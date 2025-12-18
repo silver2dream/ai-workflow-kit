@@ -2,13 +2,22 @@
 
 ## 0. Branch Model
 
-{% if project.type == 'monorepo' and has_submodules %}
+{% if project.type == 'monorepo' %}
+{% if has_submodules %}
 This project uses submodules:
 {% for repo in repos %}
 {% if repo.type == 'submodule' %}
 - `{{ repo.name }}` ({{ repo.language }})
 {% endif %}
 {% endfor %}
+{% elif has_directories %}
+This project uses directories (monorepo without submodules):
+{% for repo in repos %}
+{% if repo.type == 'directory' %}
+- `{{ repo.path }}` - {{ repo.name }} ({{ repo.language }})
+{% endif %}
+{% endfor %}
+{% endif %}
 {% endif %}
 
 Branches:

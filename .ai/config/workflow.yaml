@@ -14,10 +14,33 @@ project:
 # ============================================================
 # Repository Configuration
 # ============================================================
+# type 選項：
+#   - submodule: Git submodule（獨立 repo，有自己的 .git）
+#   - directory: 子目錄（同一個 repo 內的資料夾）
+#   - root: 根目錄（single-repo 時使用）
+#
+# 範例 1: Monorepo with submodules
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: submodule
+#
+# 範例 2: Monorepo with directories (no submodules)
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: directory
+#
+# 範例 3: Single repo
+# repos:
+#   - name: root
+#     path: ./
+#     type: root
+
 repos:
   - name: backend
     path: backend/
-    type: submodule
+    type: submodule  # submodule | directory | root
     language: go
     rules:
       - git-workflow
@@ -28,7 +51,7 @@ repos:
 
   - name: frontend
     path: frontend/
-    type: submodule
+    type: submodule  # submodule | directory | root
     language: unity
     rules:
       - git-workflow

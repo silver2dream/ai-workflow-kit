@@ -51,8 +51,8 @@ for sm in scan["submodules"]:
             f"sha: {sha}\nFix: push/restore the commit on origin, or update root to a reachable commit (merged into integration branch).",
             sm["path"].split("/")[0])
 
-# P1: missing validate-submodules in root
-if not scan["presence"]["validate_submodules_workflow"]:
+# P1: missing validate-submodules in root (only if has submodules)
+if scan["submodules"] and not scan["presence"]["validate_submodules_workflow"]:
     add(findings, "P1", "missing validate-submodules workflow in root", "Expected .github/workflows/validate-submodules.yml", "root")
 
 # P1/P2: test presence heuristics

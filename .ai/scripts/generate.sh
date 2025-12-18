@@ -60,13 +60,17 @@ env = Environment(
     lstrip_blocks=True
 )
 
-# 檢查是否有 submodules
+# 檢查 repo 類型
 has_submodules = any(r.get('type') == 'submodule' for r in config.get('repos', []))
+has_directories = any(r.get('type') == 'directory' for r in config.get('repos', []))
+is_single_repo = config['project']['type'] == 'single-repo' or any(r.get('type') == 'root' for r in config.get('repos', []))
 
 # 準備模板上下文
 context = {
     **config,
-    'has_submodules': has_submodules
+    'has_submodules': has_submodules,
+    'has_directories': has_directories,
+    'is_single_repo': is_single_repo
 }
 
 # ============================================================
@@ -119,17 +123,24 @@ release_branch = config['git']['release_branch']
 for repo in config['repos']:
     repo_name = repo['name']
     repo_path = repo.get('path', './')
-    repo_type = repo.get('type', 'local')
+    repo_type = repo.get('type', 'directory')  # 預設為 directory
     language = repo.get('language', 'generic')
     
     # 決定 workflow 輸出路徑
+    # submodule: 各自的 .github/workflows/
+    # directory/root: 根目錄的 .github/workflows/
     if repo_type == 'submodule':
         workflow_dir = os.path.join(output_dir, repo_path, '.github', 'workflows')
+        workflow_file = os.path.join(workflow_dir, 'ci.yml')
     else:
         workflow_dir = os.path.join(output_dir, '.github', 'workflows')
+        # directory 類型用 ci-{name}.yml 避免覆蓋
+        if repo_type == 'directory':
+            workflow_file = os.path.join(workflow_dir, f'ci-{repo_name}.yml')
+        else:
+            workflow_file = os.path.join(workflow_dir, 'ci.yml')
     
     os.makedirs(workflow_dir, exist_ok=True)
-    workflow_file = os.path.join(workflow_dir, 'ci.yml')
     
     # 選擇模板
     if language == 'go':

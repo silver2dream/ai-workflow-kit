@@ -96,10 +96,36 @@ project:
   description: "Project description"
   type: "single-repo"  # monorepo | single-repo
 
+# Repo type 選項：
+#   - root: 單一 repo（整個專案）
+#   - directory: 子目錄（monorepo 內的資料夾，非 submodule）
+#   - submodule: Git submodule（獨立 repo）
+#
+# 範例 1: Single repo
+# repos:
+#   - name: root
+#     path: ./
+#     type: root
+#
+# 範例 2: Monorepo with directories (no submodules)
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: directory
+#   - name: frontend
+#     path: frontend/
+#     type: directory
+#
+# 範例 3: Monorepo with submodules
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: submodule
+
 repos:
   - name: root
     path: ./
-    type: local
+    type: root  # root | directory | submodule
     language: typescript  # go | typescript | python | unity | etc.
     rules:
       - git-workflow
