@@ -1,0 +1,52 @@
+name: validate-submodules
+
+on:
+  pull_request:
+    branches: [ "feat/aether", "main" ]
+  push:
+    branches: [ "feat/aether" ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.SUBMODULES_TOKEN }}
+
+      - name: Ensure submodules initialised
+        run: |
+          git submodule update --init --recursive
+          git submodule status --recursive
+
+      - name: Verify submodule SHAs are on allowed branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          ALLOWED_BRANCHES=("feat/aether" "main")
+
+          paths=$(git config -f .gitmodules --get-regexp path | awk '{print $2}')
+          for p in $paths; do
+            echo "== Checking submodule: $p =="
+            sha=$(git -C "$p" rev-parse HEAD)
+            echo "SHA: $sha"
+
+            git -C "$p" fetch origin --prune
+
+            ok=0
+            for b in "${ALLOWED_BRANCHES[@]}"; do
+              if git -C "$p" branch -r --contains "$sha" | grep -q "origin/$b"; then
+                echo "OK: $sha is contained in origin/$b"
+                ok=1
+                break
+              fi
+            done
+
+            if [[ "$ok" -ne 1 ]]; then
+              echo "ERROR: $p SHA $sha is NOT on allowed branches: ${ALLOWED_BRANCHES[*]}"
+              exit 2
+            fi
+          done
