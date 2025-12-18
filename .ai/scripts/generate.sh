@@ -100,14 +100,17 @@ except Exception as e:
     print(f"[generate] ERROR generating AGENTS.md: {e}")
 
 # ============================================================
-# 生成 git-workflow.md (rules)
+# 生成 Kit 核心規則到 .ai/rules/_kit/
 # ============================================================
+ai_root = os.path.dirname(os.path.dirname(os.path.abspath(config_file)))
+kit_rules_dir = os.path.join(ai_root, 'rules', '_kit')
+os.makedirs(kit_rules_dir, exist_ok=True)
+
+# 生成 git-workflow.md
 try:
     template = env.get_template('git-workflow.md.j2')
     content = template.render(**context)
-    ai_root = os.path.dirname(os.path.dirname(os.path.abspath(config_file)))
-    output_path = os.path.join(ai_root, 'rules', 'git-workflow.md')
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_path = os.path.join(kit_rules_dir, 'git-workflow.md')
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(content)
     print(f"[generate] Created: {output_path}")
@@ -142,13 +145,50 @@ for repo in config['repos']:
     
     os.makedirs(workflow_dir, exist_ok=True)
     
-    # 選擇模板
-    if language == 'go':
-        template_name = 'ci-go.yml.j2'
-    elif language == 'unity':
-        template_name = 'ci-unity.yml.j2'
-    else:
-        template_name = 'ci-generic.yml.j2'
+    # 選擇模板（根據語言/框架）
+    # 語言和框架都會映射到對應的 CI 模板
+    language_templates = {
+        # Go
+        'go': 'ci-go.yml.j2',
+        'golang': 'ci-go.yml.j2',
+        
+        # Node.js / JavaScript / TypeScript 生態系
+        'node': 'ci-node.yml.j2',
+        'nodejs': 'ci-node.yml.j2',
+        'typescript': 'ci-node.yml.j2',
+        'javascript': 'ci-node.yml.j2',
+        'react': 'ci-node.yml.j2',
+        'vue': 'ci-node.yml.j2',
+        'angular': 'ci-node.yml.j2',
+        'nextjs': 'ci-node.yml.j2',
+        'nuxt': 'ci-node.yml.j2',
+        'svelte': 'ci-node.yml.j2',
+        'express': 'ci-node.yml.j2',
+        'nestjs': 'ci-node.yml.j2',
+        
+        # Python 生態系
+        'python': 'ci-python.yml.j2',
+        'django': 'ci-python.yml.j2',
+        'flask': 'ci-python.yml.j2',
+        'fastapi': 'ci-python.yml.j2',
+        
+        # Rust
+        'rust': 'ci-rust.yml.j2',
+        
+        # .NET / C#
+        'dotnet': 'ci-dotnet.yml.j2',
+        'csharp': 'ci-dotnet.yml.j2',
+        'aspnet': 'ci-dotnet.yml.j2',
+        'blazor': 'ci-dotnet.yml.j2',
+        
+        # 遊戲引擎
+        'unity': 'ci-unity.yml.j2',
+        'unreal': 'ci-unreal.yml.j2',
+        'ue4': 'ci-unreal.yml.j2',
+        'ue5': 'ci-unreal.yml.j2',
+        'godot': 'ci-godot.yml.j2',
+    }
+    template_name = language_templates.get(language.lower(), 'ci-generic.yml.j2')
     
     try:
         template = env.get_template(template_name)
@@ -158,7 +198,20 @@ for repo in config['repos']:
             'release_branch': release_branch,
             'build_cmd': repo['verify']['build'],
             'test_cmd': repo['verify']['test'],
-            'go_version': repo.get('go_version', '1.22.x')
+            # 語言特定版本
+            'go_version': repo.get('go_version', '1.22.x'),
+            'node_version': repo.get('node_version', '20'),
+            'python_version': repo.get('python_version', '3.11'),
+            'rust_version': repo.get('rust_version', 'stable'),
+            'dotnet_version': repo.get('dotnet_version', '8.0.x'),
+            'package_manager': repo.get('package_manager', 'npm'),
+            'requirements_file': repo.get('requirements_file', 'requirements.txt'),
+            # 遊戲引擎版本
+            'godot_version': repo.get('godot_version', '4.2.2'),
+            'use_dotnet': repo.get('use_dotnet', 'false'),
+            # Unreal Engine
+            'ue_version': repo.get('ue_version', '5.3'),
+            'project_name': repo.get('project_name', repo_name),
         }
         content = template.render(**ci_context)
         with open(workflow_file, 'w', encoding='utf-8') as f:

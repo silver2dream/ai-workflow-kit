@@ -11,13 +11,12 @@ This file provides guidance for Claude Code (Principal) when working with this p
 
 Before coding, ALWAYS identify which area the task touches, then apply the corresponding rules:
 
-### Backend work
-- Follow: `.ai/rules/git-workflow.md`, `.ai/rules/backend-go.md`
-### Frontend work
-- Follow: `.ai/rules/git-workflow.md`, `.ai/rules/frontend-unity.md`
+### Kit Core Rules (ALWAYS)
+- `.ai/rules/_kit/git-workflow.md` (commit format + PR base)
 
-### Git & PR workflow (ALWAYS)
-- Follow: `.ai/rules/git-workflow.md` (commit format + PR base)
+### Project-Specific Rules
+- `.ai/rules/backend-go.md`
+- `.ai/rules/frontend-unity.md`
 
 ---
 
@@ -96,8 +95,8 @@ Check:
 
 ## Constraints
 - obey AGENTS.md
-- obey `.ai/rules/git-workflow.md`
-- obey the routed architecture rules
+- obey `.ai/rules/_kit/git-workflow.md`
+- obey project-specific rules in `.ai/rules/`
 
 ## Plan
 (steps)

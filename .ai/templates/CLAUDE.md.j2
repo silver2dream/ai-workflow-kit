@@ -12,14 +12,16 @@ This file provides guidance for Claude Code (Principal) when working with this p
 
 Before coding, ALWAYS identify which area the task touches, then apply the corresponding rules:
 
-{% for repo in repos %}
-### {{ repo.name | capitalize }} work
-- Follow: {% for rule in repo.rules %}`.ai/rules/{{ rule }}.md`{% if not loop.last %}, {% endif %}{% endfor %}
+### Kit Core Rules (ALWAYS)
+{% for rule in rules.kit | default(['git-workflow']) %}
+- `.ai/rules/_kit/{{ rule }}.md`{% if rule == 'git-workflow' %} (commit format + PR base){% endif %}
 
 {% endfor %}
 
-### Git & PR workflow (ALWAYS)
-- Follow: `.ai/rules/git-workflow.md` (commit format + PR base)
+### Project-Specific Rules
+{% for rule in rules.custom | default([]) %}
+- `.ai/rules/{{ rule }}.md`
+{% endfor %}
 
 ---
 
@@ -101,8 +103,8 @@ Check:
 
 ## Constraints
 - obey AGENTS.md
-- obey `.ai/rules/git-workflow.md`
-- obey the routed architecture rules
+- obey `.ai/rules/_kit/git-workflow.md`
+- obey project-specific rules in `.ai/rules/`
 
 ## Plan
 (steps)
