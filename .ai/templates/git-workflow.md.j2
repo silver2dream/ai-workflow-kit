@@ -2,21 +2,27 @@
 
 ## 0. Branch Model
 
+{% if project.type == 'monorepo' and has_submodules %}
 This project uses submodules:
-- `backend` (go)
-- `frontend` (unity)
+{% for repo in repos %}
+{% if repo.type == 'submodule' %}
+- `{{ repo.name }}` ({{ repo.language }})
+{% endif %}
+{% endfor %}
+{% endif %}
 
 Branches:
-- **Integration branch**: `feat/example` (daily development, **target for all PRs**)
-- **Release branch**: `main` (release-only; merge from `feat/example` when releasing)
+- **Integration branch**: `{{ git.integration_branch }}` (daily development, **target for all PRs**)
+- **Release branch**: `{{ git.release_branch }}` (release-only; merge from `{{ git.integration_branch }}` when releasing)
 
 PR base rules:
-- backend repo PR base: `feat/example` (default)
-- frontend repo PR base: `feat/example` (default)
+{% for repo in repos %}
+- {{ repo.name }} repo PR base: `{{ git.integration_branch }}` (default)
+{% endfor %}
 
 Release rule (root only):
-- Only create PR from `feat/example` -> `main` for release tickets.
-- Do NOT target `main` unless the ticket explicitly says `Release: true`.
+- Only create PR from `{{ git.integration_branch }}` -> `{{ git.release_branch }}` for release tickets.
+- Do NOT target `{{ git.release_branch }}` unless the ticket explicitly says `Release: true`.
 
 ## 1. Branching Strategy
 
@@ -28,7 +34,7 @@ Release rule (root only):
 
 You MUST use the bracket `[]` format. Do not use standard Conventional Commits (no colons).
 
-- **Format**: `[type] subject`
+- **Format**: `{{ git.commit_format }}`
 - **Rules**:
   1. Type MUST be inside square brackets `[]`.
   2. Subject MUST be lowercase.
@@ -44,11 +50,13 @@ You MUST use the bracket `[]` format. Do not use standard Conventional Commits (
 ## 3. Pull Requests (MANDATORY)
 
 - Any code change MUST go through a PR (no push-only changes).
-- PR title SHOULD match commit style: `[type] subject`.
+- PR title SHOULD match commit style: `{{ git.commit_format }}`.
 - PR body MUST include: `Closes #<IssueID>`
 - Required checks must pass before merge (branch protection / rulesets).
 
+{% if has_submodules %}
 ## 4. Submodule Safety
 
-- Root repo should not point submodules to commits that are not reachable from the submodule's allowed branches (normally `feat/example`).
+- Root repo should not point submodules to commits that are not reachable from the submodule's allowed branches (normally `{{ git.integration_branch }}`).
 - Do NOT change submodule pinned commits unless the ticket explicitly requires it.
+{% endif %}

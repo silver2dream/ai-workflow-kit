@@ -48,7 +48,7 @@ for sm in scan["submodules"]:
     rc = subprocess.call(["git","-C",p,"fetch","-q","origin",sha,"--depth=1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if rc != 0:
         add(findings, "P0", f"submodule '{sm['path']}' pinned sha not found on origin",
-            f"sha: {sha}\nFix: push/restore the commit on origin, or update root to a reachable commit (merged into feat/aether).",
+            f"sha: {sha}\nFix: push/restore the commit on origin, or update root to a reachable commit (merged into integration branch).",
             sm["path"].split("/")[0])
 
 # P1: missing validate-submodules in root

@@ -2,9 +2,9 @@ name: validate-submodules
 
 on:
   pull_request:
-    branches: [ "feat/aether", "main" ]
+    branches: [ "{{ integration_branch }}"{% if integration_branch != release_branch %}, "{{ release_branch }}"{% endif %} ]
   push:
-    branches: [ "feat/aether" ]
+    branches: [ "{{ integration_branch }}" ]
 
 jobs:
   validate:
@@ -15,7 +15,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-          token: ${{ secrets.SUBMODULES_TOKEN }}
+          token: ${{ "{{" }} secrets.SUBMODULES_TOKEN {{ "}}" }}
 
       - name: Ensure submodules initialised
         run: |
@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ALLOWED_BRANCHES=("feat/aether" "main")
+          ALLOWED_BRANCHES=("{{ integration_branch }}" "{{ release_branch }}")
 
           paths=$(git config -f .gitmodules --get-regexp path | awk '{print $2}')
           for p in $paths; do

@@ -6,8 +6,17 @@ BRANCH="${2:?usage: new_worktree.sh <issue_id> <branch_name>}"
 
 ROOT="$(git rev-parse --show-toplevel)"
 WT_DIR="$ROOT/.worktrees/issue-$ISSUE_ID"
-BASE="${AI_BASE_BRANCH:-feat/aether}"            # local branch name
-REMOTE_BASE="${AI_REMOTE_BASE:-origin/feat/aether}"
+CONFIG_FILE="$ROOT/.ai/config/workflow.yaml"
+
+# Read integration branch from config
+if [[ -f "$CONFIG_FILE" ]]; then
+  DEFAULT_BASE=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c['git']['integration_branch'])" 2>/dev/null || echo "develop")
+else
+  DEFAULT_BASE="develop"
+fi
+
+BASE="${AI_BASE_BRANCH:-$DEFAULT_BASE}"
+REMOTE_BASE="${AI_REMOTE_BASE:-origin/$DEFAULT_BASE}"
 
 mkdir -p "$ROOT/.worktrees" "$ROOT/.ai/runs" "$ROOT/.ai/results" "$ROOT/.ai/exe-logs"
 

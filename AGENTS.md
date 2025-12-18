@@ -41,7 +41,7 @@ Do not proceed if these files are missing—stop and report what you cannot find
 1. **Commit**: One commit per ticket unless the ticket explicitly needs multiple commits.
 2. **Commit message**: Must follow `.ai/rules/git-workflow.md`.
    - Format: `[type] subject`
-3. **PR**: Create PR targeting `feat/aether` with "Closes #<IssueID>" in the body.
+3. **PR**: Create PR targeting `feat/example` with "Closes #<IssueID>" in the body.
    - `main` is release-only. Target `main` ONLY when the ticket explicitly says `Release: true`.
 4. **No direct pushes** to protected branches.
 
@@ -56,3 +56,4 @@ Do not proceed if these files are missing—stop and report what you cannot find
 ### frontend
 - Build: `echo 'Unity build via Editor'`
 - Test: `echo 'Unity tests via Editor'`
+

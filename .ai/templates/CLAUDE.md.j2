@@ -14,7 +14,8 @@ Before coding, ALWAYS identify which area the task touches, then apply the corre
 
 {% for repo in repos %}
 ### {{ repo.name | capitalize }} work
-- Follow: `.ai/rules/{{ repo.rules | join('.md`, `.ai/rules/') }}.md`
+- Follow: {% for rule in repo.rules %}`.ai/rules/{{ rule }}.md`{% if not loop.last %}, {% endif %}{% endfor %}
+
 {% endfor %}
 
 ### Git & PR workflow (ALWAYS)

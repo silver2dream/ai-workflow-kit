@@ -6,6 +6,17 @@ TASK_FILE="${2:?usage: run_issue_codex.sh <issue_id> <task_file> [root|backend|f
 REPO_ARG="${3:-}"  # optional override
 
 MONO_ROOT="$(git rev-parse --show-toplevel)"
+AI_ROOT="$MONO_ROOT/.ai"
+CONFIG_FILE="$AI_ROOT/config/workflow.yaml"
+
+# Read config
+if [[ -f "$CONFIG_FILE" ]]; then
+  INTEGRATION_BRANCH=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c['git']['integration_branch'])")
+  RELEASE_BRANCH=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c['git']['release_branch'])")
+else
+  INTEGRATION_BRANCH="develop"
+  RELEASE_BRANCH="main"
+fi
 
 TASK_PATH="$MONO_ROOT/$TASK_FILE"
 if [[ ! -f "$TASK_PATH" ]]; then
@@ -16,22 +27,25 @@ fi
 TICKET_REPO="$(grep -iE '^- +Repo:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +Repo:\s*//I' | tr -d '\r' || true)"
 TICKET_REPO="$(echo "$TICKET_REPO" | awk '{print tolower($0)}')"
 REPO="${REPO_ARG:-${TICKET_REPO:-root}}"
-case "$REPO" in
-  root|backend|frontend) ;;
-  *) echo "ERROR: Repo must be root|backend|frontend (got '$REPO')" >&2; exit 2 ;;
-esac
+
+# Validate repo against config
+VALID_REPOS=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(' '.join([r['name'] for r in c['repos']] + ['root']))" 2>/dev/null || echo "root backend frontend")
+if ! echo "$VALID_REPOS" | grep -qw "$REPO"; then
+  echo "ERROR: Repo must be one of: $VALID_REPOS (got '$REPO')" >&2
+  exit 2
+fi
 
 RELEASE_FLAG="$(grep -iE '^- +Release:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +Release:\s*//I' | tr -d '\r' || echo "false")"
 RELEASE_FLAG="$(echo "$RELEASE_FLAG" | awk '{print tolower($0)}')"
 if [[ "$RELEASE_FLAG" != "true" ]]; then RELEASE_FLAG="false"; fi
 
-PR_BASE="feat/aether"
+PR_BASE="$INTEGRATION_BRANCH"
 if [[ "$RELEASE_FLAG" == "true" ]]; then
   if [[ "$REPO" != "root" ]]; then
     echo "ERROR: Release tickets are allowed only for root repo." >&2
     exit 2
   fi
-  PR_BASE="main"
+  PR_BASE="$RELEASE_BRANCH"
 fi
 
 LOG_DIR="$MONO_ROOT/.ai/exe-logs"
@@ -74,9 +88,9 @@ if [[ ! -d "$WT_DIR" ]]; then
     echo "[runner] create worktree for $REPO at $WT_DIR"
     git -C "$TARGET_REPO_ROOT" fetch origin --prune >/dev/null 2>&1 || true
 
-    if ! git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/feat/aether"; then
-      if git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/remotes/origin/feat/aether"; then
-        git -C "$TARGET_REPO_ROOT" branch feat/aether origin/feat/aether >/dev/null 2>&1 || true
+    if ! git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$INTEGRATION_BRANCH"; then
+      if git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/remotes/origin/$INTEGRATION_BRANCH"; then
+        git -C "$TARGET_REPO_ROOT" branch "$INTEGRATION_BRANCH" "origin/$INTEGRATION_BRANCH" >/dev/null 2>&1 || true
       fi
     fi
 
@@ -85,7 +99,7 @@ if [[ ! -d "$WT_DIR" ]]; then
     elif git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
       git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "origin/$BRANCH" >/dev/null 2>&1 || true
     else
-      git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "feat/aether" >/dev/null 2>&1 || git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "origin/feat/aether" >/dev/null 2>&1
+      git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "$INTEGRATION_BRANCH" >/dev/null 2>&1 || git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "origin/$INTEGRATION_BRANCH" >/dev/null 2>&1
     fi
 
     git -C "$TARGET_REPO_ROOT" worktree add "$WT_DIR" "$BRANCH" >/dev/null
@@ -99,7 +113,7 @@ git checkout -q "$BRANCH" || true
 
 MODE="${AI_BRANCH_MODE:-reuse}" # reuse|reset
 if [[ "$MODE" == "reset" ]]; then
-  BASE_REF="${AI_RESET_BASE:-origin/feat/aether}"
+  BASE_REF="${AI_RESET_BASE:-origin/$INTEGRATION_BRANCH}"
   echo "[runner] reset branch to $BASE_REF"
   git fetch origin --prune >/dev/null 2>&1 || true
   git reset --hard "$BASE_REF"

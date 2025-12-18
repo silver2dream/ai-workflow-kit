@@ -41,7 +41,7 @@ repos:
 # Git Configuration
 # ============================================================
 git:
-  integration_branch: "feat/aether"
+  integration_branch: "feat/example"
   release_branch: "main"
   commit_format: "[type] subject"
   pr_body_template: |
@@ -52,14 +52,22 @@ git:
 # ============================================================
 # Spec Configuration
 # ============================================================
+# Spec 文件結構（Kiro 相容）：
+#   - requirements.md  (可選) 需求文檔
+#   - design.md        (可選) 設計文檔
+#   - tasks.md         (必要) 任務清單 - AI Workflow 讀取此文件
+#
+# 如果 tasks.md 不存在但 design.md 存在，Principal 會自動生成 tasks.md
 specs:
   base_path: ".ai/specs"
-  structure:
-    requirements: "requirements.md"
-    design: "design.md"
-    tasks: "tasks.md"
+  files:
+    requirements: "requirements.md"  # 可選
+    design: "design.md"              # 可選，用於生成 tasks.md
+    tasks: "tasks.md"                # 必要，AI Workflow 讀取
+  # 啟用自動生成 tasks.md（從 design.md）
+  auto_generate_tasks: true
   active:
-    - "cultivation-mvp"
+    - "example"
 
 # ============================================================
 # Task Configuration
@@ -83,6 +91,26 @@ audit:
     - missing-tests
     - missing-ci
   custom: []
+
+# ============================================================
+# GitHub Configuration
+# ============================================================
+# Token 從環境變數讀取，不要在此處硬編碼
+# 設定方式：
+#   - 互動式: gh auth login
+#   - 環境變數: export GH_TOKEN=ghp_xxxx
+#   - CI/CD: 設定 GITHUB_TOKEN secret
+github:
+  # 用於 issue/PR 操作的 repo（預設為當前 repo）
+  repo: ""  # 留空表示使用 git remote origin
+  # issue 標籤
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    review_pass: "review-pass"
+    review_fail: "review-fail"
+    worker_failed: "worker-failed"
 
 # ============================================================
 # Notification Configuration

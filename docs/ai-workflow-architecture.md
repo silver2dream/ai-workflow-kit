@@ -198,7 +198,7 @@
 while True:
     1. 檢查 pending issues: `gh issue list --label ai-task --state open`
     2. 如果沒有 pending:
-       - 分析 .kiro/specs/cultivation-mvp/tasks.md
+       - 分析 <specs.base_path>/<active_spec>/tasks.md
        - 找出未完成任務
        - 創建新 Issue
     3. 選擇優先級最高的 issue

@@ -114,10 +114,11 @@ git:
 
 specs:
   base_path: ".ai/specs"
-  structure:
-    requirements: "requirements.md"
-    design: "design.md"
-    tasks: "tasks.md"
+  files:
+    requirements: "requirements.md"  # 可選
+    design: "design.md"              # 可選，用於生成 tasks.md
+    tasks: "tasks.md"                # 必要
+  auto_generate_tasks: true  # 從 design.md 自動生成 tasks.md
   active: []
 
 tasks:
@@ -148,28 +149,28 @@ touch "$TARGET_DIR/.ai/results/.gitkeep"
 touch "$TARGET_DIR/.ai/runs/.gitkeep"
 touch "$TARGET_DIR/.ai/exe-logs/.gitkeep"
 
-# Update .gitignore
-if [[ -f "$TARGET_DIR/.gitignore" ]]; then
-    if ! grep -q ".ai/state/" "$TARGET_DIR/.gitignore"; then
-        log_info "Updating .gitignore..."
-        cat >> "$TARGET_DIR/.gitignore" << 'GITIGNORE'
-
-# AI Workflow - Runtime State
+# Update .gitignore (append if not already present)
+AI_GITIGNORE_MARKER="# >>> AI Workflow Kit >>>"
+AI_GITIGNORE_CONTENT="$AI_GITIGNORE_MARKER
+# Runtime state (do not commit)
 .ai/state/
 .ai/results/
 .ai/runs/
 .ai/exe-logs/
-GITIGNORE
+.worktrees/
+# <<< AI Workflow Kit <<<"
+
+if [[ -f "$TARGET_DIR/.gitignore" ]]; then
+    if ! grep -q "$AI_GITIGNORE_MARKER" "$TARGET_DIR/.gitignore"; then
+        log_info "Appending AI Workflow entries to .gitignore..."
+        echo "" >> "$TARGET_DIR/.gitignore"
+        echo "$AI_GITIGNORE_CONTENT" >> "$TARGET_DIR/.gitignore"
+    else
+        log_info ".gitignore already contains AI Workflow entries, skipping..."
     fi
 else
     log_info "Creating .gitignore..."
-    cat > "$TARGET_DIR/.gitignore" << 'GITIGNORE'
-# AI Workflow - Runtime State
-.ai/state/
-.ai/results/
-.ai/runs/
-.ai/exe-logs/
-GITIGNORE
+    echo "$AI_GITIGNORE_CONTENT" > "$TARGET_DIR/.gitignore"
 fi
 
 # Create symlinks .claude/ -> .ai/ (cross-platform)
@@ -226,6 +227,10 @@ log_info ""
 log_info "Next steps:"
 log_info "  1. Edit .ai/config/workflow.yaml for your project"
 log_info "  2. Run: bash .ai/scripts/generate.sh"
+log_info "     This will generate:"
+log_info "     - CLAUDE.md and AGENTS.md"
+log_info "     - .github/workflows/ci.yml (per repo)"
+log_info "     - .github/workflows/validate-submodules.yml (if monorepo)"
 log_info "  3. Run: bash .ai/scripts/kickoff.sh --dry-run"
 log_info ""
 log_info "Note: Files in .ai/ are the source of truth."

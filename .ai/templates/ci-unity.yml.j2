@@ -1,10 +1,10 @@
-name: frontend-ci
+name: {{ name }}-ci
 
 on:
   pull_request:
-    branches: [ "feat/aether" ]
+    branches: [ "{{ integration_branch }}"{% if integration_branch != release_branch %}, "{{ release_branch }}"{% endif %} ]
   push:
-    branches: [ "feat/aether" ]
+    branches: [ "{{ integration_branch }}" ]
 
 jobs:
   sanity:
@@ -51,30 +51,25 @@ jobs:
           test -d Assets
           echo "OK: Assets exists"
 
-      - name: Basic .meta presence check (non-strict)
+      - name: Basic .meta presence check
         shell: bash
         run: |
           set -euo pipefail
-
-          # 只做「基本防呆」：Assets 裡如果有檔案，至少要存在一些 .meta
-          #（嚴格版會檢查每個檔案都有對應 meta；之後你要我可以再升級）
           count_files=$(find Assets -type f ! -name "*.meta" | wc -l | tr -d ' ')
           count_meta=$(find Assets -type f -name "*.meta" | wc -l | tr -d ' ')
           echo "Assets non-meta files: $count_files"
           echo "Assets meta files:     $count_meta"
 
           if [ "$count_files" -gt 0 ] && [ "$count_meta" -eq 0 ]; then
-            echo "ERROR: Assets has files but no .meta files found. Unity project is likely broken."
+            echo "ERROR: Assets has files but no .meta files found."
             exit 3
           fi
-
           echo "OK: meta presence sanity check passed"
 
-      - name: Ensure no accidental huge files (optional)
+      - name: Ensure no huge files
         shell: bash
         run: |
           set -euo pipefail
-          # 超過 200MB 的檔案直接 fail（可自行調整）
           big=$(find . -type f -size +200M -not -path "./.git/*" | head -n 1 || true)
           if [ -n "$big" ]; then
             echo "ERROR: Found very large file: $big"

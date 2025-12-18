@@ -31,7 +31,7 @@ for p in $paths; do
   sha="$(git -C "$p" rev-parse HEAD)"
   if ! git -C "$p" fetch -q origin "$sha" --depth=1 2>/dev/null; then
     echo "ERROR: submodule '$p' pinned sha '$sha' not found on origin (not our ref / missing commit)." >&2
-    echo "HINT: push the commit to origin or update root to a reachable commit (e.g., merged into feat/aether)." >&2
+    echo "HINT: push the commit to origin or update root to a reachable commit (merged into integration branch)." >&2
     exit 2
   fi
 done

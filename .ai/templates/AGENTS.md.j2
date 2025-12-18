@@ -5,10 +5,14 @@ Default priority: correctness > minimal diff > speed.
 
 ## MUST-READ (before any work)
 
+{% set seen_rules = [] %}
 {% for repo in repos %}
 {% for rule in repo.rules %}
+{% if rule not in seen_rules %}
+{% set _ = seen_rules.append(rule) %}
 - Read and obey: `.ai/rules/{{ rule }}.md`{% if rule == 'git-workflow' %} (CRITICAL for commit format){% endif %}
 
+{% endif %}
 {% endfor %}
 {% endfor %}
 
@@ -22,7 +26,7 @@ Do not proceed if these files are missing—stop and report what you cannot find
 - At the start of each session, run project audit once before implementing tickets:
   - `bash .ai/scripts/scan_repo.sh`
   - `bash .ai/scripts/audit_project.sh`
-- If audit contains any P0/P1 findings, create/fix those tickets first (do not proceed to tasks work).
+- If audit contains any P0/P1 findings, create/fix those tickets first.
 
 ### 0. Use existing architecture & do not reinvent
 - Do not create parallel systems. Extend existing patterns.
@@ -41,8 +45,10 @@ Do not proceed if these files are missing—stop and report what you cannot find
 - Do NOT change submodule pinned commits unless ticket explicitly requires it.
 - If you are working in a submodule repo, the PR must be created in that repo.
 
+### 4. Git discipline
+{% else %}
+### 3. Git discipline
 {% endif %}
-### {{ '4' if has_submodules else '3' }}. Git discipline
 1. **Commit**: One commit per ticket unless the ticket explicitly needs multiple commits.
 2. **Commit message**: Must follow `.ai/rules/git-workflow.md`.
    - Format: `{{ git.commit_format }}`
@@ -58,4 +64,5 @@ Do not proceed if these files are missing—stop and report what you cannot find
 ### {{ repo.name }}
 - Build: `{{ repo.verify.build }}`
 - Test: `{{ repo.verify.test }}`
+
 {% endfor %}

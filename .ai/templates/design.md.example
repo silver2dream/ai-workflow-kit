@@ -1,0 +1,65 @@
+# Feature Name - Design Document
+
+## Overview
+
+Brief description of the feature and its purpose.
+
+## Architecture
+
+### Components
+
+1. **Component A** - Description
+2. **Component B** - Description
+
+### Data Flow
+
+```
+Input → Component A → Component B → Output
+```
+
+## Components and Interfaces
+
+### Component A
+
+**Purpose:** What this component does
+
+**Interface:**
+```typescript
+interface ComponentA {
+  method1(input: Type): ReturnType;
+  method2(): void;
+}
+```
+
+### Component B
+
+**Purpose:** What this component does
+
+## Data Models
+
+```typescript
+interface DataModel {
+  id: string;
+  name: string;
+  // ...
+}
+```
+
+## Error Handling
+
+- Error case 1: How to handle
+- Error case 2: How to handle
+
+## Testing Strategy
+
+### Unit Tests
+- Test Component A methods
+- Test Component B methods
+
+### Integration Tests
+- Test data flow between components
+
+## Implementation Notes
+
+- Note 1
+- Note 2

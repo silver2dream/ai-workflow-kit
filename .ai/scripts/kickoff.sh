@@ -59,7 +59,10 @@ ok "gh CLI 已安裝"
 
 # 2. 檢查 gh 認證
 if ! gh auth status &>/dev/null; then
-  error "gh 未認證。請執行: gh auth login"
+  error "gh 未認證。請使用以下方式之一："
+  echo "  1. 互動式登入: gh auth login"
+  echo "  2. 環境變數:   export GH_TOKEN=ghp_xxxx"
+  echo "  3. CI/CD:      設定 GITHUB_TOKEN secret"
   exit 1
 fi
 ok "gh 已認證"

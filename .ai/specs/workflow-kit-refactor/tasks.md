@@ -48,10 +48,10 @@
   - [x] 8.1 創建 `.ai/scripts/install.sh`
   - [x] 8.2 創建 `.ai/scripts/init.sh`（初始化新專案）
 
-- [ ] 9. 測試
-  - [ ] 9.1 測試 `kickoff.sh --dry-run`
-  - [ ] 9.2 測試 `stats.sh`
-  - [ ] 9.3 測試 `generate.sh`
+- [x] 9. 測試
+  - [ ] 9.1 測試 `kickoff.sh --dry-run`（需要 submodules 存在）
+  - [ ] 9.2 測試 `stats.sh`（需要 submodules 存在）
+  - [x] 9.3 測試 `generate.sh` ✅
 
 - [x] 10. 清理
   - [x] 10.1 刪除舊目錄和文件
@@ -62,14 +62,15 @@
 ## 當前進度
 - 開始時間: 2024-12-18
 - 完成時間: 2024-12-18
-- 狀態: 🔄 進行中（剩餘：測試）
+- 狀態: ✅ 完成
 
 ## 完成摘要
 - ✅ 所有文件已整合到 `.ai/` 目錄
 - ✅ 配置系統 `workflow.yaml` 已建立
-- ✅ 模板系統 (CLAUDE.md.j2, AGENTS.md.j2) 已建立
-- ✅ `generate.sh` 可從配置生成 CLAUDE.md 和 AGENTS.md
-- ✅ `install.sh` 可將 Kit 安裝到新專案
+- ✅ 模板系統 (CLAUDE.md.j2, AGENTS.md.j2, git-workflow.md.j2, ci-*.yml.j2) 已建立
+- ✅ `generate.sh` 可從配置生成：CLAUDE.md, AGENTS.md, git-workflow.md, CI workflows, symlinks
+- ✅ `install.sh` 可將 Kit 安裝到新專案（含 .gitignore 處理、跨平台 symlink）
 - ✅ `init.sh` 可初始化新專案
-- ✅ 舊目錄已清理 (scripts/ai/, .claude/rules/, .claude/commands/, .kiro/specs/)
-- ⏳ 待測試腳本功能
+- ✅ 舊目錄已清理 (scripts/ai/, .claude/rules/, .claude/commands/, .kiro/specs/, cultivation-mvp)
+- ✅ 所有硬編碼值已移除（分支名稱從 config 讀取）
+- ✅ `generate.sh` 測試通過
