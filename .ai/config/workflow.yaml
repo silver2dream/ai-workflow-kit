@@ -1,0 +1,93 @@
+# AI Workflow Kit Configuration
+# Version: 1.0
+
+version: "1.0"
+
+# ============================================================
+# Project Configuration
+# ============================================================
+project:
+  name: "ai-workflow"
+  description: "AI Autonomous Development Workflow"
+  type: "monorepo"  # monorepo | single-repo
+
+# ============================================================
+# Repository Configuration
+# ============================================================
+repos:
+  - name: backend
+    path: backend/
+    type: submodule
+    language: go
+    rules:
+      - git-workflow
+      - backend-go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+
+  - name: frontend
+    path: frontend/
+    type: submodule
+    language: unity
+    rules:
+      - git-workflow
+      - frontend-unity
+    verify:
+      build: "echo 'Unity build via Editor'"
+      test: "echo 'Unity tests via Editor'"
+
+# ============================================================
+# Git Configuration
+# ============================================================
+git:
+  integration_branch: "feat/aether"
+  release_branch: "main"
+  commit_format: "[type] subject"
+  pr_body_template: |
+    Closes #${ISSUE_ID}
+    
+    ${COMMIT_MSG}
+
+# ============================================================
+# Spec Configuration
+# ============================================================
+specs:
+  base_path: ".ai/specs"
+  structure:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  active:
+    - "cultivation-mvp"
+
+# ============================================================
+# Task Configuration
+# ============================================================
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+# ============================================================
+# Audit Configuration
+# ============================================================
+audit:
+  checks:
+    - dirty-worktree
+    - submodule-sync
+    - missing-tests
+    - missing-ci
+  custom: []
+
+# ============================================================
+# Notification Configuration
+# ============================================================
+notifications:
+  slack_webhook: "${AI_SLACK_WEBHOOK}"
+  discord_webhook: "${AI_DISCORD_WEBHOOK}"
+  system_notify: true

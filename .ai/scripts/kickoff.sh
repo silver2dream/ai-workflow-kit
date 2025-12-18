@@ -5,9 +5,9 @@ set -euo pipefail
 # kickoff.sh - 一鍵啟動 AI 自動化工作流
 # ============================================================================
 # 用法:
-#   bash scripts/ai/kickoff.sh              # 啟動完整工作流
-#   bash scripts/ai/kickoff.sh --dry-run    # 只做前置檢查，不啟動
-#   bash scripts/ai/kickoff.sh --background # 背景執行 (nohup)
+#   bash .ai/scripts/kickoff.sh              # 啟動完整工作流
+#   bash .ai/scripts/kickoff.sh --dry-run    # 只做前置檢查，不啟動
+#   bash .ai/scripts/kickoff.sh --background # 背景執行 (nohup)
 # ============================================================================
 
 MONO_ROOT="$(git rev-parse --show-toplevel)"
@@ -21,7 +21,7 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=true ;;
     --background) BACKGROUND=true ;;
     --help|-h)
-      echo "用法: bash scripts/ai/kickoff.sh [--dry-run] [--background]"
+      echo "用法: bash .ai/scripts/kickoff.sh [--dry-run] [--background]"
       echo ""
       echo "選項:"
       echo "  --dry-run     只做前置檢查，不啟動工作流"
@@ -103,8 +103,8 @@ ok "無停止標記"
 
 # 7. 執行專案審計
 info "執行專案審計..."
-bash "$MONO_ROOT/scripts/ai/scan_repo.sh" >/dev/null
-bash "$MONO_ROOT/scripts/ai/audit_project.sh" >/dev/null
+bash "$MONO_ROOT/.ai/scripts/scan_repo.sh" >/dev/null
+bash "$MONO_ROOT/.ai/scripts/audit_project.sh" >/dev/null
 
 AUDIT_FILE="$MONO_ROOT/.ai/state/audit.json"
 if [[ -f "$AUDIT_FILE" ]]; then
@@ -136,7 +136,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo ""
   info "=== Dry Run 完成 ==="
   info "所有前置檢查通過，可以啟動工作流。"
-  info "執行 'bash scripts/ai/kickoff.sh' 啟動。"
+  info "執行 'bash .ai/scripts/kickoff.sh' 啟動。"
   exit 0
 fi
 
@@ -171,7 +171,7 @@ echo ""
 # 啟動 Claude Code
 # ----------------------------------------------------------------------------
 
-BOOT_PROMPT="$MONO_ROOT/scripts/ai/principal_boot.txt"
+BOOT_PROMPT="$MONO_ROOT/.ai/scripts/principal_boot.txt"
 
 if [[ "$BACKGROUND" == "true" ]]; then
   info "背景模式啟動..."

@@ -5,9 +5,12 @@ Default priority: correctness > minimal diff > speed.
 
 ## MUST-READ (before any work)
 
-- Read and obey: `.ai/rules/git-workflow.md` (CRITICAL for commit format)
-- Read and obey: `.ai/rules/backend-go.md`
-- Read and obey: `.ai/rules/frontend-unity.md`
+{% for repo in repos %}
+{% for rule in repo.rules %}
+- Read and obey: `.ai/rules/{{ rule }}.md`{% if rule == 'git-workflow' %} (CRITICAL for commit format){% endif %}
+
+{% endfor %}
+{% endfor %}
 
 Do not proceed if these files are missing—stop and report what you cannot find.
 
@@ -19,7 +22,7 @@ Do not proceed if these files are missing—stop and report what you cannot find
 - At the start of each session, run project audit once before implementing tickets:
   - `bash .ai/scripts/scan_repo.sh`
   - `bash .ai/scripts/audit_project.sh`
-- If audit contains any P0/P1 findings, create/fix those tickets first.
+- If audit contains any P0/P1 findings, create/fix those tickets first (do not proceed to tasks work).
 
 ### 0. Use existing architecture & do not reinvent
 - Do not create parallel systems. Extend existing patterns.
@@ -33,26 +36,26 @@ Do not proceed if these files are missing—stop and report what you cannot find
 - If changing logic: add/adjust tests when feasible.
 - If no tests exist: add at least a small smoke test or verification note.
 
+{% if has_submodules %}
 ### 3. Submodule safety
 - Do NOT change submodule pinned commits unless ticket explicitly requires it.
 - If you are working in a submodule repo, the PR must be created in that repo.
 
-### 4. Git discipline
+{% endif %}
+### {{ '4' if has_submodules else '3' }}. Git discipline
 1. **Commit**: One commit per ticket unless the ticket explicitly needs multiple commits.
 2. **Commit message**: Must follow `.ai/rules/git-workflow.md`.
-   - Format: `[type] subject`
-3. **PR**: Create PR targeting `feat/aether` with "Closes #<IssueID>" in the body.
-   - `main` is release-only. Target `main` ONLY when the ticket explicitly says `Release: true`.
+   - Format: `{{ git.commit_format }}`
+3. **PR**: Create PR targeting `{{ git.integration_branch }}` with "Closes #<IssueID>" in the body.
+   - `{{ git.release_branch }}` is release-only. Target `{{ git.release_branch }}` ONLY when the ticket explicitly says `Release: true`.
 4. **No direct pushes** to protected branches.
 
 ---
 
 ## DEFAULT VERIFY COMMANDS
 
-### backend
-- Build: `go build ./...`
-- Test: `go test ./...`
-
-### frontend
-- Build: `echo 'Unity build via Editor'`
-- Test: `echo 'Unity tests via Editor'`
+{% for repo in repos %}
+### {{ repo.name }}
+- Build: `{{ repo.verify.build }}`
+- Test: `{{ repo.verify.test }}`
+{% endfor %}

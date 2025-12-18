@@ -6,7 +6,7 @@ STATE_DIR="$MONO_ROOT/.ai/state"
 mkdir -p "$STATE_DIR"
 
 if [[ ! -f "$STATE_DIR/repo_scan.json" ]]; then
-  bash "$MONO_ROOT/scripts/ai/scan_repo.sh" >/dev/null
+  bash "$MONO_ROOT/.ai/scripts/scan_repo.sh" >/dev/null
 fi
 
 python3 - <<'PY'

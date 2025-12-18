@@ -7,31 +7,53 @@
 ## Step 1: 獲取 PR 信息
 
 ```bash
-gh pr view <PR_NUMBER> --json number,title,body,headRefName,baseRefName,additions,deletions,changedFiles
+gh pr view <PR_NUMBER> --json number,title,body,headRefName,baseRefName,additions,deletions,changedFiles,statusCheckRollup
 ```
 
-## Step 2: 獲取 PR Diff
+## Step 2: 檢查 CI 狀態（必須）
+
+```bash
+gh pr checks <PR_NUMBER>
+```
+
+**CI 狀態判斷：**
+- ✅ 所有 checks 通過 → 繼續審查
+- ⏳ checks 仍在執行 → 等待完成後再審查
+- ❌ 任何 check 失敗 → 直接 reject，創建 fix issue
+
+如果 CI 失敗，不需要審查代碼，直接：
+```bash
+gh pr review <PR_NUMBER> --request-changes --body "❌ CI 失敗
+
+**失敗的 checks：**
+$(gh pr checks <PR_NUMBER> --json name,state --jq '.[] | select(.state != \"SUCCESS\") | \"- \" + .name + \": \" + .state')
+
+請修復 CI 錯誤後重新提交。
+"
+```
+
+## Step 3: 獲取 PR Diff
 
 ```bash
 gh pr diff <PR_NUMBER>
 ```
 
-## Step 3: 確定適用的規則
+## Step 4: 確定適用的規則
 
 從 PR body 或 branch name 判斷 Repo 類型，讀取對應規則：
 
 ```bash
 # 通用規則
-cat .claude/rules/git-workflow.md
+cat .ai/rules/git-workflow.md
 
 # Backend (如果 PR 涉及 backend)
-cat .claude/rules/backend-nakama-architecture-and-patterns.md
+cat .ai/rules/backend-go.md
 
 # Frontend (如果 PR 涉及 frontend)
-cat .claude/rules/unity-architecture-and-patterns.md
+cat .ai/rules/frontend-unity.md
 ```
 
-## Step 4: 審查清單
+## Step 5: 審查清單
 
 檢查以下項目：
 
@@ -63,7 +85,7 @@ cat .claude/rules/unity-architecture-and-patterns.md
 - [ ] 沒有安全漏洞（SQL injection, XSS 等）
 - [ ] 沒有未處理的錯誤
 
-## Step 5: 做出決定
+## Step 6: 做出決定
 
 ### 如果通過：
 

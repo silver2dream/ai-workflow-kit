@@ -41,7 +41,7 @@ mkdir -p "$LOG_DIR" "$RUN_DIR" "$MONO_ROOT/.ai/results" "$MONO_ROOT/.ai/state" "
 BRANCH="feat/ai-issue-$ISSUE_ID"
 
 export AI_STATE_ROOT="$MONO_ROOT"
-bash "$MONO_ROOT/scripts/ai/attempt_guard.sh" "$ISSUE_ID" "codex-auto"
+bash "$MONO_ROOT/.ai/scripts/attempt_guard.sh" "$ISSUE_ID" "codex-auto"
 
 TARGET_REPO_ROOT="$MONO_ROOT"
 WT_DIR="$MONO_ROOT/.worktrees/issue-$ISSUE_ID"
@@ -53,7 +53,7 @@ fi
 
 echo "[runner] preflight repo=$REPO"
 if [[ "$REPO" == "root" ]]; then
-  bash "$MONO_ROOT/scripts/ai/preflight.sh"
+  bash "$MONO_ROOT/.ai/scripts/preflight.sh"
 else
   if [[ -n "$(git -C "$MONO_ROOT" status --porcelain)" ]]; then
     echo "ERROR: monorepo root working tree not clean. Commit/stash first." >&2
@@ -69,7 +69,7 @@ fi
 
 if [[ ! -d "$WT_DIR" ]]; then
   if [[ "$REPO" == "root" ]]; then
-    WT_DIR="$(bash "$MONO_ROOT/scripts/ai/new_worktree.sh" "$ISSUE_ID" "$BRANCH")"
+    WT_DIR="$(bash "$MONO_ROOT/.ai/scripts/new_worktree.sh" "$ISSUE_ID" "$BRANCH")"
   else
     echo "[runner] create worktree for $REPO at $WT_DIR"
     git -C "$TARGET_REPO_ROOT" fetch origin --prune >/dev/null 2>&1 || true
@@ -156,7 +156,7 @@ if [[ "$RC" -ne 0 ]]; then
   export AI_BRANCH_NAME="$BRANCH"
   export AI_PR_BASE="$PR_BASE"
   export AI_STATE_ROOT="$WT_DIR"
-  bash "$MONO_ROOT/scripts/ai/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"
+  bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"
   exit "$RC"
 fi
 
@@ -190,7 +190,7 @@ if git diff --cached --quiet; then
   export AI_BRANCH_NAME="$BRANCH"
   export AI_PR_BASE="$PR_BASE"
   export AI_STATE_ROOT="$WT_DIR"
-  bash "$MONO_ROOT/scripts/ai/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"
+  bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"
   exit 2
 fi
 
@@ -216,7 +216,7 @@ if [[ -z "$PR_URL" ]]; then
   export AI_BRANCH_NAME="$BRANCH"
   export AI_PR_BASE="$PR_BASE"
   export AI_STATE_ROOT="$WT_DIR"
-  bash "$MONO_ROOT/scripts/ai/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"
+  bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"
   exit 2
 fi
 
@@ -225,7 +225,7 @@ export AI_REPO_NAME="$REPO"
 export AI_BRANCH_NAME="$BRANCH"
 export AI_PR_BASE="$PR_BASE"
 export AI_STATE_ROOT="$WT_DIR"
-bash "$MONO_ROOT/scripts/ai/write_result.sh" "$ISSUE_ID" "success" "$PR_URL" "$SUMMARY_FILE"
+bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "success" "$PR_URL" "$SUMMARY_FILE"
 
 echo "DONE: repo=$REPO branch=$BRANCH"
 echo "PR:   $PR_URL"

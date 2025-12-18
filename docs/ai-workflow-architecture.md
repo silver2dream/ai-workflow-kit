@@ -463,8 +463,14 @@ export AI_SYSTEM_NOTIFY=false
 
 ## 10. FAQ
 
-### Q: 為什麼不用 GitHub Actions?
+### Q: 為什麼不用 GitHub Actions 執行 Claude/Codex?
 A: GitHub Actions 執行 Claude/Codex 需要 API，會產生額外成本。我們使用本地 CLI（已訂閱）來避免這個成本。
+
+### Q: 那 frontend/backend 的 CI workflow 是做什麼的?
+A: CI workflow（`backend-ci.yml`、`frontend-ci.yml`）是**獨立於 AI workflow 的安全網**：
+- Codex 本地執行時已跑過驗證命令，Sequential Chain 不等待 CI
+- CI 作為 branch protection 的 required check，`gh pr merge` 會被擋住如果 CI 沒過
+- 這是最後一道防線，防止本地驗證漏掉的問題
 
 ### Q: 如何保證不會無限循環?
 A:
