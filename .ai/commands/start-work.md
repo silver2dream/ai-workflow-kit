@@ -202,8 +202,15 @@ cat .ai/rules/<repo-specific-rule>.md
 # Approve PR
 gh pr review <PR_NUMBER> --approve --body "✅ AI Review 通過：符合架構規則，變更在範圍內。"
 
-# Merge PR
-gh pr merge <PR_NUMBER> --squash --delete-branch
+# 等待 CI 通過（最多 10 分鐘）
+gh pr checks <PR_NUMBER> --watch --fail-fast
+
+# 如果 CI 失敗，不要合併，標記需要修復
+# gh issue edit <ISSUE_NUMBER> --add-label "ci-failed"
+# 回到 Step 1
+
+# CI 通過後，使用 auto-merge（會等待 branch protection 規則）
+gh pr merge <PR_NUMBER> --squash --delete-branch --auto
 
 # 關閉 Issue
 gh issue close <ISSUE_NUMBER> --comment "🎉 已合併！PR #<PR_NUMBER>"

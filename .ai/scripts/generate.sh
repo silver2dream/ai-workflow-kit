@@ -30,6 +30,13 @@ fi
 echo "[generate] Reading config from $CONFIG_FILE"
 echo "[generate] Templates dir: $TEMPLATES_DIR"
 
+# 驗證配置
+echo "[generate] Validating config..."
+if ! python3 "$AI_ROOT/scripts/validate_config.py" "$CONFIG_FILE"; then
+  echo "[generate] ERROR: Config validation failed"
+  exit 1
+fi
+
 # 檢查 jinja2 是否安裝
 if ! python3 -c "import jinja2" 2>/dev/null; then
   echo "[generate] Installing jinja2..."
