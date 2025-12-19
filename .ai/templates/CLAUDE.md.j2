@@ -18,10 +18,16 @@ Before coding, ALWAYS identify which area the task touches, then apply the corre
 
 {% endfor %}
 
-### Project-Specific Rules
-{% for rule in rules.custom | default([]) %}
+{% set custom_rules = rules.custom | default([]) %}
+{% if custom_rules %}
+### Project-Specific Rules (enabled)
+{% for rule in custom_rules %}
 - `.ai/rules/{{ rule }}.md`
 {% endfor %}
+{% else %}
+### Optional Example Rules (not enabled by default)
+If you want stricter, tech-specific rules, copy from `.ai/rules/_examples/` into `.ai/rules/`, then add them under `rules.custom` in `.ai/config/workflow.yaml`.
+{% endif %}
 
 ---
 
@@ -104,7 +110,7 @@ Check:
 ## Constraints
 - obey AGENTS.md
 - obey `.ai/rules/_kit/git-workflow.md`
-- obey project-specific rules in `.ai/rules/`
+- obey enabled project rules in `.ai/rules/` (if any)
 
 ## Plan
 (steps)

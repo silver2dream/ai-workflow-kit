@@ -7,8 +7,6 @@ Default priority: correctness > minimal diff > speed.
 
 
 - Read and obey: `.ai/rules/_kit/git-workflow.md` (CRITICAL for commit format)
-- Read and obey: `.ai/rules/backend-go.md`
-- Read and obey: `.ai/rules/frontend-unity.md`
 
 Do not proceed if these files are missing—stop and report what you cannot find.
 
@@ -34,11 +32,7 @@ Do not proceed if these files are missing—stop and report what you cannot find
 - If changing logic: add/adjust tests when feasible.
 - If no tests exist: add at least a small smoke test or verification note.
 
-### 3. Submodule safety
-- Do NOT change submodule pinned commits unless ticket explicitly requires it.
-- If you are working in a submodule repo, the PR must be created in that repo.
-
-### 4. Git discipline
+### 3. Git discipline
 1. **Commit**: One commit per ticket unless the ticket explicitly needs multiple commits.
 2. **Commit message**: Must follow `.ai/rules/_kit/git-workflow.md`.
    - Format: `[type] subject`
@@ -57,4 +51,3 @@ Do not proceed if these files are missing—stop and report what you cannot find
 ### frontend
 - Build: `echo 'Unity build via Editor'`
 - Test: `echo 'Unity tests via Editor'`
-
