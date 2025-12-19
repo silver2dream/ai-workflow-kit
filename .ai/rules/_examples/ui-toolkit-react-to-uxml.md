@@ -1,4 +1,7 @@
-# UI Toolkit: React/Tailwind -> UXML/USS (STRICT)
+# (Example Rule Pack) UI Toolkit: React/Tailwind -> UXML/USS (STRICT)
+
+This is an optional example rule pack for AWK users.
+To enable it: copy this file to `.ai/rules/ui-toolkit-react-to-uxml.md`, then add `ui-toolkit-react-to-uxml` under `rules.custom` in `.ai/config/workflow.yaml`.
 
 Role: Senior Unity UI Toolkit engineer.
 Task: Convert provided React/Tailwind into Unity UI Toolkit files (.uxml + .uss), and integrate into the existing Unity architecture.

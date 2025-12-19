@@ -14,9 +14,8 @@ Before coding, ALWAYS identify which area the task touches, then apply the corre
 ### Kit Core Rules (ALWAYS)
 - `.ai/rules/_kit/git-workflow.md` (commit format + PR base)
 
-### Project-Specific Rules
-- `.ai/rules/backend-go.md`
-- `.ai/rules/frontend-unity.md`
+### Optional Example Rules (not enabled by default)
+If you want stricter, tech-specific rules, copy from `.ai/rules/_examples/` into `.ai/rules/`, then add them under `rules.custom` in `.ai/config/workflow.yaml`.
 
 ---
 
@@ -41,7 +40,6 @@ Decision rule:
 ### Phase B — Task Selection
 
 Read active specs:
-- `.ai/specs/example/tasks.md`
 
 Find uncompleted tasks (`- [ ]`) and create GitHub Issues.
 
@@ -96,7 +94,7 @@ Check:
 ## Constraints
 - obey AGENTS.md
 - obey `.ai/rules/_kit/git-workflow.md`
-- obey project-specific rules in `.ai/rules/`
+- obey enabled project rules in `.ai/rules/` (if any)
 
 ## Plan
 (steps)

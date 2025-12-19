@@ -174,6 +174,8 @@ Spec 資料夾結構（Kiro 相容）：
 
 Root CI workflow：`.github/workflows/ci.yml`
 
+注意：此 repo 內建的是手寫 CI 範例。`bash .ai/scripts/generate.sh` 預設不會改動 workflows；需要從模板生成時才使用 `--generate-ci`。
+
 包含：
 - AWK evaluation：`bash .ai/scripts/evaluate.sh --offline` 與 `--offline --strict`
 - Kit tests：`bash .ai/tests/run_all_tests.sh`

@@ -1,4 +1,7 @@
-# Backend (Nakama Go) Architecture & Patterns (STRICT)
+# (Example Rule Pack) Backend (Nakama Go) Architecture & Patterns (STRICT)
+
+This is an optional example rule pack for AWK users.
+To enable it: copy this file to `.ai/rules/backend-go.md`, then add `backend-go` under `rules.custom` in `.ai/config/workflow.yaml`.
 
 Role: Senior Go/Nakama Engineer.
 Goal: Implement server-authoritative logic with production-safe patterns, STRICTLY following this repo’s module layout and data architecture.

@@ -166,11 +166,12 @@ rules:
     - git-workflow  # 從 git-workflow.md.j2 生成
   
   # 使用者自訂規則（放在 .ai/rules/，不會被覆蓋）
-  # 這些規則會被 AGENTS.md 引用
-  custom:
-    - backend-go
-    - frontend-unity
-    # - ui-toolkit-react-to-uxml  # 可選
+  # 預設保持為空，避免 AWK kit 綁死特定技術/架構。
+  #
+  # 可選範例規則包放在 `.ai/rules/_examples/`：
+  # - 先 copy 到 `.ai/rules/`
+  # - 再把規則名稱加入 custom 清單
+  custom: []
 
 # ============================================================
 # Escalation Configuration

@@ -776,10 +776,15 @@ if [[ -f "$AI_ROOT/state/audit.json" ]]; then
 import json
 with open('$AI_ROOT/state/audit.json') as f:
     audit = json.load(f)
-for f in audit.get('findings', []):
-    if f.get('type') == 'dirty_worktree':
-        print(f.get('severity', 'unknown'))
+found = False
+for finding in audit.get('findings', []):
+    finding_type = finding.get('type') or finding.get('id')
+    if finding_type in ('dirty_worktree', 'dirty-worktree'):
+        print(finding.get('severity', 'unknown'))
+        found = True
         break
+if not found:
+    print('none')
 " 2>/dev/null || echo "none")
   if [[ "$DIRTY_SEVERITY" == "P1" ]] || [[ "$DIRTY_SEVERITY" == "none" ]]; then
     log_pass "dirty_worktree severity is P1 (or not present)"

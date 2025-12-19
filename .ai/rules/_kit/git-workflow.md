@@ -2,9 +2,9 @@
 
 ## 0. Branch Model
 
-This project uses submodules:
-- `backend` (go)
-- `frontend` (unity)
+This project uses directories (monorepo without submodules):
+- `backend/` - backend (go)
+- `frontend/` - frontend (unity)
 
 Branches:
 - **Integration branch**: `feat/example` (daily development, **target for all PRs**)
@@ -48,7 +48,3 @@ You MUST use the bracket `[]` format. Do not use standard Conventional Commits (
 - PR body MUST include: `Closes #<IssueID>`
 - Required checks must pass before merge (branch protection / rulesets).
 
-## 4. Submodule Safety
-
-- Root repo should not point submodules to commits that are not reachable from the submodule's allowed branches (normally `feat/example`).
-- Do NOT change submodule pinned commits unless the ticket explicitly requires it.

@@ -1,4 +1,7 @@
-# Unity Architecture & Patterns (STRICT)
+# (Example Rule Pack) Unity Architecture & Patterns (STRICT)
+
+This is an optional example rule pack for AWK users.
+To enable it: copy this file to `.ai/rules/frontend-unity.md`, then add `frontend-unity` under `rules.custom` in `.ai/config/workflow.yaml`.
 
 Role: Senior Unity Engineer (R3 + UniTask + MessagePipe + UI Toolkit + Localization).
 Goal: Implement features while strictly following the layered architecture and UIFlow pattern.
