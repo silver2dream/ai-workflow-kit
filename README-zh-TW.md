@@ -5,44 +5,44 @@
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
-> An AI-assisted development workflow kit that drives **Spec → Implement → PR → Merge**, designed to work with **Claude Code (Principal)** + **Codex (Worker)**, and compatible with **Kiro-style specs**.
+> 「睡前啟動，早上收割」的 AI 開發工作流 Kit：以 **Spec → 實作 → PR → 合併** 為主線，搭配 **Claude Code (Principal)** + **Codex (Worker)** 完成閉環；Spec 格式與 **Kiro** 相容。
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
 ---
 
-## 📋 Table of Contents
+## 📋 目錄
 
-- [Features](#-features)
-- [Architecture Overview](#-architecture-overview)
-- [Technology Stack](#-technology-stack)
-- [Project Structure](#-project-structure)
-- [Quick Start](#-quick-start)
-- [Configuration](#-configuration)
-- [Directory Monorepo Example](#-directory-monorepo-example)
+- [特色](#-特色)
+- [架構概覽](#-架構概覽)
+- [技術棧](#-技術棧)
+- [專案結構](#-專案結構)
+- [快速開始](#-快速開始)
+- [設定](#-設定)
+- [Directory Monorepo 範例](#-directory-monorepo-範例)
 - [CI](#-ci)
-- [Evaluation](#-evaluation)
-- [Docs](#-docs)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [評估](#-評估)
+- [文件](#-文件)
+- [貢獻](#-貢獻)
+- [授權](#-授權)
 
 ---
 
-## ✨ Features
+## ✨ 特色
 
-### Core Workflow
-- **Spec-driven**: reads `.ai/specs/<name>/tasks.md` (Kiro-compatible) to decide what to do next
-- **GitHub as state machine**: uses issues/PRs + labels to track progress
-- **Dispatch + review loop**: dispatches implementation to Worker, then reviews/merges or creates fix issues
+### 核心工作流
+- **Spec 驅動**：讀取 `.ai/specs/<name>/tasks.md`（Kiro 相容）決定下一步
+- **GitHub 作為狀態機**：Issues/PR + labels 追蹤進度
+- **派工 + 審查閉環**：派工給 Worker 產 PR，再由 Principal 審查、合併或退回產生修正 issue
 
-### Kit Quality
-- **Offline Gate**: deterministic verification (no network required)
-- **Strict mode**: `--strict` enforces “no P0 findings” in audit (CI/release checks)
-- **Extensibility checks**: validates CI triggers on `feat/example` (branch alignment)
+### Kit 品質
+- **Offline Gate**：離線可驗證（不需網路）
+- **Strict mode**：`--strict` 強制 audit 無 P0（適用 CI/發布前）
+- **Extensibility checks**：檢查 CI 是否會被 `feat/example` 觸發（避免分支對齊誤判）
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ 架構概覽
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -61,25 +61,25 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-More details: `docs/ai-workflow-architecture.md`.
+完整架構文件：`docs/ai-workflow-architecture.md`
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ 技術棧
 
-### Offline (required)
-- `bash` (Windows: Git Bash / WSL)
+### Offline（必備）
+- `bash`（Windows: Git Bash / WSL）
 - `git`
 - `python3` + `pyyaml` + `jsonschema` + `jinja2`
 
-### Online / E2E (optional)
-- `gh` (GitHub CLI) + `gh auth login`
-- `claude` (Claude Code)
-- `codex` (Worker)
+### Online / E2E（選配）
+- `gh`（GitHub CLI）+ `gh auth login`
+- `claude`（Claude Code）
+- `codex`（Worker）
 
 ---
 
-## 📁 Project Structure
+## 📁 專案結構
 
 ```
 .
@@ -97,28 +97,28 @@ More details: `docs/ai-workflow-architecture.md`.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速開始
 
-### 1) Install offline dependencies
+### 1) 安裝 offline 依賴
 
 ```bash
 pip3 install pyyaml jsonschema jinja2
 ```
 
-### 2) Verify (offline)
+### 2) 離線驗證
 
 ```bash
 bash .ai/scripts/evaluate.sh --offline
 bash .ai/tests/run_all_tests.sh
 ```
 
-### 3) Generate outputs
+### 3) 生成輸出
 
 ```bash
 bash .ai/scripts/generate.sh
 ```
 
-### 4) (Optional) Run the full workflow
+### 4)（選配）跑完整工作流
 
 ```bash
 gh auth login
@@ -126,7 +126,7 @@ bash .ai/scripts/kickoff.sh --dry-run
 bash .ai/scripts/kickoff.sh
 ```
 
-Stop:
+停止：
 
 ```bash
 touch .ai/state/STOP
@@ -134,19 +134,19 @@ touch .ai/state/STOP
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ 設定
 
-Main config: `.ai/config/workflow.yaml`
+主設定：`.ai/config/workflow.yaml`
 
 ### Repo type
 
-- `type: directory`: monorepo subdirectories (single git repo)
-- `type: submodule`: git submodules (independent repos)
-- `type: root`: single-repo
+- `type: directory`：monorepo 子目錄（同一個 git repo）
+- `type: submodule`：git submodule（獨立 repo）
+- `type: root`：single-repo
 
 ### Specs
 
-Spec folder structure (Kiro compatible):
+Spec 資料夾結構（Kiro 相容）：
 
 ```
 .ai/specs/<feature-name>/
@@ -155,54 +155,55 @@ Spec folder structure (Kiro compatible):
 └── tasks.md          # required
 ```
 
-To enable a spec, add its folder name to `specs.active` in `.ai/config/workflow.yaml`.
+要啟用 spec，將 spec 資料夾名稱加入 `.ai/config/workflow.yaml` 的 `specs.active`。
 
 ---
 
-## 📦 Directory Monorepo Example
+## 📦 Directory Monorepo 範例
 
-This repo ships with a minimal directory-type example:
+這個 repo 內建一個可用的 directory 範例：
 
-- `backend/`: a tiny Go module + unit test (`go test ./...`)
-- `frontend/`: Unity skeleton (CI runs structure + JSON sanity only)
-- Spec example: `.ai/specs/example/`
-- Guide: `docs/getting-started.md`
+- `backend/`：最小 Go module + unit test（`go test ./...`）
+- `frontend/`：Unity skeleton（CI 只做結構與 JSON sanity，不需要 Unity Editor）
+- Spec 範例：`.ai/specs/example/`
+- 入門指南：`docs/getting-started.md`
 
 ---
 
 ## 🔁 CI
 
-Root CI workflow: `.github/workflows/ci.yml`
+Root CI workflow：`.github/workflows/ci.yml`
 
-It runs:
-- AWK evaluation: `bash .ai/scripts/evaluate.sh --offline` and `--offline --strict`
-- Kit tests: `bash .ai/tests/run_all_tests.sh`
-- Backend tests: `go test ./...` (in `backend/`)
-- Frontend sanity: `frontend/Packages/manifest.json` JSON validation + folder checks
-
----
-
-## 🧪 Evaluation
-
-- Standard: `.ai/docs/evaluate.md`
-- Executor: `.ai/scripts/evaluate.sh`
+包含：
+- AWK evaluation：`bash .ai/scripts/evaluate.sh --offline` 與 `--offline --strict`
+- Kit tests：`bash .ai/tests/run_all_tests.sh`
+- Backend：`go test ./...`（在 `backend/`）
+- Frontend：`frontend/Packages/manifest.json` JSON 檢查 + 資料夾存在性
 
 ---
 
-## 📚 Docs
+## 🧪 評估
+
+- 標準：`.ai/docs/evaluate.md`
+- 執行器：`.ai/scripts/evaluate.sh`
+
+---
+
+## 📚 文件
 
 - `docs/getting-started.md`
 - `docs/ai-workflow-architecture.md`
 
 ---
 
-## 🤝 Contributing
+## 🤝 貢獻
 
-- Branch model and commit format: `.ai/rules/_kit/git-workflow.md`
-- PR base should target `feat/example` by default.
+- 分支策略與 commit 格式：`.ai/rules/_kit/git-workflow.md`
+- PR base 預設 target `feat/example`
 
 ---
 
-## 📄 License
+## 📄 授權
 
-No license file is provided yet. Treat this repository as “all rights reserved” until a license is added.
+目前 repo 未提供 license 檔案；在加入 license 前，請視為 “all rights reserved”。
+
