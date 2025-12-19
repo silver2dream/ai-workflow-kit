@@ -47,3 +47,4 @@ You MUST use the bracket `[]` format. Do not use standard Conventional Commits (
 - PR title SHOULD match commit style: `[type] subject`.
 - PR body MUST include: `Closes #<IssueID>`
 - Required checks must pass before merge (branch protection / rulesets).
+

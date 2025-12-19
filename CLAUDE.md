@@ -40,7 +40,6 @@ Decision rule:
 ### Phase B — Task Selection
 
 Read active specs:
-- `.ai/specs/example/tasks.md`
 
 Find uncompleted tasks (`- [ ]`) and create GitHub Issues.
 

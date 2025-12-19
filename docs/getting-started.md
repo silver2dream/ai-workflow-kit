@@ -13,6 +13,8 @@ Edit `.ai/config/workflow.yaml`:
 - Set `git.integration_branch` (default: `feat/example`)
 - Keep `specs.active: []` until you add your own spec
 
+If you don't use an integration/release branch split, set `git.integration_branch` to the same value as `git.release_branch` (for example: both `main`).
+
 ## 2) (Optional) Enable rule packs
 
 AWK defaults to a minimal rule set under `.ai/rules/_kit/`.
@@ -61,3 +63,9 @@ Add a workflow under `.github/workflows/` that runs:
 - frontend sanity checks in `frontend/`
 
 This repo ships with a working example workflow in `.github/workflows/ci.yml`.
+
+If you prefer generating CI from templates, run:
+
+```bash
+bash .ai/scripts/generate.sh --generate-ci
+```

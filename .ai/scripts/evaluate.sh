@@ -159,11 +159,17 @@ else
 fi
 
 # O10: tests
-if bash "$AI_ROOT/tests/run_all_tests.sh" > /dev/null 2>&1; then
+TEST_LOG="$(mktemp -t awk-tests.XXXXXX)"
+if bash "$AI_ROOT/tests/run_all_tests.sh" >"$TEST_LOG" 2>&1; then
   check_pass "O10" "tests passed"
 else
+  echo ""
+  echo "---- .ai/tests/run_all_tests.sh output (last 200 lines) ----"
+  tail -n 200 "$TEST_LOG" || true
+  echo "---- end ----"
   check_fail "O10" "tests failed"
 fi
+rm -f "$TEST_LOG" 2>/dev/null || true
 
 # === 驗證 git status 未變 ===
 GIT_STATUS_AFTER=$(git status --porcelain 2>/dev/null || echo "")
