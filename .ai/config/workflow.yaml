@@ -58,7 +58,7 @@ project:
 repos:
   - name: backend
     path: backend/
-    type: submodule  # submodule | directory | root
+    type: directory  # submodule | directory | root
     language: go
     verify:
       build: "go build ./..."
@@ -66,7 +66,7 @@ repos:
 
   - name: frontend
     path: frontend/
-    type: submodule  # submodule | directory | root
+    type: directory  # submodule | directory | root
     language: unity
     verify:
       build: "echo 'Unity build via Editor'"
@@ -102,7 +102,7 @@ specs:
   # 啟用自動生成 tasks.md（從 design.md）
   auto_generate_tasks: true
   active:
-    - "workflow-kit-v2"
+    - "workflow-kit-v3"
 
 # ============================================================
 # Task Configuration

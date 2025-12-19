@@ -2,14 +2,12 @@
 set -euo pipefail
 
 # ============================================================================
-# stats.sh - AI 工作流統計報告
-# ============================================================================
-# 用法:
-#   bash .ai/scripts/stats.sh              # 顯示統計
-#   bash .ai/scripts/stats.sh --json       # JSON 格式輸出
-#   bash .ai/scripts/stats.sh --html       # 生成 HTML 報告
-#   bash .ai/scripts/stats.sh --no-save    # 不保存歷史記錄
-# ============================================================================
+# stats.sh - AI 撌乩?瘚絞閮??# ============================================================================
+# ?冽?:
+#   bash .ai/scripts/stats.sh              # 憿舐內蝯梯?
+#   bash .ai/scripts/stats.sh --json       # JSON ?澆?頛詨
+#   bash .ai/scripts/stats.sh --html       # ?? HTML ?勗?
+#   bash .ai/scripts/stats.sh --no-save    # 銝?摮風?脰???# ============================================================================
 
 MONO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$MONO_ROOT"
@@ -28,10 +26,10 @@ done
 HISTORY_FILE="$MONO_ROOT/.ai/state/stats_history.jsonl"
 
 # ----------------------------------------------------------------------------
-# 收集數據
+# ?園??豢?
 # ----------------------------------------------------------------------------
 
-# GitHub Issues 統計
+# GitHub Issues 蝯梯?
 ISSUES_TOTAL=$(gh issue list --label ai-task --state all --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 ISSUES_OPEN=$(gh issue list --label ai-task --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 ISSUES_CLOSED=$((ISSUES_TOTAL - ISSUES_OPEN))
@@ -39,11 +37,11 @@ ISSUES_FAILED=$(gh issue list --label worker-failed --state open --json number -
 ISSUES_IN_PROGRESS=$(gh issue list --label in-progress --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 ISSUES_PR_READY=$(gh issue list --label pr-ready --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-# GitHub PRs 統計
+# GitHub PRs 蝯梯?
 PRS_OPEN=$(gh pr list --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 PRS_MERGED=$(gh pr list --state merged --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-# 本地結果統計
+# ?砍蝯?蝯梯?
 RESULTS_DIR="$MONO_ROOT/.ai/results"
 LOCAL_SUCCESS=0
 LOCAL_FAILED=0
@@ -88,30 +86,27 @@ PYTHON_SCRIPT
   METRICS_COUNT=$(echo "$METRICS_DATA" | cut -d',' -f3)
 fi
 
-# 計算成功率
-TOTAL_EXECUTED=$((LOCAL_SUCCESS + LOCAL_FAILED))
+# 閮?????TOTAL_EXECUTED=$((LOCAL_SUCCESS + LOCAL_FAILED))
 if [[ "$TOTAL_EXECUTED" -gt 0 ]]; then
   SUCCESS_RATE=$(python3 -c "print(f'{$LOCAL_SUCCESS / $TOTAL_EXECUTED * 100:.1f}')")
 else
   SUCCESS_RATE="N/A"
 fi
 
-# 最近執行時間
-KICKOFF_TIME="N/A"
+# ?餈銵???KICKOFF_TIME="N/A"
 if [[ -f "$MONO_ROOT/.ai/state/kickoff_time.txt" ]]; then
   KICKOFF_TIME=$(cat "$MONO_ROOT/.ai/state/kickoff_time.txt")
 fi
 
-# 停止狀態
-STOP_STATUS="運行中"
+# ?迫???STOP_STATUS="??銝?
 if [[ -f "$MONO_ROOT/.ai/state/STOP" ]]; then
-  STOP_STATUS="已停止"
+  STOP_STATUS="撌脣?甇?
 fi
 
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # ----------------------------------------------------------------------------
-# 歷史趨勢計算
+# 甇瑕頞典閮?
 # ----------------------------------------------------------------------------
 
 calculate_trends() {
@@ -202,7 +197,7 @@ AVG_TIME_TO_MERGE=$(echo "$TRENDS_JSON" | python3 -c "import json,sys; print(jso
 TREND_DATA_POINTS=$(echo "$TRENDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('data_points',0))")
 
 # ----------------------------------------------------------------------------
-# 保存歷史記錄
+# 靽?甇瑕閮?
 # ----------------------------------------------------------------------------
 
 save_history() {
@@ -224,7 +219,7 @@ if [[ "$SAVE_HISTORY" == "true" ]]; then
 fi
 
 # ----------------------------------------------------------------------------
-# 輸出
+# 頛詨
 # ----------------------------------------------------------------------------
 
 if [[ "$OUTPUT_FORMAT" == "json" ]]; then
@@ -283,101 +278,101 @@ elif [[ "$OUTPUT_FORMAT" == "html" ]]; then
   </style>
 </head>
 <body>
-  <h1>🤖 AI Workflow 統計報告</h1>
-  <p class="timestamp">生成時間: $TIMESTAMP | 狀態: $STOP_STATUS</p>
+  <h1>?? AI Workflow 蝯梯??勗?</h1>
+  <p class="timestamp">????: $TIMESTAMP | ??? $STOP_STATUS</p>
   
   <div class="card">
-    <h2>📋 Issues</h2>
-    <div class="stat"><span class="stat-value">$ISSUES_TOTAL</span><br><span class="stat-label">總計</span></div>
-    <div class="stat"><span class="stat-value success">$ISSUES_CLOSED</span><br><span class="stat-label">已完成</span></div>
-    <div class="stat"><span class="stat-value warning">$ISSUES_OPEN</span><br><span class="stat-label">待處理</span></div>
-    <div class="stat"><span class="stat-value error">$ISSUES_FAILED</span><br><span class="stat-label">失敗</span></div>
+    <h2>?? Issues</h2>
+    <div class="stat"><span class="stat-value">$ISSUES_TOTAL</span><br><span class="stat-label">蝮質?</span></div>
+    <div class="stat"><span class="stat-value success">$ISSUES_CLOSED</span><br><span class="stat-label">撌脣???/span></div>
+    <div class="stat"><span class="stat-value warning">$ISSUES_OPEN</span><br><span class="stat-label">敺???/span></div>
+    <div class="stat"><span class="stat-value error">$ISSUES_FAILED</span><br><span class="stat-label">憭望?</span></div>
   </div>
   
   <div class="card">
-    <h2>🔀 Pull Requests</h2>
-    <div class="stat"><span class="stat-value">$PRS_OPEN</span><br><span class="stat-label">待審查</span></div>
-    <div class="stat"><span class="stat-value success">$PRS_MERGED</span><br><span class="stat-label">已合併</span></div>
+    <h2>?? Pull Requests</h2>
+    <div class="stat"><span class="stat-value">$PRS_OPEN</span><br><span class="stat-label">敺祟??/span></div>
+    <div class="stat"><span class="stat-value success">$PRS_MERGED</span><br><span class="stat-label">撌脣?雿?/span></div>
   </div>
   
   <div class="card">
-    <h2>📊 執行統計</h2>
-    <div class="stat"><span class="stat-value success">$LOCAL_SUCCESS</span><br><span class="stat-label">成功</span></div>
-    <div class="stat"><span class="stat-value error">$LOCAL_FAILED</span><br><span class="stat-label">失敗</span></div>
-    <div class="stat"><span class="stat-value">$SUCCESS_RATE%</span><br><span class="stat-label">成功率</span></div>
-    <div class="stat"><span class="stat-value">${TOTAL_DURATION}s</span><br><span class="stat-label">總執行時間</span></div>
-    <div class="stat"><span class="stat-value">${AVG_DURATION}s</span><br><span class="stat-label">平均執行時間</span></div>
+    <h2>?? ?瑁?蝯梯?</h2>
+    <div class="stat"><span class="stat-value success">$LOCAL_SUCCESS</span><br><span class="stat-label">??</span></div>
+    <div class="stat"><span class="stat-value error">$LOCAL_FAILED</span><br><span class="stat-label">憭望?</span></div>
+    <div class="stat"><span class="stat-value">$SUCCESS_RATE%</span><br><span class="stat-label">????/span></div>
+    <div class="stat"><span class="stat-value">${TOTAL_DURATION}s</span><br><span class="stat-label">蝮賢銵???/span></div>
+    <div class="stat"><span class="stat-value">${AVG_DURATION}s</span><br><span class="stat-label">撟喳??瑁???</span></div>
   </div>
   
   <div class="card">
-    <h2>📈 趨勢 (7天)</h2>
-    <div class="stat"><span class="stat-value">$DAILY_AVG_CLOSED</span><br><span class="stat-label">日均完成</span></div>
-    <div class="stat"><span class="stat-value">$SUCCESS_RATE_7D</span><br><span class="stat-label">7天成功率</span></div>
-    <div class="stat"><span class="stat-value">$AVG_TIME_TO_MERGE</span><br><span class="stat-label">平均合併時間</span></div>
-    <div class="stat"><span class="stat-value">$TREND_DATA_POINTS</span><br><span class="stat-label">數據點</span></div>
+    <h2>?? 頞典 (7憭?</h2>
+    <div class="stat"><span class="stat-value">$DAILY_AVG_CLOSED</span><br><span class="stat-label">?亙?摰?</span></div>
+    <div class="stat"><span class="stat-value">$SUCCESS_RATE_7D</span><br><span class="stat-label">7憭拇???</span></div>
+    <div class="stat"><span class="stat-value">$AVG_TIME_TO_MERGE</span><br><span class="stat-label">撟喳??蔥??</span></div>
+    <div class="stat"><span class="stat-value">$TREND_DATA_POINTS</span><br><span class="stat-label">?豢?暺?/span></div>
   </div>
   
-  <p class="timestamp">上次啟動: $KICKOFF_TIME</p>
+  <p class="timestamp">銝活??: $KICKOFF_TIME</p>
 </body>
 </html>
 EOF
-  echo "HTML 報告已生成: $HTML_FILE"
+  echo "HTML ?勗?撌脩??? $HTML_FILE"
 
 else
-  # Text 格式
+  # Text ?澆?
   echo ""
-  echo "═══════════════════════════════════════════════════════════════"
-  echo "                   🤖 AI Workflow 統計報告"
-  echo "═══════════════════════════════════════════════════════════════"
+  echo "????????????????????????????????????????????????????????????????
+  echo "                   ?? AI Workflow 蝯梯??勗?"
+  echo "????????????????????????????????????????????????????????????????
   echo ""
-  echo "  生成時間: $TIMESTAMP"
-  echo "  狀態: $STOP_STATUS"
-  echo "  上次啟動: $KICKOFF_TIME"
+  echo "  ????: $TIMESTAMP"
+  echo "  ??? $STOP_STATUS"
+  echo "  銝活??: $KICKOFF_TIME"
   echo ""
-  echo "───────────────────────────────────────────────────────────────"
-  echo "  📋 Issues"
-  echo "───────────────────────────────────────────────────────────────"
-  echo "    總計:       $ISSUES_TOTAL"
-  echo "    已完成:     $ISSUES_CLOSED"
-  echo "    待處理:     $ISSUES_OPEN"
-  echo "      - 進行中: $ISSUES_IN_PROGRESS"
-  echo "      - PR就緒: $ISSUES_PR_READY"
-  echo "    失敗:       $ISSUES_FAILED"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "  ?? Issues"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "    蝮質?:       $ISSUES_TOTAL"
+  echo "    撌脣???     $ISSUES_CLOSED"
+  echo "    敺???     $ISSUES_OPEN"
+  echo "      - ?脰?銝? $ISSUES_IN_PROGRESS"
+  echo "      - PR撠梁?: $ISSUES_PR_READY"
+  echo "    憭望?:       $ISSUES_FAILED"
   echo ""
-  echo "───────────────────────────────────────────────────────────────"
-  echo "  🔀 Pull Requests"
-  echo "───────────────────────────────────────────────────────────────"
-  echo "    待審查:     $PRS_OPEN"
-  echo "    已合併:     $PRS_MERGED"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "  ?? Pull Requests"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "    敺祟??     $PRS_OPEN"
+  echo "    撌脣?雿?     $PRS_MERGED"
   echo ""
-  echo "───────────────────────────────────────────────────────────────"
-  echo "  📊 本地執行統計"
-  echo "───────────────────────────────────────────────────────────────"
-  echo "    成功:       $LOCAL_SUCCESS"
-  echo "    失敗:       $LOCAL_FAILED"
-  echo "    成功率:     $SUCCESS_RATE%"
-  echo "    總執行時間: ${TOTAL_DURATION}s"
-  echo "    平均執行時間: ${AVG_DURATION}s"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "  ?? ?砍?瑁?蝯梯?"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "    ??:       $LOCAL_SUCCESS"
+  echo "    憭望?:       $LOCAL_FAILED"
+  echo "    ????     $SUCCESS_RATE%"
+  echo "    蝮賢銵??? ${TOTAL_DURATION}s"
+  echo "    撟喳??瑁???: ${AVG_DURATION}s"
   echo ""
-  echo "───────────────────────────────────────────────────────────────"
-  echo "  📈 趨勢 (7天)"
-  echo "───────────────────────────────────────────────────────────────"
-  echo "    日均完成:     $DAILY_AVG_CLOSED"
-  echo "    7天成功率:    $SUCCESS_RATE_7D"
-  echo "    平均合併時間: $AVG_TIME_TO_MERGE"
-  echo "    數據點:       $TREND_DATA_POINTS"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "  ?? 頞典 (7憭?"
+  echo "???????????????????????????????????????????????????????????????"
+  echo "    ?亙?摰?:     $DAILY_AVG_CLOSED"
+  echo "    7憭拇???:    $SUCCESS_RATE_7D"
+  echo "    撟喳??蔥??: $AVG_TIME_TO_MERGE"
+  echo "    ?豢?暺?       $TREND_DATA_POINTS"
   echo ""
-  echo "═══════════════════════════════════════════════════════════════"
+  echo "????????????????????????????????????????????????????????????????
   echo ""
   
-  # 顯示需要關注的項目
+  # 憿舐內?閬?瘜函??
   if [[ "$ISSUES_FAILED" -gt 0 ]] || [[ "$PRS_OPEN" -gt 0 ]]; then
-    echo "⚠️  需要關注:"
+    echo "??  ?閬?瘜?"
     if [[ "$ISSUES_FAILED" -gt 0 ]]; then
-      echo "    - $ISSUES_FAILED 個失敗的 issues: gh issue list --label worker-failed"
+      echo "    - $ISSUES_FAILED ?仃?? issues: gh issue list --label worker-failed"
     fi
     if [[ "$PRS_OPEN" -gt 0 ]]; then
-      echo "    - $PRS_OPEN 個待審查的 PRs: gh pr list"
+      echo "    - $PRS_OPEN ??撖拇??PRs: gh pr list"
     fi
     echo ""
   fi

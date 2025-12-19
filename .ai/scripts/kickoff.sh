@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # ============================================================================
-# kickoff.sh - 一鍵啟動 AI 自動化工作流
+# kickoff.sh - AI Workflow Launcher
 # ============================================================================
-# 用法:
-#   bash .ai/scripts/kickoff.sh              # 啟動完整工作流
-#   bash .ai/scripts/kickoff.sh --dry-run    # 只做前置檢查，不啟動
-#   bash .ai/scripts/kickoff.sh --background # 背景執行 (nohup)
+# Usage:
+#   bash .ai/scripts/kickoff.sh              # Start full workflow
+#   bash .ai/scripts/kickoff.sh --dry-run    # Pre-flight check only
+#   bash .ai/scripts/kickoff.sh --background # Background execution (nohup)
 # ============================================================================
 
 MONO_ROOT="$(git rev-parse --show-toplevel)"
@@ -21,93 +21,113 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=true ;;
     --background) BACKGROUND=true ;;
     --help|-h)
-      echo "用法: bash .ai/scripts/kickoff.sh [--dry-run] [--background]"
+      echo "Usage: bash .ai/scripts/kickoff.sh [--dry-run] [--background]"
       echo ""
-      echo "選項:"
-      echo "  --dry-run     只做前置檢查，不啟動工作流"
-      echo "  --background  背景執行 (使用 nohup)"
+      echo "Options:"
+      echo "  --dry-run     Pre-flight check only, don't start workflow"
+      echo "  --background  Background execution (using nohup)"
       exit 0
       ;;
   esac
 done
 
 # ----------------------------------------------------------------------------
-# 顏色輸出
+# Output helpers (plain text for Windows compatibility)
 # ----------------------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; }
+info()  { echo "[INFO] $1"; }
+ok()    { echo "[OK] $1"; }
+warn()  { echo "[WARN] $1"; }
+error() { echo "[ERROR] $1"; }
 
 # ----------------------------------------------------------------------------
-# 前置檢查
+# run_script - Cross-platform script executor
 # ----------------------------------------------------------------------------
-info "執行前置檢查..."
+# Auto-selects .py or .sh version, prefers Python (cross-platform)
+# Usage: run_script <script_name> [args...]
+# Example: run_script scan_repo --json
+# ----------------------------------------------------------------------------
+run_script() {
+  local script_name="$1"
+  shift
+  local sh_path="$MONO_ROOT/.ai/scripts/${script_name}.sh"
+  local py_path="$MONO_ROOT/.ai/scripts/${script_name}.py"
+  
+  # Prefer Python (cross-platform)
+  if command -v python3 &>/dev/null && [[ -f "$py_path" ]]; then
+    python3 "$py_path" "$@"
+  elif command -v python &>/dev/null && [[ -f "$py_path" ]]; then
+    python "$py_path" "$@"
+  elif [[ -f "$sh_path" ]]; then
+    bash "$sh_path" "$@"
+  else
+    error "Script not found: $script_name (.py or .sh)"
+    return 1
+  fi
+}
 
-# 1. 檢查 gh CLI
+# ----------------------------------------------------------------------------
+# Pre-flight checks
+# ----------------------------------------------------------------------------
+info "Running pre-flight checks..."
+
+# 1. Check gh CLI
 if ! command -v gh &>/dev/null; then
-  error "gh CLI 未安裝。請執行: brew install gh (macOS) 或參考 https://cli.github.com/"
+  error "gh CLI not installed. Run: brew install gh (macOS) or see https://cli.github.com/"
   exit 1
 fi
-ok "gh CLI 已安裝"
+ok "gh CLI installed"
 
-# 2. 檢查 gh 認證
+# 2. Check gh auth
 if ! gh auth status &>/dev/null; then
-  error "gh 未認證。請使用以下方式之一："
-  echo "  1. 互動式登入: gh auth login"
-  echo "  2. 環境變數:   export GH_TOKEN=ghp_xxxx"
-  echo "  3. CI/CD:      設定 GITHUB_TOKEN secret"
+  error "gh not authenticated. Use one of:"
+  echo "  1. Interactive: gh auth login"
+  echo "  2. Environment: export GH_TOKEN=ghp_xxxx"
+  echo "  3. CI/CD: Set GITHUB_TOKEN secret"
   exit 1
 fi
-ok "gh 已認證"
+ok "gh authenticated"
 
-# 3. 檢查 claude CLI
+# 3. Check claude CLI
 if ! command -v claude &>/dev/null; then
-  error "claude CLI 未安裝。請確認 Claude Code Pro 已安裝並在 PATH 中。"
+  error "claude CLI not installed. Ensure Claude Code Pro is installed and in PATH."
   exit 1
 fi
-ok "claude CLI 已安裝"
+ok "claude CLI installed"
 
-# 4. 檢查 codex CLI
+# 4. Check codex CLI
 if ! command -v codex &>/dev/null; then
-  warn "codex CLI 未安裝。Worker 執行時會失敗。"
+  warn "codex CLI not installed. Worker execution will fail."
 else
-  ok "codex CLI 已安裝"
+  ok "codex CLI installed"
 fi
 
-# 5. 檢查工作目錄乾淨
+# 5. Check working directory is clean
 if [[ -n "$(git status --porcelain)" ]]; then
-  error "工作目錄不乾淨。請先 commit 或 stash 變更。"
+  error "Working directory not clean. Please commit or stash changes."
   git status --short
   exit 1
 fi
-ok "工作目錄乾淨"
+ok "Working directory clean"
 
-# 6. 檢查停止標記
+# 6. Check stop marker
 if [[ -f ".ai/state/STOP" ]]; then
-  warn "發現停止標記 .ai/state/STOP"
-  read -p "是否刪除並繼續? [y/N] " -n 1 -r
+  warn "Found stop marker .ai/state/STOP"
+  read -p "Delete and continue? [y/N] " -n 1 -r
   echo
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     rm -f ".ai/state/STOP"
-    ok "已刪除停止標記"
+    ok "Deleted stop marker"
   else
-    error "請手動刪除 .ai/state/STOP 後重試"
+    error "Please manually delete .ai/state/STOP and retry"
     exit 1
   fi
 fi
-ok "無停止標記"
+ok "No stop marker"
 
-# 7. 執行專案審計
-info "執行專案審計..."
-bash "$MONO_ROOT/.ai/scripts/scan_repo.sh" >/dev/null
-bash "$MONO_ROOT/.ai/scripts/audit_project.sh" >/dev/null
+# 7. Run project audit
+info "Running project audit..."
+run_script scan_repo >/dev/null
+run_script audit_project >/dev/null
 
 AUDIT_FILE="$MONO_ROOT/.ai/state/audit.json"
 if [[ -f "$AUDIT_FILE" ]]; then
@@ -115,7 +135,7 @@ if [[ -f "$AUDIT_FILE" ]]; then
   P1_COUNT=$(python3 -c "import json; print(json.load(open('$AUDIT_FILE'))['summary']['p1'])" 2>/dev/null || echo "0")
   
   if [[ "$P0_COUNT" -gt 0 ]]; then
-    error "發現 $P0_COUNT 個 P0 問題，必須先修復！"
+    error "Found $P0_COUNT P0 issues, must fix first!"
     python3 -c "
 import json
 audit = json.load(open('$AUDIT_FILE'))
@@ -127,57 +147,57 @@ for f in audit['findings']:
   fi
   
   if [[ "$P1_COUNT" -gt 0 ]]; then
-    warn "發現 $P1_COUNT 個 P1 問題，建議修復"
+    warn "Found $P1_COUNT P1 issues, recommend fixing"
   fi
 fi
-ok "專案審計完成"
+ok "Project audit complete"
 
 # ----------------------------------------------------------------------------
-# Dry Run 模式
+# Dry Run mode
 # ----------------------------------------------------------------------------
 if [[ "$DRY_RUN" == "true" ]]; then
   echo ""
-  info "=== Dry Run 完成 ==="
-  info "所有前置檢查通過，可以啟動工作流。"
-  info "執行 'bash .ai/scripts/kickoff.sh' 啟動。"
+  info "=== Dry Run Complete ==="
+  info "All pre-flight checks passed, ready to start workflow."
+  info "Run 'bash .ai/scripts/kickoff.sh' to start."
   exit 0
 fi
 
 # ----------------------------------------------------------------------------
-# 準備啟動
+# Prepare to start
 # ----------------------------------------------------------------------------
 mkdir -p "$MONO_ROOT/.ai/state" "$MONO_ROOT/.ai/results" "$MONO_ROOT/.ai/runs" "$MONO_ROOT/.ai/exe-logs"
 
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "$TIMESTAMP" > "$MONO_ROOT/.ai/state/kickoff_time.txt"
 
-info "準備啟動 AI 工作流..."
+info "Preparing to start AI workflow..."
 echo ""
-echo "┌─────────────────────────────────────────────────────────────┐"
-echo "│                    AI 自動化工作流                          │"
-echo "├─────────────────────────────────────────────────────────────┤"
-echo "│  啟動時間: $TIMESTAMP                      │"
-echo "│  工作目錄: $MONO_ROOT"
-echo "│                                                             │"
-echo "│  停止方式:                                                  │"
-echo "│    1. touch .ai/state/STOP                                  │"
-echo "│    2. 在 Claude Code 中說「停止」                           │"
-echo "│    3. Ctrl+C                                                │"
-echo "│                                                             │"
-echo "│  查看進度:                                                  │"
-echo "│    gh issue list --label ai-task                            │"
-echo "│    gh pr list                                               │"
-echo "└─────────────────────────────────────────────────────────────┘"
+echo "============================================================"
+echo "                    AI Automation Workflow                   "
+echo "============================================================"
+echo "  Start time: $TIMESTAMP"
+echo "  Working dir: $MONO_ROOT"
+echo ""
+echo "  Stop methods:"
+echo "    1. touch .ai/state/STOP"
+echo "    2. Say 'stop' in Claude Code"
+echo "    3. Ctrl+C"
+echo ""
+echo "  Check progress:"
+echo "    gh issue list --label ai-task"
+echo "    gh pr list"
+echo "============================================================"
 echo ""
 
 # ----------------------------------------------------------------------------
-# 啟動 Claude Code
+# Start Claude Code
 # ----------------------------------------------------------------------------
 
 BOOT_PROMPT="$MONO_ROOT/.ai/scripts/principal_boot.txt"
 
 if [[ "$BACKGROUND" == "true" ]]; then
-  info "背景模式啟動..."
+  info "Starting in background mode..."
   LOG_FILE="$MONO_ROOT/.ai/exe-logs/kickoff-$(date +%Y%m%d-%H%M%S).log"
   
   nohup bash -c "
@@ -192,21 +212,21 @@ if [[ "$BACKGROUND" == "true" ]]; then
   CLAUDE_PID=$!
   echo "$CLAUDE_PID" > "$MONO_ROOT/.ai/state/claude_pid.txt"
   
-  ok "Claude Code 已在背景啟動 (PID: $CLAUDE_PID)"
-  info "日誌文件: $LOG_FILE"
-  info "停止: kill $CLAUDE_PID 或 touch .ai/state/STOP"
+  ok "Claude Code started in background (PID: $CLAUDE_PID)"
+  info "Log file: $LOG_FILE"
+  info "Stop: kill $CLAUDE_PID or touch .ai/state/STOP"
 else
-  info "前台模式啟動..."
-  info "Claude Code 將接管終端，執行 /start-work 指令"
+  info "Starting in foreground mode..."
+  info "Claude Code will take over terminal, executing /start-work"
   echo ""
   
-  # 使用 principal_boot.txt 如果存在，否則直接執行 /start-work
+  # Use principal_boot.txt if exists, otherwise run /start-work directly
   if [[ -f "$BOOT_PROMPT" ]]; then
-    info "使用 principal_boot.txt 作為啟動 prompt"
+    info "Using principal_boot.txt as boot prompt"
     claude < "$BOOT_PROMPT"
   else
-    # 直接啟動 claude 並讓用戶輸入 /start-work
-    info "請在 Claude Code 中輸入: /start-work"
+    # Start claude and let user input /start-work
+    info "Please enter: /start-work in Claude Code"
     claude
   fi
 fi

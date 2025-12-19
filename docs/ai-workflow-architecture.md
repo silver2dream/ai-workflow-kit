@@ -202,7 +202,7 @@ while True:
        - 找出未完成任務
        - 創建新 Issue
     3. 選擇優先級最高的 issue
-    4. 執行 Worker: `bash scripts/ai/run_issue_codex.sh <id> <file>`
+    4. 執行 Worker: `bash .ai/scripts/run_issue_codex.sh <id> <file>`
     5. 讀取結果: `cat .ai/results/issue-<id>.json`
     6. 如果成功且有 PR:
        - 審查: `gh pr diff <pr_number>`
@@ -220,7 +220,7 @@ while True:
 ### 4.2 Worker Integration
 
 ```bash
-# scripts/ai/run_issue_codex.sh
+# .ai/scripts/run_issue_codex.sh
 # 這是現有腳本，已經實現了：
 # - 創建 worktree
 # - 執行 codex exec
@@ -417,22 +417,22 @@ gh auth status      # GitHub 認證
 
 # 2. 啟動工作流
 # 方式 A: 一鍵啟動（推薦）
-bash scripts/ai/kickoff.sh
+bash .ai/scripts/kickoff.sh
 
 # 方式 B: 背景執行（睡前啟動）
-bash scripts/ai/kickoff.sh --background
+bash .ai/scripts/kickoff.sh --background
 
 # 方式 C: 只做前置檢查
-bash scripts/ai/kickoff.sh --dry-run
+bash .ai/scripts/kickoff.sh --dry-run
 
 # 方式 D: 手動進入 Claude Code
 claude
 > /start-work
 
 # 3. 查看進度
-bash scripts/ai/stats.sh              # 統計報告
-bash scripts/ai/stats.sh --json       # JSON 格式
-bash scripts/ai/stats.sh --html       # 生成 HTML 報告
+bash .ai/scripts/stats.sh              # 統計報告
+bash .ai/scripts/stats.sh --json       # JSON 格式
+bash .ai/scripts/stats.sh --html       # 生成 HTML 報告
 gh issue list --label ai-task         # GitHub Issues
 gh pr list                            # GitHub PRs
 
@@ -442,8 +442,8 @@ touch .ai/state/STOP
 # 或執行 /stop-work
 
 # 5. 手動發送通知
-bash scripts/ai/notify.sh "標題" "內容"
-bash scripts/ai/notify.sh --summary   # 發送統計摘要
+bash .ai/scripts/notify.sh "標題" "內容"
+bash .ai/scripts/notify.sh --summary   # 發送統計摘要
 ```
 
 ### 通知配置（可選）

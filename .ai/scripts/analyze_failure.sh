@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # ============================================================================
-# analyze_failure.sh - 分析失敗日誌並識別錯誤類型
+# analyze_failure.sh - Analyze failure logs and suggest recovery actions
 # ============================================================================
-# 用法:
+# Usage:
 #   bash .ai/scripts/analyze_failure.sh <log_file>
 #   echo "error log" | bash .ai/scripts/analyze_failure.sh -
 #
-# 輸出 (JSON):
+# Output (JSON):
 #   {
 #     "matched": true,
 #     "pattern_id": "go_compile_error",
@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
 PATTERNS_FILE="$AI_ROOT/config/failure_patterns.json"
 
-# 讀取日誌
+# Read input
 if [[ "${1:-}" == "-" ]]; then
   LOG_CONTENT=$(cat)
 elif [[ -n "${1:-}" ]] && [[ -f "$1" ]]; then
@@ -33,13 +33,13 @@ else
   exit 0
 fi
 
-# 檢查 patterns 文件
+# Check patterns file exists
 if [[ ! -f "$PATTERNS_FILE" ]]; then
   echo '{"matched":false,"type":"unknown","retryable":false,"suggestion":"Patterns file not found"}'
   exit 0
 fi
 
-# 使用 Python 進行模式匹配
+# Use Python for pattern matching
 python3 - "$PATTERNS_FILE" "$LOG_CONTENT" <<'PYTHON'
 import sys
 import json
@@ -48,7 +48,7 @@ import re
 patterns_file = sys.argv[1]
 log_content = sys.argv[2] if len(sys.argv) > 2 else ""
 
-# 載入模式
+# Load patterns
 try:
     with open(patterns_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -62,7 +62,7 @@ except Exception as e:
     }))
     sys.exit(0)
 
-# 匹配模式
+# Match patterns
 result = {
     "matched": False,
     "type": "unknown",
@@ -74,7 +74,7 @@ for pattern in patterns:
     try:
         regex = pattern.get('regex', '')
         if regex and re.search(regex, log_content, re.IGNORECASE | re.MULTILINE):
-            # 找到匹配的文字
+            # Found match, extract info
             match = re.search(regex, log_content, re.IGNORECASE | re.MULTILINE)
             matched_text = match.group(0) if match else ""
             
@@ -87,7 +87,7 @@ for pattern in patterns:
                 "max_retries": pattern.get('max_retries', 0),
                 "retry_delay_seconds": pattern.get('retry_delay_seconds', 0),
                 "suggestion": pattern.get('suggestion', ''),
-                "matched_text": matched_text[:200]  # 限制長度
+                "matched_text": matched_text[:200]  # Truncate
             }
             break
     except re.error:

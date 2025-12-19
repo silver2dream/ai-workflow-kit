@@ -2,17 +2,17 @@
 set -euo pipefail
 
 # ============================================================================
-# rollback.sh - 回滾已合併的 PR
+# rollback.sh - ?遝撌脣?雿萇? PR
 # ============================================================================
-# 用法:
+# ?冽?:
 #   bash .ai/scripts/rollback.sh <PR_NUMBER> [--dry-run]
 #
-# 功能:
-#   1. 獲取 PR 資訊
-#   2. 創建 revert commit
-#   3. 創建 revert PR
-#   4. 重新開啟原 issue
-#   5. 發送通知
+# ?:
+#   1. ?脣? PR 鞈?
+#   2. ?萄遣 revert commit
+#   3. ?萄遣 revert PR
+#   4. ?????issue
+#   5. ?潮
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,19 +23,19 @@ DRY_RUN="${2:-}"
 
 echo "[rollback] Starting rollback for PR #$PR_NUMBER"
 
-# 檢查 gh CLI
+# 瑼Ｘ gh CLI
 if ! command -v gh &> /dev/null; then
   echo "[rollback] ERROR: gh CLI not found"
   exit 1
 fi
 
-# 檢查認證
+# 瑼Ｘ隤?
 if ! gh auth status &> /dev/null; then
   echo "[rollback] ERROR: gh not authenticated. Run 'gh auth login'"
   exit 1
 fi
 
-# 獲取 PR 資訊
+# ?脣? PR 鞈?
 echo "[rollback] Fetching PR info..."
 PR_INFO=$(gh pr view "$PR_NUMBER" --json title,body,mergeCommit,headRefName,state,mergedAt 2>/dev/null)
 
@@ -44,7 +44,7 @@ if [[ -z "$PR_INFO" ]]; then
   exit 1
 fi
 
-# 解析 PR 資訊
+# 閫?? PR 鞈?
 PR_TITLE=$(echo "$PR_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))")
 PR_BODY=$(echo "$PR_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body',''))")
 MERGE_COMMIT=$(echo "$PR_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('mergeCommit',{}).get('oid','') if d.get('mergeCommit') else '')")
@@ -55,8 +55,7 @@ echo "[rollback] PR Title: $PR_TITLE"
 echo "[rollback] PR State: $PR_STATE"
 echo "[rollback] Merge Commit: $MERGE_COMMIT"
 
-# 檢查 PR 是否已合併
-if [[ "$PR_STATE" != "MERGED" ]]; then
+# 瑼Ｘ PR ?臬撌脣?雿?if [[ "$PR_STATE" != "MERGED" ]]; then
   echo "[rollback] ERROR: PR #$PR_NUMBER is not merged (state: $PR_STATE)"
   exit 1
 fi
@@ -66,11 +65,11 @@ if [[ -z "$MERGE_COMMIT" ]]; then
   exit 1
 fi
 
-# 從 PR body 提取原 issue 編號
+# 敺?PR body ????issue 蝺刻?
 ISSUE_NUMBER=$(echo "$PR_BODY" | grep -oP '(?i)(?:closes|fixes|resolves)\s*#\K\d+' | head -1 || echo "")
 echo "[rollback] Original Issue: ${ISSUE_NUMBER:-none}"
 
-# Dry run 模式
+# Dry run 璅∪?
 if [[ "$DRY_RUN" == "--dry-run" ]]; then
   echo ""
   echo "[rollback] DRY RUN - Would execute:"
@@ -84,24 +83,24 @@ if [[ "$DRY_RUN" == "--dry-run" ]]; then
   exit 0
 fi
 
-# 確保工作目錄乾淨
+# 蝣箔?撌乩??桅?銋暹楊
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "[rollback] ERROR: Working directory not clean"
   exit 1
 fi
 
-# 獲取當前分支
+# ?脣??嗅??
 CURRENT_BRANCH=$(git branch --show-current)
 echo "[rollback] Current branch: $CURRENT_BRANCH"
 
-# 創建 revert 分支
+# ?萄遣 revert ?
 REVERT_BRANCH="revert-pr-$PR_NUMBER"
 echo "[rollback] Creating revert branch: $REVERT_BRANCH"
 
 git fetch origin "$CURRENT_BRANCH"
 git checkout -b "$REVERT_BRANCH" "origin/$CURRENT_BRANCH"
 
-# 執行 revert
+# ?瑁? revert
 echo "[rollback] Reverting commit $MERGE_COMMIT..."
 if ! git revert "$MERGE_COMMIT" --no-edit; then
   echo "[rollback] ERROR: Revert failed. Manual intervention required."
@@ -111,11 +110,10 @@ if ! git revert "$MERGE_COMMIT" --no-edit; then
   exit 1
 fi
 
-# 推送分支
-echo "[rollback] Pushing revert branch..."
+# ?券???echo "[rollback] Pushing revert branch..."
 git push origin "$REVERT_BRANCH"
 
-# 創建 revert PR
+# ?萄遣 revert PR
 echo "[rollback] Creating revert PR..."
 REVERT_PR_URL=$(gh pr create \
   --title "Revert: $PR_TITLE" \
@@ -134,25 +132,24 @@ _This revert was created automatically by rollback.sh_" \
 
 echo "[rollback] Revert PR created: $REVERT_PR_URL"
 
-# 重新開啟原 issue
+# ?????issue
 if [[ -n "$ISSUE_NUMBER" ]]; then
   echo "[rollback] Reopening issue #$ISSUE_NUMBER..."
-  gh issue reopen "$ISSUE_NUMBER" --comment "🔄 Reopened due to rollback of PR #$PR_NUMBER.
+  gh issue reopen "$ISSUE_NUMBER" --comment "?? Reopened due to rollback of PR #$PR_NUMBER.
 
 Revert PR: $REVERT_PR_URL" 2>/dev/null || echo "[rollback] WARN: Could not reopen issue #$ISSUE_NUMBER"
 fi
 
-# 發送通知
+# ?潮
 if [[ -f "$SCRIPT_DIR/notify.sh" ]]; then
   echo "[rollback] Sending notification..."
-  bash "$SCRIPT_DIR/notify.sh" "🔄 Rollback: PR #$PR_NUMBER has been reverted. Revert PR: $REVERT_PR_URL" 2>/dev/null || true
+  bash "$SCRIPT_DIR/notify.sh" "?? Rollback: PR #$PR_NUMBER has been reverted. Revert PR: $REVERT_PR_URL" 2>/dev/null || true
 fi
 
-# 切回原分支
-git checkout "$CURRENT_BRANCH"
+# ??????git checkout "$CURRENT_BRANCH"
 
 echo ""
-echo "[rollback] ✅ Rollback complete!"
+echo "[rollback] ??Rollback complete!"
 echo "  Revert PR: $REVERT_PR_URL"
 echo "  Original Issue: ${ISSUE_NUMBER:-N/A}"
 echo ""

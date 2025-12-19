@@ -44,7 +44,7 @@ gh pr diff <PR_NUMBER>
 
 ```bash
 # 通用規則
-cat .ai/rules/git-workflow.md
+cat .ai/rules/_kit/git-workflow.md
 
 # Backend (如果 PR 涉及 backend)
 cat .ai/rules/backend-go.md
@@ -59,7 +59,7 @@ cat .ai/rules/frontend-unity.md
 
 ### 4.1 Git 規範
 - [ ] Commit message 使用 `[type] subject` 格式（小寫）
-- [ ] PR base 是 `feat/aether`（除非是 release）
+- [ ] PR base 是配置的 integration branch（見 workflow.yaml）
 - [ ] PR body 包含 `Closes #N`
 
 ### 4.2 範圍限制

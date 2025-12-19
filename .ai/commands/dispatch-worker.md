@@ -36,7 +36,7 @@ gh issue comment <ISSUE_NUMBER> --body "🤖 Worker 開始執行..."
 ## Step 4: 執行 Worker
 
 ```bash
-bash scripts/ai/run_issue_codex.sh <ISSUE_NUMBER> /tmp/ticket-<ISSUE_NUMBER>.md $REPO
+bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> /tmp/ticket-<ISSUE_NUMBER>.md $REPO
 ```
 
 等待執行完成（阻塞）。

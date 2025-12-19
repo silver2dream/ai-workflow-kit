@@ -17,12 +17,17 @@ def main():
     # Check dependencies
     try:
         import yaml
+    except ImportError:
+        print("[validate] ERROR: Missing dependency: pyyaml")
+        print("[validate] Please install: pip3 install pyyaml")
+        sys.exit(1)
+    
+    try:
         import jsonschema
-    except ImportError as e:
-        print(f"[validate] Installing dependencies...")
-        os.system('pip3 install pyyaml jsonschema --quiet')
-        import yaml
-        import jsonschema
+    except ImportError:
+        print("[validate] ERROR: Missing dependency: jsonschema")
+        print("[validate] Please install: pip3 install jsonschema")
+        sys.exit(1)
     
     # Load schema
     if not os.path.exists(schema_path):

@@ -396,6 +396,169 @@ else
 fi
 
 # ============================================================
+# Test 13: run_script() Function (v3)
+# ============================================================
+echo ""
+echo "## Path Reference Tests (v3)"
+
+# Test no old path references exist
+OLD_PATH_MATCHES=$(grep -r "scripts/ai/" "$AI_ROOT/commands" "$MONO_ROOT/docs" 2>/dev/null | grep -v ".ai/scripts" || true)
+if [[ -z "$OLD_PATH_MATCHES" ]]; then
+  log_pass "No old 'scripts/ai/' references found"
+else
+  log_fail "Found old 'scripts/ai/' references"
+fi
+
+# Test review-pr.md uses correct git-workflow path
+if grep -q "_kit/git-workflow.md" "$AI_ROOT/commands/review-pr.md"; then
+  log_pass "review-pr.md uses correct git-workflow path"
+else
+  log_fail "review-pr.md has wrong git-workflow path"
+fi
+
+# Test review-pr.md doesn't hardcode feat/aether
+if ! grep -q "feat/aether" "$AI_ROOT/commands/review-pr.md"; then
+  log_pass "review-pr.md doesn't hardcode branch name"
+else
+  log_fail "review-pr.md still hardcodes feat/aether"
+fi
+
+# ============================================================
+# Test 14: cleanup.sh Branch Patterns (v3)
+# ============================================================
+echo ""
+echo "## cleanup.sh Branch Pattern Tests"
+
+# Test cleanup.sh uses feat/ai-issue-* pattern for remote branches
+if grep -q "origin/feat/ai-issue-" "$AI_ROOT/scripts/cleanup.sh"; then
+  log_pass "cleanup.sh uses feat/ai-issue-* for remote branches"
+else
+  log_fail "cleanup.sh should use feat/ai-issue-* pattern"
+fi
+
+# Test cleanup.sh uses feat/ai-issue-* pattern for local branches
+if grep -q "'feat/ai-issue-\*'" "$AI_ROOT/scripts/cleanup.sh"; then
+  log_pass "cleanup.sh uses feat/ai-issue-* for local branches"
+else
+  log_fail "cleanup.sh should use feat/ai-issue-* for local branches"
+fi
+
+# ============================================================
+# Test 15: Script Executability (v3)
+# ============================================================
+echo ""
+echo "## Script Executability Tests"
+
+# Test scan_repo.py actually executes
+if python3 "$AI_ROOT/scripts/scan_repo.py" --json > /dev/null 2>&1; then
+  log_pass "scan_repo.py executes successfully"
+else
+  log_fail "scan_repo.py failed to execute"
+fi
+
+# Test audit_project.py actually executes
+if python3 "$AI_ROOT/scripts/audit_project.py" --json > /dev/null 2>&1; then
+  log_pass "audit_project.py executes successfully"
+else
+  log_fail "audit_project.py failed to execute"
+fi
+
+# Test kickoff.sh --help (safe to run)
+if bash "$AI_ROOT/scripts/kickoff.sh" --help > /dev/null 2>&1; then
+  log_pass "kickoff.sh --help executes"
+else
+  log_fail "kickoff.sh --help failed"
+fi
+
+# Test no CRLF in shell scripts (would break on Unix)
+CRLF_FILES=""
+for script in "$AI_ROOT/scripts"/*.sh; do
+  if [[ -f "$script" ]] && file "$script" 2>/dev/null | grep -q "CRLF"; then
+    CRLF_FILES="$CRLF_FILES $(basename "$script")"
+  fi
+done
+if [[ -z "$CRLF_FILES" ]]; then
+  log_pass "No CRLF line endings in shell scripts"
+else
+  log_fail "CRLF found in:$CRLF_FILES"
+fi
+
+# ============================================================
+# Test 16: validate_config.py Dependency Handling (v3)
+# ============================================================
+echo ""
+echo "## validate_config.py Dependency Tests"
+
+# Test validate_config.py doesn't auto-install
+if ! grep -q "pip3 install.*--quiet" "$AI_ROOT/scripts/validate_config.py" && \
+   ! grep -q "os.system.*pip" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py doesn't auto-install dependencies"
+else
+  log_fail "validate_config.py still auto-installs dependencies"
+fi
+
+# Test validate_config.py shows helpful error message
+if grep -q "Please install" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py shows install instructions"
+else
+  log_fail "validate_config.py missing install instructions"
+fi
+
+# ============================================================
+# Test 17: workflow.yaml Consistency (v3)
+# ============================================================
+echo ""
+echo "## workflow.yaml Consistency Tests"
+
+# Test repos use 'directory' type (not submodule)
+if python3 -c "
+import yaml
+config = yaml.safe_load(open('$AI_ROOT/config/workflow.yaml'))
+for repo in config.get('repos', []):
+    if repo.get('type') == 'submodule':
+        exit(1)
+exit(0)
+" 2>/dev/null; then
+  log_pass "workflow.yaml repos use directory type"
+else
+  log_fail "workflow.yaml still has submodule type"
+fi
+
+# Test validate-submodules.yml doesn't exist (no submodules)
+if [[ ! -f "$MONO_ROOT/.github/workflows/validate-submodules.yml" ]]; then
+  log_pass "No validate-submodules.yml (no submodules)"
+else
+  log_fail "validate-submodules.yml exists but no submodules"
+fi
+
+# ============================================================
+# Test 15: run_script() Function (v3)
+# ============================================================
+echo ""
+echo "## run_script() Cross-Platform Tests"
+
+# Test run_script function exists in kickoff.sh
+if grep -q "run_script()" "$AI_ROOT/scripts/kickoff.sh"; then
+  log_pass "kickoff.sh has run_script() function"
+else
+  log_fail "kickoff.sh missing run_script() function"
+fi
+
+# Test run_script prefers Python
+if grep -q "python3.*py_path" "$AI_ROOT/scripts/kickoff.sh" && grep -q "python.*py_path" "$AI_ROOT/scripts/kickoff.sh"; then
+  log_pass "run_script() prefers Python over bash"
+else
+  log_fail "run_script() should prefer Python"
+fi
+
+# Test kickoff.sh uses run_script for audit
+if grep -q "run_script scan_repo" "$AI_ROOT/scripts/kickoff.sh" && grep -q "run_script audit_project" "$AI_ROOT/scripts/kickoff.sh"; then
+  log_pass "kickoff.sh uses run_script for audit"
+else
+  log_fail "kickoff.sh should use run_script for audit"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 echo ""

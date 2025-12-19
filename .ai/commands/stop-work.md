@@ -98,7 +98,7 @@ rm -f .ai/signals/*
 
 ```bash
 # 發送統計摘要通知
-bash scripts/ai/notify.sh --summary
+bash .ai/scripts/notify.sh --summary
 ```
 
 ---
@@ -111,4 +111,4 @@ bash scripts/ai/notify.sh --summary
 rm .ai/state/STOP
 ```
 
-然後使用 `/start-work` 或 `bash scripts/ai/kickoff.sh`。
+然後使用 `/start-work` 或 `bash .ai/scripts/kickoff.sh`。

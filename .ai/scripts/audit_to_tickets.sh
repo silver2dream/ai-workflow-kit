@@ -49,9 +49,9 @@ def repo_from_text(title):
         if name.lower() in t:
             return name
     # Fallback heuristics
-    if any(x in t for x in ["後端", "backend", "nakama", "mongo", "redis", "postgres", "go"]):
+    if any(x in t for x in ["敺垢", "backend", "nakama", "mongo", "redis", "postgres", "go"]):
         return "backend" if "backend" in repos else "root"
-    if any(x in t for x in ["前端", "frontend", "unity", "ui", "uxml"]):
+    if any(x in t for x in ["?垢", "frontend", "unity", "ui", "uxml"]):
         return "frontend" if "frontend" in repos else "root"
     return "root"
 

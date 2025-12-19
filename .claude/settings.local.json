@@ -1,10 +1,11 @@
 {
-  "allowed_paths": [
-    "/projects/aether"
-  ],
   "permissions": {
     "allow": [
-      "Bash(dir /s \"D:\\\\projects\\\\ai-workflow\")"
+      "Bash(dir /s \"D:\\\\projects\\\\ai-workflow\")",
+      "Bash(wc:*)"
     ]
-  }
+  },
+  "allowed_paths": [
+    "/projects/aether"
+  ]
 }
