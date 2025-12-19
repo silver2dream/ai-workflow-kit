@@ -172,6 +172,38 @@ rules:
     # - ui-toolkit-react-to-uxml  # 可選
 
 # ============================================================
+# Escalation Configuration
+# ============================================================
+# 定義何時 Principal 應該暫停並請求人工介入
+#
+# triggers: 基於模式匹配的觸發器
+#   - pattern: 正則表達式，匹配 issue/PR 內容
+#   - action: pause_and_ask | require_human_approval | notify_only
+#
+# 限制條件：
+#   - max_consecutive_failures: 連續失敗次數上限
+#   - max_single_pr_files: 單一 PR 最大文件數
+#   - max_single_pr_lines: 單一 PR 最大行數變更
+escalation:
+  triggers:
+    # 安全相關：必須人工審批
+    - pattern: "security|vulnerability|credential|secret|password|token"
+      action: "require_human_approval"
+    # 危險操作：暫停並詢問
+    - pattern: "delete|drop|truncate|remove.*all|destroy"
+      action: "pause_and_ask"
+    # 資料庫 migration：通知
+    - pattern: "migration|schema.*change|alter.*table"
+      action: "notify_only"
+  
+  # 失敗限制
+  max_consecutive_failures: 3
+  
+  # PR 大小限制（超過則需人工審查）
+  max_single_pr_files: 50
+  max_single_pr_lines: 500
+
+# ============================================================
 # Notification Configuration
 # ============================================================
 notifications:

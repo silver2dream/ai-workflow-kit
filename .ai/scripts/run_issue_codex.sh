@@ -52,6 +52,9 @@ LOG_DIR="$MONO_ROOT/.ai/exe-logs"
 RUN_DIR="$MONO_ROOT/.ai/runs/issue-$ISSUE_ID"
 mkdir -p "$LOG_DIR" "$RUN_DIR" "$MONO_ROOT/.ai/results" "$MONO_ROOT/.ai/state" "$MONO_ROOT/.worktrees"
 
+# Track execution start time
+EXEC_START_TIME=$(date +%s)
+
 BRANCH="feat/ai-issue-$ISSUE_ID"
 
 export AI_STATE_ROOT="$MONO_ROOT"
@@ -162,6 +165,11 @@ else
   RC=127
 fi
 set -e
+
+# Calculate execution duration
+EXEC_END_TIME=$(date +%s)
+EXEC_DURATION=$((EXEC_END_TIME - EXEC_START_TIME))
+export AI_EXEC_DURATION="$EXEC_DURATION"
 
 if [[ "$RC" -ne 0 ]]; then
   echo "[runner] codex failed rc=$RC" | tee -a "$SUMMARY_FILE"

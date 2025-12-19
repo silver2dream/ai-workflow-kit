@@ -132,6 +132,48 @@
         "custom": { "type": "array", "items": { "type": "string" } }
       }
     },
+    "escalation": {
+      "type": "object",
+      "description": "Configuration for when Principal should pause and request human intervention",
+      "properties": {
+        "triggers": {
+          "type": "array",
+          "description": "Pattern-based triggers for escalation",
+          "items": {
+            "type": "object",
+            "required": ["pattern", "action"],
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern to match against issue/PR content"
+              },
+              "action": {
+                "enum": ["pause_and_ask", "require_human_approval", "notify_only"],
+                "description": "Action to take when pattern matches"
+              }
+            }
+          }
+        },
+        "max_consecutive_failures": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "Maximum consecutive failures before stopping"
+        },
+        "max_single_pr_files": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 50,
+          "description": "Maximum files in a single PR before requiring human review"
+        },
+        "max_single_pr_lines": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 500,
+          "description": "Maximum line changes in a single PR before requiring human review"
+        }
+      }
+    },
     "notifications": {
       "type": "object",
       "properties": {

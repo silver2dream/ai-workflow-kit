@@ -9,6 +9,9 @@ SUMMARY_FILE="${4:-}"
 ROOT="${AI_STATE_ROOT:-$(git rev-parse --show-toplevel)}"
 RESULTS_ROOT="${AI_RESULTS_ROOT:-$ROOT}"
 
+# Metrics from environment
+EXEC_DURATION="${AI_EXEC_DURATION:-0}"
+
 OUT_DIR="$RESULTS_ROOT/.ai/results"
 mkdir -p "$OUT_DIR"
 
@@ -45,7 +48,10 @@ import json
 s = \"\"\"$SUBMODULE_STATUS\"\"\"
 print(json.dumps(s))
 PY
-  )"
+  ),"
+  echo "  \"metrics\": {"
+  echo "    \"duration_seconds\": $EXEC_DURATION"
+  echo "  }"
   echo "}"
 } > "$OUT"
 

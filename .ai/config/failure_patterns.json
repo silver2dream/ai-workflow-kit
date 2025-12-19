@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Known failure patterns for intelligent error recovery",
+  "patterns": [
+    {
+      "id": "go_compile_error",
+      "type": "compile_error",
+      "language": "go",
+      "regex": "(cannot find package|undefined:|syntax error|imported and not used|declared but not used)",
+      "retryable": false,
+      "suggestion": "Fix the compilation error in the source code"
+    },
+    {
+      "id": "go_test_failure",
+      "type": "test_failure",
+      "language": "go",
+      "regex": "--- FAIL:|FAIL\\s+\\w+",
+      "retryable": false,
+      "suggestion": "Review test failures and fix the failing tests or implementation"
+    },
+    {
+      "id": "node_compile_error",
+      "type": "compile_error",
+      "language": "node",
+      "regex": "(SyntaxError:|TypeError:|Cannot find module|Module not found)",
+      "retryable": false,
+      "suggestion": "Fix the JavaScript/TypeScript syntax or import error"
+    },
+    {
+      "id": "node_test_failure",
+      "type": "test_failure",
+      "language": "node",
+      "regex": "(FAIL|✕|failed|Error:.*expect)",
+      "retryable": false,
+      "suggestion": "Review test failures and fix the failing tests"
+    },
+    {
+      "id": "python_syntax_error",
+      "type": "compile_error",
+      "language": "python",
+      "regex": "(SyntaxError:|IndentationError:|NameError:|ImportError:|ModuleNotFoundError:)",
+      "retryable": false,
+      "suggestion": "Fix the Python syntax or import error"
+    },
+    {
+      "id": "python_test_failure",
+      "type": "test_failure",
+      "language": "python",
+      "regex": "(FAILED|AssertionError|pytest.*failed)",
+      "retryable": false,
+      "suggestion": "Review pytest failures and fix the failing tests"
+    },
+    {
+      "id": "rust_compile_error",
+      "type": "compile_error",
+      "language": "rust",
+      "regex": "(error\\[E\\d+\\]:|cannot find|mismatched types)",
+      "retryable": false,
+      "suggestion": "Fix the Rust compilation error"
+    },
+    {
+      "id": "lint_error",
+      "type": "lint_error",
+      "language": "*",
+      "regex": "(eslint|golint|pylint|clippy).*error|\\d+ error",
+      "retryable": false,
+      "suggestion": "Fix linting errors before proceeding"
+    },
+    {
+      "id": "network_timeout",
+      "type": "network_error",
+      "language": "*",
+      "regex": "(ETIMEDOUT|ECONNREFUSED|ENOTFOUND|connection refused|timeout|timed out)",
+      "retryable": true,
+      "max_retries": 3,
+      "retry_delay_seconds": 30,
+      "suggestion": "Network issue detected, will retry automatically"
+    },
+    {
+      "id": "rate_limit",
+      "type": "network_error",
+      "language": "*",
+      "regex": "(rate limit|429|too many requests|API rate limit exceeded)",
+      "retryable": true,
+      "max_retries": 3,
+      "retry_delay_seconds": 60,
+      "suggestion": "Rate limited, will retry after delay"
+    },
+    {
+      "id": "git_conflict",
+      "type": "git_error",
+      "language": "*",
+      "regex": "(CONFLICT|merge conflict|Automatic merge failed)",
+      "retryable": false,
+      "suggestion": "Resolve merge conflicts manually"
+    },
+    {
+      "id": "git_push_rejected",
+      "type": "git_error",
+      "language": "*",
+      "regex": "(rejected|non-fast-forward|failed to push)",
+      "retryable": true,
+      "max_retries": 2,
+      "suggestion": "Pull latest changes and retry push"
+    },
+    {
+      "id": "disk_space",
+      "type": "system_error",
+      "language": "*",
+      "regex": "(No space left on device|ENOSPC|disk quota exceeded)",
+      "retryable": false,
+      "suggestion": "Free up disk space before retrying"
+    },
+    {
+      "id": "permission_denied",
+      "type": "system_error",
+      "language": "*",
+      "regex": "(Permission denied|EACCES|access denied)",
+      "retryable": false,
+      "suggestion": "Check file permissions"
+    },
+    {
+      "id": "timeout",
+      "type": "timeout",
+      "language": "*",
+      "regex": "(Command timed out|execution expired|deadline exceeded)",
+      "retryable": true,
+      "max_retries": 2,
+      "retry_delay_seconds": 10,
+      "suggestion": "Command timed out, will retry with extended timeout"
+    },
+    {
+      "id": "gh_auth_error",
+      "type": "auth_error",
+      "language": "*",
+      "regex": "(gh auth|authentication required|401|403 Forbidden|not logged in)",
+      "retryable": false,
+      "suggestion": "Re-authenticate with 'gh auth login'"
+    }
+  ]
+}
