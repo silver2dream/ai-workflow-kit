@@ -15,17 +15,20 @@ cd "$MONO_ROOT"
 
 DRY_RUN=false
 BACKGROUND=false
+FORCE=false
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --background) BACKGROUND=true ;;
+    --force) FORCE=true ;;
     --help|-h)
-      echo "Usage: bash .ai/scripts/kickoff.sh [--dry-run] [--background]"
+      echo "Usage: bash .ai/scripts/kickoff.sh [--dry-run] [--background] [--force]"
       echo ""
       echo "Options:"
       echo "  --dry-run     Pre-flight check only, don't start workflow"
       echo "  --background  Background execution (using nohup)"
+      echo "  --force       Auto-delete STOP marker without asking (for autonomous mode)"
       exit 0
       ;;
   esac
@@ -111,18 +114,18 @@ ok "Working directory clean"
 
 # 6. Check stop marker
 if [[ -f ".ai/state/STOP" ]]; then
-  warn "Found stop marker .ai/state/STOP"
-  read -p "Delete and continue? [y/N] " -n 1 -r
-  echo
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
+  if [[ "$FORCE" == "true" ]]; then
+    warn "Found stop marker .ai/state/STOP, auto-deleting (--force mode)"
     rm -f ".ai/state/STOP"
     ok "Deleted stop marker"
   else
-    error "Please manually delete .ai/state/STOP and retry"
+    error "Found stop marker .ai/state/STOP"
+    error "Use --force to auto-delete, or manually delete and retry"
     exit 1
   fi
+else
+  ok "No stop marker"
 fi
-ok "No stop marker"
 
 # 7. Run project audit
 info "Running project audit..."
@@ -199,34 +202,33 @@ BOOT_PROMPT="$MONO_ROOT/.ai/scripts/principal_boot.txt"
 if [[ "$BACKGROUND" == "true" ]]; then
   info "Starting in background mode..."
   LOG_FILE="$MONO_ROOT/.ai/exe-logs/kickoff-$(date +%Y%m%d-%H%M%S).log"
-  
+
   nohup bash -c "
     cd '$MONO_ROOT'
     if [[ -f '$BOOT_PROMPT' ]]; then
       claude --print < '$BOOT_PROMPT' >> '$LOG_FILE' 2>&1
     else
-      echo '/start-work' | claude --print >> '$LOG_FILE' 2>&1
+      echo '/start-work --autonomous' | claude --print >> '$LOG_FILE' 2>&1
     fi
   " > /dev/null 2>&1 &
-  
+
   CLAUDE_PID=$!
   echo "$CLAUDE_PID" > "$MONO_ROOT/.ai/state/claude_pid.txt"
-  
+
   ok "Claude Code started in background (PID: $CLAUDE_PID)"
   info "Log file: $LOG_FILE"
   info "Stop: kill $CLAUDE_PID or touch .ai/state/STOP"
 else
-  info "Starting in foreground mode..."
-  info "Claude Code will take over terminal, executing /start-work"
+  info "Starting in foreground mode (autonomous)..."
+  info "Claude Code will run autonomously, executing /start-work --autonomous"
   echo ""
-  
-  # Use principal_boot.txt if exists, otherwise run /start-work directly
+
+  # Use principal_boot.txt if exists, otherwise pass /start-work --autonomous directly
   if [[ -f "$BOOT_PROMPT" ]]; then
     info "Using principal_boot.txt as boot prompt"
     claude < "$BOOT_PROMPT"
   else
-    # Start claude and let user input /start-work
-    info "Please enter: /start-work in Claude Code"
-    claude
+    # Auto-execute /start-work in autonomous mode
+    echo "/start-work --autonomous" | claude
   fi
 fi

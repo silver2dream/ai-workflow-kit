@@ -99,6 +99,26 @@
 
 ## 🚀 快速開始
 
+### 0) 安裝 `awkit`（建議）
+
+`awkit` 是跨平台的 AWK 安裝 CLI（命名為 `awkit` 是為了避免和系統內建的 `awk` 指令衝突）。
+
+```bash
+curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
+```
+
+Windows（PowerShell）：
+
+```powershell
+irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.ps1 | iex
+```
+
+把 AWK 安裝到你的專案：
+
+```bash
+awkit install /path/to/your-project --preset react-go
+```
+
 ### 1) 安裝 offline 依賴
 
 ```bash
