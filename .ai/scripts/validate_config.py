@@ -113,6 +113,35 @@ def main():
             if not os.path.exists(spec_path):
                 warnings.append(f"Active spec not found: {spec_path}")
         
+        # Validate state files if they exist
+        state_dir = os.path.join(ai_root, 'state')
+        
+        # Validate repo_scan.json
+        repo_scan_path = os.path.join(state_dir, 'repo_scan.json')
+        repo_scan_schema_path = os.path.join(ai_root, 'config', 'repo_scan.schema.json')
+        if os.path.exists(repo_scan_path) and os.path.exists(repo_scan_schema_path):
+            with open(repo_scan_schema_path, 'r', encoding='utf-8') as f:
+                repo_scan_schema = json.load(f)
+            with open(repo_scan_path, 'r', encoding='utf-8') as f:
+                repo_scan = json.load(f)
+            try:
+                jsonschema.validate(instance=repo_scan, schema=repo_scan_schema)
+            except jsonschema.ValidationError as e:
+                warnings.append(f"repo_scan.json schema mismatch: {e.message}")
+        
+        # Validate audit.json
+        audit_path = os.path.join(state_dir, 'audit.json')
+        audit_schema_path = os.path.join(ai_root, 'config', 'audit.schema.json')
+        if os.path.exists(audit_path) and os.path.exists(audit_schema_path):
+            with open(audit_schema_path, 'r', encoding='utf-8') as f:
+                audit_schema = json.load(f)
+            with open(audit_path, 'r', encoding='utf-8') as f:
+                audit = json.load(f)
+            try:
+                jsonschema.validate(instance=audit, schema=audit_schema)
+            except jsonschema.ValidationError as e:
+                warnings.append(f"audit.json schema mismatch: {e.message}")
+        
         # Report
         if warnings:
             print(f"\n[validate] ⚠️  Warnings ({len(warnings)}):")

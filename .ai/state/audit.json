@@ -1,7 +1,9 @@
 {
+  "timestamp_utc": "2025-12-19T12:26:15Z",
   "root": "/mnt/d/projects/ai-workflow",
   "findings": [
     {
+      "id": "F001",
       "severity": "P1",
       "type": "dirty_worktree",
       "path": "/mnt/d/projects/ai-workflow",

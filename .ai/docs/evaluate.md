@@ -1,4 +1,4 @@
-# AI Workflow Kit - 評分標準 v3.1
+# AI Workflow Kit - 評分標準 v5.1
 
 ## 專案核心目的
 
@@ -8,98 +8,243 @@
 
 ---
 
+## 權威來源
+
+> **`.ai/scripts/evaluate.sh` 是唯一權威執行器。**
+> **Gate 結果與 score cap 以 evaluate.sh 輸出為準；面向分數/等級需人工依本文檔的細項清單評估。**
+
+### Output Contract
+
+evaluate.sh **承諾輸出**：
+- Offline Gate: PASS/FAIL + SKIP count
+- Origin Checks: PASS/FAIL/SKIP（僅 `--check-origin` 時輸出）
+- Extensibility Checks: PASS/FAIL/SKIP（不影響 Gate）
+- Online Gate: PASS/FAIL/SKIP
+- Score cap (4.0/8.5/10.0)
+
+evaluate.sh **不承諾輸出**：
+- 面向細項分數
+- 總分與等級
+
+### 版本同步規則
+
+- evaluate.sh 和 evaluate.md 必須版本一致
+- 版本不一致時，Offline Gate 直接 FAIL (O7)
+- 任何變更必須同時更新兩個檔案
+
+---
+
 ## 前置條件
 
-### Python 依賴
+### 關於「Offline」的說明
 
-Offline Gate 需要以下 Python 套件：
+「Offline」意指**評估執行時不需要網路連線**，但**依賴套件需預先安裝**。
+
+**保證**：Offline Gate 不執行任何網路操作（包括 `git fetch`）。
+- 有 submodule 的 repo：pinned sha 檢查移到 `--check-origin` 選項
+- 無 submodule 的 repo：完全離線
+
+評估環境需具備以下依賴，可透過以下指令安裝：
 
 ```bash
-pip3 install pyyaml jsonschema jinja2
+pip3 install pyyaml jsonschema
 ```
 
-如果缺少依賴，相關檢查會顯示錯誤訊息並提示安裝指令。
+### Offline Gate 前置條件
+
+| 依賴 | 必要性 | 缺少時行為 | 說明 |
+|------|--------|------------|------|
+| `bash` | 必要 | 腳本無法執行，exit 127 | Windows 用 Git Bash / WSL |
+| `python3` | 必要 | FAIL（無法執行驗證） | 執行驗證腳本 |
+| `pyyaml` | 必要 | FAIL（O5 失敗） | 解析 workflow.yaml |
+| `jsonschema` | 必要 | FAIL（O5 失敗） | 驗證配置 schema |
+| `git` | 必要 | FAIL（O0 無法執行） | git check-ignore 驗證 |
+| `file` | 可選 | SKIP（O8/O9 跳過） | 編碼檢查 |
 
 ### Online Gate 額外需求
 
-- `gh` CLI 已安裝且已登入 (`gh auth login`)
-- 可連線 GitHub API
+| 依賴 | 必要性 | 缺少時行為 | 說明 |
+|------|--------|------------|------|
+| `gh` | 必要 | SKIP（Online Gate 跳過） | GitHub CLI |
+| `curl` | 必要 | SKIP（Online Gate 跳過） | API 連線測試 |
+| 網路連線 | 必要 | SKIP（Online Gate 跳過） | 連線 GitHub API |
+
+---
+
+## SKIP 白名單
+
+SKIP 狀態**僅允許**以下情況，其他情況一律為 FAIL：
+
+| 允許 SKIP 的情況 | 範例 |
+|------------------|------|
+| 可選依賴缺少 | `file` 指令不存在 → O8/O9 SKIP |
+| 明確不適用 | 無 `.github/workflows` 目錄 → EXT1 SKIP |
+| Online Gate 前置條件不滿足 | `gh` 未安裝或未登入 → Online Gate SKIP |
+
+**不允許 SKIP 的情況**（必須為 FAIL）：
+- 必要配置讀取失敗（如 `integration_branch` 讀不到）
+- Python 執行錯誤
+- 目錄存在但內容為空（如 `.github/workflows/` 存在但無 workflow 檔案）
 
 ---
 
 ## 評估模式
 
-本標準區分兩種評估模式，避免把「環境問題」當成「Kit 問題」：
-
 | 模式 | 說明 | 前置條件 | 用途 |
 |------|------|----------|------|
-| **Offline** | 驗證 Kit 本身的品質 | 無（clone 下來就能跑） | CI、自檢、品質評估 |
-| **Online** | 驗證完整流程能否運作 | gh auth + 網路 | 部署前驗證 |
+| **Offline** | 驗證 Kit 本身的品質 | bash + git + Python 3 + pyyaml + jsonschema | CI、自檢、品質評估 |
+| **Online** | 驗證完整流程能否運作 | Offline + gh + curl + 網路 | 部署前驗證 |
+| **--strict** | 嚴格模式，檢查 audit P0 | 同 Offline + 乾淨工作樹 | 發布前驗證、CI |
+| **--check-origin** | 檢查 submodule sha 是否存在於 origin | 同 Offline + 網路 | 有 submodule 時驗證 |
+
+### --check-origin 行為說明
+
+| 情況 | 結果 | 說明 |
+|------|------|------|
+| 無 submodules | SKIP | 不適用（允許） |
+| 網路不可用 | FAIL | 使用者明確要求檢查，無法完成 |
+| SHA 不存在於 origin | FAIL | submodule 配置問題 |
+| 所有 SHA 都存在 | PASS | 正確配置 |
+
+**設計理由**：`--check-origin` 是使用者明確請求的檢查，若因網路問題無法執行，應明確告知（FAIL）而非靜默跳過（SKIP）。
 
 **核心原則**：
 - **PASS** = 檢查通過
 - **FAIL** = Kit 有問題（扣分）
-- **SKIP** = 前置條件不滿足，無法判斷（不扣分）
+- **SKIP** = 符合白名單條件（不扣分）
 
 ---
 
-## 評分上限
+## 評分上限與等級
 
-| 條件 | 最高分數 | 等級 |
-|------|----------|------|
+### Score Cap
+
+| 條件 | 最高分數 | 等級上限 |
+|------|----------|----------|
 | Offline Gate 有 FAIL | 4.0 | F |
-| Offline Gate 全 PASS，Online Gate 未執行或有 SKIP | 8.5 | B |
+| Offline Gate 全 PASS/SKIP，Online Gate 未執行或有 SKIP | 8.5 | B |
 | Offline + Online Gate 全 PASS | 10.0 | A |
+
+### 等級門檻
+
+| 分數區間 | 等級 | 說明 |
+|----------|------|------|
+| 9.0 - 10.0 | A | 生產就緒（需 Online Gate PASS） |
+| 8.0 - 8.9 | B | 功能完整 |
+| 7.0 - 7.9 | C | 核心可用 |
+| 6.0 - 6.9 | D | 有缺失 |
+| < 6.0 | F | 不可用 |
+
+### 等級計算
+
+```
+final_grade = grade(min(total_score, cap))
+```
+
+- `total_score`：依面向評分公式計算的原始總分
+- `cap`：由 Gate 結果決定的評分上限
+- `final_grade`：取兩者較小值對應的等級
+
+**範例**：
+- 面向總分 9.5，但 Online Gate SKIP → cap=8.5 → 最終等級 B
+- 面向總分 7.0，Offline Gate PASS → cap=8.5 → 最終等級 C（7.0 < 8.5）
 
 ---
 
 ## Offline Gate（P0 一票否決）
 
 **任一 FAIL → 總分上限 4.0 (F)**
+**SKIP 不影響評分**
 
 這些檢查不需要網路、不需要 gh auth、不需要 claude/codex，只驗證 Kit 本身。
 
-| ID | 驗證指令 | PASS 條件 | 驗證目的 |
-|----|----------|-----------|----------|
-| O1 | `bash .ai/scripts/scan_repo.sh 2>/dev/null \|\| python3 .ai/scripts/scan_repo.py` | exit 0 | 掃描腳本可執行 |
-| O2 | `cat .ai/state/repo_scan.json \| python3 -m json.tool > /dev/null` | exit 0 | 輸出為有效 JSON |
-| O3 | `bash .ai/scripts/audit_project.sh 2>/dev/null \|\| python3 .ai/scripts/audit_project.py` | exit 0 | 審計腳本可執行 |
-| O4 | `cat .ai/state/audit.json \| python3 -m json.tool > /dev/null` | exit 0 | 輸出為有效 JSON |
-| O5 | `python3 .ai/scripts/validate_config.py` | exit 0 | 配置驗證通過 |
-| O6 | `! file .ai/scripts/*.sh \| grep -qE 'CRLF\|UTF-16'` | exit 0 | 無 CRLF 或 UTF-16 |
-| O7 | `! file README.md CLAUDE.md AGENTS.md \| grep -qE 'UTF-16'` | exit 0 | 主要文件非 UTF-16 |
-| O8 | `bash .ai/tests/run_all_tests.sh` | exit 0 | 測試套件通過 |
+### O0: 無副作用檢查
 
-```bash
-# Offline Gate 檢查腳本
-echo "=== Offline Gate ==="
-OFFLINE_PASS=true
+評估過程不應弄髒工作樹。使用 `git check-ignore` 確保目錄真的會被 Git 忽略。
 
-check_offline() {
-  local id="$1" cmd="$2" desc="$3"
-  if eval "$cmd" > /dev/null 2>&1; then
-    echo "✓ $id: $desc"
-  else
-    echo "✗ $id: $desc"
-    OFFLINE_PASS=false
-  fi
-}
+| ID | 驗證指令 | PASS 條件 |
+|----|----------|-----------|
+| O0.1 | `git check-ignore -q .ai/state/` | Git 會忽略 .ai/state/ |
+| O0.2 | `git check-ignore -q .ai/results/` | Git 會忽略 .ai/results/ |
+| O0.3 | `git check-ignore -q .ai/runs/` | Git 會忽略 .ai/runs/ |
+| O0.4 | `git check-ignore -q .ai/exe-logs/` | Git 會忽略 .ai/exe-logs/ |
+| O0.5 | `git check-ignore -q .worktrees/` | Git 會忽略 .worktrees/ |
 
-check_offline "O1" "bash .ai/scripts/scan_repo.sh 2>/dev/null || python3 .ai/scripts/scan_repo.py" "scan_repo 可執行"
-check_offline "O2" "python3 -m json.tool .ai/state/repo_scan.json" "repo_scan.json 有效"
-check_offline "O3" "bash .ai/scripts/audit_project.sh 2>/dev/null || python3 .ai/scripts/audit_project.py" "audit_project 可執行"
-check_offline "O4" "python3 -m json.tool .ai/state/audit.json" "audit.json 有效"
-check_offline "O5" "python3 .ai/scripts/validate_config.py" "config 驗證通過"
-check_offline "O6" "! file .ai/scripts/*.sh | grep -qE 'CRLF|UTF-16'" "腳本無 CRLF/UTF-16"
-check_offline "O7" "! file README.md CLAUDE.md AGENTS.md 2>/dev/null | grep -qE 'UTF-16'" "文件非 UTF-16"
-check_offline "O8" "bash .ai/tests/run_all_tests.sh" "測試通過"
+### O1-O4: scan_repo 與 audit_project
 
-if [ "$OFFLINE_PASS" = false ]; then
-  echo ""; echo "❌ Offline Gate FAILED → 評分上限 4.0 (F)"
-  exit 1
-fi
-echo ""; echo "✅ Offline Gate PASSED"
-```
+| ID | 驗證方式 | PASS 條件 |
+|----|----------|-----------|
+| O1+O2 | 執行 scan_repo.sh 或 scan_repo.py | 輸出有效 JSON |
+| O3+O4 | 執行 audit_project.sh 或 audit_project.py | 輸出有效 JSON |
+| O4.1 | `--strict` 模式：檢查 audit.json P0 findings | 無 P0 findings |
+
+**關於 --strict 模式**：
+
+`--strict` 設計用於 **CI 環境或乾淨 checkout**，不建議在本機開發時使用。原因：
+- `audit_project` 會檢查是否有 P0 findings（如缺少關鍵檔案）
+- 注意：`dirty_worktree` 在 v5.0 已改為 P1，不會觸發 --strict 失敗
+- 在 CI 中，乾淨 checkout 後跑 `--strict` 可確保專案配置完整
+
+**建議用法**：
+- 本機開發：`bash .ai/scripts/evaluate.sh`（預設模式）
+- CI/發布前：`bash .ai/scripts/evaluate.sh --strict`
+
+### O5: validate_config
+
+| ID | 驗證指令 | PASS 條件 |
+|----|----------|-----------|
+| O5 | `python3 .ai/scripts/validate_config.py` | exit 0 |
+
+### O7: 版本同步（P0 強制）
+
+| ID | 驗證邏輯 | PASS 條件 |
+|----|----------|-----------|
+| O7 | 比對 evaluate.md 與 evaluate.sh 版本號 | 版本號完全一致 |
+
+### O8/O9: 編碼檢查
+
+| ID | 驗證指令 | PASS 條件 | SKIP 條件 |
+|----|----------|-----------|-----------|
+| O8 | `file .ai/scripts/*.sh` | 無 CRLF/UTF-16 | 無 `file` 指令（可選依賴） |
+| O9 | `file README.md CLAUDE.md AGENTS.md` | 無 UTF-16 | 無 `file` 指令（可選依賴） |
+
+### O10: 測試套件
+
+| ID | 驗證指令 | PASS 條件 |
+|----|----------|-----------|
+| O10 | `bash .ai/tests/run_all_tests.sh` | exit 0 |
+
+---
+
+## Extensibility Checks（不影響 Gate）
+
+這些檢查為 P1 等級，不影響 Offline Gate 結果，但會影響面向評分。
+
+### EXT1: CI/分支對齊（原 O6）
+
+檢查 CI workflows 是否會被 integration_branch 觸發。
+
+| 情況 | 結果 | 說明 |
+|------|------|------|
+| 無 `.github/workflows` 目錄 | SKIP | 明確不適用（允許） |
+| 目錄存在但無 workflow 檔案 | FAIL | 應有 workflows 或移除目錄 |
+| 讀不到 `integration_branch` | FAIL | 配置錯誤（不允許 SKIP） |
+| Python 執行錯誤 | FAIL | 環境問題（不允許 SKIP） |
+| Workflows 不觸發 integration_branch | FAIL | CI 配置問題 |
+| Workflows 觸發 integration_branch | PASS | 正確配置 |
+
+### EXT1 與面向評分的映射
+
+| EXT1 結果 | 面向評分影響 |
+|-----------|--------------|
+| PASS | 無影響 |
+| FAIL | 可擴展性面向 P1 未通過（扣 1 分） |
+| SKIP | 無影響（不適用不扣分） |
+
+**為何移出 Offline Gate**：
+- 並非所有專案都使用 GitHub Actions
+- 允許 SKIP 與 P0 Gate 的「一票否決」語意矛盾
+- 作為 Extensibility P1 更合理
 
 ---
 
@@ -113,64 +258,18 @@ echo ""; echo "✅ Offline Gate PASSED"
 | ID | 驗證指令 | 說明 |
 |----|----------|------|
 | PRE.1 | `command -v gh && gh auth status` | gh CLI 已安裝且已登入 |
-| PRE.2 | `curl -s --max-time 5 https://api.github.com > /dev/null` | 可連線 GitHub |
-
-```bash
-# 前置條件檢查
-check_prereq() {
-  if command -v gh > /dev/null 2>&1 && gh auth status > /dev/null 2>&1; then
-    if curl -s --max-time 5 https://api.github.com > /dev/null 2>&1; then
-      return 0  # 前置條件滿足
-    fi
-  fi
-  return 1  # 前置條件不滿足
-}
-```
+| PRE.2 | `command -v curl` | curl 已安裝 |
+| PRE.3 | `curl -s --max-time 5 https://api.github.com` | 可連線 GitHub |
 
 ### Online Gate 檢查項目
 
-只有在前置條件滿足時才執行：
+| ID | 驗證方式 | PASS 條件 |
+|----|----------|-----------|
+| N1 | `bash .ai/scripts/kickoff.sh --dry-run` | exit 0 |
+| N2 | rollback dry-run 輸出包含預期訊息 | 見下方說明 |
+| N3 | `bash .ai/scripts/stats.sh --json` | 輸出有效 JSON |
 
-| ID | 驗證指令 | PASS 條件 | 驗證目的 |
-|----|----------|-----------|----------|
-| N1 | `bash .ai/scripts/kickoff.sh --dry-run` | exit 0 | kickoff 流程可啟動 |
-| N2 | `bash .ai/scripts/rollback.sh 99999 --dry-run 2>&1 \| grep -i "not found\|usage\|dry"` | 有輸出 | rollback 可執行 |
-| N3 | `bash .ai/scripts/stats.sh --json \| python3 -m json.tool` | exit 0 | stats 可查詢 GitHub |
-
-```bash
-# Online Gate 檢查腳本
-echo "=== Online Gate ==="
-
-if ! check_prereq; then
-  echo "○ SKIP: 前置條件不滿足 (gh auth 或網路)"
-  echo "  → 評分上限 8.5 (B)"
-  ONLINE_STATUS="SKIP"
-else
-  ONLINE_PASS=true
-
-  check_online() {
-    local id="$1" cmd="$2" desc="$3"
-    if eval "$cmd" > /dev/null 2>&1; then
-      echo "✓ $id: $desc"
-    else
-      echo "✗ $id: $desc"
-      ONLINE_PASS=false
-    fi
-  }
-
-  check_online "N1" "bash .ai/scripts/kickoff.sh --dry-run" "kickoff 可啟動"
-  check_online "N2" "bash .ai/scripts/rollback.sh 99999 --dry-run 2>&1 | grep -qiE 'not found|usage|dry'" "rollback 可執行"
-  check_online "N3" "bash .ai/scripts/stats.sh --json | python3 -m json.tool" "stats 可查詢"
-
-  if [ "$ONLINE_PASS" = true ]; then
-    echo ""; echo "✅ Online Gate PASSED → 可達 10.0 (A)"
-    ONLINE_STATUS="PASS"
-  else
-    echo ""; echo "⚠️ Online Gate FAILED → 評分上限 8.5 (B)"
-    ONLINE_STATUS="FAIL"
-  fi
-fi
-```
+**N2 特殊處理**：捕獲輸出檢查，不依賴 exit code，避免 pipefail 誤判。
 
 ---
 
@@ -194,342 +293,90 @@ fi
 面向分數最低為 0
 
 原始總分 = Σ(面向分數 × 權重)
-
 最終總分 = min(原始總分, 評分上限)
-  - Offline FAIL → 上限 4.0
-  - Online SKIP/FAIL → 上限 8.5
-  - 全 PASS → 上限 10.0
+最終等級 = grade(最終總分)
 ```
 
 ---
 
 ## Checkpoint 清單
 
+> **注意**：以下驗證指令為**示意**，實際執行請使用 `.ai/scripts/evaluate.sh`。
+
 ### 1. 核心流程 (30%)
 
 #### P0 - 必須通過
 
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C1.P0.1 | `test -f CLAUDE.md && test -f AGENTS.md` | exit 0 |
-| C1.P0.2 | `test -f .ai/commands/start-work.md` | exit 0 |
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C1.P0.1 | `test -f CLAUDE.md && test -f AGENTS.md` | 存在 |
+| C1.P0.2 | `test -f .ai/commands/start-work.md` | 存在 |
 | C1.P0.3 | `bash .ai/scripts/run_issue_codex.sh 2>&1 \| grep -qi usage` | 有 usage |
 
 #### P1 - 重要功能
 
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C1.P1.1 | `python3 .ai/scripts/parse_tasks.py .ai/specs/*/tasks.md --json 2>/dev/null \| python3 -m json.tool` | 有效 JSON |
-| C1.P1.2 | `grep -qE "Phase A\|Phase B\|Phase C\|Phase D" .ai/commands/start-work.md` | 有匹配 |
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C1.P1.1 | `python3 .ai/scripts/parse_tasks.py ... --json` | 有效 JSON |
+| C1.P1.2 | `grep -qE "Phase A\|Phase B..." .ai/commands/start-work.md` | 有匹配 |
 | C1.P1.3 | `grep -q "Ticket Format" CLAUDE.md` | 有匹配 |
-| C1.P1.4 | `test -d .ai/results && test -d .ai/runs && test -d .ai/state` | exit 0 |
+| C1.P1.4 | `test -d .ai/results && test -d .ai/runs && test -d .ai/state` | 存在 |
 | C1.P1.5 | `grep -q "STOP" .ai/scripts/kickoff.sh` | 有匹配 |
-
-#### P2 - 加分項
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C1.P2.1 | `grep -q "_depends_on" .ai/scripts/parse_tasks.py` | 支援依賴 |
-| C1.P2.2 | `grep -qE "Coordination\|sequential\|parallel" .ai/commands/start-work.md` | 支援 multi-repo |
-| C1.P2.3 | `test -f .ai/templates/design.md.example` | 有範例 |
-| C1.P2.4 | `bash .ai/scripts/stats.sh --help 2>&1 \| grep -qE "html\|json"` | 多輸出格式 |
-
----
 
 ### 2. 可靠性 (25%)
 
 #### P0 - 必須通過
 
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C2.P0.1 | `python3 -m json.tool .ai/config/failure_patterns.json > /dev/null` | 有效 JSON |
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C2.P0.1 | `python3 -m json.tool .ai/config/failure_patterns.json` | 有效 JSON |
 | C2.P0.2 | `test -f .ai/scripts/attempt_guard.sh` | 存在 |
-
-#### P1 - 重要功能
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C2.P1.1 | `echo "cannot find package" \| bash .ai/scripts/analyze_failure.sh - 2>/dev/null \| grep -qi "matched\|type"` | 有分析結果 |
-| C2.P1.2 | `test -f .ai/scripts/rollback.sh` | 存在 |
-| C2.P1.3 | `test -f .ai/scripts/cleanup.sh` | 存在 |
-| C2.P1.4 | `grep -q "retryable" .ai/config/failure_patterns.json` | 有重試機制 |
-
-#### P2 - 加分項
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C2.P2.1 | `grep -q "failure_history" .ai/scripts/*.sh 2>/dev/null` | 有歷史記錄 |
-| C2.P2.2 | `grep -q "stats_history" .ai/scripts/stats.sh` | 有趨勢追蹤 |
-| C2.P2.3 | `grep -qE "\-\-days" .ai/scripts/cleanup.sh` | 支援 days 參數 |
-
----
 
 ### 3. 可擴展性 (20%)
 
 #### P0 - 必須通過
 
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C3.P0.1 | `python3 -m json.tool .ai/config/workflow.schema.json > /dev/null` | 有效 JSON |
-| C3.P0.2 | `python3 -c "import yaml; yaml.safe_load(open('.ai/config/workflow.yaml'))"` | 有效 YAML |
-
-#### P1 - 重要功能
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C3.P1.1 | `test -f .ai/templates/CLAUDE.md.j2 && test -f .ai/templates/AGENTS.md.j2` | 存在 |
-| C3.P1.2 | `ls .ai/templates/ci-*.yml.j2 2>/dev/null \| wc -l \| xargs test 5 -le` | ≥ 5 個 |
-| C3.P1.3 | `test -f .ai/scripts/generate.sh` | 存在 |
-| C3.P1.4 | `grep -qE "submodule\|directory\|root" .ai/config/workflow.schema.json` | 支援三種類型 |
-
-#### P2 - 加分項
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C3.P2.1 | `test -f .ai/scripts/install.sh` | 有安裝腳本 |
-| C3.P2.2 | `test -f .ai/scripts/init.sh` | 有初始化腳本 |
-| C3.P2.3 | `ls .ai/templates/ci-*.yml.j2 2>/dev/null \| wc -l \| xargs test 8 -le` | ≥ 8 個 |
-
-#### 條件化檢查
-
-| 條件 | 驗證指令 | PASS 條件 |
-|------|----------|-----------|
-| 有 .gitmodules | `! test -f .gitmodules \|\| test -f .ai/templates/validate-submodules.yml.j2` | 存在或不適用 |
-| config 有 go | `! grep -q "language: go" .ai/config/workflow.yaml \|\| test -f .ai/templates/ci-go.yml.j2` | 存在或不適用 |
-| config 有 unity | `! grep -q "language: unity" .ai/config/workflow.yaml \|\| test -f .ai/templates/ci-unity.yml.j2` | 存在或不適用 |
-
----
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C3.P0.1 | `python3 -m json.tool .ai/config/workflow.schema.json` | 有效 JSON |
+| C3.P0.2 | `python3 -c "import yaml; yaml.safe_load(...)"` | 有效 YAML |
 
 ### 4. 易用性 (15%)
 
 #### P0 - 必須通過
 
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C4.P0.1 | `! file README.md \| grep -qE 'UTF-16'` | 非 UTF-16 |
-
-#### P1 - 重要功能
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C4.P1.1 | `grep -qiE "quick.?start\|getting.?started" README.md` | 有快速開始 |
-| C4.P1.2 | `grep -q "kickoff" README.md && grep -q "stats" README.md` | 有命令說明 |
-| C4.P1.3 | `bash .ai/tests/run_all_tests.sh 2>&1 \| grep -qE "passed\|✓"` | 輸出清晰 |
-
-#### P2 - 加分項
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C4.P2.1 | `test -f docs/getting-started.md -o -f .ai/docs/getting-started.md` | 有教程 |
-| C4.P2.2 | `find docs .ai/docs -name "*.md" -exec grep -l "architecture" {} \; 2>/dev/null \| head -1` | 有架構文件 |
-| C4.P2.3 | `grep -qE "\-\-dry-run" .ai/scripts/kickoff.sh` | 有 dry-run |
-
----
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C4.P0.1 | `file README.md \| grep -qE 'UTF-16'` | 無匹配 |
 
 ### 5. 安全性 (10%)
 
 #### P0 - 必須通過
 
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C5.P0.1 | `grep -q "escalation" .ai/config/workflow.yaml` | 有 escalation |
-| C5.P0.2 | `grep -qE "\-\-dry-run" .ai/scripts/rollback.sh .ai/scripts/cleanup.sh` | 破壞性操作有 dry-run |
-
-#### P1 - 重要功能
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C5.P1.1 | `grep -q "max_consecutive_failures" .ai/config/workflow.yaml` | 有失敗限制 |
-| C5.P1.2 | `grep -qE "max_single_pr_files\|max_single_pr_lines" .ai/config/workflow.yaml` | 有 PR 限制 |
-| C5.P1.3 | `grep -qE "require_human_approval\|pause_and_ask" .ai/config/workflow.yaml` | 有人工審核 |
-
-#### P2 - 加分項
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| C5.P2.1 | `! grep -rE "ghp_\|token.*=" .ai/results/ .ai/state/ 2>/dev/null \| grep -v schema` | 無敏感資訊 |
-| C5.P2.2 | `grep -q "\-\-auto" .ai/commands/start-work.md` | merge 用 --auto |
-
----
-
-## 配置一致性檢查
-
-驗證 `workflow.yaml` 與實際 repo 狀態一致。每項 FAIL 從核心流程扣 0.5 分。
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| R1 | `BRANCH=$(python3 -c "import yaml; print(yaml.safe_load(open('.ai/config/workflow.yaml'))['git']['integration_branch'])") && git rev-parse --verify "$BRANCH" 2>/dev/null \|\| git rev-parse --verify "origin/$BRANCH" 2>/dev/null` | 分支存在 |
-| R2 | `python3 -c "import yaml,os; c=yaml.safe_load(open('.ai/config/workflow.yaml')); exit(0 if all(os.path.exists(r['path']) for r in c['repos']) else 1)"` | 路徑存在 |
-| R3 | `python3 .ai/scripts/validate_config.py` | type-specific 驗證通過 |
-
-### R3 Type-Specific 驗證規則 (v3.1 新增)
-
-`validate_config.py` 會根據 `repos[].type` 進行額外驗證：
-
-| type | 驗證規則 |
-|------|----------|
-| `submodule` | `.gitmodules` 必須存在且包含該 path，且該 path 下應是 git repo |
-| `directory` | path 必須是目錄（警告：如有 `.git` 建議改用 submodule） |
-| `root` | path 必須是 `./` 或空 |
-
----
-
-## Doc Drift 檢查
-
-檢查是否引用過期路徑。每處 FAIL 從易用性扣 0.5 分。
-
-```bash
-# 不應有輸出
-grep -rn "scripts/ai/" .ai/ CLAUDE.md AGENTS.md README.md 2>/dev/null
-```
-
----
-
-## 負向測試（可選加分）
-
-驗證系統能正確拒絕錯誤輸入。每項 +0.25 分（最多 +1.0）。
-
-| ID | 驗證指令 | PASS 條件 |
-|----|----------|-----------|
-| NEG.1 | `! python3 .ai/scripts/validate_config.py /nonexistent 2>/dev/null` | 錯誤路徑 exit 非 0 |
-| NEG.2 | `! bash .ai/scripts/run_issue_codex.sh 2>/dev/null` | 缺參數 exit 非 0 |
-| NEG.3 | `! python3 .ai/scripts/parse_tasks.py /nonexistent 2>/dev/null` | 錯誤路徑 exit 非 0 |
-| NEG.4 | `echo "" \| bash .ai/scripts/analyze_failure.sh - 2>/dev/null; test $? -eq 0` | 空輸入不崩潰 |
-
----
-
-## 評分等級
-
-| 分數 | 等級 | 說明 |
-|------|------|------|
-| 9.0 - 10.0 | A | 生產就緒（需 Online Gate PASS） |
-| 8.0 - 8.9 | B | 功能完整 |
-| 7.0 - 7.9 | C | 核心可用 |
-| 6.0 - 6.9 | D | 有缺失 |
-| < 6.0 | F | 不可用 |
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C5.P0.1 | `grep -q "escalation" .ai/config/workflow.yaml` | 有匹配 |
+| C5.P0.2 | `grep -qE "\-\-dry-run" .ai/scripts/rollback.sh ...` | 有匹配 |
 
 ---
 
 ## 如何使用
 
-### 預設模式（Offline）
-
-任何人 clone 下來就能評估 Kit 品質：
-
 ```bash
+# Offline 模式（預設，完全離線）
 bash .ai/scripts/evaluate.sh
-# 或
-bash .ai/scripts/evaluate.sh --offline
-```
 
-### 完整模式（Online）
-
-需要 gh auth + 網路，驗證完整流程：
-
-```bash
+# Online 模式
 bash .ai/scripts/evaluate.sh --online
-```
 
-### CI 整合
+# 嚴格模式（檢查 audit P0，建議在 CI 使用）
+bash .ai/scripts/evaluate.sh --strict
 
-```yaml
-# .github/workflows/evaluate.yml
-- name: Evaluate Kit
-  run: bash .ai/scripts/evaluate.sh --offline
-```
+# 檢查 submodule origin（需要網路）
+bash .ai/scripts/evaluate.sh --check-origin
 
----
-
-## 完整評估腳本
-
-實際腳本位於 `.ai/scripts/evaluate.sh`，以下為簡化版本：
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-MODE="${1:---offline}"
-echo "=========================================="
-echo "AI Workflow Kit - Evaluation v3.1"
-echo "Mode: $MODE"
-echo "=========================================="
-echo ""
-
-# === Offline Gate ===
-echo "## Offline Gate"
-OFFLINE_PASS=true
-
-check_offline() {
-  local id="$1" cmd="$2" desc="$3"
-  if eval "$cmd" > /dev/null 2>&1; then
-    echo "[PASS] $id: $desc"
-  else
-    echo "[FAIL] $id: $desc"
-    OFFLINE_PASS=false
-  fi
-}
-
-check_offline "O1" "bash .ai/scripts/scan_repo.sh 2>/dev/null || python3 .ai/scripts/scan_repo.py" "scan_repo"
-check_offline "O2" "python3 -m json.tool .ai/state/repo_scan.json" "repo_scan.json"
-check_offline "O3" "bash .ai/scripts/audit_project.sh 2>/dev/null || python3 .ai/scripts/audit_project.py" "audit_project"
-check_offline "O4" "python3 -m json.tool .ai/state/audit.json" "audit.json"
-check_offline "O5" "python3 .ai/scripts/validate_config.py" "validate_config (含 type-specific)"
-check_offline "O6" "! file .ai/scripts/*.sh | grep -qE 'CRLF|UTF-16'" "無 CRLF/UTF-16"
-check_offline "O7" "! file README.md CLAUDE.md AGENTS.md 2>/dev/null | grep -qE 'UTF-16'" "文件編碼"
-check_offline "O8" "bash .ai/tests/run_all_tests.sh" "測試套件"
-
-echo ""
-if [ "$OFFLINE_PASS" = false ]; then
-  echo "❌ Offline Gate FAILED"
-  echo "評分上限: 4.0 (F)"
-  exit 1
-fi
-echo "✅ Offline Gate PASSED"
-
-# === Online Gate (如果請求) ===
-SCORE_CAP=8.5
-if [ "$MODE" = "--online" ]; then
-  echo ""
-  echo "## Online Gate"
-
-  # 前置條件
-  if ! command -v gh > /dev/null 2>&1; then
-    echo "[SKIP] gh CLI 未安裝"
-  elif ! gh auth status > /dev/null 2>&1; then
-    echo "[SKIP] gh 未登入"
-  elif ! curl -s --max-time 5 https://api.github.com > /dev/null 2>&1; then
-    echo "[SKIP] 無法連線 GitHub"
-  else
-    ONLINE_PASS=true
-
-    check_online() {
-      local id="$1" cmd="$2" desc="$3"
-      if eval "$cmd" > /dev/null 2>&1; then
-        echo "[PASS] $id: $desc"
-      else
-        echo "[FAIL] $id: $desc"
-        ONLINE_PASS=false
-      fi
-    }
-
-    check_online "N1" "bash .ai/scripts/kickoff.sh --dry-run" "kickoff"
-    check_online "N2" "bash .ai/scripts/rollback.sh 99999 --dry-run 2>&1 | grep -qiE 'not found|usage|dry'" "rollback"
-    check_online "N3" "bash .ai/scripts/stats.sh --json | python3 -m json.tool" "stats"
-
-    echo ""
-    if [ "$ONLINE_PASS" = true ]; then
-      echo "✅ Online Gate PASSED"
-      SCORE_CAP=10.0
-    else
-      echo "⚠️ Online Gate FAILED"
-    fi
-  fi
-fi
-
-echo ""
-echo "=========================================="
-echo "評分上限: $SCORE_CAP"
-echo "=========================================="
+# 組合使用
+bash .ai/scripts/evaluate.sh --online --strict --check-origin
 ```
 
 ---
@@ -541,4 +388,12 @@ echo "=========================================="
 | 1.0 | 2025-12-19 | 初始版本 |
 | 2.0 | 2025-12-19 | 加入 Must-Pass Gate、P0/P1/P2 分級 |
 | 3.0 | 2025-12-19 | 拆分 Offline/Online Gate、加入 SKIP 狀態、明確前置條件 |
-| 3.1 | 2025-12-19 | 加入前置條件章節、統一 Online Gate 檢查項目（含 rollback）、type-specific 配置驗證 |
+| 3.1 | 2025-12-19 | 統一 Online Gate、type-specific 驗證 |
+| 3.2 | 2025-12-19 | 修正前置條件矛盾、O1-O4 合併邏輯、O6/O7 SKIP 規則、N2 pipefail 問題 |
+| 3.3 | 2025-12-19 | bash 改為必要、新增 O0 gitignore 檢查、O6 CI/分支對齊、擴大敏感資訊掃描 |
+| 4.0 | 2025-12-19 | evaluate.sh 成為唯一權威、版本強制一致(O7)、O0 用 git check-ignore、O6 用 Python 解析 YAML |
+| 4.1 | 2025-12-19 | 明確 Output Contract、統一前置條件表格、修正 O6 PyYAML on: 布林值問題 |
+| 4.2 | 2025-12-19 | O6 移出 Offline Gate 改為 EXT1、SKIP 白名單、--strict 模式、補齊 curl 依賴、等級映射明確化、標註示意程式碼 |
+| 4.3 | 2025-12-19 | EXT1 與面向評分映射、--strict 使用前提說明 |
+| 5.0 | 2025-12-19 | Offline Gate 真正離線（移除 git fetch）、統一 audit/scan schema、dirty_worktree 改為 P1、新增 --check-origin 選項 |
+| 5.1 | 2025-12-19 | 修正 --strict 文檔（dirty_worktree 是 P1）、--check-origin 網路錯誤改為 FAIL（非 SKIP） |

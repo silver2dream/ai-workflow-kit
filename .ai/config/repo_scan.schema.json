@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "repo_scan.json schema",
+  "description": "Schema for repository scan output",
+  "type": "object",
+  "required": ["root", "submodules", "ai_config"],
+  "properties": {
+    "timestamp_utc": {
+      "type": "string",
+      "description": "ISO 8601 timestamp"
+    },
+    "root": {
+      "type": "object",
+      "required": ["path", "clean"],
+      "properties": {
+        "path": { "type": "string" },
+        "branch": { "type": "string" },
+        "head": { "type": "string" },
+        "clean": { "type": "boolean" },
+        "status": { "type": "string" },
+        "workflows": { "type": "boolean" }
+      }
+    },
+    "submodules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "exists"],
+        "properties": {
+          "path": { "type": "string" },
+          "exists": { "type": "boolean" },
+          "clean": { "type": "boolean" },
+          "branch": { "type": "string" },
+          "head": { "type": "string" },
+          "kind": { "type": "string" },
+          "has_workflows": { "type": "boolean" },
+          "test_files": { "type": "integer" },
+          "test_folders_present": { "type": "boolean" }
+        }
+      }
+    },
+    "presence": {
+      "type": "object",
+      "properties": {
+        "gitmodules": { "type": "boolean" },
+        "claude_md": { "type": "boolean" },
+        "agents_md": { "type": "boolean" },
+        "tasks_md": { "type": "boolean" },
+        "design_md": { "type": "boolean" },
+        "validate_submodules_workflow": { "type": "boolean" }
+      }
+    },
+    "ai_config": {
+      "type": "object",
+      "required": ["exists"],
+      "properties": {
+        "exists": { "type": "boolean" },
+        "workflow_yaml": { "type": "boolean" },
+        "scripts_dir": { "type": "boolean" }
+      }
+    }
+  }
+}

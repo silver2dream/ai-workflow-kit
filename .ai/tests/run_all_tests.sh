@@ -628,7 +628,48 @@ else
 fi
 
 # ============================================================
-# Test 20: validate_config.py Type-Specific Validation (v3.1)
+# Test 20: evaluate.sh v4.0 Features
+# ============================================================
+echo ""
+echo "## evaluate.sh v4.0 Tests"
+
+# Test O0: git check-ignore
+if grep -q "git check-ignore" "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh uses git check-ignore for O0"
+else
+  log_fail "evaluate.sh missing git check-ignore"
+fi
+
+# Test O6: Python YAML parsing
+if grep -q "import yaml, glob, fnmatch" "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh uses Python for O6 CI check"
+else
+  log_fail "evaluate.sh missing Python CI check"
+fi
+
+# Test O7: version sync check
+if grep -q "version mismatch" "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh checks version sync (O7)"
+else
+  log_fail "evaluate.sh missing version sync check"
+fi
+
+# Test N2: pipefail avoidance
+if grep -q 'ROLLBACK_OUTPUT=.*|| true' "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh avoids pipefail for N2"
+else
+  log_fail "evaluate.sh may have pipefail issue in N2"
+fi
+
+# Test prerequisites check
+if grep -q "import yaml" "$AI_ROOT/scripts/evaluate.sh" && grep -q "import jsonschema" "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh checks Python dependencies"
+else
+  log_fail "evaluate.sh missing dependency checks"
+fi
+
+# ============================================================
+# Test 21: validate_config.py Type-Specific Validation (v3.1)
 # ============================================================
 echo ""
 echo "## Type-Specific Validation Tests (v3.1)"
@@ -671,6 +712,82 @@ if grep -q "should be './'" "$AI_ROOT/scripts/validate_config.py" || grep -q "sh
   log_pass "validate_config.py validates root path"
 else
   log_fail "validate_config.py missing root path validation"
+fi
+
+# ============================================================
+# Test 22: Schema Validation (v5.0)
+# ============================================================
+echo ""
+echo "## Schema Validation Tests (v5.0)"
+
+# Test repo_scan.schema.json exists
+if [[ -f "$AI_ROOT/config/repo_scan.schema.json" ]]; then
+  log_pass "repo_scan.schema.json exists"
+else
+  log_fail "repo_scan.schema.json missing"
+fi
+
+# Test audit.schema.json exists
+if [[ -f "$AI_ROOT/config/audit.schema.json" ]]; then
+  log_pass "audit.schema.json exists"
+else
+  log_fail "audit.schema.json missing"
+fi
+
+# Test repo_scan.json conforms to schema
+if [[ -f "$AI_ROOT/state/repo_scan.json" ]] && [[ -f "$AI_ROOT/config/repo_scan.schema.json" ]]; then
+  if python3 -c "
+import json, jsonschema
+with open('$AI_ROOT/config/repo_scan.schema.json') as f:
+    schema = json.load(f)
+with open('$AI_ROOT/state/repo_scan.json') as f:
+    data = json.load(f)
+jsonschema.validate(data, schema)
+" 2>/dev/null; then
+    log_pass "repo_scan.json conforms to schema"
+  else
+    log_fail "repo_scan.json does not conform to schema"
+  fi
+else
+  log_skip "repo_scan.json schema validation (files missing)"
+fi
+
+# Test audit.json conforms to schema
+if [[ -f "$AI_ROOT/state/audit.json" ]] && [[ -f "$AI_ROOT/config/audit.schema.json" ]]; then
+  if python3 -c "
+import json, jsonschema
+with open('$AI_ROOT/config/audit.schema.json') as f:
+    schema = json.load(f)
+with open('$AI_ROOT/state/audit.json') as f:
+    data = json.load(f)
+jsonschema.validate(data, schema)
+" 2>/dev/null; then
+    log_pass "audit.json conforms to schema"
+  else
+    log_fail "audit.json does not conform to schema"
+  fi
+else
+  log_skip "audit.json schema validation (files missing)"
+fi
+
+# Test dirty_worktree is P1 (not P0)
+if [[ -f "$AI_ROOT/state/audit.json" ]]; then
+  DIRTY_SEVERITY=$(python3 -c "
+import json
+with open('$AI_ROOT/state/audit.json') as f:
+    audit = json.load(f)
+for f in audit.get('findings', []):
+    if f.get('type') == 'dirty_worktree':
+        print(f.get('severity', 'unknown'))
+        break
+" 2>/dev/null || echo "none")
+  if [[ "$DIRTY_SEVERITY" == "P1" ]] || [[ "$DIRTY_SEVERITY" == "none" ]]; then
+    log_pass "dirty_worktree severity is P1 (or not present)"
+  else
+    log_fail "dirty_worktree severity is $DIRTY_SEVERITY (should be P1)"
+  fi
+else
+  log_skip "dirty_worktree severity check (audit.json missing)"
 fi
 
 # ============================================================
