@@ -559,6 +559,121 @@ else
 fi
 
 # ============================================================
+# Test 18: Python Scripts Write State Files (v3.1)
+# ============================================================
+echo ""
+echo "## Python State File Tests (v3.1)"
+
+# Clean up old state files first
+rm -f "$AI_ROOT/state/repo_scan.json" "$AI_ROOT/state/audit.json" 2>/dev/null || true
+
+# Test scan_repo.py writes state file
+if python3 "$AI_ROOT/scripts/scan_repo.py" > /dev/null 2>&1 && [[ -f "$AI_ROOT/state/repo_scan.json" ]]; then
+  log_pass "scan_repo.py writes repo_scan.json"
+else
+  log_fail "scan_repo.py should write repo_scan.json"
+fi
+
+# Test audit_project.py writes state file
+if python3 "$AI_ROOT/scripts/audit_project.py" > /dev/null 2>&1 && [[ -f "$AI_ROOT/state/audit.json" ]]; then
+  log_pass "audit_project.py writes audit.json"
+else
+  log_fail "audit_project.py should write audit.json"
+fi
+
+# Test state files are valid JSON
+if python3 -m json.tool "$AI_ROOT/state/repo_scan.json" > /dev/null 2>&1; then
+  log_pass "repo_scan.json is valid JSON"
+else
+  log_fail "repo_scan.json is not valid JSON"
+fi
+
+if python3 -m json.tool "$AI_ROOT/state/audit.json" > /dev/null 2>&1; then
+  log_pass "audit.json is valid JSON"
+else
+  log_fail "audit.json is not valid JSON"
+fi
+
+# ============================================================
+# Test 19: evaluate.sh Exists (v3.1)
+# ============================================================
+echo ""
+echo "## evaluate.sh Tests (v3.1)"
+
+if [[ -f "$AI_ROOT/scripts/evaluate.sh" ]]; then
+  log_pass "evaluate.sh exists"
+else
+  log_fail "evaluate.sh missing"
+fi
+
+# Test evaluate.sh has offline gate
+if grep -q "Offline Gate" "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh has Offline Gate"
+else
+  log_fail "evaluate.sh missing Offline Gate"
+fi
+
+# Test evaluate.sh has online gate
+if grep -q "Online Gate" "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh has Online Gate"
+else
+  log_fail "evaluate.sh missing Online Gate"
+fi
+
+# Test evaluate.sh checks rollback
+if grep -q "rollback" "$AI_ROOT/scripts/evaluate.sh"; then
+  log_pass "evaluate.sh checks rollback"
+else
+  log_fail "evaluate.sh missing rollback check"
+fi
+
+# ============================================================
+# Test 20: validate_config.py Type-Specific Validation (v3.1)
+# ============================================================
+echo ""
+echo "## Type-Specific Validation Tests (v3.1)"
+
+# Test validate_config.py has type-specific validation
+if grep -q "repo_type == 'submodule'" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py checks submodule type"
+else
+  log_fail "validate_config.py missing submodule type check"
+fi
+
+if grep -q "repo_type == 'directory'" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py checks directory type"
+else
+  log_fail "validate_config.py missing directory type check"
+fi
+
+if grep -q "repo_type == 'root'" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py checks root type"
+else
+  log_fail "validate_config.py missing root type check"
+fi
+
+# Test validate_config.py checks .gitmodules for submodule type
+if grep -q "gitmodules" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py checks .gitmodules for submodules"
+else
+  log_fail "validate_config.py missing .gitmodules check"
+fi
+
+# Test validate_config.py warns about directory with .git
+if grep -q "has .git" "$AI_ROOT/scripts/validate_config.py" || grep -q "consider type=submodule" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py warns about directory with .git"
+else
+  log_fail "validate_config.py missing directory .git warning"
+fi
+
+# Test validate_config.py validates root path
+if grep -q "should be './'" "$AI_ROOT/scripts/validate_config.py" || grep -q "should be './' or empty" "$AI_ROOT/scripts/validate_config.py"; then
+  log_pass "validate_config.py validates root path"
+else
+  log_fail "validate_config.py missing root path validation"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 echo ""

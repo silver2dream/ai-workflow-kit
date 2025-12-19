@@ -102,7 +102,7 @@ specs:
   # 啟用自動生成 tasks.md（從 design.md）
   auto_generate_tasks: true
   active:
-    - "workflow-kit-v3"
+    - "workflow-kit-v3.1"
 
 # ============================================================
 # Task Configuration

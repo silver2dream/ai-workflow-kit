@@ -67,6 +67,13 @@ def main():
     
     result = scan_repo(root)
     
+    # Always write to state file for consistency with .sh version
+    state_dir = root / '.ai' / 'state'
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_file = state_dir / 'repo_scan.json'
+    with open(state_file, 'w', encoding='utf-8') as f:
+        json.dump(result, f, indent=2)
+    
     if output_json:
         print(json.dumps(result, indent=2))
     else:
@@ -77,6 +84,7 @@ def main():
         if result['ai_config']['exists']:
             print(f"  - workflow.yaml: {'yes' if result['ai_config']['workflow_yaml'] else 'no'}")
             print(f"  - scripts dir: {'yes' if result['ai_config']['scripts_dir'] else 'no'}")
+        print(f"\nState saved to: {state_file}")
 
 if __name__ == '__main__':
     main()

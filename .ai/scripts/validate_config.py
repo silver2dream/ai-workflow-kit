@@ -54,14 +54,43 @@ def main():
         errors = []
         warnings = []
         
-        # Check repos
+        # Check repos with type-specific validation
+        mono_root = os.path.dirname(ai_root)
+        gitmodules_path = os.path.join(mono_root, '.gitmodules')
+        gitmodules_content = ''
+        if os.path.exists(gitmodules_path):
+            with open(gitmodules_path, 'r', encoding='utf-8') as f:
+                gitmodules_content = f.read()
+        
         for repo in config.get('repos', []):
             repo_name = repo.get('name', 'unknown')
+            repo_path = repo.get('path', '').rstrip('/')
+            repo_type = repo.get('type', 'directory')
+            full_path = os.path.join(mono_root, repo_path) if repo_path else mono_root
             
-            # Check path exists (warning only)
-            repo_path = repo.get('path', '')
-            if repo_path and repo_path != './' and not os.path.exists(os.path.join(os.path.dirname(ai_root), repo_path)):
-                warnings.append(f"Repo '{repo_name}': path '{repo_path}' does not exist")
+            # Type-specific validation
+            if repo_type == 'submodule':
+                # Check .gitmodules exists and contains this path
+                if not os.path.exists(gitmodules_path):
+                    errors.append(f"Repo '{repo_name}': type=submodule but .gitmodules not found")
+                elif repo_path and repo_path not in gitmodules_content:
+                    errors.append(f"Repo '{repo_name}': type=submodule but path '{repo_path}' not in .gitmodules")
+                # Check path is a git repo
+                if repo_path and not os.path.exists(os.path.join(full_path, '.git')):
+                    errors.append(f"Repo '{repo_name}': type=submodule but '{repo_path}' is not a git repo")
+            
+            elif repo_type == 'directory':
+                # Check path exists and is a directory
+                if repo_path and not os.path.isdir(full_path):
+                    warnings.append(f"Repo '{repo_name}': path '{repo_path}' does not exist or is not a directory")
+                # Should NOT be an independent git repo (warning only)
+                elif repo_path and os.path.exists(os.path.join(full_path, '.git')):
+                    warnings.append(f"Repo '{repo_name}': type=directory but '{repo_path}' has .git (consider type=submodule?)")
+            
+            elif repo_type == 'root':
+                # Check path is ./ or empty
+                if repo_path not in ['.', './', '']:
+                    errors.append(f"Repo '{repo_name}': type=root but path is '{repo_path}' (should be './' or empty)")
         
         # Check rules files exist
         rules_dir = os.path.join(ai_root, 'rules')

@@ -1,20 +1,10 @@
 {
-  "timestamp_utc": "2025-12-19T06:27:56Z",
-  "root": {
-    "path": "/mnt/d/projects/ai-workflow",
-    "branch": "develop",
-    "head": "2aeba5c2a90d70e9d8fd69e1c6e5a8b5267d2b5c",
-    "clean": false,
-    "status": "## develop...origin/develop\n M .ai/commands/analyze-next.md\n M .ai/commands/dispatch-worker.md\n M .ai/commands/review-pr.md\n M .ai/commands/start-work.md\n M .ai/commands/stop-work.md\n M .ai/config/failure_patterns.json\n M .ai/config/workflow.schema.json\n M .ai/config/workflow.yaml\n M .ai/rules/backend-go.md\n M .ai/rules/frontend-unity.md\n M .ai/rules/ui-toolkit-react-to-uxml.md\n M .ai/scripts/attempt_guard.sh\n M .ai/scripts/audit_project.py\n M .ai/scripts/audit_project.sh\n M .ai/scripts/audit_to_tickets.sh\n M .ai/scripts/new_worktree.sh\n M .ai/scripts/parse_tasks.py\n M .ai/scripts/preflight.sh\n M .ai/scripts/run_issue_codex.sh\n M .ai/scripts/scan_repo.py\n M .ai/scripts/scan_repo.sh\n M .ai/scripts/validate_config.py\n M .ai/scripts/write_result.sh\n M .ai/specs/example/tasks.md\n M .ai/specs/workflow-kit-refactor/tasks.md\n M .ai/specs/workflow-kit-v2/design.md\n M .ai/templates/AGENTS.md.j2\n M .ai/templates/CLAUDE.md.j2\n M .ai/templates/ci-dotnet.yml.j2\n M .ai/templates/ci-generic.yml.j2\n M .ai/templates/ci-go.yml.j2\n M .ai/templates/ci-godot.yml.j2\n M .ai/templates/ci-node.yml.j2\n M .ai/templates/ci-python.yml.j2\n M .ai/templates/ci-rust.yml.j2\n M .ai/templates/ci-unity.yml.j2\n M .ai/templates/ci-unreal.yml.j2\n M .ai/templates/design.md.example\n M .ai/templates/git-workflow.md.j2\n M .ai/templates/validate-submodules.yml.j2\n M docs/ai-workflow-architecture.md\n?? .claude/commands\n?? .claude/rules",
-    "workflows": true
-  },
+  "root": "/mnt/d/projects/ai-workflow",
   "submodules": [],
-  "presence": {
-    "gitmodules": false,
-    "claude_md": true,
-    "agents_md": true,
-    "tasks_md": false,
-    "design_md": false,
-    "validate_submodules_workflow": true
+  "repos": [],
+  "ai_config": {
+    "exists": true,
+    "workflow_yaml": true,
+    "scripts_dir": true
   }
 }

@@ -125,6 +125,13 @@ def main():
     
     result = audit_project(root)
     
+    # Always write to state file for consistency with .sh version
+    state_dir = root / '.ai' / 'state'
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_file = state_dir / 'audit.json'
+    with open(state_file, 'w', encoding='utf-8') as f:
+        json.dump(result, f, indent=2)
+    
     if output_json:
         print(json.dumps(result, indent=2))
     else:
@@ -137,20 +144,21 @@ def main():
         if result['findings']:
             for finding in result['findings']:
                 severity = finding['severity']
-                icon = {'P0': '🔴', 'P1': '🟠', 'P2': '🟡'}.get(severity, '⚪')
-                print(f"{icon} [{severity}] {finding['message']}")
+                icon = {'P0': '[P0]', 'P1': '[P1]', 'P2': '[P2]'}.get(severity, '[??]')
+                print(f"{icon} {finding['message']}")
                 if finding['path']:
                     print(f"   Path: {finding['path']}")
         else:
-            print("✅ No issues found")
+            print("No issues found")
         
         print()
         print("-" * 60)
         s = result['summary']
         print(f"Summary: {s['p0']} P0, {s['p1']} P1, {s['p2']} P2 ({s['total']} total)")
+        print(f"State saved to: {state_file}")
         
         if s['p0'] > 0:
-            print("\n⚠️  P0 issues must be fixed before proceeding!")
+            print("\nP0 issues must be fixed before proceeding!")
             sys.exit(1)
 
 if __name__ == '__main__':
