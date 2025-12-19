@@ -1,27 +1,30 @@
-# Example Feature - Implementation Plan
+# Example Feature - Health Check (Directory Monorepo)
+
+Repo: backend, frontend  
+Coordination: sequential  
+Sync: independent
 
 ## Tasks
 
-- [ ] 1. Set up project structure
-  - Create necessary directories and files
-  - _Requirements: 1.1_
+- [ ] 1. Backend: add health check
+  - Repo: backend
+  - [ ] 1.1 Add `health` implementation (function or minimal handler)
+    - _Requirements: R1_
+  - [ ] 1.2 Add unit tests for health payload
+    - _Requirements: R1_
 
-- [ ] 2. Implement Component A
-  - [ ] 2.1 Create input handler interface
-  - [ ] 2.2 Implement input validation
-  - [ ] 2.3 Write unit tests
-  - _Requirements: 1.1, 1.2_
+- [ ] 2. Frontend: show health status (stub)
+  - Repo: frontend
+  - _depends_on: 1_
+  - [ ] 2.1 Add a minimal entrypoint/script placeholder
+    - _Requirements: R2_
+  - [ ] 2.2 Add localization key placeholders for UI strings
+    - _Requirements: R2_
 
-- [ ] 3. Implement Component B
-  - [ ] 3.1 Create processing logic
-  - [ ] 3.2 Implement error handling
-  - [ ] 3.3 Write unit tests
-  - _Requirements: 1.2, 1.3_
+- [ ] 3. CI sanity
+  - Repo: root
+  - [ ] 3.1 Ensure root CI runs AWK offline + tests, backend go tests, frontend sanity
+    - _Requirements: R3_
 
-- [ ] 4. Integration
-  - [ ] 4.1 Wire components together
-  - [ ] 4.2 Write integration tests
-  - _Requirements: 1.1, 1.2, 1.3_
-
-- [ ] 5. Checkpoint
-  - Ensure all tests pass, ask the user if questions arise.
+- [ ] 4. Checkpoint
+  - Ensure `bash .ai/scripts/evaluate.sh --offline` and `bash .ai/tests/run_all_tests.sh` pass.

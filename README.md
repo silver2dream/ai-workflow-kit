@@ -20,6 +20,13 @@ bash .ai/scripts/stats.sh
 touch .ai/state/STOP
 ```
 
+## Docs
+
+| 文件 | 說明 |
+|------|------|
+| `docs/getting-started.md` | Directory 型 monorepo 範例（含 CI） |
+| `.ai/docs/evaluate.md` | 評分標準與 Gate 定義 |
+
 ## 架構概覽
 
 ```

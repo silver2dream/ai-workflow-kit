@@ -101,8 +101,9 @@ specs:
     tasks: "tasks.md"                # 必要，AI Workflow 讀取
   # 啟用自動生成 tasks.md（從 design.md）
   auto_generate_tasks: true
-  active:
-    - "workflow-kit-v3.1"
+  # 預設不啟用任何 spec，避免新使用者一跑就產生 Issue/PR。
+  # 參考範例 spec：.ai/specs/example/
+  active: []
 
 # ============================================================
 # Task Configuration
