@@ -1,4 +1,4 @@
-# AI Workflow Kit - 評分標準 v3
+# AI Workflow Kit - 評分標準 v3.1
 
 ## 專案核心目的
 
@@ -360,6 +360,17 @@ fi
 |----|----------|-----------|
 | R1 | `BRANCH=$(python3 -c "import yaml; print(yaml.safe_load(open('.ai/config/workflow.yaml'))['git']['integration_branch'])") && git rev-parse --verify "$BRANCH" 2>/dev/null \|\| git rev-parse --verify "origin/$BRANCH" 2>/dev/null` | 分支存在 |
 | R2 | `python3 -c "import yaml,os; c=yaml.safe_load(open('.ai/config/workflow.yaml')); exit(0 if all(os.path.exists(r['path']) for r in c['repos']) else 1)"` | 路徑存在 |
+| R3 | `python3 .ai/scripts/validate_config.py` | type-specific 驗證通過 |
+
+### R3 Type-Specific 驗證規則 (v3.1 新增)
+
+`validate_config.py` 會根據 `repos[].type` 進行額外驗證：
+
+| type | 驗證規則 |
+|------|----------|
+| `submodule` | `.gitmodules` 必須存在且包含該 path，且該 path 下應是 git repo |
+| `directory` | path 必須是目錄（警告：如有 `.git` 建議改用 submodule） |
+| `root` | path 必須是 `./` 或空 |
 
 ---
 
@@ -431,13 +442,15 @@ bash .ai/scripts/evaluate.sh --online
 
 ## 完整評估腳本
 
+實際腳本位於 `.ai/scripts/evaluate.sh`，以下為簡化版本：
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
 MODE="${1:---offline}"
 echo "=========================================="
-echo "AI Workflow Kit - Evaluation v3"
+echo "AI Workflow Kit - Evaluation v3.1"
 echo "Mode: $MODE"
 echo "=========================================="
 echo ""
@@ -449,9 +462,9 @@ OFFLINE_PASS=true
 check_offline() {
   local id="$1" cmd="$2" desc="$3"
   if eval "$cmd" > /dev/null 2>&1; then
-    echo "✓ $id: $desc"
+    echo "[PASS] $id: $desc"
   else
-    echo "✗ $id: $desc"
+    echo "[FAIL] $id: $desc"
     OFFLINE_PASS=false
   fi
 }
@@ -460,7 +473,7 @@ check_offline "O1" "bash .ai/scripts/scan_repo.sh 2>/dev/null || python3 .ai/scr
 check_offline "O2" "python3 -m json.tool .ai/state/repo_scan.json" "repo_scan.json"
 check_offline "O3" "bash .ai/scripts/audit_project.sh 2>/dev/null || python3 .ai/scripts/audit_project.py" "audit_project"
 check_offline "O4" "python3 -m json.tool .ai/state/audit.json" "audit.json"
-check_offline "O5" "python3 .ai/scripts/validate_config.py" "validate_config"
+check_offline "O5" "python3 .ai/scripts/validate_config.py" "validate_config (含 type-specific)"
 check_offline "O6" "! file .ai/scripts/*.sh | grep -qE 'CRLF|UTF-16'" "無 CRLF/UTF-16"
 check_offline "O7" "! file README.md CLAUDE.md AGENTS.md 2>/dev/null | grep -qE 'UTF-16'" "文件編碼"
 check_offline "O8" "bash .ai/tests/run_all_tests.sh" "測試套件"
@@ -481,20 +494,20 @@ if [ "$MODE" = "--online" ]; then
 
   # 前置條件
   if ! command -v gh > /dev/null 2>&1; then
-    echo "○ SKIP: gh CLI 未安裝"
+    echo "[SKIP] gh CLI 未安裝"
   elif ! gh auth status > /dev/null 2>&1; then
-    echo "○ SKIP: gh 未登入"
+    echo "[SKIP] gh 未登入"
   elif ! curl -s --max-time 5 https://api.github.com > /dev/null 2>&1; then
-    echo "○ SKIP: 無法連線 GitHub"
+    echo "[SKIP] 無法連線 GitHub"
   else
     ONLINE_PASS=true
 
     check_online() {
       local id="$1" cmd="$2" desc="$3"
       if eval "$cmd" > /dev/null 2>&1; then
-        echo "✓ $id: $desc"
+        echo "[PASS] $id: $desc"
       else
-        echo "✗ $id: $desc"
+        echo "[FAIL] $id: $desc"
         ONLINE_PASS=false
       fi
     }
@@ -528,3 +541,4 @@ echo "=========================================="
 | 1.0 | 2025-12-19 | 初始版本 |
 | 2.0 | 2025-12-19 | 加入 Must-Pass Gate、P0/P1/P2 分級 |
 | 3.0 | 2025-12-19 | 拆分 Offline/Online Gate、加入 SKIP 狀態、明確前置條件 |
+| 3.1 | 2025-12-19 | 加入前置條件章節、統一 Online Gate 檢查項目（含 rollback）、type-specific 配置驗證 |
