@@ -5,10 +5,26 @@ Default priority: correctness > minimal diff > speed.
 
 ## MUST-READ (before any work)
 
+{% set kit_rules = rules.kit | default([]) %}
+{% set custom_rules = rules.custom | default([]) %}
+{% set repo_rules = [] %}
+{% for repo in repos %}
+{% for rule in repo.rules | default([]) %}
+{% if rule not in repo_rules %}
+{% set _ = repo_rules.append(rule) %}
+{% endif %}
+{% endfor %}
+{% endfor %}
 
-- Read and obey: `.ai/rules/_kit/git-workflow.md` (CRITICAL for commit format)
-- Read and obey: `.ai/rules/backend-go.md`
-- Read and obey: `.ai/rules/frontend-unity.md`
+{# Kit 核心規則 (從 _kit/ 目錄) #}
+{% for rule in kit_rules %}
+- Read and obey: `.ai/rules/_kit/{{ rule }}.md`{% if rule == 'git-workflow' %} (CRITICAL for commit format){% endif %}
+
+{% endfor %}
+{# 使用者自訂規則 (從 rules/ 目錄) #}
+{% for rule in custom_rules %}
+- Read and obey: `.ai/rules/{{ rule }}.md`
+{% endfor %}
 
 Do not proceed if these files are missing—stop and report what you cannot find.
 
@@ -34,27 +50,30 @@ Do not proceed if these files are missing—stop and report what you cannot find
 - If changing logic: add/adjust tests when feasible.
 - If no tests exist: add at least a small smoke test or verification note.
 
+{% if has_submodules %}
 ### 3. Submodule safety
 - Do NOT change submodule pinned commits unless ticket explicitly requires it.
 - If you are working in a submodule repo, the PR must be created in that repo.
 
 ### 4. Git discipline
+{% else %}
+### 3. Git discipline
+{% endif %}
 1. **Commit**: One commit per ticket unless the ticket explicitly needs multiple commits.
 2. **Commit message**: Must follow `.ai/rules/_kit/git-workflow.md`.
-   - Format: `[type] subject`
-3. **PR**: Create PR targeting `feat/example` with "Closes #<IssueID>" in the body.
-   - `main` is release-only. Target `main` ONLY when the ticket explicitly says `Release: true`.
+   - Format: `{{ git.commit_format }}`
+3. **PR**: Create PR targeting `{{ git.integration_branch }}` with "Closes #<IssueID>" in the body.
+   - `{{ git.release_branch }}` is release-only. Target `{{ git.release_branch }}` ONLY when the ticket explicitly says `Release: true`.
 4. **No direct pushes** to protected branches.
 
 ---
 
 ## DEFAULT VERIFY COMMANDS
 
-### backend
-- Build: `go build ./...`
-- Test: `go test ./...`
+{% for repo in repos %}
+### {{ repo.name }}
+- Build: `{{ repo.verify.build }}`
+- Test: `{{ repo.verify.test }}`
 
-### frontend
-- Build: `echo 'Unity build via Editor'`
-- Test: `echo 'Unity tests via Editor'`
+{% endfor %}
 

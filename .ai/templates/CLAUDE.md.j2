@@ -4,19 +4,24 @@ This file provides guidance for Claude Code (Principal) when working with this p
 
 ## Project Overview
 
-**Name:** ai-workflow
-**Type:** monorepo
-**Repos:** backend, frontend
+**Name:** {{ project.name }}
+**Type:** {{ project.type }}
+**Repos:** {% for repo in repos %}{{ repo.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+
 ## Rule Routing (IMPORTANT)
 
 Before coding, ALWAYS identify which area the task touches, then apply the corresponding rules:
 
 ### Kit Core Rules (ALWAYS)
-- `.ai/rules/_kit/git-workflow.md` (commit format + PR base)
+{% for rule in rules.kit | default(['git-workflow']) %}
+- `.ai/rules/_kit/{{ rule }}.md`{% if rule == 'git-workflow' %} (commit format + PR base){% endif %}
+
+{% endfor %}
 
 ### Project-Specific Rules
-- `.ai/rules/backend-go.md`
-- `.ai/rules/frontend-unity.md`
+{% for rule in rules.custom | default([]) %}
+- `.ai/rules/{{ rule }}.md`
+{% endfor %}
 
 ---
 
@@ -41,9 +46,11 @@ Decision rule:
 ### Phase B — Task Selection
 
 Read active specs:
-- `.ai/specs/example/tasks.md`
+{% for spec in specs.active %}
+- `{{ specs.base_path }}/{{ spec }}/tasks.md`
+{% endfor %}
 
-Find uncompleted tasks (`- [ ]`) and create GitHub Issues.
+Find uncompleted tasks (`{{ tasks.format.uncompleted }}`) and create GitHub Issues.
 
 ### Phase C — Execution (Worker / Codex)
 
@@ -55,9 +62,9 @@ bash .ai/scripts/run_issue_codex.sh <id> <ticket_file> <repo>
 Worker MUST:
 1. Implement within scope
 2. Verify (commands listed in ticket)
-3. Commit using `[type] subject` (lowercase)
+3. Commit using `{{ git.commit_format }}` (lowercase)
 4. Push branch
-5. Create PR (base: `feat/example`, release: `main`)
+5. Create PR (base: `{{ git.integration_branch }}`, release: `{{ git.release_branch }}`)
 6. Write `.ai/results/issue-<id>.json` with PR URL
 
 ### Phase D — Review
@@ -68,8 +75,8 @@ gh pr diff <PR_NUMBER>
 ```
 
 Check:
-- Commit format: `[type] subject`
-- PR base: `feat/example`
+- Commit format: `{{ git.commit_format }}`
+- PR base: `{{ git.integration_branch }}`
 - Changes within scope
 - Architecture rules compliance
 
@@ -80,7 +87,8 @@ Check:
 ```markdown
 # [type] short title
 
-- Repo: backend | frontend- Severity: P0 | P1 | P2
+- Repo: {% for repo in repos %}{{ repo.name }}{% if not loop.last %} | {% endif %}{% endfor %}
+- Severity: P0 | P1 | P2
 - Source: audit:<finding-id> | tasks.md #<n>
 - Release: false
 
@@ -102,8 +110,9 @@ Check:
 (steps)
 
 ## Verification
-- backend: `go build ./...` and `go test ./...`
-- frontend: `echo 'Unity build via Editor'` and `echo 'Unity tests via Editor'`
+{% for repo in repos %}
+- {{ repo.name }}: `{{ repo.verify.build }}` and `{{ repo.verify.test }}`
+{% endfor %}
 
 ## Acceptance Criteria
 - [ ] ...
@@ -136,5 +145,5 @@ touch .ai/state/STOP
 | Scripts | `.ai/scripts/` |
 | Rules | `.ai/rules/` |
 | Commands | `.ai/commands/` |
-| Specs | `.ai/specs/` |
+| Specs | `{{ specs.base_path }}/` |
 | Results | `.ai/results/` |

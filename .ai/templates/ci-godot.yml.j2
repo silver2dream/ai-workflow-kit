@@ -1,0 +1,282 @@
+name: {{ name }}-ci
+
+on:
+  pull_request:
+    branches: [ "{{ integration_branch }}"{% if integration_branch != release_branch %}, "{{ release_branch }}"{% endif %} ]
+  push:
+    branches: [ "{{ integration_branch }}" ]
+
+# ============================================================
+# Godot CI 有兩種模式：
+# 1. sanity-check (預設): 快速檢查，使用 headless Godot
+# 2. full-export: 完整匯出，需要設定 export presets
+#
+# Godot 4.x 支援 headless 模式，可在 CI 中執行
+# ============================================================
+
+env:
+  GODOT_VERSION: "{{ godot_version | default('4.2.2') }}"
+
+jobs:
+  sanity-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Check Godot project structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          echo "== Check project.godot =="
+          if [ ! -f "project.godot" ]; then
+            echo "ERROR: project.godot not found"
+            exit 1
+          fi
+          echo "OK: project.godot found"
+          
+          echo "== Parse project config =="
+          if grep -q "config/name" project.godot; then
+            PROJECT_NAME=$(grep "config/name" project.godot | sed 's/.*="\(.*\)"/\1/')
+            echo "Project name: $PROJECT_NAME"
+          fi
+          
+          if grep -q "config/features" project.godot; then
+            FEATURES=$(grep "config/features" project.godot)
+            echo "Features: $FEATURES"
+          fi
+          
+          echo "== Check required folders =="
+          for dir in scenes scripts; do
+            if [ -d "$dir" ]; then
+              echo "OK: $dir exists"
+            else
+              echo "INFO: $dir not found (optional)"
+            fi
+          done
+
+      - name: GDScript code quality checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          GD_FILES=$(find . -name "*.gd" -not -path "./.git/*" -not -path "./addons/*" 2>/dev/null || true)
+          if [ -z "$GD_FILES" ]; then
+            echo "No GDScript files found, skipping"
+            exit 0
+          fi
+          
+          echo "== GDScript Code Quality Checks =="
+          ERRORS=0
+          WARNINGS=0
+          
+          # 1. 檢查 class_name 宣告
+          echo ""
+          echo "Checking class declarations..."
+          for file in $GD_FILES; do
+            # 檢查是否有 extends 但沒有 class_name（可選警告）
+            if grep -q "^extends" "$file" && ! grep -q "^class_name" "$file"; then
+              # 只對非 autoload 腳本警告
+              if ! grep -q "@tool" "$file"; then
+                echo "  INFO: $file - has extends but no class_name (consider adding)"
+              fi
+            fi
+          done
+          
+          # 2. 檢查常見錯誤模式
+          echo ""
+          echo "Checking common mistakes..."
+          for file in $GD_FILES; do
+            # 檢查 await 在非 async 函數中使用
+            if grep -qE "^\s*await\s+" "$file"; then
+              # 確認函數是否有 async 標記（Godot 4 不需要，但檢查 func 存在）
+              if ! grep -qE "^func\s+|^static\s+func" "$file"; then
+                echo "  WARN: $file - uses await but no function found"
+                WARNINGS=$((WARNINGS + 1))
+              fi
+            fi
+            
+            # 檢查已棄用的 yield（Godot 4 應使用 await）
+            if grep -qE "\byield\s*\(" "$file"; then
+              echo "  ERROR: $file - uses deprecated 'yield' (use 'await' in Godot 4)"
+              ERRORS=$((ERRORS + 1))
+            fi
+            
+            # 檢查 connect 舊語法
+            if grep -qE '\.connect\s*\(\s*"[^"]+"\s*,' "$file"; then
+              echo "  WARN: $file - uses old connect syntax (consider callable syntax)"
+              WARNINGS=$((WARNINGS + 1))
+            fi
+            
+            # 檢查 $NodePath 存取（建議使用 @onready）
+            if grep -qE '\$[A-Za-z]' "$file" && ! grep -q "@onready" "$file"; then
+              echo "  INFO: $file - uses \$NodePath without @onready (consider caching)"
+            fi
+          done
+          
+          # 3. 檢查信號宣告
+          echo ""
+          echo "Checking signal declarations..."
+          for file in $GD_FILES; do
+            # 檢查信號命名（應為 snake_case）
+            if grep -qE "^signal\s+[a-z]+[A-Z]" "$file"; then
+              echo "  WARN: $file - signal name should be snake_case"
+              WARNINGS=$((WARNINGS + 1))
+            fi
+          done
+          
+          # 4. 檢查 @export 和 @onready
+          echo ""
+          echo "Checking annotations..."
+          for file in $GD_FILES; do
+            # 檢查舊的 export 語法
+            if grep -qE "^export\s*\(" "$file"; then
+              echo "  ERROR: $file - uses old 'export()' syntax (use '@export' in Godot 4)"
+              ERRORS=$((ERRORS + 1))
+            fi
+            
+            # 檢查舊的 onready 語法
+            if grep -qE "^onready\s+" "$file"; then
+              echo "  ERROR: $file - uses old 'onready' syntax (use '@onready' in Godot 4)"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+          
+          # 5. 統計
+          echo ""
+          GD_COUNT=$(echo "$GD_FILES" | wc -w)
+          TSCN_COUNT=$(find . -name "*.tscn" -not -path "./.git/*" | wc -l)
+          TRES_COUNT=$(find . -name "*.tres" -not -path "./.git/*" | wc -l)
+          echo "Stats: $GD_COUNT scripts, $TSCN_COUNT scenes, $TRES_COUNT resources"
+          echo "Results: $ERRORS errors, $WARNINGS warnings"
+          
+          if [ $ERRORS -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Check scene files
+        shell: bash
+        run: |
+          echo "== Scene file checks =="
+          
+          TSCN_FILES=$(find . -name "*.tscn" -not -path "./.git/*" 2>/dev/null || true)
+          if [ -z "$TSCN_FILES" ]; then
+            echo "No scene files found"
+            exit 0
+          fi
+          
+          ERRORS=0
+          
+          # 檢查場景檔案是否有效
+          for file in $TSCN_FILES; do
+            # 檢查是否有 gd_scene 標頭
+            if ! head -n 1 "$file" | grep -q "\[gd_scene"; then
+              echo "  ERROR: $file - invalid scene file (missing gd_scene header)"
+              ERRORS=$((ERRORS + 1))
+            fi
+            
+            # 檢查是否有遺失的外部資源引用
+            if grep -q 'ext_resource.*path="res://' "$file"; then
+              while IFS= read -r line; do
+                RES_PATH=$(echo "$line" | sed -n 's/.*path="\(res:\/\/[^"]*\)".*/\1/p')
+                LOCAL_PATH=$(echo "$RES_PATH" | sed 's|res://||')
+                if [ -n "$LOCAL_PATH" ] && [ ! -f "$LOCAL_PATH" ]; then
+                  echo "  WARN: $file - references missing resource: $RES_PATH"
+                fi
+              done < <(grep 'ext_resource.*path="res://' "$file")
+            fi
+          done
+          
+          if [ $ERRORS -gt 0 ]; then
+            exit 1
+          fi
+          echo "OK: All scene files valid"
+
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: {{ godot_version | default('4.2.2') }}
+          use-dotnet: {{ use_dotnet | default('false') }}
+
+      - name: Verify Godot installation
+        run: godot --version
+
+      - name: Import project
+        run: |
+          # Run Godot once to import all resources
+          timeout 120 godot --headless --import || true
+
+      - name: Validate GDScript syntax
+        run: |
+          # Use Godot's built-in script validation
+          godot --headless --check-only --script res://project.godot 2>&1 || echo "Script validation completed"
+
+      - name: Custom verification
+        run: |
+          {{ build_cmd }}
+          {{ test_cmd }}
+
+  # ============================================================
+  # GUT 測試 (可選，需要安裝 GUT addon)
+  # 取消註解以啟用
+  # ============================================================
+  # gut-tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         lfs: true
+  #
+  #     - name: Setup Godot
+  #       uses: chickensoft-games/setup-godot@v2
+  #       with:
+  #         version: {{ godot_version | default('4.2.2') }}
+  #         use-dotnet: {{ use_dotnet | default('false') }}
+  #
+  #     - name: Import project
+  #       run: timeout 120 godot --headless --import || true
+  #
+  #     - name: Run GUT tests
+  #       run: |
+  #         godot --headless -s addons/gut/gut_cmdln.gd \
+  #           -gdir=res://test \
+  #           -ginclude_subdirs \
+  #           -gexit
+
+  # ============================================================
+  # 完整匯出 (可選，需要設定 export_presets.cfg)
+  # 取消註解以啟用
+  # ============================================================
+  # export:
+  #   if: github.event_name == 'push'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         lfs: true
+  #
+  #     - name: Setup Godot
+  #       uses: chickensoft-games/setup-godot@v2
+  #       with:
+  #         version: {{ godot_version | default('4.2.2') }}
+  #         use-dotnet: {{ use_dotnet | default('false') }}
+  #         export-templates: true
+  #
+  #     - name: Import project
+  #       run: timeout 120 godot --headless --import || true
+  #
+  #     - name: Export (Linux)
+  #       run: |
+  #         mkdir -p build/linux
+  #         godot --headless --export-release "Linux/X11" build/linux/game.x86_64
+  #
+  #     - name: Upload artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: linux-build
+  #         path: build/linux/
+

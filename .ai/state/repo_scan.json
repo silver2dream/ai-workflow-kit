@@ -1,0 +1,25 @@
+{
+  "timestamp_utc": "2025-12-19T13:05:36Z",
+  "root": {
+    "path": "/mnt/d/projects/ai-workflow",
+    "branch": "develop",
+    "head": "c3ed5a01d8c9a26f0117eed91b79ae4492485bce",
+    "clean": false,
+    "status": "## develop...origin/develop\n M .ai/commands/analyze-next.md\n M .ai/commands/dispatch-worker.md\n M .ai/commands/review-pr.md\n M .ai/commands/start-work.md\n M .ai/commands/stop-work.md\n M .ai/config/audit.schema.json\n M .ai/config/failure_patterns.json\n M .ai/config/repo_scan.schema.json\n M .ai/config/workflow.schema.json\n M .ai/config/workflow.yaml\n M .ai/rules/backend-go.md\n M .ai/rules/frontend-unity.md\n M .ai/rules/ui-toolkit-react-to-uxml.md\n M .ai/scripts/audit_project.py\n M .ai/scripts/parse_tasks.py\n M .ai/scripts/scan_repo.py\n M .ai/scripts/validate_config.py\n M .ai/specs/example/tasks.md\n D .ai/specs/workflow-kit-refactor/tasks.md\n D .ai/specs/workflow-kit-v2/design.md\n D .ai/specs/workflow-kit-v2/tasks.md\n D .ai/specs/workflow-kit-v3.1/design.md\n D .ai/specs/workflow-kit-v3.1/tasks.md\n D .ai/specs/workflow-kit-v3/design.md\n D .ai/specs/workflow-kit-v3/tasks.md\n D .ai/specs/workflow-kit-v4.2/design.md\n D .ai/specs/workflow-kit-v4.2/requirements.md\n D .ai/specs/workflow-kit-v4.2/tasks.md\n D .ai/specs/workflow-kit-v5.0/design.md\n D .ai/specs/workflow-kit-v5.0/requirements.md\n D .ai/specs/workflow-kit-v5.0/tasks.md\n D .ai/state/audit.json\n D .ai/state/repo_scan.json\n M .ai/templates/AGENTS.md.j2\n M .ai/templates/CLAUDE.md.j2\n M .ai/templates/ci-dotnet.yml.j2\n M .ai/templates/ci-generic.yml.j2\n M .ai/templates/ci-go.yml.j2\n M .ai/templates/ci-godot.yml.j2\n M .ai/templates/ci-node.yml.j2\n M .ai/templates/ci-python.yml.j2\n M .ai/templates/ci-rust.yml.j2\n M .ai/templates/ci-unity.yml.j2\n M .ai/templates/ci-unreal.yml.j2\n M .ai/templates/design.md.example\n M .ai/templates/git-workflow.md.j2\n M .ai/templates/validate-submodules.yml.j2\n D .claude/settings.local.json\n M .gitignore\n M README.md\n D backend/.github/workflows/ci.yml\n M docs/ai-workflow-architecture.md\n D frontend/.github/workflows/ci.yml\n?? .ai/specs/example/design.md\n?? .ai/specs/example/requirements.md\n?? .github/\n?? backend/README.md\n?? backend/go.mod\n?? backend/health/\n?? docs/getting-started.md\n?? frontend/Assets/\n?? frontend/Packages/\n?? frontend/README.md",
+    "workflows": true
+  },
+  "submodules": [],
+  "presence": {
+    "gitmodules": false,
+    "claude_md": true,
+    "agents_md": true,
+    "tasks_md": false,
+    "design_md": false,
+    "validate_submodules_workflow": false
+  },
+  "ai_config": {
+    "exists": true,
+    "workflow_yaml": true,
+    "scripts_dir": true
+  }
+}

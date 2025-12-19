@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Workflow Kit Configuration",
+  "type": "object",
+  "required": ["version", "project", "repos", "git"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Configuration version"
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "type": { "enum": ["monorepo", "single-repo"] }
+      }
+    },
+    "repos": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "type", "language", "verify"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "path": { "type": "string" },
+          "type": { "enum": ["submodule", "directory", "root"] },
+          "language": {
+            "enum": [
+              "go", "golang",
+              "node", "nodejs", "typescript", "javascript",
+              "react", "vue", "angular", "nextjs", "nuxt", "svelte",
+              "express", "nestjs",
+              "python", "django", "flask", "fastapi",
+              "rust",
+              "dotnet", "csharp", "aspnet", "blazor",
+              "unity", "unreal", "ue4", "ue5", "godot",
+              "generic"
+            ]
+          },
+          "verify": {
+            "type": "object",
+            "required": ["build", "test"],
+            "properties": {
+              "build": { "type": "string" },
+              "test": { "type": "string" }
+            }
+          },
+          "go_version": { "type": "string" },
+          "node_version": { "type": "string" },
+          "python_version": { "type": "string" },
+          "rust_version": { "type": "string" },
+          "dotnet_version": { "type": "string" },
+          "package_manager": { "enum": ["npm", "yarn", "pnpm"] },
+          "godot_version": { "type": "string" },
+          "ue_version": { "type": "string" },
+          "project_name": { "type": "string" }
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "required": ["integration_branch", "release_branch", "commit_format"],
+      "properties": {
+        "integration_branch": { "type": "string", "minLength": 1 },
+        "release_branch": { "type": "string", "minLength": 1 },
+        "commit_format": { "type": "string" },
+        "pr_body_template": { "type": "string" }
+      }
+    },
+    "specs": {
+      "type": "object",
+      "properties": {
+        "base_path": { "type": "string", "default": ".ai/specs" },
+        "files": {
+          "type": "object",
+          "properties": {
+            "requirements": { "type": "string" },
+            "design": { "type": "string" },
+            "tasks": { "type": "string" }
+          }
+        },
+        "auto_generate_tasks": { "type": "boolean" },
+        "active": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "object",
+          "properties": {
+            "uncompleted": { "type": "string" },
+            "completed": { "type": "string" },
+            "optional": { "type": "string" }
+          }
+        },
+        "source_priority": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "properties": {
+        "checks": { "type": "array", "items": { "type": "string" } },
+        "custom": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "github": {
+      "type": "object",
+      "properties": {
+        "repo": { "type": "string" },
+        "labels": {
+          "type": "object",
+          "properties": {
+            "task": { "type": "string" },
+            "in_progress": { "type": "string" },
+            "pr_ready": { "type": "string" },
+            "review_pass": { "type": "string" },
+            "review_fail": { "type": "string" },
+            "worker_failed": { "type": "string" }
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "properties": {
+        "kit": { "type": "array", "items": { "type": "string" } },
+        "custom": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "description": "Configuration for when Principal should pause and request human intervention",
+      "properties": {
+        "triggers": {
+          "type": "array",
+          "description": "Pattern-based triggers for escalation",
+          "items": {
+            "type": "object",
+            "required": ["pattern", "action"],
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern to match against issue/PR content"
+              },
+              "action": {
+                "enum": ["pause_and_ask", "require_human_approval", "notify_only"],
+                "description": "Action to take when pattern matches"
+              }
+            }
+          }
+        },
+        "max_consecutive_failures": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "Maximum consecutive failures before stopping"
+        },
+        "max_single_pr_files": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 50,
+          "description": "Maximum files in a single PR before requiring human review"
+        },
+        "max_single_pr_lines": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 500,
+          "description": "Maximum line changes in a single PR before requiring human review"
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "properties": {
+        "slack_webhook": { "type": "string" },
+        "discord_webhook": { "type": "string" },
+        "system_notify": { "type": "boolean" }
+      }
+    }
+  }
+}

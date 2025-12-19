@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "audit.json schema",
+  "description": "Schema for project audit output",
+  "type": "object",
+  "required": ["root", "findings", "summary"],
+  "properties": {
+    "timestamp_utc": {
+      "type": "string",
+      "description": "ISO 8601 timestamp"
+    },
+    "root": {
+      "type": "string",
+      "description": "Repository root path"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "type", "message"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Optional finding ID (e.g., F001)"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["P0", "P1", "P2"],
+            "description": "P0=critical, P1=important, P2=minor"
+          },
+          "type": {
+            "type": "string",
+            "description": "Finding type (e.g., dirty_worktree, missing_file)"
+          },
+          "path": {
+            "type": "string",
+            "description": "Related file or directory path"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable description"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["p0", "p1", "p2", "total"],
+      "properties": {
+        "p0": { "type": "integer", "minimum": 0 },
+        "p1": { "type": "integer", "minimum": 0 },
+        "p2": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+name: {{ name }}-ci
+
+on:
+  pull_request:
+    branches: [ "{{ integration_branch }}"{% if integration_branch != release_branch %}, "{{ release_branch }}"{% endif %} ]
+  push:
+    branches: [ "{{ integration_branch }}" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "{{ go_version | default('1.22.x') }}"
+      - name: Build
+        run: |
+          {{ build_cmd }}
+      - name: Test
+        run: |
+          {{ test_cmd }}

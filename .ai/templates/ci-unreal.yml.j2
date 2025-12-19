@@ -1,0 +1,186 @@
+name: {{ name }}-ci
+
+on:
+  pull_request:
+    branches: [ "{{ integration_branch }}"{% if integration_branch != release_branch %}, "{{ release_branch }}"{% endif %} ]
+  push:
+    branches: [ "{{ integration_branch }}" ]
+
+# ============================================================
+# Unreal Engine CI 有兩種模式：
+# 1. sanity-check (預設): 快速檢查，不需要 UE
+# 2. full-build: 完整編譯，需要設定 UE_FULL_BUILD=true
+#
+# 完整編譯需要：
+# - 設定 repository secret: RUNUAT_USER, RUNUAT_TOKEN (Epic Games 帳號)
+# - 或使用 self-hosted runner 並預裝 UE
+# ============================================================
+
+env:
+  UE_VERSION: "{{ ue_version | default('5.3') }}"
+  PROJECT_NAME: "{{ project_name | default('MyProject') }}"
+
+jobs:
+  sanity-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Check Unreal project structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          echo "== Check .uproject file =="
+          UPROJECT=$(find . -maxdepth 2 -name "*.uproject" | head -n 1)
+          if [ -z "$UPROJECT" ]; then
+            echo "ERROR: No .uproject file found"
+            exit 1
+          fi
+          echo "OK: Found $UPROJECT"
+          
+          echo "== Validate .uproject JSON =="
+          python3 -c "import json; json.load(open('$UPROJECT'))"
+          echo "OK: .uproject is valid JSON"
+          
+          echo "== Check UE version in .uproject =="
+          python3 -c "
+          import json
+          with open('$UPROJECT') as f:
+              data = json.load(f)
+              ver = data.get('EngineAssociation', 'unknown')
+              print(f'Engine version: {ver}')
+          "
+          
+          echo "== Check required folders =="
+          for dir in Source Content Config; do
+            if [ -d "$dir" ]; then
+              echo "OK: $dir exists"
+            else
+              echo "WARN: $dir not found"
+            fi
+          done
+
+      - name: UE C++ code quality checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          if [ ! -d "Source" ]; then
+            echo "No Source folder, skipping"
+            exit 0
+          fi
+          
+          echo "== UE C++ Code Quality Checks =="
+          ERRORS=0
+          WARNINGS=0
+          
+          # 1. 檢查 UCLASS 和 GENERATED_BODY
+          echo ""
+          echo "Checking UE macros..."
+          for file in $(find Source -name "*.h" 2>/dev/null); do
+            if grep -q "class.*:.*public.*\(UObject\|AActor\|UActorComponent\|APawn\|ACharacter\|UUserWidget\)" "$file"; then
+              if ! grep -q "UCLASS(" "$file"; then
+                echo "  ERROR: $file - inherits UE class but missing UCLASS()"
+                ERRORS=$((ERRORS + 1))
+              elif ! grep -q "GENERATED_BODY()\|GENERATED_UCLASS_BODY()" "$file"; then
+                echo "  ERROR: $file - has UCLASS but missing GENERATED_BODY()"
+                ERRORS=$((ERRORS + 1))
+              fi
+            fi
+          done
+          
+          # 2. 檢查常見錯誤
+          echo ""
+          echo "Checking common mistakes..."
+          for file in $(find Source \( -name "*.cpp" -o -name "*.h" \) 2>/dev/null); do
+            if grep -qE "\bnew\s+(UObject|AActor|UActorComponent)\b" "$file"; then
+              echo "  WARN: $file - using 'new' for UObject (use NewObject<>)"
+              WARNINGS=$((WARNINGS + 1))
+            fi
+          done
+          
+          # 3. 檢查 Build.cs
+          echo ""
+          echo "Checking build files..."
+          if ! find Source -name "*.Build.cs" | grep -q .; then
+            echo "  ERROR: No .Build.cs file found"
+            ERRORS=$((ERRORS + 1))
+          else
+            echo "  OK: .Build.cs found"
+          fi
+          
+          if ! find Source -name "*.Target.cs" | grep -q .; then
+            echo "  WARN: No .Target.cs file found"
+            WARNINGS=$((WARNINGS + 1))
+          else
+            echo "  OK: .Target.cs found"
+          fi
+          
+          echo ""
+          echo "Results: $ERRORS errors, $WARNINGS warnings"
+          
+          if [ $ERRORS -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Check assets and LFS
+        shell: bash
+        run: |
+          echo "== Asset checks =="
+          
+          # 大檔案檢查
+          big=$(find . -type f -size +100M -not -path "./.git/*" 2>/dev/null | head -5 || true)
+          if [ -n "$big" ]; then
+            echo "WARN: Large files found (consider Git LFS):"
+            echo "$big"
+          fi
+          
+          # LFS 設定檢查
+          if [ -f ".gitattributes" ] && grep -q "lfs" .gitattributes; then
+            echo "OK: Git LFS configured"
+          else
+            echo "WARN: Consider adding Git LFS for .uasset, .umap files"
+          fi
+
+      - name: Custom verification
+        run: |
+          {{ build_cmd }}
+          {{ test_cmd }}
+
+  # ============================================================
+  # 完整編譯 (可選，需要額外設定)
+  # 取消註解以啟用
+  # ============================================================
+  # full-build:
+  #   if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-build')
+  #   runs-on: ubuntu-latest
+  #   container:
+  #     image: ghcr.io/epicgames/unreal-engine:dev-${{ "{{" }} env.UE_VERSION {{ "}}" }}
+  #     credentials:
+  #       username: ${{ "{{" }} secrets.RUNUAT_USER {{ "}}" }}
+  #       password: ${{ "{{" }} secrets.RUNUAT_TOKEN {{ "}}" }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         lfs: true
+  #
+  #     - name: Build
+  #       run: |
+  #         /home/ue4/UnrealEngine/Engine/Build/BatchFiles/RunUAT.sh \
+  #           BuildCookRun \
+  #           -project="${{ "{{" }} github.workspace {{ "}}" }}/${{ "{{" }} env.PROJECT_NAME {{ "}}" }}.uproject" \
+  #           -noP4 -clientconfig=Development -serverconfig=Development \
+  #           -cook -build -stage -pak -archive \
+  #           -archivedirectory="${{ "{{" }} github.workspace {{ "}}" }}/Build"
+  #
+  #     - name: Run Tests
+  #       run: |
+  #         /home/ue4/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd \
+  #           "${{ "{{" }} github.workspace {{ "}}" }}/${{ "{{" }} env.PROJECT_NAME {{ "}}" }}.uproject" \
+  #           -ExecCmds="Automation RunTests Now" \
+  #           -unattended -nopause -NullRHI -nosplash

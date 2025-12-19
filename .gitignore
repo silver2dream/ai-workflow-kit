@@ -1,0 +1,26 @@
+# AI Workflow Kit - State and Output Directories
+.ai/state/
+.ai/results/
+.ai/runs/
+.ai/exe-logs/
+
+# Worktrees
+.worktrees/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code local settings (do not commit)
+.claude/settings.local.json

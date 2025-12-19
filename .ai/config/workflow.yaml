@@ -1,0 +1,213 @@
+# AI Workflow Kit Configuration
+# Version: 1.0
+
+version: "1.0"
+
+# ============================================================
+# Project Configuration
+# ============================================================
+project:
+  name: "ai-workflow"
+  description: "AI Autonomous Development Workflow"
+  type: "monorepo"  # monorepo | single-repo
+
+# ============================================================
+# Repository Configuration
+# ============================================================
+# type 選項：
+#   - submodule: Git submodule（獨立 repo，有自己的 .git）
+#   - directory: 子目錄（同一個 repo 內的資料夾）
+#   - root: 根目錄（single-repo 時使用）
+#
+# language 選項（會選擇對應的 CI 模板）：
+#   - go          → ci-go.yml.j2
+#   - node/typescript/javascript → ci-node.yml.j2
+#   - python      → ci-python.yml.j2
+#   - rust        → ci-rust.yml.j2
+#   - dotnet/csharp → ci-dotnet.yml.j2
+#   - unity       → ci-unity.yml.j2
+#   - generic     → ci-generic.yml.j2 (其他語言)
+#
+# 語言特定版本設定：
+#   - go_version: "1.22.x"
+#   - node_version: "20"
+#   - python_version: "3.11"
+#   - rust_version: "stable"
+#   - dotnet_version: "8.0.x"
+#   - package_manager: "npm" | "yarn" | "pnpm"
+#
+#
+# 範例 1: Monorepo with submodules
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: submodule
+#
+# 範例 2: Monorepo with directories (no submodules)
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: directory
+#
+# 範例 3: Single repo
+# repos:
+#   - name: root
+#     path: ./
+#     type: root
+
+repos:
+  - name: backend
+    path: backend/
+    type: directory  # submodule | directory | root
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+
+  - name: frontend
+    path: frontend/
+    type: directory  # submodule | directory | root
+    language: unity
+    verify:
+      build: "echo 'Unity build via Editor'"
+      test: "echo 'Unity tests via Editor'"
+
+# ============================================================
+# Git Configuration
+# ============================================================
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+  pr_body_template: |
+    Closes #${ISSUE_ID}
+    
+    ${COMMIT_MSG}
+
+# ============================================================
+# Spec Configuration
+# ============================================================
+# Spec 文件結構（Kiro 相容）：
+#   - requirements.md  (可選) 需求文檔
+#   - design.md        (可選) 設計文檔
+#   - tasks.md         (必要) 任務清單 - AI Workflow 讀取此文件
+#
+# 如果 tasks.md 不存在但 design.md 存在，Principal 會自動生成 tasks.md
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"  # 可選
+    design: "design.md"              # 可選，用於生成 tasks.md
+    tasks: "tasks.md"                # 必要，AI Workflow 讀取
+  # 啟用自動生成 tasks.md（從 design.md）
+  auto_generate_tasks: true
+  # 預設不啟用任何 spec，避免新使用者一跑就產生 Issue/PR。
+  # 參考範例 spec：.ai/specs/example/
+  active: []
+
+# ============================================================
+# Task Configuration
+# ============================================================
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+# ============================================================
+# Audit Configuration
+# ============================================================
+audit:
+  checks:
+    - dirty-worktree
+    - submodule-sync
+    - missing-tests
+    - missing-ci
+  custom: []
+
+# ============================================================
+# GitHub Configuration
+# ============================================================
+# Token 從環境變數讀取，不要在此處硬編碼
+# 設定方式：
+#   - 互動式: gh auth login
+#   - 環境變數: export GH_TOKEN=ghp_xxxx
+#   - CI/CD: 設定 GITHUB_TOKEN secret
+github:
+  # 用於 issue/PR 操作的 repo（預設為當前 repo）
+  repo: ""  # 留空表示使用 git remote origin
+  # issue 標籤
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    review_pass: "review-pass"
+    review_fail: "review-fail"
+    worker_failed: "worker-failed"
+
+# ============================================================
+# Rules Configuration
+# ============================================================
+# Kit 核心規則 vs 使用者自訂規則：
+#   - Kit 核心規則：generate.sh 自動生成到 .ai/rules/_kit/
+#     - git-workflow.md（從模板生成，包含分支配置）
+#   - 使用者自訂規則：放在 .ai/rules/（不會被覆蓋）
+#     - backend-go.md, frontend-unity.md 等
+#
+# 規則查找順序：
+#   1. .ai/rules/{rule}.md（使用者自訂優先）
+#   2. .ai/rules/_kit/{rule}.md（Kit 核心）
+rules:
+  # Kit 核心規則（由 generate.sh 管理，不要手動編輯）
+  kit:
+    - git-workflow  # 從 git-workflow.md.j2 生成
+  
+  # 使用者自訂規則（放在 .ai/rules/，不會被覆蓋）
+  # 這些規則會被 AGENTS.md 引用
+  custom:
+    - backend-go
+    - frontend-unity
+    # - ui-toolkit-react-to-uxml  # 可選
+
+# ============================================================
+# Escalation Configuration
+# ============================================================
+# 定義何時 Principal 應該暫停並請求人工介入
+#
+# triggers: 基於模式匹配的觸發器
+#   - pattern: 正則表達式，匹配 issue/PR 內容
+#   - action: pause_and_ask | require_human_approval | notify_only
+#
+# 限制條件：
+#   - max_consecutive_failures: 連續失敗次數上限
+#   - max_single_pr_files: 單一 PR 最大文件數
+#   - max_single_pr_lines: 單一 PR 最大行數變更
+escalation:
+  triggers:
+    # 安全相關：必須人工審批
+    - pattern: "security|vulnerability|credential|secret|password|token"
+      action: "require_human_approval"
+    # 危險操作：暫停並詢問
+    - pattern: "delete|drop|truncate|remove.*all|destroy"
+      action: "pause_and_ask"
+    # 資料庫 migration：通知
+    - pattern: "migration|schema.*change|alter.*table"
+      action: "notify_only"
+  
+  # 失敗限制
+  max_consecutive_failures: 3
+  
+  # PR 大小限制（超過則需人工審查）
+  max_single_pr_files: 50
+  max_single_pr_lines: 500
+
+# ============================================================
+# Notification Configuration
+# ============================================================
+notifications:
+  slack_webhook: "${AI_SLACK_WEBHOOK}"
+  discord_webhook: "${AI_DISCORD_WEBHOOK}"
+  system_notify: true
