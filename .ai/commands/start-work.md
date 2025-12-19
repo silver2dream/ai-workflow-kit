@@ -2,6 +2,25 @@
 
 ---
 
+## 運行模式
+
+檢查命令參數：
+- **`--autonomous`**: 自動化模式，不詢問用戶，所有決策自動處理
+- **無參數**: 互動模式，遇到問題會詢問用戶
+
+**自動化模式行為：**
+| 情況 | 行為 |
+|------|------|
+| PR 過大 | 標記 `needs-human-review`，跳過此任務，繼續下一個 |
+| 敏感變更觸發 | 標記 `security-review`，不合併，繼續下一個 |
+| 任務生成後 | 直接繼續，不詢問確認 |
+| 連續失敗 | 達到 `max_consecutive_failures` 後自動停止 |
+| 任何錯誤 | 記錄到 `.ai/exe-logs/`，標記 issue，繼續下一個 |
+
+**重要**：自動化模式下，**絕對不要**使用 `詢問用戶`、`等待指示`、`是否繼續` 等互動行為。
+
+---
+
 ## 前置檢查
 
 先執行這些檢查，任何一項失敗就停止並報告：
@@ -104,7 +123,9 @@ cat > $SPEC_PATH/tasks.md << 'EOF'
 EOF
 ```
 
-4. 報告生成結果，詢問用戶是否要調整後再繼續。
+4. 報告生成結果：
+   - **自動化模式**：直接繼續到主循環，不詢問
+   - **互動模式**：詢問用戶是否要調整後再繼續
 
 ---
 
@@ -137,8 +158,20 @@ cat <specs.base_path>/<spec_name>/tasks.md
 
 **升級檢查（創建 Issue 前）：**
 檢查任務內容是否匹配 `escalation.triggers` 中的模式：
+
+**自動化模式：**
 ```bash
 # 對每個 trigger pattern 檢查
+# 如果匹配且 action = "require_human_approval"
+#   → 標記 issue 為 needs-human-review，跳過此任務，繼續下一個
+# 如果匹配且 action = "pause_and_ask"
+#   → 標記 issue 為 needs-review，跳過此任務，繼續下一個
+# 如果匹配且 action = "notify_only"
+#   → 記錄到 log，繼續執行
+```
+
+**互動模式：**
+```bash
 # 如果匹配且 action = "require_human_approval"
 #   → 暫停並詢問用戶是否繼續
 # 如果匹配且 action = "pause_and_ask"
@@ -254,9 +287,21 @@ gh pr view <PR_NUMBER> --json files,additions,deletions
 # 檢查 PR 大小是否超過限制
 FILES_COUNT=$(gh pr view <PR_NUMBER> --json files -q '.files | length')
 LINES_CHANGED=$(gh pr view <PR_NUMBER> --json additions,deletions -q '.additions + .deletions')
+```
 
+**自動化模式：**
+```bash
 # 如果超過 escalation.max_single_pr_files 或 escalation.max_single_pr_lines
-# → 暫停並請求人工審查
+#   → 標記 PR 為 needs-human-review
+#   → 不合併，跳過此任務
+#   → 繼續處理下一個任務
+gh pr edit <PR_NUMBER> --add-label "needs-human-review"
+gh pr comment <PR_NUMBER> --body "PR 過大（$FILES_COUNT 文件，$LINES_CHANGED 行），需要人工審查"
+```
+
+**互動模式：**
+```bash
+# 如果超過限制 → 暫停並請求人工審查
 # 輸出：「⚠️ PR 過大（X 文件，Y 行），需要人工審查。是否繼續？」
 ```
 
@@ -391,4 +436,8 @@ bash .ai/scripts/rollback.sh <PR_NUMBER> --dry-run
 
 ## 開始執行
 
-現在開始執行前置檢查，然後進入主循環。遇到任何問題時報告並等待指示。
+現在開始執行前置檢查，然後進入主循環。
+
+**自動化模式**：遇到問題時記錄到 log，標記相關 issue/PR，繼續處理下一個任務。不詢問用戶。
+
+**互動模式**：遇到問題時報告並等待指示。

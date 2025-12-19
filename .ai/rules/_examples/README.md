@@ -4,6 +4,10 @@ AWK ships with a minimal, generic default rule set under `.ai/rules/_kit/`.
 
 This directory contains **optional example rule packs** that you can adopt for your project.
 
+Available examples:
+- `backend-go.md`
+- `frontend-react.md`
+
 ## How To Enable An Example Rule Pack
 
 1) Copy the example file into `.ai/rules/`:

@@ -99,6 +99,26 @@ More details: `docs/ai-workflow-architecture.md`.
 
 ## 🚀 Quick Start
 
+### 0) Install `awkit` (recommended)
+
+`awkit` is the cross-platform AWK installer CLI (named `awkit` to avoid clashing with the system `awk` command).
+
+```bash
+curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.ps1 | iex
+```
+
+Install AWK into a project:
+
+```bash
+awkit install /path/to/your-project --preset react-go
+```
+
 ### 1) Install offline dependencies
 
 ```bash

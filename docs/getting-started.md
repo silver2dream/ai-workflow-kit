@@ -5,6 +5,18 @@ This repo is an **AWK (AI Workflow Kit)** reference implementation for a directo
 - `backend/` (Go)
 - `frontend/` (Unity skeleton)
 
+## 0) Install AWK into your repo
+
+Recommended: install the `awkit` CLI from GitHub Releases, then run:
+
+```bash
+awkit install /path/to/your-repo --preset generic
+```
+
+Presets:
+- `generic`: single-repo template (edit to match your structure)
+- `react-go`: directory monorepo template for React (frontend) + Go (backend)
+
 ## 1) Configure `workflow.yaml`
 
 Edit `.ai/config/workflow.yaml`:

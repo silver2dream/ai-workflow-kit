@@ -1,0 +1,76 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ""
+            pack: tar.gz
+          - goos: linux
+            goarch: arm64
+            ext: ""
+            pack: tar.gz
+          - goos: darwin
+            goarch: amd64
+            ext: ""
+            pack: tar.gz
+          - goos: darwin
+            goarch: arm64
+            ext: ""
+            pack: tar.gz
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+            pack: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X github.com/silver2dream/ai-workflow-kit/internal/buildinfo.Version=${GITHUB_REF_NAME}" -o "dist/awkit${{ matrix.ext }}" ./cmd/awkit
+
+      - name: Package (tar.gz)
+        if: matrix.pack == 'tar.gz'
+        run: |
+          set -euo pipefail
+          tar -czf "dist/awkit_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" -C dist awkit
+
+      - name: Package (zip)
+        if: matrix.pack == 'zip'
+        run: |
+          set -euo pipefail
+          (cd dist && zip -9 "awkit_${{ matrix.goos }}_${{ matrix.goarch }}.zip" "awkit${{ matrix.ext }}")
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/awkit_*.tar.gz
+            dist/awkit_*.zip
+            install.sh
+            install.ps1
+

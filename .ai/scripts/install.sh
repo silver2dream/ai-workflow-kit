@@ -61,26 +61,40 @@ mkdir -p "$TARGET_DIR/.ai/templates"
 mkdir -p "$TARGET_DIR/.ai/rules"
 mkdir -p "$TARGET_DIR/.ai/commands"
 mkdir -p "$TARGET_DIR/.ai/specs"
+mkdir -p "$TARGET_DIR/.ai/docs"
+mkdir -p "$TARGET_DIR/.ai/tests"
 mkdir -p "$TARGET_DIR/.ai/state"
 mkdir -p "$TARGET_DIR/.ai/results"
 mkdir -p "$TARGET_DIR/.ai/runs"
 mkdir -p "$TARGET_DIR/.ai/exe-logs"
 
-# Copy scripts
+# Copy scripts (bash + python)
 log_info "Copying scripts..."
-cp "$KIT_ROOT/scripts/"*.sh "$TARGET_DIR/.ai/scripts/" 2>/dev/null || true
+cp -R "$KIT_ROOT/scripts/"* "$TARGET_DIR/.ai/scripts/" 2>/dev/null || true
 
 # Copy templates
 log_info "Copying templates..."
-cp "$KIT_ROOT/templates/"*.j2 "$TARGET_DIR/.ai/templates/" 2>/dev/null || true
+cp -R "$KIT_ROOT/templates/"* "$TARGET_DIR/.ai/templates/" 2>/dev/null || true
 
-# Copy rules (as examples)
-log_info "Copying rule templates..."
-cp "$KIT_ROOT/rules/"*.md "$TARGET_DIR/.ai/rules/" 2>/dev/null || true
+# Copy rules (kit + examples)
+log_info "Copying rules..."
+cp -R "$KIT_ROOT/rules/"* "$TARGET_DIR/.ai/rules/" 2>/dev/null || true
 
 # Copy commands
 log_info "Copying commands..."
-cp "$KIT_ROOT/commands/"*.md "$TARGET_DIR/.ai/commands/" 2>/dev/null || true
+cp -R "$KIT_ROOT/commands/"* "$TARGET_DIR/.ai/commands/" 2>/dev/null || true
+
+# Copy docs (required for evaluate.sh version sync)
+log_info "Copying docs..."
+cp -R "$KIT_ROOT/docs/"* "$TARGET_DIR/.ai/docs/" 2>/dev/null || true
+
+# Copy tests (required for Offline Gate O10)
+log_info "Copying tests..."
+cp -R "$KIT_ROOT/tests/"* "$TARGET_DIR/.ai/tests/" 2>/dev/null || true
+
+# Copy config schemas and defaults
+log_info "Copying config files..."
+cp -R "$KIT_ROOT/config/"* "$TARGET_DIR/.ai/config/" 2>/dev/null || true
 
 # Create sample config if not exists
 if [[ ! -f "$TARGET_DIR/.ai/config/workflow.yaml" ]]; then
@@ -252,8 +266,9 @@ log_info "  1. Edit .ai/config/workflow.yaml for your project"
 log_info "  2. Run: bash .ai/scripts/generate.sh"
 log_info "     This will generate:"
 log_info "     - CLAUDE.md and AGENTS.md"
-log_info "     - .github/workflows/ci.yml (per repo)"
-log_info "     - .github/workflows/validate-submodules.yml (if monorepo)"
+log_info "     - .ai/rules/_kit/git-workflow.md"
+log_info "     - .claude/{rules,commands} (symlink or copy)"
+log_info "     - (optional) CI workflows: use 'bash .ai/scripts/generate.sh --generate-ci'"
 log_info "  3. Run: bash .ai/scripts/kickoff.sh --dry-run"
 log_info ""
 log_info "Note: Files in .ai/ are the source of truth."
