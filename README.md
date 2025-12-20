@@ -119,26 +119,40 @@ Install AWK into a project:
 awkit install /path/to/your-project --preset react-go
 ```
 
+### 0.1) Update `awkit`
+
+Check version and updates:
+
+```bash
+awkit version
+awkit check-update
+```
+
+Update the CLI:
+
+```bash
+curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
+```
+
+Update kit files inside a project:
+
+```bash
+awkit install /path/to/your-project --force
+```
+
 ### 1) Install offline dependencies
 
 ```bash
 pip3 install pyyaml jsonschema jinja2
 ```
 
-### 2) Verify (offline)
-
-```bash
-bash .ai/scripts/evaluate.sh --offline
-bash .ai/tests/run_all_tests.sh
-```
-
-### 3) Generate outputs
+### 2) Generate outputs
 
 ```bash
 bash .ai/scripts/generate.sh
 ```
 
-### 4) (Optional) Run the full workflow
+### 3) (Optional) Run the full workflow
 
 ```bash
 gh auth login
@@ -206,6 +220,7 @@ It runs:
 
 ## 🧪 Evaluation
 
+- For kit maintainers/CI only; regular users can skip.
 - Standard: `.ai/docs/evaluate.md`
 - Executor: `.ai/scripts/evaluate.sh`
 

@@ -16,19 +16,22 @@ cd "$MONO_ROOT"
 DRY_RUN=false
 BACKGROUND=false
 FORCE=false
+CHECK_UPDATE="${AWKIT_CHECK_UPDATE:-false}"
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --background) BACKGROUND=true ;;
     --force) FORCE=true ;;
+    --check-update) CHECK_UPDATE=true ;;
     --help|-h)
-      echo "Usage: bash .ai/scripts/kickoff.sh [--dry-run] [--background] [--force]"
+      echo "Usage: bash .ai/scripts/kickoff.sh [--dry-run] [--background] [--force] [--check-update]"
       echo ""
       echo "Options:"
       echo "  --dry-run     Pre-flight check only, don't start workflow"
       echo "  --background  Background execution (using nohup)"
       echo "  --force       Auto-delete STOP marker without asking (for autonomous mode)"
+      echo "  --check-update  Check for awkit updates (best-effort)"
       exit 0
       ;;
   esac
@@ -102,6 +105,16 @@ if ! command -v codex &>/dev/null; then
   warn "codex CLI not installed. Worker execution will fail."
 else
   ok "codex CLI installed"
+fi
+
+# 4.1 Optional: check for awkit updates
+if [[ "$CHECK_UPDATE" == "true" ]]; then
+  if command -v awkit &>/dev/null; then
+    info "Checking for awkit updates..."
+    awkit check-update --quiet || true
+  else
+    warn "awkit not found; update check skipped"
+  fi
 fi
 
 # 5. Check working directory is clean

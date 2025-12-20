@@ -119,26 +119,40 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 awkit install /path/to/your-project --preset react-go
 ```
 
+### 0.1) 更新 `awkit`
+
+確認版本與更新：
+
+```bash
+awkit version
+awkit check-update
+```
+
+更新 CLI：
+
+```bash
+curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
+```
+
+更新專案內的 kit 檔案：
+
+```bash
+awkit install /path/to/your-project --force
+```
+
 ### 1) 安裝 offline 依賴
 
 ```bash
 pip3 install pyyaml jsonschema jinja2
 ```
 
-### 2) 離線驗證
-
-```bash
-bash .ai/scripts/evaluate.sh --offline
-bash .ai/tests/run_all_tests.sh
-```
-
-### 3) 生成輸出
+### 2) 生成輸出
 
 ```bash
 bash .ai/scripts/generate.sh
 ```
 
-### 4)（選配）跑完整工作流
+### 3)（選配）跑完整工作流
 
 ```bash
 gh auth login
@@ -206,6 +220,7 @@ Root CI workflow：`.github/workflows/ci.yml`
 
 ## 🧪 評估
 
+- 僅供 kit 維護者 / CI 使用，一般使用者可跳過。
 - 標準：`.ai/docs/evaluate.md`
 - 執行器：`.ai/scripts/evaluate.sh`
 
@@ -228,4 +243,3 @@ Root CI workflow：`.github/workflows/ci.yml`
 ## 📄 授權
 
 目前 repo 未提供 license 檔案；在加入 license 前，請視為 “all rights reserved”。
-

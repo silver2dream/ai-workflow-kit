@@ -1,7 +1,7 @@
 # AI Autonomous Workflow Architecture
 
-> Version: 1.1
-> Last Updated: 2024-12-18
+> Version: 1.2
+> Last Updated: 2025-01-04
 > Status: Implementation Complete
 
 ---
@@ -164,7 +164,7 @@
 │      ├─► [5] Review: gh pr diff + 判斷                       │
 │      │       │                                               │
 │      │       ├─► approve: gh pr merge, close issue           │
-│      │       └─► reject: create fix issue                    │
+│      │       └─► reject: request changes + requeue           │
 │      │                                                       │
 │      └─► [6] Loop: 回到 [1]                                  │
 │                                                              │
@@ -189,7 +189,7 @@
 #### `/start-work` - 主入口
 
 ```markdown
-# .claude/commands/start-work.md
+# .ai/commands/start-work.md
 
 你是 Principal Engineer。執行完整的自動化工作流循環。
 
@@ -198,17 +198,18 @@
 while True:
     1. 檢查 pending issues: `gh issue list --label ai-task --state open`
     2. 如果沒有 pending:
+       - 若 tasks.md 不存在但 design.md 存在，先生成 tasks.md
        - 分析 <specs.base_path>/<active_spec>/tasks.md
        - 找出未完成任務
-       - 創建新 Issue
+       - 創建新 Issue（含完整 ticket 模板）
     3. 選擇優先級最高的 issue
     4. 執行 Worker: `bash .ai/scripts/run_issue_codex.sh <id> <file>`
     5. 讀取結果: `cat .ai/results/issue-<id>.json`
     6. 如果成功且有 PR:
        - 審查: `gh pr diff <pr_number>`
-       - 判斷是否符合 .claude/rules/*.md
-       - 通過: `gh pr merge --squash`
-       - 拒絕: 創建 fix issue
+       - 判斷是否符合 .ai/rules/*.md
+       - 通過: `gh pr merge --squash --delete-branch --auto`
+       - 拒絕: request changes + requeue issue
     7. 繼續下一輪
 
 ## 停止條件
@@ -240,7 +241,7 @@ while True:
   "status": "success",           // success | failed
   "repo": "backend",             // root | backend | frontend
   "branch": "feat/ai-issue-42",
-  "base_branch": "feat/aether",
+  "base_branch": "<integration_branch>",
   "head_sha": "abc123...",
   "timestamp_utc": "2024-12-18T15:30:00Z",
   "pr_url": "https://github.com/.../pull/123",
@@ -267,7 +268,7 @@ Issue 生命週期:
                                 │   [review-pass]   [review-fail]
                                 │         │               │
                                 │         ▼               ▼
-                                │     [closed]     [fix] created
+                                │     [closed]     [requeue]
                                 │                        │
                                 ▼                        │
                           [worker-failed]                │
@@ -381,7 +382,7 @@ touch .ai/state/STOP
 ### Phase 1: Foundation ✅
 - [x] scan_repo.sh
 - [x] audit_project.sh
-- [x] audit_to_tickets.sh
+- [x] audit_to_tickets.sh (manual utility, not in main flow)
 - [x] run_issue_codex.sh
 - [x] write_result.sh
 - [x] CLAUDE.md, AGENTS.md
@@ -399,6 +400,14 @@ touch .ai/state/STOP
 - [x] stats.sh - 統計報告
 - [x] notify.sh - 通知機制
 - [ ] 端到端測試（手動驗證）
+
+### Manual Utilities (Optional)
+
+These scripts are not part of the automatic workflow loop, but can be used manually:
+- `audit_to_tickets.sh` - convert audit findings into issue tickets
+- `cleanup.sh` - remove old worktrees/branches/results
+- `stats.sh` - generate workflow statistics (text/json/html)
+- `notify.sh` - send system/Slack/Discord notifications
 
 ### Phase 4: Polish ✅
 - [x] 通知機制（系統通知 + Slack/Discord 可選）
