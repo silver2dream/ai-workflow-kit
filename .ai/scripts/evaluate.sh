@@ -102,7 +102,7 @@ else
   check_fail "O3+O4" "audit_project failed"
 fi
 
-# O4.1: --strict 模式檢查 audit P0/P1
+# O4.1: --strict 模式檢查 audit P0
 if [ "$STRICT" = true ]; then
   P0_COUNT=$(python3 -c "
 import json, sys

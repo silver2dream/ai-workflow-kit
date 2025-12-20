@@ -1,7 +1,7 @@
 /start-work --autonomous
 
-你正在自動化模式下運行。請遵守以下規則：
-1. 不要詢問用戶任何問題
-2. 遇到問題時：記錄 log → 標記 issue/PR → 繼續下一個任務
-3. 只有在達到 max_consecutive_failures 或發現 STOP 文件時才停止
-4. 所有需要人工處理的項目標記為 needs-human-review
+You are running in autonomous mode. Follow these rules:
+1. Do not ask the user any questions.
+2. On problems: write a log, label the issue/PR, then continue to the next task.
+3. Stop only when max_consecutive_failures is reached or a STOP file exists.
+4. Mark anything that needs human help as needs-human-review.

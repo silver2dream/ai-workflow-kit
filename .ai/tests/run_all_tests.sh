@@ -396,7 +396,7 @@ else
 fi
 
 # ============================================================
-# Test 13: run_script() Function (v3)
+# Test 13: Path Reference Tests (v3)
 # ============================================================
 echo ""
 echo "## Path Reference Tests (v3)"
@@ -532,7 +532,7 @@ else
 fi
 
 # ============================================================
-# Test 15: run_script() Function (v3)
+# Test 18: run_script() Cross-Platform Tests (v3)
 # ============================================================
 echo ""
 echo "## run_script() Cross-Platform Tests"
@@ -559,7 +559,7 @@ else
 fi
 
 # ============================================================
-# Test 18: Python Scripts Write State Files (v3.1)
+# Test 19: Python Scripts Write State Files (v3.1)
 # ============================================================
 echo ""
 echo "## Python State File Tests (v3.1)"
@@ -595,7 +595,7 @@ else
 fi
 
 # ============================================================
-# Test 19: evaluate.sh Exists (v3.1)
+# Test 20: evaluate.sh Exists (v3.1)
 # ============================================================
 echo ""
 echo "## evaluate.sh Tests (v3.1)"
@@ -628,7 +628,7 @@ else
 fi
 
 # ============================================================
-# Test 20: evaluate.sh v4.0 Features
+# Test 21: evaluate.sh v4.0 Features
 # ============================================================
 echo ""
 echo "## evaluate.sh v4.0 Tests"
@@ -669,7 +669,7 @@ else
 fi
 
 # ============================================================
-# Test 21: validate_config.py Type-Specific Validation (v3.1)
+# Test 22: validate_config.py Type-Specific Validation (v3.1)
 # ============================================================
 echo ""
 echo "## Type-Specific Validation Tests (v3.1)"
@@ -715,10 +715,10 @@ else
 fi
 
 # ============================================================
-# Test 22: Schema Validation (v5.0)
+# Test 23: Schema Validation (v5.1)
 # ============================================================
 echo ""
-echo "## Schema Validation Tests (v5.0)"
+echo "## Schema Validation Tests (v5.1)"
 
 # Test repo_scan.schema.json exists
 if [[ -f "$AI_ROOT/config/repo_scan.schema.json" ]]; then

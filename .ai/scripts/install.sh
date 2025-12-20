@@ -110,15 +110,17 @@ project:
   description: "Project description"
   type: "single-repo"  # monorepo | single-repo
 
-# Repo type ?賊?嚗?#   - root: ?桐? repo嚗??獢?
-#   - directory: 摮??monorepo ?抒?鞈?憭橘???submodule嚗?#   - submodule: Git submodule嚗蝡?repo嚗?#
-# 蝭? 1: Single repo
+# Repo types:
+#   - root: single repo (root)
+#   - directory: monorepo directories (no submodules)
+#   - submodule: git submodule
+# Example 1: Single repo
 # repos:
 #   - name: root
 #     path: ./
 #     type: root
 #
-# 蝭? 2: Monorepo with directories (no submodules)
+# Example 2: Monorepo with directories (no submodules)
 # repos:
 #   - name: backend
 #     path: backend/
@@ -127,7 +129,7 @@ project:
 #     path: frontend/
 #     type: directory
 #
-# 蝭? 3: Monorepo with submodules
+# Example 3: Monorepo with submodules
 # repos:
 #   - name: backend
 #     path: backend/
@@ -152,10 +154,10 @@ git:
 specs:
   base_path: ".ai/specs"
   files:
-    requirements: "requirements.md"  # ?舫
-    design: "design.md"              # ?舫嚗?潛???tasks.md
-    tasks: "tasks.md"                # 敹?
-  auto_generate_tasks: true  # 敺?design.md ?芸??? tasks.md
+    requirements: "requirements.md"  # spec requirements
+    design: "design.md"              # design doc (optional)
+    tasks: "tasks.md"                # task list
+  auto_generate_tasks: true  # derive tasks.md from design.md
   active: []
 
 tasks:
