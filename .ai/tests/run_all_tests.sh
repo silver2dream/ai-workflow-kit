@@ -796,6 +796,38 @@ else
 fi
 
 # ============================================================
+# Test 24: Python Unit Tests (pytest)
+# ============================================================
+echo ""
+echo "## Python Unit Tests (pytest)"
+
+PYTEST_AVAILABLE=false
+if command -v pytest &>/dev/null; then
+  PYTEST_AVAILABLE=true
+elif python3 -m pytest --version &>/dev/null 2>&1; then
+  PYTEST_AVAILABLE=true
+fi
+
+if [[ "$PYTEST_AVAILABLE" == "true" ]]; then
+  PYTEST_OUTPUT=$(python3 -m pytest "$AI_ROOT/tests/unit" -v --tb=short 2>&1)
+  PYTEST_EXIT=$?
+
+  if [[ $PYTEST_EXIT -eq 0 ]]; then
+    log_pass "Python unit tests passed"
+  elif [[ $PYTEST_EXIT -eq 5 ]]; then
+    # Exit code 5 means no tests collected
+    log_skip "No pytest tests found"
+  else
+    log_fail "Python unit tests failed"
+    if [[ "$VERBOSE" == "--verbose" ]]; then
+      echo "$PYTEST_OUTPUT"
+    fi
+  fi
+else
+  log_skip "pytest not installed (pip3 install pytest)"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 echo ""

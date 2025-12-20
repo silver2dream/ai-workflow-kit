@@ -1,0 +1,5 @@
+# Invalid workflow - missing required fields
+version: "1.0"
+project:
+  name: "test"
+# Missing: repos, git, specs, github, rules, escalation
