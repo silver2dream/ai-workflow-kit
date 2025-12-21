@@ -30,10 +30,7 @@ bash .ai/scripts/generate.sh
 awkit check-update
 
 # 更新專案內的 kit 檔案
-awkit install /path/to/project --force
-
-# 或在專案目錄內執行
-awkit install . --force
+awkit init --force
 ```
 
 ---

@@ -24,18 +24,59 @@ if ($Version -eq "latest") {
 $Tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP ("awkit-" + [guid]::NewGuid().ToString()))
 $ZipPath = Join-Path $Tmp.FullName $Asset
 
-Write-Host "[install] Downloading $Url"
-Invoke-WebRequest -Uri $Url -OutFile $ZipPath
+Write-Host ""
+Write-Host "Installing awkit..."
+Write-Host "  Platform: windows/amd64"
+Write-Host "  Version:  $Version"
+Write-Host ""
 
-Expand-Archive -Path $ZipPath -DestinationPath $Tmp.FullName -Force
+Write-Host "[1/3] Downloading..."
+try {
+  Invoke-WebRequest -Uri $Url -OutFile $ZipPath -ErrorAction Stop
+} catch {
+  Write-Host ""
+  Write-Host "✗ Download failed" -ForegroundColor Red
+  Write-Host ""
+  Write-Host "Troubleshooting:" -ForegroundColor Yellow
+  Write-Host "  - Check your internet connection"
+  Write-Host "  - Verify the release exists: $Url"
+  Write-Host "  - Try setting `$env:AWKIT_VERSION to a specific version"
+  Write-Host ""
+  Write-Host "Error: $_" -ForegroundColor Red
+  exit 1
+}
+
+Write-Host "[2/3] Extracting..."
+try {
+  Expand-Archive -Path $ZipPath -DestinationPath $Tmp.FullName -Force -ErrorAction Stop
+} catch {
+  Write-Host ""
+  Write-Host "✗ Extraction failed" -ForegroundColor Red
+  Write-Host ""
+  Write-Host "The downloaded file may be corrupted. Try again."
+  Write-Host "Error: $_" -ForegroundColor Red
+  exit 1
+}
 
 $Exe = Join-Path $Tmp.FullName "awkit.exe"
 if (-not (Test-Path $Exe)) {
-  throw "awkit.exe not found in downloaded archive"
+  Write-Host ""
+  Write-Host "✗ awkit.exe not found in archive" -ForegroundColor Red
+  exit 1
 }
 
-$Dest = Join-Path $BinDir "awkit.exe"
-Copy-Item -Force $Exe $Dest
+Write-Host "[3/3] Installing..."
+try {
+  $Dest = Join-Path $BinDir "awkit.exe"
+  Copy-Item -Force $Exe $Dest -ErrorAction Stop
+} catch {
+  Write-Host ""
+  Write-Host "✗ Cannot install to: $Dest" -ForegroundColor Red
+  Write-Host ""
+  Write-Host "Check write permissions or try running as Administrator."
+  Write-Host "Error: $_" -ForegroundColor Red
+  exit 1
+}
 
 Remove-Item -Recurse -Force $Tmp.FullName -ErrorAction SilentlyContinue
 

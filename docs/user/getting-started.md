@@ -49,12 +49,14 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 安裝到專案：
 
 ```bash
-# 從任意位置，指定專案路徑
-awkit install /path/to/your-project --preset react-go
+# 在當前目錄初始化 AWK
+awkit init
 
-# 或在專案目錄內執行
-cd /path/to/your-project
-awkit install . --preset react-go
+# 或使用 preset
+awkit init --preset react-go
+
+# 或指定路徑
+awkit init /path/to/your-project --preset react-go
 ```
 
 ### 方式二：手動安裝
