@@ -291,6 +291,31 @@ FAILED tests/test_xxx.py::test_function
 
 ### Windows
 
+#### 終端機顯示中文亂碼
+
+**症狀：** 執行 `awkit init` 或查看 workflow.yaml 時，中文註解顯示為亂碼
+
+**原因：** Windows PowerShell 預設使用系統編碼（Big5/GBK），而非 UTF-8
+
+**解決：**
+
+方法一：設定 PowerShell 使用 UTF-8
+```powershell
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+chcp 65001
+```
+
+方法二：使用 Windows Terminal（推薦）
+- Windows Terminal 預設支援 UTF-8
+- 從 Microsoft Store 安裝
+
+方法三：使用 Git Bash
+- Git Bash 預設支援 UTF-8
+
+**注意：** 這只是顯示問題，實際檔案內容是正確的 UTF-8 編碼。
+
+---
+
 #### 路徑過長
 
 **症狀：**

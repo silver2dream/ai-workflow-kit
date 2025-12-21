@@ -38,6 +38,12 @@ func Install(kit fs.FS, targetDir string, opts Options) error {
 		opts.ProjectName = filepath.Base(targetDir)
 	}
 
+	// Apply preset FIRST to generate workflow.yaml before copyDir
+	// This ensures preset-specific config is used instead of embedded default
+	if err := applyPreset(kit, targetDir, opts); err != nil {
+		return err
+	}
+
 	if err := copyDir(kit, ".ai", filepath.Join(targetDir, ".ai"), opts.Force); err != nil {
 		return err
 	}
@@ -51,10 +57,6 @@ func Install(kit fs.FS, targetDir string, opts Options) error {
 	}
 
 	if err := ensureGitAttributes(targetDir); err != nil {
-		return err
-	}
-
-	if err := applyPreset(kit, targetDir, opts); err != nil {
 		return err
 	}
 
