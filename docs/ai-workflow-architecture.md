@@ -6,6 +6,24 @@
 
 ---
 
+## Documentation Navigation
+
+本文件是 AWK 的高層架構說明。更多詳細文件請參考：
+
+### For Users
+- [Getting Started](user/getting-started.md) - 快速開始
+- [Configuration](user/configuration.md) - 配置說明
+- [Troubleshooting](user/troubleshooting.md) - 故障排除
+- [FAQ](user/faq.md) - 常見問題
+
+### For Developers
+- [Architecture](developer/architecture.md) - 系統內部架構
+- [API Reference](developer/api-reference.md) - 腳本與模組 API
+- [Contributing](developer/contributing.md) - 貢獻指南
+- [Testing](developer/testing.md) - 測試說明
+
+---
+
 ## 1. Executive Summary
 
 ### 1.1 Goal

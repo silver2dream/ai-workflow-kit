@@ -1,4 +1,4 @@
-# AI Workflow Kit - 評分標準 v5.1
+# AI Workflow Kit - 評分標準 v5.2
 
 ## 專案核心目的
 
@@ -280,9 +280,9 @@ final_grade = grade(min(total_score, cap))
 | 面向 | 權重 | P0 項數 | P1 項數 | P2 項數 |
 |------|------|---------|---------|---------|
 | 核心流程 | 30% | 3 | 5 | 4 |
-| 可靠性 | 25% | 2 | 4 | 3 |
+| 可靠性 | 25% | 2 | 7 | 3 |
 | 可擴展性 | 20% | 2 | 4 | 3 |
-| 易用性 | 15% | 1 | 3 | 3 |
+| 易用性 | 15% | 1 | 6 | 9 |
 | 安全性 | 10% | 2 | 3 | 2 |
 
 ### 分數計算
@@ -332,6 +332,14 @@ final_grade = grade(min(total_score, cap))
 | C2.P0.1 | `python3 -m json.tool .ai/config/failure_patterns.json` | 有效 JSON |
 | C2.P0.2 | `test -f .ai/scripts/attempt_guard.sh` | 存在 |
 
+#### P1 - 重要功能
+
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C2.P1.1 | `test -f .ai/scripts/lib/errors.py` | 存在 |
+| C2.P1.2 | `test -f .ai/scripts/lib/logger.py` | 存在 |
+| C2.P1.3 | `python3 -c "from lib.errors import AWKError"` | 可匯入 |
+
 ### 3. 可擴展性 (20%)
 
 #### P0 - 必須通過
@@ -348,6 +356,25 @@ final_grade = grade(min(total_score, cap))
 | ID | 驗證指令（示意） | PASS 條件 |
 |----|------------------|-----------|
 | C4.P0.1 | `file README.md \| grep -qE 'UTF-16'` | 無匹配 |
+
+#### P1 - 重要功能
+
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C4.P1.1 | `test -f docs/user/getting-started.md` | 存在 |
+| C4.P1.2 | `test -f docs/user/configuration.md` | 存在 |
+| C4.P1.3 | `test -f docs/user/troubleshooting.md` | 存在 |
+
+#### P2 - 加分項
+
+| ID | 驗證指令（示意） | PASS 條件 |
+|----|------------------|-----------|
+| C4.P2.1 | `test -f docs/user/faq.md` | 存在 |
+| C4.P2.2 | `test -f docs/developer/architecture.md` | 存在 |
+| C4.P2.3 | `test -f docs/developer/api-reference.md` | 存在 |
+| C4.P2.4 | `test -f docs/developer/contributing.md` | 存在 |
+| C4.P2.5 | `test -f docs/developer/testing.md` | 存在 |
+| C4.P2.6 | `grep -q "docs/user" README.md` | README 有文件索引 |
 
 ### 5. 安全性 (10%)
 
@@ -397,3 +424,4 @@ bash .ai/scripts/evaluate.sh --online --strict --check-origin
 | 4.3 | 2025-12-19 | EXT1 與面向評分映射、--strict 使用前提說明 |
 | 5.0 | 2025-12-19 | Offline Gate 真正離線（移除 git fetch）、統一 audit/scan schema、dirty_worktree 改為 P1、新增 --check-origin 選項 |
 | 5.1 | 2025-12-19 | 修正 --strict 文檔（dirty_worktree 是 P1）、--check-origin 網路錯誤改為 FAIL（非 SKIP） |
+| 5.2 | 2025-12-21 | 新增文件完整性檢查：使用者文件(P1)、開發者文件(P2)、lib 模組(P1)、README 文件索引(P2) |

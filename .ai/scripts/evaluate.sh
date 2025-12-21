@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI Workflow Kit - Evaluation v5.1
+# AI Workflow Kit - Evaluation v5.2
 # 注意：不使用 set -o pipefail，避免 N2 誤判
 set -eu
 
@@ -23,7 +23,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "=========================================="
-echo "AI Workflow Kit - Evaluation v5.1"
+echo "AI Workflow Kit - Evaluation v5.2"
 echo "Mode: $MODE$([ "$STRICT" = true ] && echo " --strict" || echo "")$([ "$CHECK_ORIGIN" = true ] && echo " --check-origin" || echo "")"
 echo "=========================================="
 echo ""

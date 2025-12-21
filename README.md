@@ -226,15 +226,40 @@ It runs:
 
 ---
 
-## 📚 Docs
+## 📚 Documentation
 
-- `docs/getting-started.md`
-- `docs/ai-workflow-architecture.md`
+### For Users
+
+| Document | Description |
+|----------|-------------|
+| [Getting Started](docs/user/getting-started.md) | Quick start guide |
+| [Configuration](docs/user/configuration.md) | workflow.yaml reference |
+| [Troubleshooting](docs/user/troubleshooting.md) | Error solutions |
+| [FAQ](docs/user/faq.md) | Common questions |
+
+### For Developers
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/developer/architecture.md) | System internals |
+| [API Reference](docs/developer/api-reference.md) | Scripts & modules |
+| [Contributing](docs/developer/contributing.md) | Development guide |
+| [Testing](docs/developer/testing.md) | Test framework |
+
+### Other
+
+- [Architecture Overview](docs/ai-workflow-architecture.md) - High-level system design
 
 ---
 
 ## 🤝 Contributing
 
+See [Contributing Guide](docs/developer/contributing.md) for:
+- Development setup
+- Code standards
+- PR workflow
+
+Quick reference:
 - Branch model and commit format: `.ai/rules/_kit/git-workflow.md`
 - PR base should target `feat/example` by default.
 
