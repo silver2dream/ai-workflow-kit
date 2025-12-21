@@ -7,5 +7,5 @@ import "embed"
 // NOTE: This embeds only tracked files. Runtime state under `.ai/state/` is ignored by git
 // and should not be embedded into release binaries.
 //
-//go:embed .ai/commands/*.md .ai/config/* .ai/docs/*.md .ai/rules/_kit/*.md .ai/rules/_examples/*.md .ai/scripts/*.sh .ai/scripts/*.py .ai/specs/*/*.md .ai/templates/* .ai/tests/*.sh
+//go:embed .ai/commands/*.md .ai/config/* .ai/docs/*.md .ai/rules/_kit/*.md .ai/rules/_examples/*.md .ai/scripts/*.sh .ai/scripts/*.py .ai/scripts/*.txt .ai/scripts/lib/*.py .ai/specs/*/*.md .ai/templates/* .ai/tests/*.sh .ai/tests/*.py .ai/tests/*.ini .ai/tests/fixtures/* .ai/tests/unit/*.py
 var KitFS embed.FS
