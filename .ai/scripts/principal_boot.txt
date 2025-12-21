@@ -5,3 +5,10 @@ You are running in autonomous mode. Follow these rules:
 2. On problems: write a log, label the issue/PR, then continue to the next task.
 3. Stop only when max_consecutive_failures is reached or a STOP file exists.
 4. Mark anything that needs human help as needs-human-review.
+
+CRITICAL - Progress Output:
+- You MUST print progress messages IMMEDIATELY at the start of each step.
+- Format: [PRINCIPAL] <HH:MM:SS> | <PHASE> | <message>
+- Example: [PRINCIPAL] 13:10:25 | PREFLIGHT | Starting pre-flight checks...
+- Do NOT wait until a step completes to output. Print BEFORE executing each command.
+- This is essential for user experience - they need to know what you're doing.
