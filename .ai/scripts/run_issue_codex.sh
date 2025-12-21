@@ -306,8 +306,13 @@ You are an automated coding agent running inside a git worktree.
 Repo rules:
 - Read and follow CLAUDE.md and AGENTS.md.
 - Keep changes minimal and strictly within ticket scope.
-- Use commit format: [type] subject (lowercase).
-- Create a PR (base: $PR_BASE) and include "Closes #$ISSUE_ID" in the PR body.
+
+IMPORTANT: Do NOT run any git commands (commit, push, etc.) or create PRs.
+The runner script will handle git operations after you complete the code changes.
+Your job is ONLY to:
+1. Write/modify code files
+2. Run verification commands
+3. Report the results
 
 Ticket:
 $(cat "$TASK_PATH")
@@ -316,6 +321,7 @@ After making changes:
 - Print: git status --porcelain
 - Print: git diff
 - Run verification commands from the ticket.
+- Do NOT commit or push - the runner will handle that.
 PROMPT
 
 CODEX_LOG_BASE="$LOG_DIR/issue-$ISSUE_ID.${REPO}.codex"
@@ -420,6 +426,23 @@ SUBJECT="$(echo "$SUBJECT" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 _-]/ /
 COMMIT_MSG="[$TYPE] $SUBJECT"
 
 trace_step_start "git_commit"
+
+# Clean up any stale index.lock files (may be left by sandbox restrictions)
+if [[ -f "$WT_DIR/.git/index.lock" ]]; then
+  echo "[runner] WARNING: Removing stale index.lock" | tee -a "$SUMMARY_FILE"
+  rm -f "$WT_DIR/.git/index.lock" 2>/dev/null || true
+fi
+
+# For worktrees, .git is a file pointing to the actual git dir
+# Check if there's a lock in the actual git dir
+if [[ -f "$WT_DIR/.git" ]]; then
+  ACTUAL_GIT_DIR="$(cat "$WT_DIR/.git" | sed 's/gitdir: //')"
+  if [[ -f "$ACTUAL_GIT_DIR/index.lock" ]]; then
+    echo "[runner] WARNING: Removing stale index.lock from gitdir" | tee -a "$SUMMARY_FILE"
+    rm -f "$ACTUAL_GIT_DIR/index.lock" 2>/dev/null || true
+  fi
+fi
+
 git add -A
 if [[ "$REPO" == "root" ]]; then
   git reset -q .ai .worktrees >/dev/null 2>&1 || true
