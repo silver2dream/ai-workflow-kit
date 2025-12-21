@@ -151,9 +151,12 @@ func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 func ensureRuntimeDirs(targetDir string) error {
 	dirs := []string{
 		filepath.Join(targetDir, ".ai", "state"),
+		filepath.Join(targetDir, ".ai", "state", "traces"),
 		filepath.Join(targetDir, ".ai", "results"),
 		filepath.Join(targetDir, ".ai", "runs"),
 		filepath.Join(targetDir, ".ai", "exe-logs"),
+		filepath.Join(targetDir, ".ai", "temp"),
+		filepath.Join(targetDir, ".ai", "logs"),
 		filepath.Join(targetDir, ".worktrees"),
 	}
 	for _, d := range dirs {
@@ -164,9 +167,12 @@ func ensureRuntimeDirs(targetDir string) error {
 
 	keepFiles := []string{
 		filepath.Join(targetDir, ".ai", "state", ".gitkeep"),
+		filepath.Join(targetDir, ".ai", "state", "traces", ".gitkeep"),
 		filepath.Join(targetDir, ".ai", "results", ".gitkeep"),
 		filepath.Join(targetDir, ".ai", "runs", ".gitkeep"),
 		filepath.Join(targetDir, ".ai", "exe-logs", ".gitkeep"),
+		filepath.Join(targetDir, ".ai", "temp", ".gitkeep"),
+		filepath.Join(targetDir, ".ai", "logs", ".gitkeep"),
 	}
 	for _, f := range keepFiles {
 		if _, err := os.Stat(f); err == nil {
@@ -190,16 +196,44 @@ func ensureGitIgnore(targetDir string) error {
 		".ai/results/",
 		".ai/runs/",
 		".ai/exe-logs/",
+		".ai/logs/",
+		".ai/temp/",
 		".worktrees/",
 		"# Claude Code local settings (do not commit)",
 		".claude/settings.local.json",
+		"# Common cache files (prevent audit P1 findings)",
+		"__pycache__/",
+		"*.pyc",
+		"*.pyo",
+		".pytest_cache/",
+		"node_modules/",
+		".npm/",
+		".yarn/",
+		"*.log",
 		markerEnd,
 	}, "\n") + "\n"
 
 	path := filepath.Join(targetDir, ".gitignore")
 	existing, _ := os.ReadFile(path)
+
+	// If AWK section exists, replace it (to support upgrades with new entries)
 	if bytes.Contains(existing, []byte(markerStart)) {
-		return nil
+		startIdx := bytes.Index(existing, []byte(markerStart))
+		endIdx := bytes.Index(existing, []byte(markerEnd))
+		if endIdx > startIdx {
+			// Remove old section and replace with new
+			endIdx += len(markerEnd)
+			// Skip trailing newline if present
+			if endIdx < len(existing) && existing[endIdx] == '\n' {
+				endIdx++
+			}
+			var out []byte
+			out = append(out, existing[:startIdx]...)
+			out = append(out, []byte(snippet)...)
+			out = append(out, existing[endIdx:]...)
+			return os.WriteFile(path, out, 0o644)
+		}
+		// Malformed section (start without end), append new section
 	}
 
 	var out []byte
