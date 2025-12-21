@@ -378,8 +378,8 @@ class TestParseTasksCLI:
             text=True
         )
 
-        assert result.returncode == 1
-        assert "Usage" in result.stdout or "usage" in result.stdout.lower()
+        assert result.returncode == 2
+        assert "missing tasks file" in result.stderr.lower()
 
     def test_cli_json_output(self, fixtures_dir):
         """Test CLI --json output is valid JSON."""
@@ -438,8 +438,8 @@ class TestParseTasksCLI:
             text=True
         )
 
-        assert result.returncode == 1
-        assert "not found" in result.stderr.lower() or "error" in result.stderr.lower()
+        assert result.returncode == 2
+        assert "not found" in result.stderr.lower()
 
     def test_cli_empty_file(self, fixtures_dir):
         """Test CLI handles empty tasks file."""

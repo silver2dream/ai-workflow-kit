@@ -16,6 +16,9 @@ import re
 import time
 from pathlib import Path
 
+from lib.errors import AWKError, ConfigError, handle_unexpected_error, print_error
+from lib.logger import Logger, split_log_level
+
 def get_repo_root() -> Path:
     """Get git repository root."""
     try:
@@ -115,28 +118,47 @@ def scan_repo(root: Path) -> dict:
     return result
 
 def main():
-    output_json = '--json' in sys.argv
+    args = sys.argv[1:]
+    log_level, args, log_error = split_log_level(args)
+    if log_error:
+        print_error(ConfigError(log_error))
+        sys.exit(2)
+
+    output_json = '--json' in args
     root = get_repo_root()
-    
-    result = scan_repo(root)
-    
-    # Always write to state file
-    state_dir = root / '.ai' / 'state'
-    state_dir.mkdir(parents=True, exist_ok=True)
-    state_file = state_dir / 'repo_scan.json'
-    with open(state_file, 'w', encoding='utf-8') as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
-        f.write('\n')
-    
-    if output_json:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-    else:
-        print(f"Repository: {result['root']['path']}")
-        print(f"Branch: {result['root']['branch']}")
-        print(f"Clean: {'yes' if result['root']['clean'] else 'no'}")
-        print(f"Submodules: {len(result['submodules'])}")
-        print(f"AI Config: {'yes' if result['ai_config']['exists'] else 'no'}")
-        print(f"\nState saved to: {state_file}")
+    logger = Logger("scan_repo", root / '.ai' / 'logs', level=log_level)
+
+    try:
+        logger.info("scan start", {"output_json": output_json})
+        result = scan_repo(root)
+
+        # Always write to state file
+        state_dir = root / '.ai' / 'state'
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_file = state_dir / 'repo_scan.json'
+        with open(state_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2, ensure_ascii=True)
+            f.write('\n')
+
+        if output_json:
+            print(json.dumps(result, indent=2, ensure_ascii=True))
+        else:
+            print(f"Repository: {result['root']['path']}")
+            print(f"Branch: {result['root']['branch']}")
+            print(f"Clean: {'yes' if result['root']['clean'] else 'no'}")
+            print(f"Submodules: {len(result['submodules'])}")
+            print(f"AI Config: {'yes' if result['ai_config']['exists'] else 'no'}")
+            print(f"\nState saved to: {state_file}")
+        logger.info("scan complete", {"state_file": str(state_file)})
+    except AWKError as err:
+        logger.error("scan failed", {"error": err.message})
+        print_error(err)
+        sys.exit(err.exit_code)
+    except Exception as exc:
+        err = handle_unexpected_error(exc)
+        logger.error("scan failed", {"error": str(exc)})
+        print_error(err)
+        sys.exit(err.exit_code)
 
 if __name__ == '__main__':
     main()

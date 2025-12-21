@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "execution_trace.json schema",
+  "description": "Schema for run_issue_codex execution traces",
+  "type": "object",
+  "required": ["trace_id", "issue_id", "status", "started_at", "duration_seconds", "steps"],
+  "properties": {
+    "trace_id": { "type": "string" },
+    "issue_id": { "type": "string" },
+    "repo": { "type": "string" },
+    "branch": { "type": "string" },
+    "base_branch": { "type": "string" },
+    "status": { "type": "string", "enum": ["running", "success", "failed"] },
+    "started_at": { "type": "string" },
+    "ended_at": { "type": "string" },
+    "duration_seconds": { "type": "integer", "minimum": 0 },
+    "error": { "type": "string" },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "started_at", "ended_at", "duration_seconds"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["success", "failed"] },
+          "started_at": { "type": "string" },
+          "ended_at": { "type": "string" },
+          "duration_seconds": { "type": "integer", "minimum": 0 },
+          "error": { "type": "string" },
+          "context": { "type": "object" }
+        }
+      }
+    }
+  }
+}

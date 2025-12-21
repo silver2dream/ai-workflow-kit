@@ -1,7 +1,11 @@
-﻿#!/usr/bin/env python3
-import sys, json, subprocess, re, time
+#!/usr/bin/env python3
+import sys
+import json
+import subprocess
+import time
 from pathlib import Path
-from typing import Dict, Any
+from lib.errors import AWKError, ConfigError, handle_unexpected_error, print_error
+from lib.logger import Logger, split_log_level
 
 def get_repo_root():
     try:
@@ -34,17 +38,46 @@ def audit_project(root):
                         "p2": len([f for f in findings if f["severity"]=="P2"]), "total": len(findings)}}
 
 def main():
+    args = sys.argv[1:]
+    log_level, args, log_error = split_log_level(args)
+    if log_error:
+        print_error(ConfigError(log_error))
+        sys.exit(2)
+    output_json = '--json' in args
+
     root = get_repo_root()
-    result = audit_project(root)
-    state_dir = root / '.ai' / 'state'
-    state_dir.mkdir(parents=True, exist_ok=True)
-    with open(state_dir / 'audit.json', 'w') as f: json.dump(result, f, indent=2); f.write('\n')
-    if '--json' in sys.argv: print(json.dumps(result, indent=2))
-    else:
-        print("=" * 60 + "\nProject Audit Report\n" + "=" * 60)
-        for f in result['findings']: print(f"[{f['severity']}] {f['message']}")
-        s = result['summary']
-        print(f"\nSummary: {s['p0']} P0, {s['p1']} P1, {s['p2']} P2")
-        if s['p0'] > 0: sys.exit(1)
+    logger = Logger("audit_project", root / '.ai' / 'logs', level=log_level)
+
+    try:
+        logger.info("audit start", {"output_json": output_json})
+        result = audit_project(root)
+        state_dir = root / '.ai' / 'state'
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_file = state_dir / 'audit.json'
+        with open(state_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2, ensure_ascii=True)
+            f.write('\n')
+
+        if output_json:
+            print(json.dumps(result, indent=2, ensure_ascii=True))
+        else:
+            print("=" * 60 + "\nProject Audit Report\n" + "=" * 60)
+            for f in result['findings']:
+                print(f"[{f['severity']}] {f['message']}")
+            s = result['summary']
+            print(f"\nSummary: {s['p0']} P0, {s['p1']} P1, {s['p2']} P2")
+        logger.info("audit complete", {"state_file": str(state_file)})
+
+        if result["summary"]["p0"] > 0:
+            sys.exit(1)
+    except AWKError as err:
+        logger.error("audit failed", {"error": err.message})
+        print_error(err)
+        sys.exit(err.exit_code)
+    except Exception as exc:
+        err = handle_unexpected_error(exc)
+        logger.error("audit failed", {"error": str(exc)})
+        print_error(err)
+        sys.exit(err.exit_code)
 
 if __name__ == '__main__': main()

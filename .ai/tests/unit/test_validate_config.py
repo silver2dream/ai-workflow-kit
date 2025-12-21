@@ -124,7 +124,7 @@ escalation:
         result = run_validate_config(script_path, ai_config / "workflow.yaml", cwd=temp_git_repo)
 
         # Should fail due to missing required fields
-        assert result.returncode == 1
+        assert result.returncode == 3
 
     def test_cli_missing_config_file(self, temp_dir):
         """Test CLI handles missing config file."""
@@ -132,7 +132,7 @@ escalation:
 
         result = run_validate_config(script_path, temp_dir / "nonexistent.yaml")
 
-        assert result.returncode == 1
+        assert result.returncode == 2
         output = (result.stdout + result.stderr).lower()
         assert "not found" in output or "error" in output
 
@@ -199,7 +199,7 @@ escalation:
         result = run_validate_config(script_path, ai_config / "workflow.yaml", cwd=temp_git_repo)
 
         # Should fail due to invalid repo type (schema validation)
-        assert result.returncode == 1
+        assert result.returncode == 3
 
     def test_submodule_type_validation(self, temp_git_repo):
         """Test validation of submodule type repos."""
@@ -246,7 +246,7 @@ escalation:
         result = run_validate_config(script_path, ai_config / "workflow.yaml", cwd=temp_git_repo)
 
         # Should fail because .gitmodules doesn't exist
-        assert result.returncode == 1
+        assert result.returncode == 3
         output = (result.stdout + result.stderr).lower()
         assert "gitmodules" in output or "submodule" in output
 
@@ -344,7 +344,7 @@ escalation:
         result = run_validate_config(script_path, ai_config / "workflow.yaml", cwd=temp_git_repo)
 
         # Should fail because root type should have path "./" or empty
-        assert result.returncode == 1
+        assert result.returncode == 3
         output = (result.stdout + result.stderr).lower()
         assert "root" in output or "path" in output
 
@@ -417,6 +417,6 @@ escalation:
         result = run_validate_config(script_path, ai_config / "workflow.yaml", cwd=temp_git_repo)
 
         # Should fail because custom rule doesn't exist
-        assert result.returncode == 1
+        assert result.returncode == 3
         output = (result.stdout + result.stderr).lower()
         assert "rule" in output or "not found" in output

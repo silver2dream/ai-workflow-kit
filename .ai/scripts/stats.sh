@@ -88,6 +88,59 @@ PYTHON_SCRIPT
   METRICS_COUNT=$(echo "$METRICS_DATA" | cut -d',' -f3)
 fi
 
+# Execution traces
+TRACE_DIR="$MONO_ROOT/.ai/state/traces"
+TRACE_COUNT=0
+TRACE_AVG_DURATION=0
+TRACE_FAILED_STEPS_JSON="[]"
+if [[ -d "$TRACE_DIR" ]]; then
+  TRACE_METRICS=$(python3 - "$TRACE_DIR" <<'PYTHON_SCRIPT'
+import json
+import os
+import sys
+from collections import Counter
+
+trace_dir = sys.argv[1]
+durations = []
+failure_steps = Counter()
+total = 0
+
+try:
+    for fname in os.listdir(trace_dir):
+        if not fname.endswith(".json"):
+            continue
+        total += 1
+        try:
+            with open(os.path.join(trace_dir, fname), "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception:
+            continue
+        duration = data.get("duration_seconds", 0)
+        if isinstance(duration, (int, float)) and duration > 0:
+            durations.append(duration)
+        for step in data.get("steps", []):
+            if step.get("status") == "failed":
+                name = step.get("name", "unknown")
+                failure_steps[name] += 1
+except Exception:
+    pass
+
+avg = round(sum(durations) / len(durations), 1) if durations else 0
+common = [{"name": name, "count": count} for name, count in failure_steps.most_common(5)]
+
+print(json.dumps({
+    "trace_count": total,
+    "avg_duration": avg,
+    "failure_steps": common,
+}))
+PYTHON_SCRIPT
+  )
+  TRACE_COUNT=$(echo "$TRACE_METRICS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('trace_count', 0))")
+  TRACE_AVG_DURATION=$(echo "$TRACE_METRICS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('avg_duration', 0))")
+  TRACE_FAILED_STEPS_JSON=$(echo "$TRACE_METRICS" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('failure_steps', [])))")
+fi
+TRACE_FAILED_STEPS_TEXT=$(echo "$TRACE_FAILED_STEPS_JSON" | python3 -c "import json,sys; steps=json.load(sys.stdin); print(', '.join([f\"{s.get('name')} ({s.get('count')})\" for s in steps]) if steps else 'N/A')")
+
 TOTAL_EXECUTED=$((LOCAL_SUCCESS + LOCAL_FAILED))
 if [[ "$TOTAL_EXECUTED" -gt 0 ]]; then
   SUCCESS_RATE=$(python3 -c "print(f'{$LOCAL_SUCCESS / $TOTAL_EXECUTED * 100:.1f}')")
@@ -249,6 +302,11 @@ if [[ "$OUTPUT_FORMAT" == "json" ]]; then
     "total_duration_seconds": $TOTAL_DURATION,
     "avg_duration_seconds": $AVG_DURATION
   },
+  "traces": {
+    "total": $TRACE_COUNT,
+    "avg_duration_seconds": $TRACE_AVG_DURATION,
+    "common_failed_steps": $TRACE_FAILED_STEPS_JSON
+  },
   "trends": {
     "daily_avg_closed": "$DAILY_AVG_CLOSED",
     "success_rate_7d": "$SUCCESS_RATE_7D",
@@ -305,6 +363,13 @@ elif [[ "$OUTPUT_FORMAT" == "html" ]]; then
     <div class="stat"><span class="stat-value">${TOTAL_DURATION}s</span><br><span class="stat-label">Total Duration</span></div>
     <div class="stat"><span class="stat-value">${AVG_DURATION}s</span><br><span class="stat-label">Avg Duration</span></div>
   </div>
+
+  <div class="card">
+    <h2>Execution Traces</h2>
+    <div class="stat"><span class="stat-value">$TRACE_COUNT</span><br><span class="stat-label">Total Traces</span></div>
+    <div class="stat"><span class="stat-value">${TRACE_AVG_DURATION}s</span><br><span class="stat-label">Avg Duration</span></div>
+    <p class="stat-label">Common failed steps: $TRACE_FAILED_STEPS_TEXT</p>
+  </div>
   
   <div class="card">
     <h2>Trends (7d)</h2>
@@ -352,6 +417,12 @@ else
   echo "  Success rate: $SUCCESS_RATE"
   echo "  Total duration (s): ${TOTAL_DURATION}"
   echo "  Avg duration (s):   ${AVG_DURATION}"
+  echo ""
+  echo "Execution Traces"
+  echo "--------------------------------------------"
+  echo "  Total traces:       $TRACE_COUNT"
+  echo "  Avg duration (s):   ${TRACE_AVG_DURATION}"
+  echo "  Common failed steps: $TRACE_FAILED_STEPS_TEXT"
   echo ""
   echo "Trends (7d)"
   echo "--------------------------------------------"

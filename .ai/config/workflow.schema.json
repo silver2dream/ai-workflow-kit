@@ -160,6 +160,18 @@
           "default": 3,
           "description": "Maximum consecutive failures before stopping"
         },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2,
+          "description": "Number of retries after a failure"
+        },
+        "retry_delay_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 5,
+          "description": "Delay between retries in seconds"
+        },
         "max_single_pr_files": {
           "type": "integer",
           "minimum": 1,

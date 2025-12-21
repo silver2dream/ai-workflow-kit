@@ -21,8 +21,12 @@ Dependency syntax in tasks.md:
 import re
 import sys
 import json
+from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Optional
+
+from lib.errors import AWKError, ConfigError, handle_unexpected_error, print_error
+from lib.logger import Logger, split_log_level
 
 class Task:
     def __init__(self, id: str, title: str, completed: bool = False):
@@ -180,63 +184,105 @@ def get_parallel_tasks(tasks: List[Task]) -> List[List[Task]]:
     
     return parallel_groups
 
+def _parse_cli_args(argv: List[str]) -> Dict[str, object]:
+    log_level, args, log_error = split_log_level(argv)
+    if log_error:
+        raise ConfigError(log_error)
+
+    output_json = '--json' in args
+    show_next = '--next' in args
+    show_parallel = '--parallel' in args
+
+    tasks_file = None
+    for arg in args:
+        if not arg.startswith('-'):
+            tasks_file = arg
+            break
+
+    if not tasks_file:
+        raise ConfigError(
+            "Missing tasks file path.",
+            suggestion="Provide a tasks.md path as the first argument.",
+            details={"usage": (__doc__ or "").strip()},
+        )
+
+    return {
+        "tasks_file": tasks_file,
+        "output_json": output_json,
+        "show_next": show_next,
+        "show_parallel": show_parallel,
+        "log_level": log_level,
+    }
+
+
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
-    
-    tasks_file = sys.argv[1]
-    output_json = '--json' in sys.argv
-    show_next = '--next' in sys.argv
-    show_parallel = '--parallel' in sys.argv
-    
     try:
-        with open(tasks_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-    except FileNotFoundError:
-        print(f"Error: File not found: {tasks_file}", file=sys.stderr)
-        sys.exit(1)
-    
-    tasks = parse_tasks(content)
-    
-    if show_next:
-        executable = get_executable_tasks(tasks)
-        if output_json:
-            print(json.dumps([t.to_dict() for t in executable], indent=2))
+        opts = _parse_cli_args(sys.argv[1:])
+        tasks_file = opts["tasks_file"]
+        output_json = opts["output_json"]
+        show_next = opts["show_next"]
+        show_parallel = opts["show_parallel"]
+        logger = Logger("parse_tasks", Path.cwd() / ".ai" / "logs", level=opts["log_level"])
+
+        logger.info("parse start", {"tasks_file": tasks_file})
+        try:
+            with open(tasks_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except FileNotFoundError as exc:
+            raise ConfigError(
+                f"Tasks file not found: {tasks_file}",
+                suggestion="Check the path and try again.",
+                details={"path": tasks_file},
+            ) from exc
+
+        tasks = parse_tasks(content)
+
+        if show_next:
+            executable = get_executable_tasks(tasks)
+            if output_json:
+                print(json.dumps([t.to_dict() for t in executable], indent=2, ensure_ascii=True))
+            else:
+                if executable:
+                    print("Next executable task(s):")
+                    for t in executable:
+                        status = "[x]" if t.completed else "[ ]"
+                        deps = f" (depends on: {', '.join(t.depends_on)})" if t.depends_on else ""
+                        print(f"  {status} {t.id}. {t.title}{deps}")
+                else:
+                    print("No executable tasks (all completed or blocked)")
+
+        elif show_parallel:
+            groups = get_parallel_tasks(tasks)
+            if output_json:
+                result = [[t.to_dict() for t in g] for g in groups]
+                print(json.dumps(result, indent=2, ensure_ascii=True))
+            else:
+                print("Parallel execution groups:")
+                for i, group in enumerate(groups, 1):
+                    print(f"\n  Wave {i}:")
+                    for t in group:
+                        deps = f" (depends on: {', '.join(t.depends_on)})" if t.depends_on else ""
+                        print(f"    - {t.id}. {t.title}{deps}")
+
         else:
-            if executable:
-                print("Next executable task(s):")
-                for t in executable:
+            # Default: show all tasks in topological order
+            sorted_tasks = topological_sort(tasks)
+            if output_json:
+                print(json.dumps([t.to_dict() for t in sorted_tasks], indent=2, ensure_ascii=True))
+            else:
+                print("Tasks (topological order):")
+                for t in sorted_tasks:
                     status = "[x]" if t.completed else "[ ]"
                     deps = f" (depends on: {', '.join(t.depends_on)})" if t.depends_on else ""
                     print(f"  {status} {t.id}. {t.title}{deps}")
-            else:
-                print("No executable tasks (all completed or blocked)")
-    
-    elif show_parallel:
-        groups = get_parallel_tasks(tasks)
-        if output_json:
-            result = [[t.to_dict() for t in g] for g in groups]
-            print(json.dumps(result, indent=2))
-        else:
-            print("Parallel execution groups:")
-            for i, group in enumerate(groups, 1):
-                print(f"\n  Wave {i}:")
-                for t in group:
-                    deps = f" (depends on: {', '.join(t.depends_on)})" if t.depends_on else ""
-                    print(f"    - {t.id}. {t.title}{deps}")
-    
-    else:
-        # Default: show all tasks in topological order
-        sorted_tasks = topological_sort(tasks)
-        if output_json:
-            print(json.dumps([t.to_dict() for t in sorted_tasks], indent=2))
-        else:
-            print("Tasks (topological order):")
-            for t in sorted_tasks:
-                status = "[x]" if t.completed else "[ ]"
-                deps = f" (depends on: {', '.join(t.depends_on)})" if t.depends_on else ""
-                print(f"  {status} {t.id}. {t.title}{deps}")
+        logger.info("parse complete", {"tasks_file": tasks_file})
+    except AWKError as err:
+        print_error(err)
+        sys.exit(err.exit_code)
+    except Exception as exc:
+        err = handle_unexpected_error(exc)
+        print_error(err)
+        sys.exit(err.exit_code)
 
 if __name__ == '__main__':
     main()
