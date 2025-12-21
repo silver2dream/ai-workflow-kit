@@ -29,13 +29,16 @@ func TestInstall_CurrentDirectory(t *testing.T) {
 	mockFS := createMinimalMockFS()
 
 	// Test install with absolute path
-	err = Install(mockFS, tmpDir, Options{
+	result, err := Install(mockFS, tmpDir, Options{
 		Preset:     "generic",
 		NoGenerate: true,
 		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Install returned nil result")
 	}
 
 	// Verify .ai directory was created
@@ -67,13 +70,16 @@ func TestInstall_DotPath(t *testing.T) {
 	mockFS := createMinimalMockFS()
 
 	// Test install with "."
-	err = Install(mockFS, ".", Options{
+	result, err := Install(mockFS, ".", Options{
 		Preset:     "generic",
 		NoGenerate: true,
 		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install with '.' failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Install returned nil result")
 	}
 
 	// Verify .ai directory was created
@@ -92,7 +98,7 @@ func TestInstall_InvalidPreset(t *testing.T) {
 
 	mockFS := createMinimalMockFS()
 
-	err = Install(mockFS, tmpDir, Options{
+	_, err = Install(mockFS, tmpDir, Options{
 		Preset:     "invalid-preset",
 		NoGenerate: true,
 	})
@@ -104,11 +110,84 @@ func TestInstall_InvalidPreset(t *testing.T) {
 func TestInstall_NonExistentDirectory(t *testing.T) {
 	mockFS := createMinimalMockFS()
 
-	err := Install(mockFS, "/nonexistent/path/that/does/not/exist", Options{
+	_, err := Install(mockFS, "/nonexistent/path/that/does/not/exist", Options{
 		Preset:     "generic",
 		NoGenerate: true,
 	})
 	if err == nil {
 		t.Error("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestInstall_ConfigSkipped(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create existing workflow.yaml
+	configDir := filepath.Join(tmpDir, ".ai", "config")
+	os.MkdirAll(configDir, 0o755)
+	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("existing: true"), 0o644)
+
+	mockFS := createMinimalMockFS()
+
+	result, err := Install(mockFS, tmpDir, Options{
+		Preset:     "generic",
+		NoGenerate: true,
+		WithCI:     false,
+	})
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Install returned nil result")
+	}
+	if !result.ConfigSkipped {
+		t.Error("expected ConfigSkipped to be true")
+	}
+
+	// Verify original content preserved
+	content, _ := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	if string(content) != "existing: true" {
+		t.Error("existing workflow.yaml was overwritten")
+	}
+}
+
+func TestInstall_ForceConfig(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create existing workflow.yaml
+	configDir := filepath.Join(tmpDir, ".ai", "config")
+	os.MkdirAll(configDir, 0o755)
+	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("existing: true"), 0o644)
+
+	mockFS := createMinimalMockFS()
+
+	result, err := Install(mockFS, tmpDir, Options{
+		Preset:      "generic",
+		ForceConfig: true,
+		NoGenerate:  true,
+		WithCI:      false,
+	})
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Install returned nil result")
+	}
+	if result.ConfigSkipped {
+		t.Error("expected ConfigSkipped to be false with --force-config")
+	}
+
+	// Verify content was overwritten
+	content, _ := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	if string(content) == "existing: true" {
+		t.Error("workflow.yaml was not overwritten with --force-config")
 	}
 }
