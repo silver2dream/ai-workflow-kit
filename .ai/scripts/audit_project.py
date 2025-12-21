@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 import sys
+import os
 import json
 import subprocess
 import time
 from pathlib import Path
+
+# Add scripts directory to Python path for lib imports
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 from lib.errors import AWKError, ConfigError, handle_unexpected_error, print_error
 from lib.logger import Logger, split_log_level
 

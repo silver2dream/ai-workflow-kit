@@ -366,6 +366,90 @@ class TestValidateConfigWithActualConfig:
         assert result.returncode == 0
 
 
+class TestValidateConfigFromDifferentWorkingDirectory:
+    """Test validate_config.py when executed from different working directories."""
+
+    def test_cli_works_from_project_root_with_relative_path(self, temp_git_repo):
+        """Test CLI works when called with relative path from project root.
+
+        This tests the real-world scenario where users run:
+            python3 .ai/scripts/validate_config.py
+        from the project root directory.
+
+        The script must correctly resolve 'lib' module imports regardless
+        of the current working directory.
+        """
+        # Setup: copy the entire .ai/scripts directory to temp repo
+        import shutil
+        ai_scripts_src = SCRIPTS_DIR
+        ai_scripts_dst = temp_git_repo / ".ai" / "scripts"
+        ai_scripts_dst.mkdir(parents=True, exist_ok=True)
+
+        # Copy all Python files and lib directory
+        for item in ai_scripts_src.iterdir():
+            if item.is_file() and item.suffix == '.py':
+                shutil.copy(item, ai_scripts_dst / item.name)
+            elif item.is_dir() and item.name == 'lib':
+                shutil.copytree(item, ai_scripts_dst / 'lib')
+
+        # Setup config
+        ai_config = temp_git_repo / ".ai" / "config"
+        ai_config.mkdir(parents=True, exist_ok=True)
+
+        schema_src = SCRIPTS_DIR.parent / "config" / "workflow.schema.json"
+        shutil.copy(schema_src, ai_config / "workflow.schema.json")
+
+        minimal_config = """version: "1.0"
+project:
+  name: "test"
+  type: "single-repo"
+repos:
+  - name: root
+    path: "./"
+    type: root
+    language: python
+    verify:
+      build: "echo build"
+      test: "echo test"
+git:
+  integration_branch: "develop"
+  release_branch: "main"
+  commit_format: "[type] subject"
+specs:
+  base_path: ".ai/specs"
+  active: []
+github:
+  repo: ""
+rules:
+  kit: []
+  custom: []
+escalation:
+  max_consecutive_failures: 3
+"""
+        (ai_config / "workflow.yaml").write_text(minimal_config)
+
+        # Key test: run with RELATIVE path from project root
+        # This simulates: cd /project && python3 .ai/scripts/validate_config.py
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+
+        result = subprocess.run(
+            [sys.executable, ".ai/scripts/validate_config.py", ".ai/config/workflow.yaml"],
+            cwd=temp_git_repo,  # Execute from project root
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            env=env
+        )
+
+        # Should NOT fail with "ModuleNotFoundError: No module named 'lib'"
+        assert "No module named 'lib'" not in result.stderr, \
+            f"Script failed to import lib module when run from project root:\n{result.stderr}"
+        assert result.returncode == 0, \
+            f"Script failed unexpectedly:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+
+
 class TestValidateConfigMissingRules:
     """Test validate_config.py rule file checking."""
 
