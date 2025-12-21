@@ -143,12 +143,16 @@ awkit check-update
 curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
 ```
 
-更新專案內的 kit 檔案：
+更新專案內的 kit 檔案（保留你的 workflow.yaml）：
 
 ```bash
-# 只更新 kit 檔案（保留你的 workflow.yaml）
-awkit init --force
+awkit upgrade
+bash .ai/scripts/generate.sh
+```
 
+其他更新選項：
+
+```bash
 # 只套用不同的 preset 到 workflow.yaml
 awkit init --preset react-go --force-config
 

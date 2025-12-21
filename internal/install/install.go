@@ -16,6 +16,7 @@ type Options struct {
 	ProjectName string
 	Force       bool
 	ForceConfig bool // Only overwrite workflow.yaml
+	SkipConfig  bool // Skip workflow.yaml entirely (for upgrade)
 	NoGenerate  bool
 	WithCI      bool
 }
@@ -304,6 +305,11 @@ func copyOSDir(src, dst string) error {
 }
 
 func applyPreset(kit fs.FS, targetDir string, opts Options) (skipped bool, err error) {
+	// Skip config entirely for upgrade mode
+	if opts.SkipConfig {
+		return true, nil
+	}
+
 	switch opts.Preset {
 	case "", "generic":
 		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetGeneric)

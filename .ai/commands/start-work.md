@@ -2,6 +2,39 @@
 
 ---
 
+## 進度輸出規則（重要！）
+
+**每個步驟開始時，必須立即輸出進度訊息**，讓使用者知道目前狀態：
+
+```
+[PRINCIPAL] <timestamp> | <phase> | <message>
+```
+
+範例：
+```
+[PRINCIPAL] 10:43:37 | PREFLIGHT | 開始前置檢查...
+[PRINCIPAL] 10:43:38 | PREFLIGHT | ✓ gh 已認證
+[PRINCIPAL] 10:43:38 | PREFLIGHT | ✓ 工作目錄乾淨
+[PRINCIPAL] 10:43:39 | PHASE-0   | 檢查 tasks.md...
+[PRINCIPAL] 10:43:40 | PHASE-0   | 找到 10 個未完成任務
+[PRINCIPAL] 10:43:41 | STEP-1   | 檢查 pending issues...
+[PRINCIPAL] 10:43:42 | STEP-2   | 創建新任務: implement room manager
+[PRINCIPAL] 10:43:45 | STEP-3   | 派工給 Worker (issue #1)...
+[PRINCIPAL] 10:44:30 | STEP-4   | Worker 完成，檢查結果...
+[PRINCIPAL] 10:44:31 | STEP-5   | 審查 PR #2...
+[PRINCIPAL] 10:44:35 | STEP-6   | ✓ PR 已合併
+[PRINCIPAL] 10:44:36 | LOOP     | 回到 Step 1，處理下一個任務...
+```
+
+**規則：**
+1. 每個 Phase/Step 開始時立即輸出，不要等到結束
+2. 重要操作（創建 issue、派工、審查）要輸出詳細資訊
+3. 錯誤時輸出 `✗` 和錯誤原因
+4. 成功時輸出 `✓`
+5. 長時間操作（如等待 Worker）每 30 秒輸出一次心跳
+
+---
+
 ## 運行模式
 
 檢查命令參數：
@@ -25,18 +58,30 @@
 
 先執行這些檢查，任何一項失敗就停止並報告：
 
+**輸出**: `[PRINCIPAL] <time> | PREFLIGHT | 開始前置檢查...`
+
 ```bash
 # 1. 確認 gh 已認證
 gh auth status
+# 輸出: [PRINCIPAL] <time> | PREFLIGHT | ✓ gh 已認證
+```
 
+```bash
 # 2. 確認工作目錄乾淨
 git status --porcelain
+# 輸出: [PRINCIPAL] <time> | PREFLIGHT | ✓ 工作目錄乾淨
+```
 
+```bash
 # 3. 確認沒有停止標記
 test ! -f .ai/state/STOP
+# 輸出: [PRINCIPAL] <time> | PREFLIGHT | ✓ 無停止標記
+```
 
+```bash
 # 4. 讀取配置
 cat .ai/config/workflow.yaml
+# 輸出: [PRINCIPAL] <time> | PREFLIGHT | ✓ 配置已載入
 ```
 
 從配置中獲取：
@@ -50,6 +95,8 @@ cat .ai/config/workflow.yaml
 ---
 
 ## Phase 0: 檢查並生成 tasks.md（如需要）
+
+**輸出**: `[PRINCIPAL] <time> | PHASE-0 | 檢查 specs 和 tasks...`
 
 對每個 active spec，檢查是否需要從 design.md 生成 tasks.md：
 
@@ -131,13 +178,19 @@ EOF
 
 ## 主循環
 
+**輸出**: `[PRINCIPAL] <time> | LOOP | 開始主循環...`
+
 重複以下步驟，直到滿足停止條件：
 
 ### Step 1: 檢查 Pending Issues
 
+**輸出**: `[PRINCIPAL] <time> | STEP-1 | 檢查 pending issues...`
+
 ```bash
 gh issue list --label ai-task --state open --json number,title,labels --limit 50
 ```
+
+**輸出結果**: `[PRINCIPAL] <time> | STEP-1 | 找到 N 個 pending issues`
 
 分析結果：
 - 如果有 `in-progress` 標籤的 issue → 檢查是否有對應的 result.json，如果有則跳到 Step 4；如果沒有則繼續下一個 issue
@@ -145,6 +198,8 @@ gh issue list --label ai-task --state open --json number,title,labels --limit 50
 - 如果沒有 pending issues → 執行 Step 2
 
 ### Step 2: 分析並創建新任務
+
+**輸出**: `[PRINCIPAL] <time> | STEP-2 | 分析 tasks.md，準備創建任務...`
 
 讀取活躍 spec 的 tasks.md：
 
@@ -225,6 +280,8 @@ cat <specs.base_path>/<spec_name>/tasks.md
 
 ### Step 3: 派工給 Worker (Codex)
 
+**輸出**: `[PRINCIPAL] <time> | STEP-3 | 派工給 Worker (issue #N, repo: X)...`
+
 選擇優先級最高的 pending issue（P0 > P1 > P2，同優先級取編號最小）。
 
 ```bash
@@ -295,9 +352,15 @@ bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> /tmp/ticket-<ISSUE_NUMBER>.md
 
 ### Step 4: 檢查執行結果
 
+**輸出**: `[PRINCIPAL] <time> | STEP-4 | Worker 完成，檢查結果...`
+
 ```bash
 cat .ai/results/issue-<ISSUE_NUMBER>.json
 ```
+
+**輸出結果**: 
+- 成功: `[PRINCIPAL] <time> | STEP-4 | ✓ Worker 成功，PR: <url>`
+- 失敗: `[PRINCIPAL] <time> | STEP-4 | ✗ Worker 失敗: <reason>`
 
 分析 `status` 欄位：
 
@@ -312,6 +375,8 @@ cat .ai/results/issue-<ISSUE_NUMBER>.json
 - 回到 Step 1
 
 ### Step 5: 審查 PR
+
+**輸出**: `[PRINCIPAL] <time> | STEP-5 | 審查 PR #N...`
 
 從 result.json 獲取 PR URL，提取 PR 編號。
 
@@ -372,7 +437,11 @@ cat .ai/rules/<repo-specific-rule>.md
 
 ### Step 6: 處理審查結果
 
+**輸出**: `[PRINCIPAL] <time> | STEP-6 | 處理審查結果...`
+
 **如果審查通過**：
+
+**輸出**: `[PRINCIPAL] <time> | STEP-6 | ✓ 審查通過，準備合併...`
 
 ```bash
 # Approve PR
@@ -395,9 +464,13 @@ gh issue close <ISSUE_NUMBER> --comment "🎉 已合併！PR #<PR_NUMBER>"
 gh issue edit <ISSUE_NUMBER> --add-label "review-pass"
 ```
 
+**輸出**: `[PRINCIPAL] <time> | STEP-6 | ✓ PR #N 已合併，issue #M 已關閉`
+
 回到 Step 1 處理下一個任務。
 
 **如果審查不通過**：
+
+**輸出**: `[PRINCIPAL] <time> | STEP-6 | ✗ 審查不通過: <reason>`
 
 ```bash
 # Request changes

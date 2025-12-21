@@ -243,3 +243,116 @@ func TestInstall_PresetConfigNotOverwrittenByCopyDir(t *testing.T) {
 		t.Error("workflow.yaml should contain react-go preset languages (typescript/go)")
 	}
 }
+
+func TestInstall_Upgrade(t *testing.T) {
+	// Test upgrade scenario: existing config should be preserved
+	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create existing workflow.yaml with custom content
+	configDir := filepath.Join(tmpDir, ".ai", "config")
+	os.MkdirAll(configDir, 0o755)
+	customConfig := "project:\n  name: my-custom-project\n  type: monorepo\n"
+	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(customConfig), 0o644)
+
+	// Create existing scripts directory with old content
+	scriptsDir := filepath.Join(tmpDir, ".ai", "scripts")
+	os.MkdirAll(scriptsDir, 0o755)
+	os.WriteFile(filepath.Join(scriptsDir, "old-script.sh"), []byte("old content"), 0o644)
+
+	mockFS := fstest.MapFS{
+		".ai/config/workflow.schema.json": &fstest.MapFile{Data: []byte(`{}`)},
+		".ai/scripts/generate.sh":         &fstest.MapFile{Data: []byte("#!/bin/bash\necho new")},
+		".ai/scripts/kickoff.sh":          &fstest.MapFile{Data: []byte("#!/bin/bash\necho kickoff")},
+		".ai/rules/.gitkeep":              &fstest.MapFile{Data: []byte("")},
+		".ai/commands/.gitkeep":           &fstest.MapFile{Data: []byte("")},
+		".ai/templates/.gitkeep":          &fstest.MapFile{Data: []byte("")},
+	}
+
+	// Simulate upgrade: Force=true with SkipConfig=true
+	result, err := Install(mockFS, tmpDir, Options{
+		Force:      true,
+		SkipConfig: true,
+		NoGenerate: true,
+		WithCI:     false,
+	})
+	if err != nil {
+		t.Fatalf("Install (upgrade) failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Install returned nil result")
+	}
+
+	// Config should be skipped (preserved)
+	if !result.ConfigSkipped {
+		t.Error("expected ConfigSkipped to be true during upgrade")
+	}
+
+	// Verify original config preserved
+	content, _ := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	if string(content) != customConfig {
+		t.Error("workflow.yaml was overwritten during upgrade")
+	}
+
+	// Verify new scripts were added
+	if _, err := os.Stat(filepath.Join(scriptsDir, "kickoff.sh")); os.IsNotExist(err) {
+		t.Error("new script kickoff.sh was not added during upgrade")
+	}
+}
+
+func TestInstall_GitIgnoreContainsClaudeSettings(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockFS := createMinimalMockFS()
+
+	_, err = Install(mockFS, tmpDir, Options{
+		Preset:     "generic",
+		NoGenerate: true,
+		WithCI:     false,
+	})
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+
+	// Verify .gitignore contains claude settings entry
+	content, err := os.ReadFile(filepath.Join(tmpDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("failed to read .gitignore: %v", err)
+	}
+
+	if !strings.Contains(string(content), ".claude/settings.local.json") {
+		t.Error(".gitignore should contain .claude/settings.local.json")
+	}
+}
+
+func TestInstall_ClaudeDirectoryCreated(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockFS := createMinimalMockFS()
+
+	_, err = Install(mockFS, tmpDir, Options{
+		Preset:     "generic",
+		NoGenerate: true,
+		WithCI:     false,
+	})
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+
+	// Verify .claude directory was created
+	claudeDir := filepath.Join(tmpDir, ".claude")
+	if _, err := os.Stat(claudeDir); os.IsNotExist(err) {
+		t.Error(".claude directory was not created")
+	}
+}

@@ -204,6 +204,56 @@ gh auth login
 
 ---
 
+### Claude Code 需要手動批准命令 (Autopilot 卡住)
+
+**症狀：**
+```
+GitHub CLI operations require approval in the current execution context
+```
+
+**原因：** Claude Code 的安全機制需要批准 `gh` 等命令
+
+**解決：**
+
+方法一：重新生成權限設定（推薦）
+```bash
+bash .ai/scripts/generate.sh
+```
+這會生成 `.claude/settings.local.json`，自動批准 `gh`、`git`、`codex` 等命令。
+
+方法二：手動編輯 `.claude/settings.local.json`
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh:*)",
+      "Bash(git:*)",
+      "Bash(bash:*)",
+      "Bash(codex:*)"
+    ]
+  }
+}
+```
+
+方法三：使用 `--dangerously-skip-permissions` flag（不推薦）
+```bash
+claude --print --dangerously-skip-permissions < .ai/scripts/principal_boot.txt
+```
+
+---
+
+### kickoff.sh 長時間無輸出
+
+**症狀：** 執行 `kickoff.sh` 後很久沒有任何訊息
+
+**原因：** Principal 在執行前置檢查和分析，但沒有輸出進度
+
+**解決：**
+1. 升級到最新版本：`awkit upgrade && bash .ai/scripts/generate.sh`
+2. 新版本會輸出進度訊息：`[PRINCIPAL] <time> | <phase> | <message>`
+
+---
+
 ## 語言特定錯誤
 
 ### Go

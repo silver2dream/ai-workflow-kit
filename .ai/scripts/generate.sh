@@ -268,6 +268,19 @@ ai_root = os.path.dirname(os.path.dirname(os.path.abspath(config_file)))
 claude_dir = os.path.join(output_dir, '.claude')
 os.makedirs(claude_dir, exist_ok=True)
 
+# ============================================================
+# Generate .claude/settings.local.json for auto-approval
+# ============================================================
+try:
+    template = env.get_template('claude-settings.json.j2')
+    content = template.render(**context)
+    settings_path = os.path.join(claude_dir, 'settings.local.json')
+    with open(settings_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"[generate] Created: {settings_path}")
+except Exception as e:
+    print(f"[generate] ERROR generating claude settings: {e}")
+
 ai_rules = os.path.join(ai_root, 'rules')
 ai_commands = os.path.join(ai_root, 'commands')
 claude_rules = os.path.join(claude_dir, 'rules')
