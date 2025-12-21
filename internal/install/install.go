@@ -15,23 +15,32 @@ type Options struct {
 	Preset      string
 	ProjectName string
 	Force       bool
+	ForceConfig bool // Only overwrite workflow.yaml
 	NoGenerate  bool
 	WithCI      bool
 }
 
-func Install(kit fs.FS, targetDir string, opts Options) error {
+// InstallResult contains information about what was done
+type InstallResult struct {
+	ConfigSkipped bool
+	ConfigPath    string
+}
+
+func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) {
+	result := &InstallResult{}
+
 	// Resolve "." or "./" to absolute path
 	if targetDir == "." || targetDir == "./" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return fmt.Errorf("cannot resolve current directory: %w", err)
+			return nil, fmt.Errorf("cannot resolve current directory: %w", err)
 		}
 		targetDir = cwd
 	}
 	targetDir = filepath.Clean(targetDir)
 
 	if st, err := os.Stat(targetDir); err != nil || !st.IsDir() {
-		return fmt.Errorf("target directory does not exist or is not a directory: %s", targetDir)
+		return nil, fmt.Errorf("target directory does not exist or is not a directory: %s", targetDir)
 	}
 
 	if opts.ProjectName == "" {
@@ -40,41 +49,44 @@ func Install(kit fs.FS, targetDir string, opts Options) error {
 
 	// Apply preset FIRST to generate workflow.yaml before copyDir
 	// This ensures preset-specific config is used instead of embedded default
-	if err := applyPreset(kit, targetDir, opts); err != nil {
-		return err
+	configSkipped, err := applyPreset(kit, targetDir, opts)
+	if err != nil {
+		return nil, err
 	}
+	result.ConfigSkipped = configSkipped
+	result.ConfigPath = filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
 
 	if err := copyDir(kit, ".ai", filepath.Join(targetDir, ".ai"), opts.Force); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := ensureRuntimeDirs(targetDir); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := ensureGitIgnore(targetDir); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := ensureGitAttributes(targetDir); err != nil {
-		return err
+		return nil, err
 	}
 
 	if opts.WithCI {
 		if err := ensureCIWorkflow(targetDir); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if err := ensureClaudeLinks(targetDir); err != nil {
-		return err
+		return nil, err
 	}
 
 	if !opts.NoGenerate {
 		_ = tryGenerate(targetDir)
 	}
 
-	return nil
+	return result, nil
 }
 
 func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
@@ -285,29 +297,32 @@ func copyOSDir(src, dst string) error {
 	})
 }
 
-func applyPreset(kit fs.FS, targetDir string, opts Options) error {
+func applyPreset(kit fs.FS, targetDir string, opts Options) (skipped bool, err error) {
 	switch opts.Preset {
 	case "", "generic":
-		return ensureWorkflowConfig(targetDir, opts.ProjectName, presetGeneric)
+		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetGeneric)
 	case "react-go":
-		if err := ensureWorkflowConfig(targetDir, opts.ProjectName, presetReactGo); err != nil {
-			return err
+		skipped, err = ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetReactGo)
+		if err != nil {
+			return skipped, err
 		}
-		return applyReactGoRules(kit, targetDir)
+		return skipped, applyReactGoRules(kit, targetDir)
 	default:
-		return fmt.Errorf("unknown preset: %q", opts.Preset)
+		return false, fmt.Errorf("unknown preset: %q", opts.Preset)
 	}
 }
 
-func ensureWorkflowConfig(targetDir, projectName string, preset func(projectName string) []byte) error {
+func ensureWorkflowConfig(targetDir, projectName string, forceOverwrite bool, preset func(projectName string) []byte) (skipped bool, err error) {
 	path := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
 	if _, err := os.Stat(path); err == nil {
-		return nil
+		if !forceOverwrite {
+			return true, nil // File exists, skip
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return false, err
 	}
-	return os.WriteFile(path, preset(projectName), 0o644)
+	return false, os.WriteFile(path, preset(projectName), 0o644)
 }
 
 func applyReactGoRules(kit fs.FS, targetDir string) error {

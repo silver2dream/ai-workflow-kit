@@ -192,7 +192,8 @@ Arguments:
 
 Options:
   --preset        Project preset (%s) [default: generic]
-  --force         Overwrite existing kit files
+  --force         Overwrite all existing kit files
+  --force-config  Overwrite only workflow.yaml (apply preset to existing project)
   --dry-run       Show what would be done without making changes
   --no-generate   Skip running generate.sh after init
   --with-ci       Create CI workflow if missing [default: true]
@@ -202,6 +203,7 @@ Examples:
   awkit init
   awkit init --preset react-go
   awkit init /path/to/project --force
+  awkit init --preset react-go --force-config  # Apply preset to existing project
   awkit init --dry-run
 
 Run 'awkit list-presets' to see available presets.
@@ -278,6 +280,7 @@ func cmdInit(args []string) int {
 	noGenerate := fs.Bool("no-generate", false, "")
 	withCI := fs.Bool("with-ci", true, "")
 	force := fs.Bool("force", false, "")
+	forceConfig := fs.Bool("force-config", false, "")
 	dryRun := fs.Bool("dry-run", false, "")
 	projectName := fs.String("project-name", "", "")
 	showHelp := fs.Bool("help", false, "")
@@ -330,7 +333,9 @@ func cmdInit(args []string) int {
 	fmt.Printf("  Target:  %s\n", cyan(displayTarget))
 	fmt.Printf("  Preset:  %s\n", cyan(*preset))
 	if *force {
-		fmt.Printf("  Mode:    %s\n", cyan("force (overwrite existing)"))
+		fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
+	} else if *forceConfig {
+		fmt.Printf("  Mode:    %s\n", cyan("force-config (overwrite config only)"))
 	}
 	fmt.Println("")
 
@@ -351,13 +356,15 @@ func cmdInit(args []string) int {
 		return 0
 	}
 
-	if err := install.Install(awkit.KitFS, targetDir, install.Options{
+	result, err := install.Install(awkit.KitFS, targetDir, install.Options{
 		Preset:      *preset,
 		ProjectName: *projectName,
 		Force:       *force,
+		ForceConfig: *forceConfig,
 		NoGenerate:  *noGenerate,
 		WithCI:      *withCI,
-	}); err != nil {
+	})
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "")
 		errorf("%v\n", err)
 		fmt.Fprintln(os.Stderr, "")
@@ -370,6 +377,18 @@ func cmdInit(args []string) int {
 
 	fmt.Println("")
 	success("AWK initialized successfully!\n")
+
+	// Warn if config was skipped
+	if result != nil && result.ConfigSkipped {
+		fmt.Println("")
+		warn("Skipped: .ai/config/workflow.yaml (already exists)\n")
+		fmt.Printf("  Preset '%s' was NOT applied to config.\n", *preset)
+		fmt.Println("")
+		fmt.Println("  To apply preset config, use one of:")
+		fmt.Printf("    awkit init --preset %s --force        # Overwrite all files\n", *preset)
+		fmt.Printf("    awkit init --preset %s --force-config # Overwrite config only\n", *preset)
+	}
+
 	fmt.Println("")
 	fmt.Println(bold("Next steps:"))
 	fmt.Printf("  1. %s\n", cyan("cd "+displayTarget))
