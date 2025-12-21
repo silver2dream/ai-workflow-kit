@@ -80,6 +80,7 @@ func run() int {
 	switch os.Args[1] {
 	case "version":
 		fmt.Println(buildinfo.Version)
+		warnUpdateAvailable()
 		return 0
 	case "check-update":
 		return cmdCheckUpdate(os.Args[2:])
@@ -729,8 +730,15 @@ func warnUpdateAvailable() {
 		return
 	}
 	if result.UpdateAvailable {
-		fmt.Fprintf(os.Stderr, "\n%sUpdate available:%s %s -> %s\n", colorYellow, colorReset, result.Current, result.Latest)
-		fmt.Fprintln(os.Stderr, "Run:", updateCommand(repo))
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintf(os.Stderr, "%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorYellow, colorReset)
+		fmt.Fprintf(os.Stderr, "%s  Update available: %s -> %s%s\n", colorYellow, result.Current, result.Latest, colorReset)
+		fmt.Fprintf(os.Stderr, "%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorYellow, colorReset)
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  Run:", updateCommand(repo))
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintf(os.Stderr, "  Release notes: https://github.com/%s/releases/latest\n", repo)
+		fmt.Fprintln(os.Stderr, "")
 	}
 }
 
@@ -753,6 +761,9 @@ func updateCommand(repo string) string {
 	repo = strings.TrimSpace(repo)
 	if repo == "" {
 		repo = updatecheck.DefaultRepo
+	}
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("irm https://github.com/%s/releases/latest/download/install.ps1 | iex", repo)
 	}
 	return fmt.Sprintf("curl -fsSL https://github.com/%s/releases/latest/download/install.sh | bash", repo)
 }
