@@ -26,11 +26,21 @@ bash .ai/scripts/generate.sh
 
 **A:**
 ```bash
-# 更新 CLI
+# 檢查 CLI 是否有更新
 awkit check-update
 
-# 更新專案內的 kit 檔案
-awkit init --force
+# 更新 CLI (重新安裝)
+# Linux/macOS
+curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
+
+# Windows PowerShell
+irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.ps1 | iex
+
+# 升級專案內的 kit 檔案（保留你的 workflow.yaml）
+awkit upgrade
+
+# 重新生成輔助檔案
+bash .ai/scripts/generate.sh
 ```
 
 ---

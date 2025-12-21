@@ -58,6 +58,8 @@ Then regenerate helper docs (recommended):
 bash .ai/scripts/generate.sh
 ```
 
+This will also generate `.claude/settings.local.json` with pre-approved permissions for `gh`, `git`, `codex`, and your verify commands. This enables true autopilot mode without manual approval prompts.
+
 ## 3) Add your first spec
 
 Create a new folder under `.ai/specs/<your-feature>/` and add at least `tasks.md`.

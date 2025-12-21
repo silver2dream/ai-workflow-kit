@@ -89,3 +89,35 @@ func TestPresets(t *testing.T) {
 		t.Error("missing 'react-go' preset")
 	}
 }
+
+func TestCompletionContainsUpgrade(t *testing.T) {
+	// Verify upgrade command is in all completions
+	if !strings.Contains(bashCompletion, "upgrade") {
+		t.Error("bash completion should contain upgrade command")
+	}
+	if !strings.Contains(zshCompletion, "upgrade") {
+		t.Error("zsh completion should contain upgrade command")
+	}
+	if !strings.Contains(fishCompletion, "upgrade") {
+		t.Error("fish completion should contain upgrade command")
+	}
+}
+
+func TestUsageContainsUpgrade(t *testing.T) {
+	// Capture usage output
+	var buf bytes.Buffer
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	usage()
+
+	w.Close()
+	os.Stderr = oldStderr
+	buf.ReadFrom(r)
+
+	output := buf.String()
+	if !strings.Contains(output, "upgrade") {
+		t.Error("usage should contain upgrade command")
+	}
+}

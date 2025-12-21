@@ -59,6 +59,16 @@ awkit init --preset react-go
 awkit init /path/to/your-project --preset react-go
 ```
 
+升級現有專案：
+
+```bash
+# 升級 kit 檔案（保留你的 workflow.yaml）
+awkit upgrade
+
+# 重新生成輔助檔案
+bash .ai/scripts/generate.sh
+```
+
 ### 方式二：手動安裝
 
 1. 複製 `.ai/` 目錄到你的專案
@@ -125,6 +135,7 @@ bash .ai/scripts/generate.sh
 - `CLAUDE.md` - Principal AI 的指令檔
 - `AGENTS.md` - Worker AI 的指令檔
 - `.ai/rules/_kit/git-workflow.md` - Git 工作流程規則
+- `.claude/settings.local.json` - Claude Code 權限設定（自動批准 gh、git 等命令）
 
 ### 步驟 3：驗證設定
 
@@ -241,3 +252,43 @@ brew install bash
 - [配置說明](configuration.md) - 完整的 workflow.yaml 設定
 - [故障排除](troubleshooting.md) - 常見錯誤與解決方案
 - [FAQ](faq.md) - 常見問題
+
+---
+
+## awkit CLI 命令參考
+
+| 命令 | 說明 |
+|------|------|
+| `awkit init` | 初始化新專案 |
+| `awkit init --preset <name>` | 使用指定 preset 初始化 |
+| `awkit upgrade` | 升級 kit 檔案，保留 workflow.yaml |
+| `awkit uninstall` | 移除 AWK |
+| `awkit list-presets` | 列出可用 preset |
+| `awkit check-update` | 檢查 CLI 更新 |
+| `awkit version` | 顯示版本 |
+| `awkit help <command>` | 顯示命令說明 |
+
+### init 選項
+
+```bash
+awkit init [path] [options]
+
+Options:
+  --preset <name>     使用指定 preset (generic, react-go)
+  --force             覆蓋所有現有檔案
+  --force-config      只覆蓋 workflow.yaml
+  --dry-run           預覽操作，不實際執行
+  --no-generate       跳過執行 generate.sh
+  --with-ci           建立 CI workflow (預設: true)
+  --project-name      覆蓋專案名稱
+```
+
+### upgrade 選項
+
+```bash
+awkit upgrade [path] [options]
+
+Options:
+  --dry-run           預覽操作，不實際執行
+  --no-generate       跳過執行 generate.sh
+```

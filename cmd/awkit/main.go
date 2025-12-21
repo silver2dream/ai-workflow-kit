@@ -91,6 +91,8 @@ func run() int {
 		return cmdInit(os.Args[2:])
 	case "uninstall":
 		return cmdUninstall(os.Args[2:])
+	case "upgrade":
+		return cmdUpgrade(os.Args[2:])
 	case "list-presets":
 		return cmdListPresets()
 	case "completion":
@@ -116,6 +118,7 @@ Usage:
 
 Commands:
   init          Initialize AWK in a project (or current directory)
+  upgrade       Upgrade AWK kit files (preserves workflow.yaml)
   uninstall     Remove AWK from a project
   list-presets  Show available project presets
   check-update  Check for CLI updates
@@ -126,6 +129,7 @@ Commands:
 Examples:
   awkit init
   awkit init --preset react-go
+  awkit upgrade
   awkit init /path/to/project
   awkit uninstall .
   awkit check-update
@@ -163,6 +167,8 @@ func cmdHelp(command string) int {
 	switch command {
 	case "init", "install":
 		usageInit()
+	case "upgrade":
+		usageUpgrade()
 	case "uninstall":
 		usageUninstall()
 	case "list-presets":
@@ -208,6 +214,29 @@ Examples:
 
 Run 'awkit list-presets' to see available presets.
 `, availablePresetNames())
+}
+
+func usageUpgrade() {
+	fmt.Fprint(os.Stderr, `Upgrade AWK kit files in a project
+
+This command updates scripts, templates, commands, rules, and docs
+while preserving your workflow.yaml configuration.
+
+Usage:
+  awkit upgrade [project_path] [options]
+
+Arguments:
+  project_path    Path to the project (default: current directory)
+
+Options:
+  --dry-run       Show what would be updated without making changes
+  --no-generate   Skip running generate.sh after upgrade
+
+Examples:
+  awkit upgrade
+  awkit upgrade /path/to/project
+  awkit upgrade --dry-run
+`)
 }
 
 func usageUninstall() {
@@ -411,6 +440,106 @@ func cmdInit(args []string) int {
 	return 0
 }
 
+func cmdUpgrade(args []string) int {
+	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = usageUpgrade
+
+	dryRun := fs.Bool("dry-run", false, "")
+	noGenerate := fs.Bool("no-generate", false, "")
+	showHelp := fs.Bool("help", false, "")
+	showHelpShort := fs.Bool("h", false, "")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if *showHelp || *showHelpShort {
+		usageUpgrade()
+		return 0
+	}
+
+	// Default to current directory
+	targetDir := "."
+	if fs.NArg() >= 1 {
+		targetDir = fs.Arg(0)
+	}
+
+	// Resolve target for display
+	displayTarget := targetDir
+	if targetDir == "." || targetDir == "./" {
+		if cwd, err := os.Getwd(); err == nil {
+			displayTarget = cwd
+		}
+	}
+
+	// Check if AWK is installed
+	aiDir := targetDir + "/.ai"
+	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
+		errorf("AWK is not installed in %s\n", displayTarget)
+		fmt.Fprintln(os.Stderr, "Run 'awkit init' first to initialize AWK.")
+		return 1
+	}
+
+	fmt.Println("")
+	if *dryRun {
+		fmt.Printf("%s[DRY RUN]%s Would upgrade AWK:\n", colorYellow, colorReset)
+	} else {
+		fmt.Println("Upgrading AWK...")
+	}
+	fmt.Printf("  Target: %s\n", cyan(displayTarget))
+	fmt.Println("")
+
+	if *dryRun {
+		fmt.Println("Would update:")
+		fmt.Println("  .ai/scripts/")
+		fmt.Println("  .ai/scripts/lib/")
+		fmt.Println("  .ai/templates/")
+		fmt.Println("  .ai/rules/_kit/")
+		fmt.Println("  .ai/rules/_examples/")
+		fmt.Println("  .ai/commands/")
+		fmt.Println("  .ai/docs/")
+		fmt.Println("  .ai/tests/")
+		fmt.Println("")
+		fmt.Println("Would preserve:")
+		fmt.Println("  .ai/config/workflow.yaml")
+		fmt.Println("  .ai/specs/")
+		fmt.Println("  .ai/rules/ (user rules)")
+		fmt.Println("")
+		success("Dry run complete. No changes made.\n")
+		return 0
+	}
+
+	// Upgrade: force overwrite kit files, but skip workflow.yaml
+	result, err := install.Install(awkit.KitFS, targetDir, install.Options{
+		Force:      true, // Overwrite kit files
+		SkipConfig: true, // Preserve workflow.yaml
+		NoGenerate: *noGenerate,
+		WithCI:     false, // Don't touch CI on upgrade
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "")
+		errorf("%v\n", err)
+		return 1
+	}
+
+	fmt.Println("")
+	success("AWK upgraded successfully!\n")
+
+	if result != nil && result.ConfigSkipped {
+		fmt.Println("")
+		info("  Config preserved: .ai/config/workflow.yaml\n")
+	}
+
+	fmt.Println("")
+	fmt.Println(bold("Next steps:"))
+	fmt.Printf("  %s\n", cyan("bash .ai/scripts/generate.sh"))
+	fmt.Println("")
+
+	warnUpdateAvailable()
+	return 0
+}
+
 func cmdUninstall(args []string) int {
 	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -550,7 +679,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install uninstall list-presets check-update completion version help"
+    commands="init install upgrade uninstall list-presets check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -559,6 +688,11 @@ _awkit() {
             ;;
         init|install)
             local opts="--preset --force --force-config --dry-run --no-generate --with-ci --project-name --help"
+            COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
+            return 0
+            ;;
+        upgrade)
+            local opts="--dry-run --no-generate --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
             return 0
             ;;
@@ -591,6 +725,7 @@ _awkit() {
     commands=(
         'init:Initialize AWK in a project'
         'install:Alias for init'
+        'upgrade:Upgrade AWK kit files (preserves config)'
         'uninstall:Remove AWK from a project'
         'list-presets:Show available presets'
         'check-update:Check for CLI updates'
@@ -623,6 +758,12 @@ _awkit() {
                         '--project-name[Override project name]:name:' \
                         '*:directory:_files -/'
                     ;;
+                upgrade)
+                    _arguments \
+                        '--dry-run[Show what would be done]' \
+                        '--no-generate[Skip generate.sh]' \
+                        '*:directory:_files -/'
+                    ;;
                 uninstall)
                     _arguments \
                         '--dry-run[Show what would be removed]' \
@@ -649,6 +790,7 @@ complete -c awkit -e
 # Commands
 complete -c awkit -n __fish_use_subcommand -a init -d 'Initialize AWK in a project'
 complete -c awkit -n __fish_use_subcommand -a install -d 'Alias for init'
+complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files (preserves config)'
 complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a project'
 complete -c awkit -n __fish_use_subcommand -a list-presets -d 'Show available presets'
 complete -c awkit -n __fish_use_subcommand -a check-update -d 'Check for CLI updates'
@@ -664,6 +806,10 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l dry-run -d 'S
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l no-generate -d 'Skip generate.sh'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l with-ci -d 'Create CI workflow'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name -d 'Override project name'
+
+# upgrade options
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-generate -d 'Skip generate.sh'
 
 # uninstall options
 complete -c awkit -n '__fish_seen_subcommand_from uninstall' -l dry-run -d 'Show what would be removed'
