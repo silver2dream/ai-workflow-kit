@@ -396,7 +396,7 @@ else
 fi
 
 # ============================================================
-# Test 13: run_script() Function (v3)
+# Test 13: Path Reference Tests (v3)
 # ============================================================
 echo ""
 echo "## Path Reference Tests (v3)"
@@ -532,7 +532,7 @@ else
 fi
 
 # ============================================================
-# Test 15: run_script() Function (v3)
+# Test 18: run_script() Cross-Platform Tests (v3)
 # ============================================================
 echo ""
 echo "## run_script() Cross-Platform Tests"
@@ -559,7 +559,7 @@ else
 fi
 
 # ============================================================
-# Test 18: Python Scripts Write State Files (v3.1)
+# Test 19: Python Scripts Write State Files (v3.1)
 # ============================================================
 echo ""
 echo "## Python State File Tests (v3.1)"
@@ -595,7 +595,7 @@ else
 fi
 
 # ============================================================
-# Test 19: evaluate.sh Exists (v3.1)
+# Test 20: evaluate.sh Exists (v3.1)
 # ============================================================
 echo ""
 echo "## evaluate.sh Tests (v3.1)"
@@ -628,7 +628,7 @@ else
 fi
 
 # ============================================================
-# Test 20: evaluate.sh v4.0 Features
+# Test 21: evaluate.sh v4.0 Features
 # ============================================================
 echo ""
 echo "## evaluate.sh v4.0 Tests"
@@ -669,7 +669,7 @@ else
 fi
 
 # ============================================================
-# Test 21: validate_config.py Type-Specific Validation (v3.1)
+# Test 22: validate_config.py Type-Specific Validation (v3.1)
 # ============================================================
 echo ""
 echo "## Type-Specific Validation Tests (v3.1)"
@@ -715,10 +715,10 @@ else
 fi
 
 # ============================================================
-# Test 22: Schema Validation (v5.0)
+# Test 23: Schema Validation (v5.1)
 # ============================================================
 echo ""
-echo "## Schema Validation Tests (v5.0)"
+echo "## Schema Validation Tests (v5.1)"
 
 # Test repo_scan.schema.json exists
 if [[ -f "$AI_ROOT/config/repo_scan.schema.json" ]]; then
@@ -793,6 +793,38 @@ if not found:
   fi
 else
   log_skip "dirty_worktree severity check (audit.json missing)"
+fi
+
+# ============================================================
+# Test 24: Python Unit Tests (pytest)
+# ============================================================
+echo ""
+echo "## Python Unit Tests (pytest)"
+
+PYTEST_AVAILABLE=false
+if command -v pytest &>/dev/null; then
+  PYTEST_AVAILABLE=true
+elif python3 -m pytest --version &>/dev/null 2>&1; then
+  PYTEST_AVAILABLE=true
+fi
+
+if [[ "$PYTEST_AVAILABLE" == "true" ]]; then
+  PYTEST_OUTPUT=$(python3 -m pytest "$AI_ROOT/tests/unit" -v --tb=short 2>&1)
+  PYTEST_EXIT=$?
+
+  if [[ $PYTEST_EXIT -eq 0 ]]; then
+    log_pass "Python unit tests passed"
+  elif [[ $PYTEST_EXIT -eq 5 ]]; then
+    # Exit code 5 means no tests collected
+    log_skip "No pytest tests found"
+  else
+    log_fail "Python unit tests failed"
+    if [[ "$VERBOSE" == "--verbose" ]]; then
+      echo "$PYTEST_OUTPUT"
+    fi
+  fi
+else
+  log_skip "pytest not installed (pip3 install pytest)"
 fi
 
 # ============================================================

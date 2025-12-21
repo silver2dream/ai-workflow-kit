@@ -11,6 +11,7 @@ RESULTS_ROOT="${AI_RESULTS_ROOT:-$ROOT}"
 
 # Metrics from environment
 EXEC_DURATION="${AI_EXEC_DURATION:-0}"
+RETRY_COUNT="${AI_RETRY_COUNT:-0}"
 
 OUT_DIR="$RESULTS_ROOT/.ai/results"
 mkdir -p "$OUT_DIR"
@@ -32,6 +33,32 @@ fi
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 OUT="$OUT_DIR/issue-$ISSUE_ID.json"
 
+json_escape() {
+  local input
+  input="$(cat)"
+
+  # Handle empty input
+  if [[ -z "$input" ]]; then
+    printf '""'
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$input" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()), end="")'
+    return
+  fi
+  if command -v python >/dev/null 2>&1; then
+    printf '%s' "$input" | python -c 'import json,sys; print(json.dumps(sys.stdin.read()), end="")'
+    return
+  fi
+
+  # Fallback: manual escaping
+  input="${input//\\/\\\\}"
+  input="${input//\"/\\\"}"
+  input="${input//$'\n'/\\n}"
+  printf '"%s"' "$input"
+}
+
 {
   echo "{"
   echo "  \"issue_id\": \"$ISSUE_ID\","
@@ -43,14 +70,10 @@ OUT="$OUT_DIR/issue-$ISSUE_ID.json"
   echo "  \"timestamp_utc\": \"$TS\","
   echo "  \"pr_url\": \"${PR_URL}\","
   echo "  \"summary_file\": \"${SUMMARY_FILE}\","
-  echo "  \"submodule_status\": $(python3 - <<PY
-import json
-s = \"\"\"$SUBMODULE_STATUS\"\"\"
-print(json.dumps(s))
-PY
-  ),"
+  echo "  \"submodule_status\": $(printf '%s' "$SUBMODULE_STATUS" | json_escape),"
   echo "  \"metrics\": {"
-  echo "    \"duration_seconds\": $EXEC_DURATION"
+  echo "    \"duration_seconds\": $EXEC_DURATION,"
+  echo "    \"retry_count\": $RETRY_COUNT"
   echo "  }"
   echo "}"
 } > "$OUT"

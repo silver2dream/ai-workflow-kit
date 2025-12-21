@@ -116,7 +116,40 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 Install AWK into a project:
 
 ```bash
-awkit install /path/to/your-project --preset react-go
+# Initialize AWK in current directory
+awkit init
+
+# Or with a preset
+awkit init --preset react-go
+
+# Or specify a path
+awkit init /path/to/your-project --preset react-go
+```
+
+Note: `awkit install` is an alias for `awkit init` (backward compatible).
+
+### 0.1) Update `awkit`
+
+Check version and updates:
+
+```bash
+awkit version
+awkit check-update
+```
+
+Update the CLI:
+
+```bash
+curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
+```
+
+Update kit files inside a project:
+
+```bash
+awkit init --force
+
+# Or specify a path
+awkit init /path/to/your-project --force
 ```
 
 ### 1) Install offline dependencies
@@ -125,20 +158,13 @@ awkit install /path/to/your-project --preset react-go
 pip3 install pyyaml jsonschema jinja2
 ```
 
-### 2) Verify (offline)
-
-```bash
-bash .ai/scripts/evaluate.sh --offline
-bash .ai/tests/run_all_tests.sh
-```
-
-### 3) Generate outputs
+### 2) Generate outputs
 
 ```bash
 bash .ai/scripts/generate.sh
 ```
 
-### 4) (Optional) Run the full workflow
+### 3) (Optional) Run the full workflow
 
 ```bash
 gh auth login
@@ -206,20 +232,46 @@ It runs:
 
 ## 🧪 Evaluation
 
+- For kit maintainers/CI only; regular users can skip.
 - Standard: `.ai/docs/evaluate.md`
 - Executor: `.ai/scripts/evaluate.sh`
 
 ---
 
-## 📚 Docs
+## 📚 Documentation
 
-- `docs/getting-started.md`
-- `docs/ai-workflow-architecture.md`
+### For Users
+
+| Document | Description |
+|----------|-------------|
+| [Getting Started](docs/user/getting-started.md) | Quick start guide |
+| [Configuration](docs/user/configuration.md) | workflow.yaml reference |
+| [Troubleshooting](docs/user/troubleshooting.md) | Error solutions |
+| [FAQ](docs/user/faq.md) | Common questions |
+
+### For Developers
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/developer/architecture.md) | System internals |
+| [API Reference](docs/developer/api-reference.md) | Scripts & modules |
+| [Contributing](docs/developer/contributing.md) | Development guide |
+| [Testing](docs/developer/testing.md) | Test framework |
+
+### Other
+
+- [Architecture Overview](docs/ai-workflow-architecture.md) - High-level system design
 
 ---
 
 ## 🤝 Contributing
 
+See [Contributing Guide](docs/developer/contributing.md) for:
+- Development setup
+- Code standards
+- PR workflow
+
+Quick reference:
 - Branch model and commit format: `.ai/rules/_kit/git-workflow.md`
 - PR base should target `feat/example` by default.
 

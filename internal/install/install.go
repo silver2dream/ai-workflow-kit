@@ -20,10 +20,15 @@ type Options struct {
 }
 
 func Install(kit fs.FS, targetDir string, opts Options) error {
-	targetDir = filepath.Clean(targetDir)
-	if targetDir == "." || targetDir == "" {
-		return fmt.Errorf("invalid target directory: %q", targetDir)
+	// Resolve "." or "./" to absolute path
+	if targetDir == "." || targetDir == "./" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("cannot resolve current directory: %w", err)
+		}
+		targetDir = cwd
 	}
+	targetDir = filepath.Clean(targetDir)
 
 	if st, err := os.Stat(targetDir); err != nil || !st.IsDir() {
 		return fmt.Errorf("target directory does not exist or is not a directory: %s", targetDir)

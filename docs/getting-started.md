@@ -10,12 +10,18 @@ This repo is an **AWK (AI Workflow Kit)** reference implementation for a directo
 Recommended: install the `awkit` CLI from GitHub Releases, then run:
 
 ```bash
-awkit install /path/to/your-repo --preset generic
+# In your project directory
+awkit init --preset generic
+
+# Or specify a path
+awkit init /path/to/your-repo --preset generic
 ```
 
 Presets:
 - `generic`: single-repo template (edit to match your structure)
 - `react-go`: directory monorepo template for React (frontend) + Go (backend)
+
+Run `awkit list-presets` to see all available presets.
 
 ## 1) Configure `workflow.yaml`
 

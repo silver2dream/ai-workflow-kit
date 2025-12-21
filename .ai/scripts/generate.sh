@@ -57,7 +57,7 @@ fi
 echo "[generate] Reading config from $CONFIG_FILE"
 echo "[generate] Templates dir: $TEMPLATES_DIR"
 
-# 撽??蔭
+# Validate config before generation.
 echo "[generate] Validating config..."
 if ! python3 "$AI_ROOT/scripts/validate_config.py" "$CONFIG_FILE"; then
   echo "[generate] ERROR: Config validation failed"
@@ -146,7 +146,7 @@ ai_root = os.path.dirname(os.path.dirname(os.path.abspath(config_file)))
 kit_rules_dir = os.path.join(ai_root, 'rules', '_kit')
 os.makedirs(kit_rules_dir, exist_ok=True)
 
-# ?? git-workflow.md
+# Generate git-workflow.md
 try:
     template = env.get_template('git-workflow.md.j2')
     content = template.render(**context)

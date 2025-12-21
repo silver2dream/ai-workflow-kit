@@ -68,17 +68,97 @@ tmp="$(mktemp -d)"
 cleanup() { rm -rf "$tmp"; }
 trap cleanup EXIT
 
-echo "[install] Downloading ${url}"
-curl -fsSL "$url" -o "${tmp}/${asset}"
+echo ""
+echo "Installing awkit..."
+echo "  Platform: ${os}/${arch}"
+echo "  Version:  ${VERSION}"
+echo ""
 
-tar -xzf "${tmp}/${asset}" -C "$tmp"
+echo "[1/3] Downloading..."
+if ! curl -fsSL "$url" -o "${tmp}/${asset}" 2>/dev/null; then
+  echo ""
+  echo "✗ Download failed" >&2
+  echo ""
+  echo "Troubleshooting:" >&2
+  echo "  - Check your internet connection" >&2
+  echo "  - Verify the release exists: ${url}" >&2
+  echo "  - Try setting AWKIT_VERSION to a specific version" >&2
+  exit 1
+fi
 
+echo "[2/3] Extracting..."
+if ! tar -xzf "${tmp}/${asset}" -C "$tmp" 2>/dev/null; then
+  echo ""
+  echo "✗ Extraction failed" >&2
+  echo ""
+  echo "The downloaded file may be corrupted. Try again." >&2
+  exit 1
+fi
+
+if [[ ! -f "${tmp}/awkit" ]]; then
+  echo ""
+  echo "✗ awkit binary not found in archive" >&2
+  exit 1
+fi
+
+echo "[3/3] Installing..."
 bin_dir="${PREFIX}/bin"
-mkdir -p "$bin_dir"
-install -m 0755 "${tmp}/awkit" "${bin_dir}/awkit"
+if ! mkdir -p "$bin_dir" 2>/dev/null; then
+  echo ""
+  echo "✗ Cannot create directory: ${bin_dir}" >&2
+  echo ""
+  echo "Try running with sudo or set AWKIT_PREFIX to a writable location." >&2
+  exit 1
+fi
 
-echo "[install] Installed: ${bin_dir}/awkit"
-echo "[install] Ensure it's on PATH, e.g.: export PATH=\"${bin_dir}:$PATH\""
+if ! install -m 0755 "${tmp}/awkit" "${bin_dir}/awkit" 2>/dev/null; then
+  echo ""
+  echo "✗ Cannot install to: ${bin_dir}/awkit" >&2
+  echo ""
+  echo "Check write permissions or try: sudo install -m 0755 ${tmp}/awkit ${bin_dir}/awkit" >&2
+  exit 1
+fi
+
+echo ""
+echo "✓ awkit installed to ${bin_dir}/awkit"
+
+# Check if bin_dir is already in PATH
+if [[ ":$PATH:" == *":${bin_dir}:"* ]]; then
+  echo "✓ ${bin_dir} is already in PATH"
+  echo ""
+  echo "Run 'awkit version' to verify installation."
+else
+  echo ""
+  echo "To use awkit, add it to your PATH:"
+  echo ""
+  
+  # Detect shell and give specific advice
+  shell_name="$(basename "${SHELL:-/bin/bash}")"
+  case "$shell_name" in
+    zsh)
+      echo "  echo 'export PATH=\"${bin_dir}:\$PATH\"' >> ~/.zshrc"
+      echo "  source ~/.zshrc"
+      ;;
+    bash)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        echo "  echo 'export PATH=\"${bin_dir}:\$PATH\"' >> ~/.bashrc"
+        echo "  source ~/.bashrc"
+      else
+        echo "  echo 'export PATH=\"${bin_dir}:\$PATH\"' >> ~/.bash_profile"
+        echo "  source ~/.bash_profile"
+      fi
+      ;;
+    fish)
+      echo "  fish_add_path ${bin_dir}"
+      ;;
+    *)
+      echo "  export PATH=\"${bin_dir}:\$PATH\""
+      ;;
+  esac
+  echo ""
+  echo "Or restart your terminal, then run 'awkit version' to verify."
+fi
+echo ""
 
 if [[ -n "${1:-}" ]]; then
   "${bin_dir}/awkit" install "$1" --preset react-go

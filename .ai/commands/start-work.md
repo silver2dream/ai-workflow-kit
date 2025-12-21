@@ -64,7 +64,7 @@ ls -la $SPEC_PATH/
 **判斷邏輯：**
 - 如果 `tasks.md` 存在且有未完成任務 (`- [ ]`) → 跳過，進入主循環
 - 如果 `tasks.md` 不存在，但 `design.md` 存在 → 從 design.md 生成 tasks.md
-- 如果兩者都不存在 → 報告並跳過此 spec
+- 如果兩者都不存在 → 記錄並跳過此 spec（不要停止流程）
 
 **從 design.md 生成 tasks.md：**
 
@@ -99,12 +99,12 @@ cat $SPEC_PATH/design.md
     - _Requirements: X.X_
 
 - [ ] 3. Checkpoint
-  - Ensure all tests pass, ask the user if questions arise.
+  - Ensure tests pass. In autonomous mode, log issues and continue (do not ask).
 
 [更多任務...]
 
 - [ ] N. Final Checkpoint
-  - Ensure all tests pass, ask the user if questions arise.
+  - Ensure tests pass. In autonomous mode, log issues and continue (do not ask).
 ```
 
 **tasks.md 格式規則（Kiro 相容）：**
@@ -140,7 +140,7 @@ gh issue list --label ai-task --state open --json number,title,labels --limit 50
 ```
 
 分析結果：
-- 如果有 `in-progress` 標籤的 issue → 檢查是否有對應的 result.json，如果有則跳到 Step 4
+- 如果有 `in-progress` 標籤的 issue → 檢查是否有對應的 result.json，如果有則跳到 Step 4；如果沒有則繼續下一個 issue
 - 如果有 pending issues（有 `ai-task` 但沒有 `in-progress`）→ 跳到 Step 3
 - 如果沒有 pending issues → 執行 Step 2
 
@@ -181,6 +181,47 @@ cat <specs.base_path>/<spec_name>/tasks.md
 ```
 
 根據任務內容，創建 GitHub Issue（使用配置中的分支名稱）。
+
+**Ticket 模板（必填段落）：**
+```markdown
+# <Title>
+
+- Repo: <repo>
+- Coordination: sequential  # sequential | parallel
+- Sync: independent         # required | independent (optional)
+- Priority: P2
+- Release: false
+
+## Objective
+<What to deliver and why>
+
+## Scope
+- In scope change list
+
+## Non-goals
+- Out of scope items
+
+## Constraints
+- obey AGENTS.md
+- obey .ai/rules/_kit/git-workflow.md
+- obey repo-specific rules in .ai/rules/
+
+## Plan
+1) Read relevant rules and existing code paths
+2) Make minimal change that satisfies acceptance criteria
+3) Add/adjust tests if applicable
+4) Run verification commands
+
+## Verification
+- Build: `<from config.repos[repo].verify.build>`
+- Test: `<from config.repos[repo].verify.test>`
+
+## Acceptance Criteria
+- [ ] Implementation matches Objective and Scope
+- [ ] Verification commands executed and pass
+- [ ] Commit message uses `[type] subject` (lowercase)
+- [ ] PR targets integration branch and includes `Closes #<IssueID>` in body
+```
 
 ### Step 3: 派工給 Worker (Codex)
 
@@ -364,10 +405,11 @@ gh pr review <PR_NUMBER> --request-changes --body "❌ 需要修正：
 <列出具體問題>
 "
 
-# 更新原 issue 標籤
-gh issue edit <ISSUE_NUMBER> --remove-label "pr-ready" --add-label "review-fail"
+# Update issue labels and requeue
+gh issue edit <ISSUE_NUMBER> --remove-label "pr-ready" --remove-label "in-progress" --add-label "review-fail"
 
-# 創建 fix issue（使用配置中的分支名稱）
+# Comment on the issue with required fixes
+gh issue comment <ISSUE_NUMBER> --body "Review failed. Please address the requested changes and rerun."
 ```
 
 回到 Step 1。

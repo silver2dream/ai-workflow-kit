@@ -3,6 +3,7 @@
 .ai/results/
 .ai/runs/
 .ai/exe-logs/
+.ai/logs/
 
 # Worktrees
 .worktrees/

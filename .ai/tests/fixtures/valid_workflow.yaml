@@ -1,0 +1,34 @@
+version: "1.0"
+project:
+  name: "test-project"
+  type: "monorepo"
+repos:
+  - name: backend
+    path: backend/
+    type: directory
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+  - name: frontend
+    path: frontend/
+    type: directory
+    language: typescript
+    verify:
+      build: "npm run build"
+      test: "npm test"
+git:
+  integration_branch: "develop"
+  release_branch: "main"
+  commit_format: "[type] subject"
+specs:
+  base_path: ".ai/specs"
+  active: []
+github:
+  repo: "owner/repo"
+rules:
+  kit:
+    - git-workflow
+  custom: []
+escalation:
+  max_consecutive_failures: 3

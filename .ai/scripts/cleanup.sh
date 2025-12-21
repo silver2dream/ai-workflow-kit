@@ -2,12 +2,16 @@
 set -euo pipefail
 
 # ============================================================================
-# cleanup.sh - 皜?撌脣??? worktrees ????# ============================================================================
-# ?冽?:
+# cleanup.sh - Clean up worktrees, branches, runs, and results.
+# ============================================================================
+# Usage:
 #   bash .ai/scripts/cleanup.sh [--dry-run] [--days N] [--force]
 #
-# ?賊?:
-#   --dry-run   ?芷＊蝷箸?皜?隞暻潘?銝祕?銵?#   --days N    ?芣???N 憭拙?撌脣?雿??????身 7嚗?#   --force     撘瑕皜?嚗?瑼Ｘ PR ???# ============================================================================
+# Options:
+#   --dry-run   Show what would be removed
+#   --days N    Age threshold in days (default: 7)
+#   --force     Skip issue/PR open checks
+# ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -17,7 +21,7 @@ DRY_RUN=false
 DAYS=7
 FORCE=false
 
-# 閫???
+# Parse arguments.
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dry-run)
@@ -52,26 +56,27 @@ CLEANED_BRANCHES=0
 CLEANED_RUNS=0
 
 # ============================================================
-# 1. 皜? Worktrees
+# 1. Worktrees
 # ============================================================
 echo "## Checking worktrees..."
 
-# ?脣????worktrees
+# List worktrees.
 WORKTREES=$(git worktree list --porcelain 2>/dev/null | grep "^worktree" | sed 's/worktree //' || true)
 
 for wt in $WORKTREES; do
-  # 頝喲?銝?worktree
+  # Skip main worktree.
   if [[ "$wt" == "$MONO_ROOT" ]] || [[ "$wt" == "$(pwd)" ]]; then
     continue
   fi
   
-  # 瑼Ｘ?臬??issue worktree
+  # Only clean issue worktrees.
   if [[ "$wt" == *"issue-"* ]] || [[ "$wt" == *".worktrees"* ]]; then
-    # ?? issue 蝺刻?
+    # Extract issue number.
     ISSUE_NUM=$(echo "$wt" | grep -oP 'issue-\K\d+' || echo "")
     
     if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
-      # 瑼Ｘ issue ???      ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+      # Check issue state.
+      ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
       
       if [[ "$ISSUE_STATE" == "OPEN" ]]; then
         echo "  SKIP: $wt (issue #$ISSUE_NUM is still open)"
@@ -87,38 +92,41 @@ for wt in $WORKTREES; do
   fi
 done
 
-# 皜? worktree 閮?銝剔??⊥?璇
+# Prune stale worktree entries.
 if [[ "$DRY_RUN" == "false" ]]; then
   git worktree prune 2>/dev/null || true
 fi
 
 # ============================================================
-# 2. 皜??垢?
+# 2. Remote branches
 # ============================================================
 echo ""
 echo "## Checking remote branches..."
 
-# ?脣?撌脣?雿萇??垢?
+# Prune remote branches.
 git fetch --prune 2>/dev/null || true
 
-# ? feat/ai-issue- ???蝡臬???REMOTE_BRANCHES=$(git branch -r --list 'origin/feat/ai-issue-*' 2>/dev/null || true)
+# Find remote branches that match feat/ai-issue-*.
+REMOTE_BRANCHES=$(git branch -r --list 'origin/feat/ai-issue-*' 2>/dev/null || true)
 
 for branch in $REMOTE_BRANCHES; do
-  # 蝘駁 origin/ ?韌
+  # Trim origin/ prefix.
   BRANCH_NAME="${branch#origin/}"
   
-  # ?? issue 蝺刻? (from feat/ai-issue-N)
+  # Extract issue number (from feat/ai-issue-N).
   ISSUE_NUM=$(echo "$BRANCH_NAME" | grep -oP 'ai-issue-\K\d+' || echo "")
   
   if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
-    # 瑼Ｘ撠???PR ???    PR_STATE=$(gh pr list --head "$BRANCH_NAME" --json state -q '.[0].state' 2>/dev/null || echo "")
+    # Check PR state.
+    PR_STATE=$(gh pr list --head "$BRANCH_NAME" --json state -q '.[0].state' 2>/dev/null || echo "")
     
     if [[ "$PR_STATE" == "OPEN" ]]; then
       echo "  SKIP: $BRANCH_NAME (PR is still open)"
       continue
     fi
     
-    # 瑼Ｘ issue ???    ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+    # Check issue state.
+    ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
     
     if [[ "$ISSUE_STATE" == "OPEN" ]]; then
       echo "  SKIP: $BRANCH_NAME (issue #$ISSUE_NUM is still open)"
@@ -134,7 +142,7 @@ for branch in $REMOTE_BRANCHES; do
 done
 
 # ============================================================
-# 3. 皜??砍?
+# 3. Local branches
 # ============================================================
 echo ""
 echo "## Checking local branches..."
@@ -142,7 +150,7 @@ echo "## Checking local branches..."
 LOCAL_BRANCHES=$(git branch --list 'feat/ai-issue-*' 2>/dev/null | sed 's/^[* ]*//' || true)
 
 for branch in $LOCAL_BRANCHES; do
-  # ?? issue 蝺刻? (from feat/ai-issue-N)
+  # Extract issue number (from feat/ai-issue-N).
   ISSUE_NUM=$(echo "$branch" | grep -oP 'ai-issue-\K\d+' || echo "")
   
   if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
@@ -162,18 +170,18 @@ for branch in $LOCAL_BRANCHES; do
 done
 
 # ============================================================
-# 4. 皜??? run 閮?
+# 4. Run records
 # ============================================================
 echo ""
 echo "## Checking old run records..."
 
 RUNS_DIR="$AI_ROOT/runs"
 if [[ -d "$RUNS_DIR" ]]; then
-  # ?曉頞? N 憭拍??桅?
+  # Find runs older than N days.
   OLD_RUNS=$(find "$RUNS_DIR" -maxdepth 1 -type d -name "issue-*" -mtime +"$DAYS" 2>/dev/null || true)
   
   for run_dir in $OLD_RUNS; do
-    # ?? issue 蝺刻?
+    # Extract issue number.
     ISSUE_NUM=$(basename "$run_dir" | grep -oP 'issue-\K\d+' || echo "")
     
     if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
@@ -194,7 +202,7 @@ if [[ -d "$RUNS_DIR" ]]; then
 fi
 
 # ============================================================
-# 5. 皜??? result ?辣
+# 5. Result files
 # ============================================================
 echo ""
 echo "## Checking old result files..."

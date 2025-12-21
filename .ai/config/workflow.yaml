@@ -201,6 +201,10 @@ escalation:
   # 失敗限制
   max_consecutive_failures: 3
   
+  # 重試設定
+  retry_count: 2
+  retry_delay_seconds: 5
+
   # PR 大小限制（超過則需人工審查）
   max_single_pr_files: 50
   max_single_pr_lines: 500

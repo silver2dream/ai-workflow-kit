@@ -19,6 +19,14 @@
       "suggestion": "Review test failures and fix the failing tests or implementation"
     },
     {
+      "id": "go_mod_tidy_required",
+      "type": "dependency_error",
+      "language": "go",
+      "regex": "go: updates to go\\.mod needed|go mod tidy",
+      "retryable": false,
+      "suggestion": "Run go mod tidy and commit updated go.mod/go.sum"
+    },
+    {
       "id": "node_compile_error",
       "type": "compile_error",
       "language": "node",
@@ -35,6 +43,14 @@
       "suggestion": "Review test failures and fix the failing tests"
     },
     {
+      "id": "node_install_error",
+      "type": "dependency_error",
+      "language": "node",
+      "regex": "(npm ERR!|pnpm ERR!|yarn error)",
+      "retryable": false,
+      "suggestion": "Fix dependency installation errors or update lockfiles"
+    },
+    {
       "id": "python_syntax_error",
       "type": "compile_error",
       "language": "python",
@@ -49,6 +65,14 @@
       "regex": "(FAILED|AssertionError|pytest.*failed)",
       "retryable": false,
       "suggestion": "Review pytest failures and fix the failing tests"
+    },
+    {
+      "id": "python_dependency_error",
+      "type": "dependency_error",
+      "language": "python",
+      "regex": "(No module named|ModuleNotFoundError|pip .*ERROR)",
+      "retryable": false,
+      "suggestion": "Install missing Python dependencies or update requirements"
     },
     {
       "id": "rust_compile_error",
