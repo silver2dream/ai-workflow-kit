@@ -116,7 +116,12 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 把 AWK 安裝到你的專案：
 
 ```bash
+# 從任意位置，指定專案路徑
 awkit install /path/to/your-project --preset react-go
+
+# 或在專案目錄內執行
+cd /path/to/your-project
+awkit install . --preset react-go
 ```
 
 ### 0.1) 更新 `awkit`
@@ -138,6 +143,9 @@ curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/downl
 
 ```bash
 awkit install /path/to/your-project --force
+
+# 或在專案目錄內執行
+awkit install . --force
 ```
 
 ### 1) 安裝 offline 依賴

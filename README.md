@@ -116,7 +116,12 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 Install AWK into a project:
 
 ```bash
+# From anywhere, specify the project path
 awkit install /path/to/your-project --preset react-go
+
+# Or from within the project directory
+cd /path/to/your-project
+awkit install . --preset react-go
 ```
 
 ### 0.1) Update `awkit`
@@ -138,6 +143,9 @@ Update kit files inside a project:
 
 ```bash
 awkit install /path/to/your-project --force
+
+# Or from within the project directory
+awkit install . --force
 ```
 
 ### 1) Install offline dependencies

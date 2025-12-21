@@ -37,8 +37,31 @@ if (-not (Test-Path $Exe)) {
 $Dest = Join-Path $BinDir "awkit.exe"
 Copy-Item -Force $Exe $Dest
 
-Write-Host "[install] Installed: $Dest"
-Write-Host "[install] Add to PATH if needed: $BinDir"
+Remove-Item -Recurse -Force $Tmp.FullName -ErrorAction SilentlyContinue
+
+Write-Host ""
+Write-Host "✓ awkit installed to $Dest" -ForegroundColor Green
+
+# Check if BinDir is in PATH
+$CurrentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if ($CurrentPath -split ";" | Where-Object { $_ -eq $BinDir }) {
+  Write-Host "✓ $BinDir is already in PATH" -ForegroundColor Green
+  Write-Host ""
+  Write-Host "Run 'awkit version' to verify installation."
+} else {
+  Write-Host ""
+  Write-Host "To use awkit, add it to your PATH:" -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "  # Add to User PATH (permanent):" -ForegroundColor Cyan
+  Write-Host "  `$path = [Environment]::GetEnvironmentVariable('PATH', 'User')"
+  Write-Host "  [Environment]::SetEnvironmentVariable('PATH', `"`$path;$BinDir`", 'User')"
+  Write-Host ""
+  Write-Host "  # Or for current session only:"
+  Write-Host "  `$env:PATH += `";$BinDir`""
+  Write-Host ""
+  Write-Host "Then restart your terminal and run 'awkit version' to verify."
+}
+Write-Host ""
 
 if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) {
   & $Dest install $ProjectPath --preset react-go

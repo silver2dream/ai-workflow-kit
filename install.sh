@@ -77,8 +77,46 @@ bin_dir="${PREFIX}/bin"
 mkdir -p "$bin_dir"
 install -m 0755 "${tmp}/awkit" "${bin_dir}/awkit"
 
-echo "[install] Installed: ${bin_dir}/awkit"
-echo "[install] Ensure it's on PATH, e.g.: export PATH=\"${bin_dir}:$PATH\""
+echo ""
+echo "✓ awkit installed to ${bin_dir}/awkit"
+
+# Check if bin_dir is already in PATH
+if [[ ":$PATH:" == *":${bin_dir}:"* ]]; then
+  echo "✓ ${bin_dir} is already in PATH"
+  echo ""
+  echo "Run 'awkit version' to verify installation."
+else
+  echo ""
+  echo "To use awkit, add it to your PATH:"
+  echo ""
+  
+  # Detect shell and give specific advice
+  shell_name="$(basename "${SHELL:-/bin/bash}")"
+  case "$shell_name" in
+    zsh)
+      echo "  echo 'export PATH=\"${bin_dir}:\$PATH\"' >> ~/.zshrc"
+      echo "  source ~/.zshrc"
+      ;;
+    bash)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        echo "  echo 'export PATH=\"${bin_dir}:\$PATH\"' >> ~/.bashrc"
+        echo "  source ~/.bashrc"
+      else
+        echo "  echo 'export PATH=\"${bin_dir}:\$PATH\"' >> ~/.bash_profile"
+        echo "  source ~/.bash_profile"
+      fi
+      ;;
+    fish)
+      echo "  fish_add_path ${bin_dir}"
+      ;;
+    *)
+      echo "  export PATH=\"${bin_dir}:\$PATH\""
+      ;;
+  esac
+  echo ""
+  echo "Or restart your terminal, then run 'awkit version' to verify."
+fi
+echo ""
 
 if [[ -n "${1:-}" ]]; then
   "${bin_dir}/awkit" install "$1" --preset react-go
