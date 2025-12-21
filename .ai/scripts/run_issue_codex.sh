@@ -335,16 +335,21 @@ while [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; do
   NO_RETRY=""
   if command -v codex >/dev/null 2>&1; then
     HELP="$(codex exec --help 2>/dev/null || true)"
+    # Build codex command based on available flags
+    CODEX_CMD="codex exec"
     if echo "$HELP" | grep -q -- '--full-auto'; then
-      codex exec --full-auto --log-file "$CODEX_LOG" --prompt-file "$PROMPT_FILE" | tee -a "$SUMMARY_FILE"
-      RC=${PIPESTATUS[0]}
+      CODEX_CMD="$CODEX_CMD --full-auto"
     elif echo "$HELP" | grep -q -- '--yolo'; then
-      codex exec --yolo --log-file "$CODEX_LOG" --prompt-file "$PROMPT_FILE" | tee -a "$SUMMARY_FILE"
-      RC=${PIPESTATUS[0]}
-    else
-      codex exec --log-file "$CODEX_LOG" --prompt-file "$PROMPT_FILE" | tee -a "$SUMMARY_FILE"
-      RC=${PIPESTATUS[0]}
+      CODEX_CMD="$CODEX_CMD --yolo"
     fi
+    # Use --json for structured output logging (if available)
+    if echo "$HELP" | grep -q -- '--json'; then
+      CODEX_CMD="$CODEX_CMD --json"
+    fi
+    # Read prompt from stdin (new codex CLI style)
+    # Log output via shell redirection instead of --log-file
+    $CODEX_CMD < "$PROMPT_FILE" 2>&1 | tee -a "$SUMMARY_FILE" "$CODEX_LOG"
+    RC=${PIPESTATUS[0]}
   else
     record_error "codex CLI not found in PATH"
     echo "ERROR: codex CLI not found in PATH" | tee -a "$SUMMARY_FILE"

@@ -238,11 +238,20 @@ else
 
   # Use principal_boot.txt if exists, otherwise pass /start-work --autonomous directly
   # Note: --print flag avoids raw mode issues in WSL/non-TTY environments
+  # Use stdbuf to disable output buffering for real-time progress
   if [[ -f "$BOOT_PROMPT" ]]; then
     info "Using principal_boot.txt as boot prompt"
-    claude --print < "$BOOT_PROMPT"
+    if command -v stdbuf &>/dev/null; then
+      stdbuf -oL -eL claude --print < "$BOOT_PROMPT"
+    else
+      claude --print < "$BOOT_PROMPT"
+    fi
   else
     # Auto-execute /start-work in autonomous mode
-    echo "/start-work --autonomous" | claude --print
+    if command -v stdbuf &>/dev/null; then
+      echo "/start-work --autonomous" | stdbuf -oL -eL claude --print
+    else
+      echo "/start-work --autonomous" | claude --print
+    fi
   fi
 fi
