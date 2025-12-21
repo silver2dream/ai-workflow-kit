@@ -18,11 +18,14 @@ gh issue view <ISSUE_NUMBER> --json number,title,body,labels,state
 ## Step 2: 準備 Ticket
 
 ```bash
-# 保存 issue body 為 ticket 文件
-gh issue view <ISSUE_NUMBER> --json body -q .body > /tmp/ticket-<ISSUE_NUMBER>.md
+# 確保 temp 目錄存在
+mkdir -p .ai/temp
+
+# 保存 issue body 為 ticket 文件（使用 .ai/temp/ 而非 /tmp/）
+gh issue view <ISSUE_NUMBER> --json body -q .body > .ai/temp/ticket-<ISSUE_NUMBER>.md
 
 # 讀取 Repo 欄位
-REPO=$(grep -oP '(?<=- Repo: )\w+' /tmp/ticket-<ISSUE_NUMBER>.md || echo "root")
+REPO=$(grep -oP '(?<=- Repo: )\w+' .ai/temp/ticket-<ISSUE_NUMBER>.md || echo "root")
 echo "Repo: $REPO"
 ```
 
@@ -36,7 +39,7 @@ gh issue comment <ISSUE_NUMBER> --body "🤖 Worker 開始執行..."
 ## Step 4: 執行 Worker
 
 ```bash
-bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> /tmp/ticket-<ISSUE_NUMBER>.md $REPO
+bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> .ai/temp/ticket-<ISSUE_NUMBER>.md $REPO
 ```
 
 等待執行完成（阻塞）。

@@ -288,12 +288,15 @@ cat <specs.base_path>/<spec_name>/tasks.md
 # 標記為進行中
 gh issue edit <ISSUE_NUMBER> --add-label "in-progress"
 
-# 將 issue body 保存為 ticket 文件
-gh issue view <ISSUE_NUMBER> --json body -q .body > /tmp/ticket-<ISSUE_NUMBER>.md
+# 確保 temp 目錄存在
+mkdir -p .ai/temp
+
+# 將 issue body 保存為 ticket 文件（使用 .ai/temp/ 而非 /tmp/）
+gh issue view <ISSUE_NUMBER> --json body -q .body > .ai/temp/ticket-<ISSUE_NUMBER>.md
 
 # 從 ticket 讀取 Repo 欄位（支援多 repo）
-REPOS=$(grep -oP '(?<=- Repo: )[\w, ]+' /tmp/ticket-<ISSUE_NUMBER>.md || echo "root")
-COORDINATION=$(grep -oP '(?<=- Coordination: )\w+' /tmp/ticket-<ISSUE_NUMBER>.md || echo "sequential")
+REPOS=$(grep -oP '(?<=- Repo: )[\w, ]+' .ai/temp/ticket-<ISSUE_NUMBER>.md || echo "root")
+COORDINATION=$(grep -oP '(?<=- Coordination: )\w+' .ai/temp/ticket-<ISSUE_NUMBER>.md || echo "sequential")
 ```
 
 **Multi-Repo 處理邏輯：**
@@ -310,7 +313,7 @@ if [[ "$COORDINATION" == "sequential" ]]; then
   for REPO in "${REPO_LIST[@]}"; do
     REPO=$(echo "$REPO" | tr -d ' ')
     echo "Processing repo: $REPO"
-    bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> /tmp/ticket-<ISSUE_NUMBER>.md $REPO
+    bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> .ai/temp/ticket-<ISSUE_NUMBER>.md $REPO
     
     # 檢查結果，如果失敗則停止
     RESULT=$(cat .ai/results/issue-<ISSUE_NUMBER>.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))")
@@ -324,7 +327,7 @@ elif [[ "$COORDINATION" == "parallel" ]]; then
   echo "Warning: parallel coordination not fully supported, using sequential"
   for REPO in "${REPO_LIST[@]}"; do
     REPO=$(echo "$REPO" | tr -d ' ')
-    bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> /tmp/ticket-<ISSUE_NUMBER>.md $REPO
+    bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> .ai/temp/ticket-<ISSUE_NUMBER>.md $REPO
   done
 fi
 ```
@@ -333,7 +336,7 @@ fi
 
 ```bash
 REPO=$(echo "$REPOS" | tr -d ' ')
-bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> /tmp/ticket-<ISSUE_NUMBER>.md $REPO
+bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> .ai/temp/ticket-<ISSUE_NUMBER>.md $REPO
 ```
 
 等待命令完成（這是阻塞執行），然後繼續到 Step 4。

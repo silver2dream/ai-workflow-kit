@@ -332,6 +332,43 @@ func TestInstall_GitIgnoreContainsClaudeSettings(t *testing.T) {
 	}
 }
 
+func TestInstall_GitIgnoreContainsCacheFiles(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockFS := createMinimalMockFS()
+
+	_, err = Install(mockFS, tmpDir, Options{
+		Preset:     "generic",
+		NoGenerate: true,
+		WithCI:     false,
+	})
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("failed to read .gitignore: %v", err)
+	}
+
+	// Verify common cache files are ignored to prevent audit P1 findings
+	expectedEntries := []string{
+		"__pycache__/",
+		"*.pyc",
+		"node_modules/",
+		".pytest_cache/",
+	}
+	for _, entry := range expectedEntries {
+		if !strings.Contains(string(content), entry) {
+			t.Errorf(".gitignore should contain %s", entry)
+		}
+	}
+}
+
 func TestInstall_ClaudeDirectoryCreated(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
 	if err != nil {
@@ -354,5 +391,75 @@ func TestInstall_ClaudeDirectoryCreated(t *testing.T) {
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	if _, err := os.Stat(claudeDir); os.IsNotExist(err) {
 		t.Error(".claude directory was not created")
+	}
+}
+
+func TestInstall_GitIgnoreUpdatedOnUpgrade(t *testing.T) {
+	// Test that upgrade replaces old AWK gitignore section with new entries
+	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create existing .gitignore with OLD AWK section (missing __pycache__)
+	oldGitignore := `# User entries
+*.bak
+
+# >>> AI Workflow Kit >>>
+# Runtime state (do not commit)
+.ai/state/
+.ai/results/
+.ai/runs/
+.ai/exe-logs/
+.worktrees/
+# <<< AI Workflow Kit <<<
+
+# More user entries
+*.tmp
+`
+	os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte(oldGitignore), 0o644)
+
+	mockFS := createMinimalMockFS()
+
+	// Simulate upgrade
+	_, err = Install(mockFS, tmpDir, Options{
+		Force:      true,
+		SkipConfig: true,
+		NoGenerate: true,
+		WithCI:     false,
+	})
+	if err != nil {
+		t.Fatalf("Install (upgrade) failed: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("failed to read .gitignore: %v", err)
+	}
+
+	// Should now contain new entries
+	if !strings.Contains(string(content), "__pycache__/") {
+		t.Error(".gitignore should contain __pycache__/ after upgrade")
+	}
+	if !strings.Contains(string(content), ".ai/temp/") {
+		t.Error(".gitignore should contain .ai/temp/ after upgrade")
+	}
+	if !strings.Contains(string(content), ".ai/logs/") {
+		t.Error(".gitignore should contain .ai/logs/ after upgrade")
+	}
+
+	// Should preserve user entries
+	if !strings.Contains(string(content), "*.bak") {
+		t.Error(".gitignore should preserve user entries (*.bak)")
+	}
+	if !strings.Contains(string(content), "*.tmp") {
+		t.Error(".gitignore should preserve user entries (*.tmp)")
+	}
+
+	// Should only have ONE AWK section (not duplicated)
+	count := strings.Count(string(content), "# >>> AI Workflow Kit >>>")
+	if count != 1 {
+		t.Errorf(".gitignore should have exactly 1 AWK section, got %d", count)
 	}
 }
