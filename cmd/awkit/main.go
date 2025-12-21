@@ -343,9 +343,20 @@ func cmdInit(args []string) int {
 		fmt.Println("Would create/update:")
 		fmt.Println("  .ai/config/workflow.yaml")
 		fmt.Println("  .ai/scripts/")
+		fmt.Println("  .ai/scripts/lib/")
 		fmt.Println("  .ai/templates/")
 		fmt.Println("  .ai/rules/")
 		fmt.Println("  .ai/commands/")
+		fmt.Println("  .ai/docs/")
+		fmt.Println("  .ai/tests/")
+		fmt.Println("  .ai/specs/")
+		fmt.Println("  .ai/state/ (runtime, gitignored)")
+		fmt.Println("  .ai/results/ (runtime, gitignored)")
+		fmt.Println("  .ai/runs/ (runtime, gitignored)")
+		fmt.Println("  .ai/exe-logs/ (runtime, gitignored)")
+		fmt.Println("  .worktrees/ (gitignored)")
+		fmt.Println("  .claude/rules -> .ai/rules (symlink)")
+		fmt.Println("  .claude/commands -> .ai/commands (symlink)")
 		if *withCI {
 			fmt.Println("  .github/workflows/ci.yml (if missing)")
 		}
@@ -547,7 +558,7 @@ _awkit() {
             return 0
             ;;
         init|install)
-            local opts="--preset --force --dry-run --no-generate --with-ci --project-name --help"
+            local opts="--preset --force --force-config --dry-run --no-generate --with-ci --project-name --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
             return 0
             ;;
@@ -604,7 +615,8 @@ _awkit() {
                 init|install)
                     _arguments \
                         '--preset[Project preset]:preset:(generic react-go)' \
-                        '--force[Overwrite existing files]' \
+                        '--force[Overwrite all existing files]' \
+                        '--force-config[Overwrite only workflow.yaml]' \
                         '--dry-run[Show what would be done]' \
                         '--no-generate[Skip generate.sh]' \
                         '--with-ci[Create CI workflow]' \
@@ -646,7 +658,8 @@ complete -c awkit -n __fish_use_subcommand -a help -d 'Show help'
 
 # init/install options
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic react-go'
-complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Overwrite existing files'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Overwrite all existing files'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l dry-run -d 'Show what would be done'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l no-generate -d 'Skip generate.sh'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l with-ci -d 'Create CI workflow'

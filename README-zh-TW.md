@@ -146,10 +146,14 @@ curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/downl
 更新專案內的 kit 檔案：
 
 ```bash
+# 只更新 kit 檔案（保留你的 workflow.yaml）
 awkit init --force
 
-# 或指定路徑
-awkit init /path/to/your-project --force
+# 只套用不同的 preset 到 workflow.yaml
+awkit init --preset react-go --force-config
+
+# 完整重置：更新 kit 檔案並套用 preset 到 workflow.yaml
+awkit init --preset react-go --force
 ```
 
 ### 1) 安裝 offline 依賴

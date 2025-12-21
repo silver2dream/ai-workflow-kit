@@ -104,6 +104,12 @@ func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 			return os.MkdirAll(dstPath, 0o755)
 		}
 
+		// Skip workflow.yaml - it's managed by applyPreset, not copyDir
+		// This prevents the embedded default config from overwriting preset-generated config
+		if strings.HasSuffix(path, "workflow.yaml") {
+			return nil
+		}
+
 		if !force {
 			if _, err := os.Stat(dstPath); err == nil {
 				return nil
