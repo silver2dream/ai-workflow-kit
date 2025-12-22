@@ -15,9 +15,14 @@ project:
 # Repository Configuration
 # ============================================================
 # type 選項：
-#   - submodule: Git submodule（獨立 repo，有自己的 .git）
+#   - root: 根目錄（single-repo 時使用，path 必須是 ./）
 #   - directory: 子目錄（同一個 repo 內的資料夾）
-#   - root: 根目錄（single-repo 時使用）
+#   - submodule: Git submodule（獨立 repo，有自己的 .git）
+#
+# 各 type 行為差異：
+#   - root: 所有操作在 repo 根目錄執行
+#   - directory: 操作在 worktree root 執行，變更限定在子目錄
+#   - submodule: commit/push 先在 submodule 執行，再更新 parent reference
 #
 # language 選項（會選擇對應的 CI 模板）：
 #   - go          → ci-go.yml.j2
@@ -36,24 +41,45 @@ project:
 #   - dotnet_version: "8.0.x"
 #   - package_manager: "npm" | "yarn" | "pnpm"
 #
+# ============================================================
+# 範例配置
+# ============================================================
 #
-# 範例 1: Monorepo with submodules
-# repos:
-#   - name: backend
-#     path: backend/
-#     type: submodule
-#
-# 範例 2: Monorepo with directories (no submodules)
-# repos:
-#   - name: backend
-#     path: backend/
-#     type: directory
-#
-# 範例 3: Single repo
+# 範例 1: Single repo (獨立專案)
+# project:
+#   type: "single-repo"
 # repos:
 #   - name: root
 #     path: ./
 #     type: root
+#     language: go
+#     verify:
+#       build: "go build ./..."
+#       test: "go test ./..."
+#
+# 範例 2: Monorepo with directories (共用 .git)
+# project:
+#   type: "monorepo"
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: directory
+#     language: go
+#   - name: frontend
+#     path: frontend/
+#     type: directory
+#     language: node
+#
+# 範例 3: Monorepo with submodules (獨立 .git)
+# project:
+#   type: "monorepo"
+# repos:
+#   - name: backend
+#     path: backend/
+#     type: submodule
+#     language: go
+#     # submodule 特有選項：
+#     # allow_parent_changes: false  # 是否允許修改 submodule 外的檔案
 
 repos:
   - name: backend

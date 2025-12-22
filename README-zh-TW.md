@@ -194,9 +194,30 @@ touch .ai/state/STOP
 
 ### Repo type
 
-- `type: directory`：monorepo 子目錄（同一個 git repo）
-- `type: submodule`：git submodule（獨立 repo）
-- `type: root`：single-repo
+AWK 支援三種專案結構類型，在 `.ai/config/workflow.yaml` 中設定：
+
+| Type | 說明 | 使用情境 |
+|------|------|----------|
+| `root` | 單一 repository | 獨立專案 |
+| `directory` | Monorepo 子目錄 | 共用 .git 的 monorepo |
+| `submodule` | Git submodule | 獨立 .git 的 monorepo |
+
+**各類型行為差異：**
+- **root**：所有操作在 repo 根目錄執行。Path 必須是 `./`。
+- **directory**：操作在 worktree root 執行，變更限定在子目錄。
+- **submodule**：commit/push 先在 submodule 執行，再更新 parent reference。
+
+範例：
+```yaml
+repos:
+  - name: backend
+    path: backend/
+    type: directory  # 或: root, submodule
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+```
 
 ### Specs
 

@@ -109,6 +109,29 @@ Check:
 
 ---
 
+## REPO TYPE SUPPORT
+
+AWK supports three repository types configured in `.ai/config/workflow.yaml`:
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `root` | Single repository | Standalone projects |
+| `directory` | Subdirectory in monorepo | Monorepo with shared .git |
+| `submodule` | Git submodule | Monorepo with independent repos |
+
+### Type-Specific Behavior
+
+- **root**: All operations run from repo root. Path must be `./`.
+- **directory**: Operations run from worktree root, changes scoped to subdirectory.
+- **submodule**: Commits/pushes happen in submodule first, then parent updates reference.
+
+### Submodule Constraints
+- Changes must stay within submodule boundary (unless `allow_parent_changes: true`)
+- PRs target parent repo, not submodule remote
+- Rollback reverts both submodule and parent commits
+
+---
+
 ## Quick Reference
 
 ### Start Work

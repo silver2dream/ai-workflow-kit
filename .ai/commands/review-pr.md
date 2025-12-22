@@ -38,6 +38,45 @@ $(gh pr checks <PR_NUMBER> --json name,state --jq '.[] | select(.state != \"SUCC
 gh pr diff <PR_NUMBER>
 ```
 
+## Step 3.1: 檢查 Submodule 變更 (Req 21.1-21.4)
+
+檢查 PR 是否包含 submodule 變更：
+
+```bash
+# 檢查是否有 submodule 變更
+SUBMODULE_CHANGES=$(gh pr diff <PR_NUMBER> | grep -E "^diff --git.*Subproject commit" || true)
+
+if [[ -n "$SUBMODULE_CHANGES" ]]; then
+  echo "⚠️ PR 包含 submodule 變更"
+  
+  # 獲取變更的 submodule 路徑
+  CHANGED_SUBMODULES=$(gh pr diff <PR_NUMBER> | grep -B1 "Subproject commit" | grep "^diff --git" | sed 's/.*a\///' | sed 's/ b\/.*//' | sort -u)
+  
+  for submodule in $CHANGED_SUBMODULES; do
+    echo "  - Submodule: $submodule"
+    
+    # 獲取 submodule commit 變更
+    OLD_SHA=$(gh pr diff <PR_NUMBER> | grep -A1 "diff --git a/$submodule" | grep "^-Subproject commit" | sed 's/-Subproject commit //' || echo "")
+    NEW_SHA=$(gh pr diff <PR_NUMBER> | grep -A1 "diff --git a/$submodule" | grep "^+Subproject commit" | sed 's/+Subproject commit //' || echo "")
+    
+    if [[ -n "$OLD_SHA" && -n "$NEW_SHA" ]]; then
+      echo "    Old SHA: $OLD_SHA"
+      echo "    New SHA: $NEW_SHA"
+      
+      # 檢查 submodule commit 是否已 push 到 origin (Req 21.3)
+      if ! git -C "$submodule" fetch origin "$NEW_SHA" --depth=1 2>/dev/null; then
+        echo "    ⚠️ WARNING: Submodule commit $NEW_SHA not found on origin!"
+        echo "    This may cause issues when others clone the repo."
+      fi
+      
+      # 顯示 submodule 的 commit diff (Req 21.2)
+      echo "    Submodule commits:"
+      git -C "$submodule" log --oneline "$OLD_SHA..$NEW_SHA" 2>/dev/null || echo "    (unable to show commits)"
+    fi
+  done
+fi
+```
+
 ## Step 4: 確定適用的規則
 
 從 PR body 或 branch name 判斷 Repo 類型，讀取對應規則：

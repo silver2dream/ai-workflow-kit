@@ -828,6 +828,78 @@ else
 fi
 
 # ============================================================
+# Test 25: Go Tests
+# ============================================================
+echo ""
+echo "## Go Tests"
+
+if command -v go &>/dev/null; then
+  GO_OUTPUT=$(go test ./... 2>&1)
+  GO_EXIT=$?
+
+  if [[ $GO_EXIT -eq 0 ]]; then
+    log_pass "Go tests passed"
+  else
+    log_fail "Go tests failed"
+    if [[ "$VERBOSE" == "--verbose" ]]; then
+      echo "$GO_OUTPUT"
+    fi
+  fi
+else
+  log_skip "go not installed"
+fi
+
+# ============================================================
+# Test 26: Shell Workflow Integration Tests
+# ============================================================
+echo ""
+echo "## Shell Workflow Integration Tests"
+
+# Test analyze_failure.sh
+if [[ -f "$SCRIPT_DIR/test_analyze_failure.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_analyze_failure.sh" > /dev/null 2>&1; then
+    log_pass "test_analyze_failure.sh passed"
+  else
+    log_fail "test_analyze_failure.sh failed"
+  fi
+else
+  log_skip "test_analyze_failure.sh not found"
+fi
+
+# Test root workflow
+if [[ -f "$SCRIPT_DIR/test_root_workflow.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_root_workflow.sh" > /dev/null 2>&1; then
+    log_pass "test_root_workflow.sh passed"
+  else
+    log_fail "test_root_workflow.sh failed"
+  fi
+else
+  log_skip "test_root_workflow.sh not found"
+fi
+
+# Test directory workflow
+if [[ -f "$SCRIPT_DIR/test_directory_workflow.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_directory_workflow.sh" > /dev/null 2>&1; then
+    log_pass "test_directory_workflow.sh passed"
+  else
+    log_fail "test_directory_workflow.sh failed"
+  fi
+else
+  log_skip "test_directory_workflow.sh not found"
+fi
+
+# Test submodule workflow
+if [[ -f "$SCRIPT_DIR/test_submodule_workflow.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_submodule_workflow.sh" > /dev/null 2>&1; then
+    log_pass "test_submodule_workflow.sh passed"
+  else
+    log_fail "test_submodule_workflow.sh failed"
+  fi
+else
+  log_skip "test_submodule_workflow.sh not found"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 echo ""

@@ -9,6 +9,482 @@ MONO_ROOT="$(git rev-parse --show-toplevel)"
 AI_ROOT="$MONO_ROOT/.ai"
 CONFIG_FILE="$AI_ROOT/config/workflow.yaml"
 
+# ============================================================
+# Repo Type Detection Functions
+# ============================================================
+# Get repo type from workflow.yaml
+# Returns: root | directory | submodule (default: directory)
+get_repo_type() {
+  local repo_name="$1"
+  local config_file="$2"
+  
+  if [[ ! -f "$config_file" ]]; then
+    echo "directory"
+    return
+  fi
+  
+  python3 -c "
+import yaml
+import sys
+
+repo_name = '$repo_name'
+config_file = '$config_file'
+
+try:
+    with open(config_file) as f:
+        config = yaml.safe_load(f)
+    
+    for repo in config.get('repos', []):
+        if repo.get('name') == repo_name:
+            print(repo.get('type', 'directory'))
+            sys.exit(0)
+    
+    # Not found in config, default to directory
+    print('directory')
+except Exception as e:
+    print('directory', file=sys.stderr)
+    print('directory')
+" 2>/dev/null || echo "directory"
+}
+
+# Get repo path from workflow.yaml
+get_repo_path() {
+  local repo_name="$1"
+  local config_file="$2"
+  
+  if [[ ! -f "$config_file" ]]; then
+    echo "./"
+    return
+  fi
+  
+  python3 -c "
+import yaml
+import sys
+
+repo_name = '$repo_name'
+config_file = '$config_file'
+
+try:
+    with open(config_file) as f:
+        config = yaml.safe_load(f)
+    
+    for repo in config.get('repos', []):
+        if repo.get('name') == repo_name:
+            print(repo.get('path', './'))
+            sys.exit(0)
+    
+    # Not found, default to ./
+    print('./')
+except Exception:
+    print('./')
+" 2>/dev/null || echo "./"
+}
+
+# ============================================================
+# Submodule Git Operations Functions (Req 6.1-6.5, 20.1-20.4, 24.1-24.5)
+# ============================================================
+
+# Global variables for submodule tracking
+SUBMODULE_SHA=""
+PARENT_SHA=""
+CONSISTENCY_STATUS="consistent"
+
+# Check if all changes are within submodule boundary (Req 20.1-20.4)
+check_submodule_boundary() {
+  local wt_dir="$1"
+  local submodule_path="$2"
+  local allow_parent="${3:-false}"
+  
+  # Get list of changed files
+  local changed_files
+  changed_files="$(git -C "$wt_dir" diff --cached --name-only 2>/dev/null || true)"
+  
+  if [[ -z "$changed_files" ]]; then
+    return 0
+  fi
+  
+  local outside_files=""
+  while IFS= read -r file; do
+    # Check if file is within submodule path
+    if [[ ! "$file" =~ ^"$submodule_path"/ && "$file" != "$submodule_path" ]]; then
+      # File is outside submodule
+      outside_files="$outside_files$file"$'\n'
+    fi
+  done <<< "$changed_files"
+  
+  if [[ -n "$outside_files" ]]; then
+    if [[ "$allow_parent" == "true" ]]; then
+      echo "[runner] WARNING: Changes outside submodule boundary (allowed by config):" >&2
+      echo "$outside_files" >&2
+      return 0
+    else
+      echo "ERROR: Changes detected outside submodule '$submodule_path':" >&2
+      echo "$outside_files" >&2
+      echo "HINT: Set allow_parent_changes=true in ticket to allow parent changes." >&2
+      return 1
+    fi
+  fi
+  
+  return 0
+}
+
+# Commit changes in submodule first, then update parent reference (Req 6.1, 6.2)
+git_commit_submodule() {
+  local wt_dir="$1"
+  local submodule_path="$2"
+  local commit_msg="$3"
+  local submodule_dir="$wt_dir/$submodule_path"
+  
+  echo "[runner] submodule commit: $submodule_path" >&2
+  
+  # Stage and commit in submodule first (Req 6.1)
+  git -C "$submodule_dir" add -A
+  
+  if git -C "$submodule_dir" diff --cached --quiet; then
+    echo "[runner] no changes in submodule" >&2
+    return 1
+  fi
+  
+  if ! git -C "$submodule_dir" commit -m "$commit_msg"; then
+    echo "ERROR: submodule commit failed" >&2
+    return 2
+  fi
+  
+  # Record submodule SHA (Req 6.2)
+  SUBMODULE_SHA="$(git -C "$submodule_dir" rev-parse HEAD)"
+  echo "[runner] submodule SHA: $SUBMODULE_SHA" >&2
+  
+  # Update parent's submodule reference (Req 6.2)
+  git -C "$wt_dir" add "$submodule_path"
+  
+  if ! git -C "$wt_dir" commit -m "$commit_msg"; then
+    echo "ERROR: parent commit (submodule ref update) failed" >&2
+    CONSISTENCY_STATUS="submodule_committed_parent_failed"
+    return 2
+  fi
+  
+  # Record parent SHA
+  PARENT_SHA="$(git -C "$wt_dir" rev-parse HEAD)"
+  echo "[runner] parent SHA: $PARENT_SHA" >&2
+  
+  return 0
+}
+
+# Push submodule first, then parent (Req 6.3, 6.4, 6.5, 24.1-24.3)
+git_push_submodule() {
+  local wt_dir="$1"
+  local submodule_path="$2"
+  local branch="$3"
+  local submodule_dir="$wt_dir/$submodule_path"
+  
+  echo "[runner] submodule push: $submodule_path" >&2
+  
+  # Get submodule's default branch for push
+  local submodule_branch
+  submodule_branch="$(git -C "$submodule_dir" symbolic-ref --short HEAD 2>/dev/null || echo "$branch")"
+  
+  # Create branch in submodule if needed
+  if ! git -C "$submodule_dir" show-ref --verify --quiet "refs/heads/$submodule_branch"; then
+    git -C "$submodule_dir" checkout -b "$submodule_branch" >&2
+  fi
+  
+  # Push submodule first (Req 6.3)
+  if ! git -C "$submodule_dir" push -u origin "$submodule_branch"; then
+    echo "ERROR: submodule push failed" >&2
+    CONSISTENCY_STATUS="submodule_push_failed"
+    return 2
+  fi
+  
+  echo "[runner] submodule pushed to origin/$submodule_branch" >&2
+  
+  # Push parent (Req 6.4)
+  if ! git -C "$wt_dir" push -u origin "$branch"; then
+    echo "ERROR: parent push failed (submodule already pushed)" >&2
+    CONSISTENCY_STATUS="parent_push_failed_submodule_pushed"
+    echo "RECOVERY: git -C '$submodule_dir' reset --hard HEAD~1 && git push -f origin $submodule_branch" >&2
+    return 2
+  fi
+  
+  echo "[runner] parent pushed to origin/$branch" >&2
+  CONSISTENCY_STATUS="consistent"
+  
+  return 0
+}
+
+# ============================================================
+# Security Functions (Req 25.1-25.5, 29.1-29.5)
+# ============================================================
+
+# Check for script modifications (Req 25.1-25.5)
+check_script_modifications() {
+  local wt_dir="$1"
+  local allow_script_changes="${2:-false}"
+  local whitelist="${3:-}"
+  
+  # Get list of changed files
+  local changed_files
+  changed_files="$(git -C "$wt_dir" diff --cached --name-only 2>/dev/null || true)"
+  
+  if [[ -z "$changed_files" ]]; then
+    return 0
+  fi
+  
+  local protected_paths=".ai/scripts/ .ai/commands/"
+  local violations=""
+  
+  while IFS= read -r file; do
+    for protected in $protected_paths; do
+      if [[ "$file" == "$protected"* ]]; then
+        # Check if file is in whitelist
+        if [[ -n "$whitelist" && "$whitelist" == *"$file"* ]]; then
+          continue
+        fi
+        violations="$violations$file"$'\n'
+      fi
+    done
+  done <<< "$changed_files"
+  
+  if [[ -n "$violations" ]]; then
+    if [[ "$allow_script_changes" == "true" ]]; then
+      echo "[runner] WARNING: Script modifications detected (allowed by approval flag):" >&2
+      echo "$violations" >&2
+      return 0
+    else
+      echo "ERROR: Modifications to protected scripts detected:" >&2
+      echo "$violations" >&2
+      echo "HINT: Set allow_script_changes=true in ticket to allow script modifications." >&2
+      return 1
+    fi
+  fi
+  
+  return 0
+}
+
+# Check for sensitive information in changes (Req 29.1-29.5)
+check_sensitive_info() {
+  local wt_dir="$1"
+  local allow_secrets="${2:-false}"
+  local custom_patterns="${3:-}"
+  
+  # Default secret patterns
+  local patterns=(
+    'password\s*[:=]\s*["\x27][^"\x27]+'
+    'api[_-]?key\s*[:=]\s*["\x27][^"\x27]+'
+    'secret[_-]?key\s*[:=]\s*["\x27][^"\x27]+'
+    'access[_-]?token\s*[:=]\s*["\x27][^"\x27]+'
+    'private[_-]?key\s*[:=]'
+    'AWS_SECRET_ACCESS_KEY'
+    'GITHUB_TOKEN'
+    'BEGIN\s+(RSA|DSA|EC|OPENSSH)\s+PRIVATE\s+KEY'
+  )
+  
+  # Get diff content
+  local diff_content
+  diff_content="$(git -C "$wt_dir" diff --cached 2>/dev/null || true)"
+  
+  if [[ -z "$diff_content" ]]; then
+    return 0
+  fi
+  
+  local found_secrets=""
+  for pattern in "${patterns[@]}"; do
+    if echo "$diff_content" | grep -iE "$pattern" >/dev/null 2>&1; then
+      found_secrets="$found_secrets- Pattern matched: $pattern"$'\n'
+    fi
+  done
+  
+  # Check custom patterns if provided
+  if [[ -n "$custom_patterns" ]]; then
+    for pattern in $custom_patterns; do
+      if echo "$diff_content" | grep -E "$pattern" >/dev/null 2>&1; then
+        found_secrets="$found_secrets- Custom pattern matched: $pattern"$'\n'
+      fi
+    done
+  fi
+  
+  if [[ -n "$found_secrets" ]]; then
+    if [[ "$allow_secrets" == "true" ]]; then
+      echo "[runner] WARNING: Potential sensitive information detected (allowed by flag):" >&2
+      echo "$found_secrets" >&2
+      return 0
+    else
+      echo "ERROR: Potential sensitive information detected in changes:" >&2
+      echo "$found_secrets" >&2
+      echo "HINT: Set allow_secrets=true in ticket if this is intentional." >&2
+      return 1
+    fi
+  fi
+  
+  return 0
+}
+
+# ============================================================
+# Error Handling Functions (Req 13.1-13.5)
+# ============================================================
+
+# Format detailed error message with context
+format_error() {
+  local operation="$1"
+  local error_msg="$2"
+  local suggestion="${3:-}"
+  
+  echo "============================================================" >&2
+  echo "ERROR: $error_msg" >&2
+  echo "============================================================" >&2
+  echo "Operation: $operation" >&2
+  echo "Repo Type: ${REPO_TYPE:-unknown}" >&2
+  echo "Repo Path: ${REPO_PATH:-unknown}" >&2
+  echo "Worktree: ${WT_DIR:-unknown}" >&2
+  echo "Work Dir: ${WORK_DIR:-unknown}" >&2
+  echo "Branch: ${BRANCH:-unknown}" >&2
+  if [[ -n "$suggestion" ]]; then
+    echo "" >&2
+    echo "SUGGESTION: $suggestion" >&2
+  fi
+  echo "============================================================" >&2
+}
+
+# ============================================================
+# Cross-Platform Functions (Req 27.1-27.4, 28.1-28.4)
+# ============================================================
+
+# Normalize path for cross-platform comparison (Req 27.1-27.4)
+normalize_path() {
+  local path="$1"
+  # Remove trailing slashes, convert backslashes to forward slashes
+  path="${path//\\//}"
+  path="${path%/}"
+  # Convert to lowercase for case-insensitive comparison on Windows
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    path="$(echo "$path" | tr '[:upper:]' '[:lower:]')"
+  fi
+  echo "$path"
+}
+
+# Compare paths case-insensitively on Windows (Req 27.2)
+paths_equal() {
+  local path1="$1"
+  local path2="$2"
+  local norm1 norm2
+  norm1="$(normalize_path "$path1")"
+  norm2="$(normalize_path "$path2")"
+  [[ "$norm1" == "$norm2" ]]
+}
+
+# Cache directory for push permission results (Req 28.4)
+PUSH_PERMISSION_CACHE_FILE="$MONO_ROOT/.ai/state/cache/push_permissions.json"
+
+# Check push permission with caching (Req 28.1-28.4)
+check_push_permission() {
+  local remote_url="$1"
+  local cache_key="push:$remote_url"
+  local cache_ttl=300  # 5 minutes
+  
+  mkdir -p "$(dirname "$PUSH_PERMISSION_CACHE_FILE")"
+  
+  # Check cache first (Req 28.4)
+  if [[ -f "$PUSH_PERMISSION_CACHE_FILE" ]]; then
+    local cached_result
+    cached_result=$(python3 -c "
+import json
+import time
+import sys
+
+cache_file = '$PUSH_PERMISSION_CACHE_FILE'
+key = '$cache_key'
+ttl = $cache_ttl
+
+try:
+    with open(cache_file) as f:
+        cache = json.load(f)
+    
+    if key in cache:
+        entry = cache[key]
+        if time.time() - entry.get('timestamp', 0) <= ttl:
+            print('allowed' if entry.get('allowed', False) else 'denied')
+            sys.exit(0)
+    print('unknown')
+except Exception:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+    
+    if [[ "$cached_result" == "allowed" ]]; then
+      return 0
+    elif [[ "$cached_result" == "denied" ]]; then
+      return 1
+    fi
+  fi
+  
+  # Try a dry-run push to check permission (Req 28.1, 28.2)
+  local allowed="false"
+  if git push --dry-run "$remote_url" HEAD:refs/heads/__permission_check__ 2>/dev/null; then
+    allowed="true"
+  fi
+  
+  # Update cache (Req 28.3)
+  python3 -c "
+import json
+import time
+
+cache_file = '$PUSH_PERMISSION_CACHE_FILE'
+key = '$cache_key'
+allowed = '$allowed' == 'true'
+
+try:
+    with open(cache_file) as f:
+        cache = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    cache = {}
+
+cache[key] = {
+    'allowed': allowed,
+    'timestamp': time.time()
+}
+
+with open(cache_file, 'w') as f:
+    json.dump(cache, f, indent=2)
+" 2>/dev/null || true
+  
+  [[ "$allowed" == "true" ]]
+}
+
+# ============================================================
+# Submodule Branch Management Functions (Req 16.1, 16.2, 16.4)
+# ============================================================
+
+# Create or reuse branch in submodule (Req 16.1, 16.2, 16.4)
+setup_submodule_branch() {
+  local submodule_dir="$1"
+  local branch_name="$2"
+  
+  echo "[runner] setup submodule branch: $branch_name" >&2
+  
+  # Get submodule's default branch (Req 16.2)
+  local default_branch
+  default_branch="$(git -C "$submodule_dir" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")"
+  
+  # Check if branch already exists (Req 16.4)
+  if git -C "$submodule_dir" show-ref --verify --quiet "refs/heads/$branch_name"; then
+    echo "[runner] reusing existing submodule branch: $branch_name" >&2
+    git -C "$submodule_dir" checkout "$branch_name" >&2
+    return 0
+  fi
+  
+  # Check if branch exists on remote
+  if git -C "$submodule_dir" show-ref --verify --quiet "refs/remotes/origin/$branch_name"; then
+    echo "[runner] checking out remote submodule branch: $branch_name" >&2
+    git -C "$submodule_dir" checkout -b "$branch_name" "origin/$branch_name" >&2
+    return 0
+  fi
+  
+  # Create new branch from default branch (Req 16.1)
+  echo "[runner] creating new submodule branch from $default_branch" >&2
+  git -C "$submodule_dir" checkout -b "$branch_name" "origin/$default_branch" >&2 || \
+    git -C "$submodule_dir" checkout -b "$branch_name" >&2
+  
+  return 0
+}
+
 # Read config
 if [[ -f "$CONFIG_FILE" ]]; then
   INTEGRATION_BRANCH=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c['git']['integration_branch'])")
@@ -41,6 +517,24 @@ if ! echo "$VALID_REPOS" | grep -qw "$REPO"; then
   echo "ERROR: Repo must be one of: $VALID_REPOS (got '$REPO')" >&2
   exit 2
 fi
+
+# ============================================================
+# Detect Repo Type and Path from Config
+# ============================================================
+REPO_TYPE="$(get_repo_type "$REPO" "$CONFIG_FILE")"
+REPO_PATH="$(get_repo_path "$REPO" "$CONFIG_FILE")"
+
+# Special handling for root type
+if [[ "$REPO" == "root" ]]; then
+  REPO_TYPE="root"
+  REPO_PATH="./"
+fi
+
+# Export for use by other scripts
+export REPO_TYPE
+export REPO_PATH
+
+echo "[runner] repo=$REPO type=$REPO_TYPE path=$REPO_PATH"
 
 RELEASE_FLAG="$(grep -iE '^- +Release:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +Release:\s*//I' | tr -d '\r' || echo "false")"
 RELEASE_FLAG="$(echo "$RELEASE_FLAG" | awk '{print tolower($0)}')"
@@ -222,66 +716,55 @@ if ! bash "$MONO_ROOT/.ai/scripts/attempt_guard.sh" "$ISSUE_ID" "codex-auto"; th
 fi
 trace_step_end "success"
 
-TARGET_REPO_ROOT="$MONO_ROOT"
+# Monorepo support: always create worktree from MONO_ROOT
+# For backend/frontend repos, we cd into the subdirectory after worktree creation
 WT_DIR="$MONO_ROOT/.worktrees/issue-$ISSUE_ID"
+WORK_DIR="$WT_DIR"  # Where codex will actually work
 
-if [[ "$REPO" == "backend" || "$REPO" == "frontend" ]]; then
-  TARGET_REPO_ROOT="$MONO_ROOT/$REPO"
-  WT_DIR="$MONO_ROOT/.worktrees/${REPO}-issue-$ISSUE_ID"
+if [[ "$REPO" != "root" ]]; then
+  # For monorepo subdirectories, work inside the subdirectory
+  WORK_DIR="$WT_DIR/$REPO"
 fi
 
-echo "[runner] preflight repo=$REPO"
+echo "[runner] preflight repo=$REPO type=$REPO_TYPE"
 trace_step_start "preflight"
-if [[ "$REPO" == "root" ]]; then
-  if ! bash "$MONO_ROOT/.ai/scripts/preflight.sh"; then
-    record_error "preflight failed"
-    trace_step_end "failed" "preflight failed"
-    exit 2
-  fi
-else
-  if [[ -n "$(git -C "$MONO_ROOT" status --porcelain)" ]]; then
-    record_error "monorepo root working tree not clean"
-    echo "ERROR: monorepo root working tree not clean. Commit/stash first." >&2
-    git -C "$MONO_ROOT" status --porcelain >&2 || true
-    trace_step_end "failed" "monorepo root working tree not clean"
-    exit 2
-  fi
-  if [[ -n "$(git -C "$TARGET_REPO_ROOT" status --porcelain)" ]]; then
-    record_error "$REPO working tree not clean"
-    echo "ERROR: $REPO working tree not clean. Commit/stash first." >&2
-    git -C "$TARGET_REPO_ROOT" status --porcelain >&2 || true
-    trace_step_end "failed" "$REPO working tree not clean"
-    exit 2
-  fi
+# Always check monorepo root is clean
+if [[ -n "$(git -C "$MONO_ROOT" status --porcelain)" ]]; then
+  record_error "working tree not clean"
+  echo "ERROR: working tree not clean. Commit/stash first." >&2
+  git -C "$MONO_ROOT" status --porcelain >&2 || true
+  trace_step_end "failed" "working tree not clean"
+  exit 2
+fi
+# Run preflight for ALL repo types (Req 7.6, 7.7)
+if ! bash "$MONO_ROOT/.ai/scripts/preflight.sh" "$REPO_TYPE" "$REPO_PATH"; then
+  record_error "preflight failed"
+  trace_step_end "failed" "preflight failed"
+  exit 2
 fi
 trace_step_end "success"
 
 trace_step_start "worktree"
 if [[ ! -d "$WT_DIR" ]]; then
-  if [[ "$REPO" == "root" ]]; then
-    WT_DIR="$(bash "$MONO_ROOT/.ai/scripts/new_worktree.sh" "$ISSUE_ID" "$BRANCH")"
+  # Pass repo_type and repo_path to new_worktree.sh (Req 14.5)
+  WT_DIR="$(bash "$MONO_ROOT/.ai/scripts/new_worktree.sh" "$ISSUE_ID" "$BRANCH" "$REPO_TYPE" "$REPO_PATH")"
+  if [[ "$REPO" != "root" ]]; then
+    WORK_DIR="$WT_DIR/$REPO"
   else
-    echo "[runner] create worktree for $REPO at $WT_DIR"
-    git -C "$TARGET_REPO_ROOT" fetch origin --prune >/dev/null 2>&1 || true
-
-    if ! git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$INTEGRATION_BRANCH"; then
-      if git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/remotes/origin/$INTEGRATION_BRANCH"; then
-        git -C "$TARGET_REPO_ROOT" branch "$INTEGRATION_BRANCH" "origin/$INTEGRATION_BRANCH" >/dev/null 2>&1 || true
-      fi
-    fi
-
-    if git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
-      :
-    elif git -C "$TARGET_REPO_ROOT" show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
-      git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "origin/$BRANCH" >/dev/null 2>&1 || true
-    else
-      git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "$INTEGRATION_BRANCH" >/dev/null 2>&1 || git -C "$TARGET_REPO_ROOT" branch "$BRANCH" "origin/$INTEGRATION_BRANCH" >/dev/null 2>&1
-    fi
-
-    git -C "$TARGET_REPO_ROOT" worktree add "$WT_DIR" "$BRANCH" >/dev/null
+    WORK_DIR="$WT_DIR"
   fi
 fi
-echo "[runner] worktree=$WT_DIR"
+
+# Verify work directory exists
+if [[ ! -d "$WORK_DIR" ]]; then
+  format_error "worktree_setup" "work directory not found: $WORK_DIR" \
+    "Check that the repo path '$REPO_PATH' exists in the worktree"
+  record_error "work directory not found: $WORK_DIR"
+  trace_step_end "failed" "work directory not found"
+  exit 2
+fi
+
+echo "[runner] worktree=$WT_DIR work_dir=$WORK_DIR"
 trace_step_end "success"
 
 cd "$WT_DIR"
@@ -299,6 +782,34 @@ fi
 TITLE_LINE="$(sed -n 's/^#\s\+//p' "$TASK_PATH" | head -n 1 | tr -d '\r')"
 [[ -z "$TITLE_LINE" ]] && TITLE_LINE="issue-$ISSUE_ID"
 
+# Build work directory instruction for prompt (Req 10.1-10.5)
+WORK_DIR_INSTRUCTION=""
+case "$REPO_TYPE" in
+  root)
+    # Root type: no special path instructions (Req 10.1)
+    ;;
+  directory)
+    # Directory type: explain paths relative to monorepo root (Req 10.2, 10.4)
+    WORK_DIR_INSTRUCTION="
+IMPORTANT: You are working in a MONOREPO (directory type).
+- Working directory: $WORK_DIR
+- All file paths should be relative to the worktree root
+- Example: $REPO/internal/foo.go (not internal/foo.go)
+"
+    ;;
+  submodule)
+    # Submodule type: warn about file boundary (Req 10.3, 10.5)
+    WORK_DIR_INSTRUCTION="
+IMPORTANT: You are working in a SUBMODULE within a monorepo.
+- Submodule path: $REPO_PATH
+- Working directory: $WORK_DIR
+- WARNING: Do NOT modify files outside the submodule directory!
+- All changes must be within: $REPO_PATH/
+- Files outside this boundary will cause the commit to fail.
+"
+    ;;
+esac
+
 PROMPT_FILE="$RUN_DIR/prompt.txt"
 cat > "$PROMPT_FILE" <<PROMPT
 You are an automated coding agent running inside a git worktree.
@@ -306,7 +817,7 @@ You are an automated coding agent running inside a git worktree.
 Repo rules:
 - Read and follow CLAUDE.md and AGENTS.md.
 - Keep changes minimal and strictly within ticket scope.
-
+$WORK_DIR_INSTRUCTION
 IMPORTANT: Do NOT run any git commands (commit, push, etc.) or create PRs.
 The runner script will handle git operations after you complete the code changes.
 Your job is ONLY to:
@@ -425,6 +936,40 @@ fi
 SUBJECT="$(echo "$SUBJECT" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 _-]/ /g' | tr -s ' ' | sed 's/^ *//;s/ *$//')"
 COMMIT_MSG="[$TYPE] $SUBJECT"
 
+# Security checks before commit (Req 25.1-25.5, 29.1-29.5)
+trace_step_start "security_check"
+
+# Read security flags from ticket
+ALLOW_SCRIPT_CHANGES="$(grep -iE '^- +allow_script_changes:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +allow_script_changes:\s*//I' | tr -d '\r' || echo "false")"
+ALLOW_SCRIPT_CHANGES="$(echo "$ALLOW_SCRIPT_CHANGES" | awk '{print tolower($0)}')"
+SCRIPT_WHITELIST="$(grep -iE '^- +script_whitelist:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +script_whitelist:\s*//I' | tr -d '\r' || true)"
+
+ALLOW_SECRETS="$(grep -iE '^- +allow_secrets:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +allow_secrets:\s*//I' | tr -d '\r' || echo "false")"
+ALLOW_SECRETS="$(echo "$ALLOW_SECRETS" | awk '{print tolower($0)}')"
+CUSTOM_SECRET_PATTERNS="$(grep -iE '^- +secret_patterns:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +secret_patterns:\s*//I' | tr -d '\r' || true)"
+
+# Stage changes first to check them
+git add -A
+if [[ "$REPO" == "root" ]]; then
+  git reset -q .ai .worktrees >/dev/null 2>&1 || true
+fi
+
+# Check for script modifications (Req 25.1-25.5)
+if ! check_script_modifications "$WT_DIR" "$ALLOW_SCRIPT_CHANGES" "$SCRIPT_WHITELIST"; then
+  record_error "script modification not allowed"
+  trace_step_end "failed" "script modification not allowed"
+  exit 2
+fi
+
+# Check for sensitive information (Req 29.1-29.5)
+if ! check_sensitive_info "$WT_DIR" "$ALLOW_SECRETS" "$CUSTOM_SECRET_PATTERNS"; then
+  record_error "sensitive information detected"
+  trace_step_end "failed" "sensitive information detected"
+  exit 2
+fi
+
+trace_step_end "success"
+
 trace_step_start "git_commit"
 
 # Clean up any stale index.lock files (may be left by sandbox restrictions)
@@ -443,41 +988,95 @@ if [[ -f "$WT_DIR/.git" ]]; then
   fi
 fi
 
-git add -A
-if [[ "$REPO" == "root" ]]; then
-  git reset -q .ai .worktrees >/dev/null 2>&1 || true
-fi
-
-if git diff --cached --quiet; then
-  record_error "no changes staged"
-  echo "ERROR: no changes staged; nothing to commit." | tee -a "$SUMMARY_FILE"
-  trace_step_end "failed" "no changes staged"
-  export AI_RESULTS_ROOT="$MONO_ROOT"
-  export AI_REPO_NAME="$REPO"
-  export AI_BRANCH_NAME="$BRANCH"
-  export AI_PR_BASE="$PR_BASE"
-  export AI_STATE_ROOT="$WT_DIR"
-  trace_step_start "write_result"
-  if ! bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"; then
-    trace_step_end "failed" "write_result failed"
+# Handle git operations based on repo type
+if [[ "$REPO_TYPE" == "submodule" ]]; then
+  # Submodule type: check boundary, commit submodule first, then parent (Req 6.1-6.5, 20.1-20.4)
+  ALLOW_PARENT_CHANGES="$(grep -iE '^- +allow_parent_changes:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +allow_parent_changes:\s*//I' | tr -d '\r' || echo "false")"
+  ALLOW_PARENT_CHANGES="$(echo "$ALLOW_PARENT_CHANGES" | awk '{print tolower($0)}')"
+  
+  if ! check_submodule_boundary "$WT_DIR" "$REPO_PATH" "$ALLOW_PARENT_CHANGES"; then
+    record_error "changes outside submodule boundary"
+    trace_step_end "failed" "changes outside submodule boundary"
     exit 2
   fi
-  trace_step_end "success"
-  exit 2
-fi
+  
+  if ! git_commit_submodule "$WT_DIR" "$REPO_PATH" "$COMMIT_MSG"; then
+    RC=$?
+    if [[ "$RC" -eq 1 ]]; then
+      record_error "no changes in submodule"
+      echo "ERROR: no changes staged in submodule." | tee -a "$SUMMARY_FILE"
+      trace_step_end "failed" "no changes in submodule"
+    else
+      record_error "submodule commit failed"
+      trace_step_end "failed" "submodule commit failed"
+    fi
+    export AI_RESULTS_ROOT="$MONO_ROOT"
+    export AI_REPO_NAME="$REPO"
+    export AI_BRANCH_NAME="$BRANCH"
+    export AI_PR_BASE="$PR_BASE"
+    export AI_STATE_ROOT="$WT_DIR"
+    export AI_SUBMODULE_SHA="$SUBMODULE_SHA"
+    export AI_CONSISTENCY_STATUS="$CONSISTENCY_STATUS"
+    trace_step_start "write_result"
+    bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE" || true
+    trace_step_end "success"
+    exit 2
+  fi
+else
+  # Root/Directory type: standard git operations
+  # Files already staged in security_check step
 
-if ! git commit -m "$COMMIT_MSG"; then
-  record_error "git commit failed"
-  trace_step_end "failed" "git commit failed"
-  exit 2
+  if git diff --cached --quiet; then
+    record_error "no changes staged"
+    echo "ERROR: no changes staged; nothing to commit." | tee -a "$SUMMARY_FILE"
+    trace_step_end "failed" "no changes staged"
+    export AI_RESULTS_ROOT="$MONO_ROOT"
+    export AI_REPO_NAME="$REPO"
+    export AI_BRANCH_NAME="$BRANCH"
+    export AI_PR_BASE="$PR_BASE"
+    export AI_STATE_ROOT="$WT_DIR"
+    trace_step_start "write_result"
+    if ! bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE"; then
+      trace_step_end "failed" "write_result failed"
+      exit 2
+    fi
+    trace_step_end "success"
+    exit 2
+  fi
+
+  if ! git commit -m "$COMMIT_MSG"; then
+    record_error "git commit failed"
+    trace_step_end "failed" "git commit failed"
+    exit 2
+  fi
 fi
 trace_step_end "success"
 
 trace_step_start "git_push"
-if ! git push -u origin "$BRANCH"; then
-  record_error "git push failed"
-  trace_step_end "failed" "git push failed"
-  exit 2
+if [[ "$REPO_TYPE" == "submodule" ]]; then
+  # Submodule type: push submodule first, then parent (Req 6.3-6.5, 24.1-24.3)
+  if ! git_push_submodule "$WT_DIR" "$REPO_PATH" "$BRANCH"; then
+    record_error "submodule push failed: $CONSISTENCY_STATUS"
+    trace_step_end "failed" "submodule push failed"
+    export AI_RESULTS_ROOT="$MONO_ROOT"
+    export AI_REPO_NAME="$REPO"
+    export AI_BRANCH_NAME="$BRANCH"
+    export AI_PR_BASE="$PR_BASE"
+    export AI_STATE_ROOT="$WT_DIR"
+    export AI_SUBMODULE_SHA="$SUBMODULE_SHA"
+    export AI_CONSISTENCY_STATUS="$CONSISTENCY_STATUS"
+    trace_step_start "write_result"
+    bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "failed" "" "$SUMMARY_FILE" || true
+    trace_step_end "success"
+    exit 2
+  fi
+else
+  # Root/Directory type: standard push
+  if ! git push -u origin "$BRANCH"; then
+    record_error "git push failed"
+    trace_step_end "failed" "git push failed"
+    exit 2
+  fi
 fi
 trace_step_end "success"
 
@@ -518,6 +1117,9 @@ export AI_REPO_NAME="$REPO"
 export AI_BRANCH_NAME="$BRANCH"
 export AI_PR_BASE="$PR_BASE"
 export AI_STATE_ROOT="$WT_DIR"
+export AI_REPO_TYPE="$REPO_TYPE"
+export AI_SUBMODULE_SHA="$SUBMODULE_SHA"
+export AI_CONSISTENCY_STATUS="$CONSISTENCY_STATUS"
 trace_step_start "write_result"
 if ! bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "success" "$PR_URL" "$SUMMARY_FILE"; then
   trace_step_end "failed" "write_result failed"
@@ -525,7 +1127,7 @@ if ! bash "$MONO_ROOT/.ai/scripts/write_result.sh" "$ISSUE_ID" "success" "$PR_UR
 fi
 trace_step_end "success"
 
-echo "DONE: repo=$REPO branch=$BRANCH"
+echo "DONE: repo=$REPO type=$REPO_TYPE branch=$BRANCH"
 echo "PR:   $PR_URL"
 echo "LOG:  $CODEX_LOG"
 echo "JSON: $MONO_ROOT/.ai/results/issue-$ISSUE_ID.json"
