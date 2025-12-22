@@ -194,9 +194,30 @@ Main config: `.ai/config/workflow.yaml`
 
 ### Repo type
 
-- `type: directory`: monorepo subdirectories (single git repo)
-- `type: submodule`: git submodules (independent repos)
-- `type: root`: single-repo
+AWK supports three repository types configured in `.ai/config/workflow.yaml`:
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `root` | Single repository | Standalone projects |
+| `directory` | Subdirectory in monorepo | Monorepo with shared .git |
+| `submodule` | Git submodule | Monorepo with independent repos |
+
+**Type-Specific Behavior:**
+- **root**: All operations run from repo root. Path must be `./`.
+- **directory**: Operations run from worktree root, changes scoped to subdirectory.
+- **submodule**: Commits/pushes happen in submodule first, then parent updates reference.
+
+Example:
+```yaml
+repos:
+  - name: backend
+    path: backend/
+    type: directory  # or: root, submodule
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+```
 
 ### Specs
 

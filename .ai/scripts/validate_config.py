@@ -116,9 +116,14 @@ def main():
         mono_root = os.path.dirname(ai_root)
         gitmodules_path = os.path.join(mono_root, '.gitmodules')
         gitmodules_content = ''
+        gitmodules_paths = []
         if os.path.exists(gitmodules_path):
             with open(gitmodules_path, 'r', encoding='utf-8') as f:
                 gitmodules_content = f.read()
+            # Parse submodule paths from .gitmodules
+            import re
+            gitmodules_paths = re.findall(r'path\s*=\s*(.+)', gitmodules_content)
+            gitmodules_paths = [p.strip() for p in gitmodules_paths]
 
         for repo in config.get('repos', []):
             repo_name = repo.get('name', 'unknown')
@@ -126,26 +131,71 @@ def main():
             repo_type = repo.get('type', 'directory')
             full_path = os.path.join(mono_root, repo_path) if repo_path else mono_root
 
+            # Security: Path traversal prevention (Req 22.1-22.4)
+            if '..' in repo_path:
+                errors.append(f"Repo '{repo_name}': path '{repo_path}' contains '..' (path traversal not allowed)")
+                continue
+            
+            # Verify path is within worktree (Req 9.4)
+            if repo_path:
+                try:
+                    resolved_path = os.path.realpath(full_path)
+                    resolved_root = os.path.realpath(mono_root)
+                    if not resolved_path.startswith(resolved_root):
+                        errors.append(f"Repo '{repo_name}': path '{repo_path}' resolves outside monorepo root")
+                        continue
+                except Exception:
+                    pass  # Path doesn't exist yet, skip this check
+
             # Type-specific validation
             if repo_type == 'submodule':
+                # Req 1.5, 1.6, 9.1, 9.2, 26.1-26.4: Submodule validation
                 if not os.path.exists(gitmodules_path):
-                    errors.append(f"Repo '{repo_name}': type=submodule but .gitmodules not found")
-                elif repo_path and repo_path not in gitmodules_content:
-                    errors.append(f"Repo '{repo_name}': type=submodule but path '{repo_path}' not in .gitmodules")
-                if repo_path and not os.path.exists(os.path.join(full_path, '.git')):
-                    errors.append(f"Repo '{repo_name}': type=submodule but '{repo_path}' is not a git repo")
+                    errors.append(f"Repo '{repo_name}': type=submodule but .gitmodules not found (Req 26.1)")
+                elif repo_path and repo_path not in gitmodules_paths:
+                    errors.append(f"Repo '{repo_name}': type=submodule but path '{repo_path}' not in .gitmodules (Req 26.2)")
+                
+                # Check submodule has .git (Req 26.3)
+                if repo_path and os.path.exists(full_path):
+                    git_path = os.path.join(full_path, '.git')
+                    if not os.path.exists(git_path):
+                        errors.append(f"Repo '{repo_name}': type=submodule but '{repo_path}' has no .git file/directory (Req 26.3)")
+                    else:
+                        # Verify remote URL matches .gitmodules (Req 26.4)
+                        try:
+                            import subprocess
+                            result = subprocess.run(
+                                ['git', '-C', full_path, 'remote', 'get-url', 'origin'],
+                                capture_output=True, text=True, timeout=5
+                            )
+                            if result.returncode == 0:
+                                actual_remote = result.stdout.strip()
+                                # Parse expected remote from .gitmodules
+                                url_pattern = rf'submodule\s+["\']?{re.escape(repo_path)}["\']?\s*\].*?url\s*=\s*(.+)'
+                                url_match = re.search(url_pattern, gitmodules_content, re.DOTALL | re.IGNORECASE)
+                                if url_match:
+                                    expected_remote = url_match.group(1).strip()
+                                    if actual_remote != expected_remote:
+                                        warnings.append(
+                                            f"Repo '{repo_name}': submodule remote URL mismatch. "
+                                            f"Expected: {expected_remote}, Actual: {actual_remote} (Req 26.4)"
+                                        )
+                        except Exception:
+                            pass  # Skip remote validation if git command fails
 
             elif repo_type == 'directory':
+                # Req 9.3, 9.5: Directory type validation
                 if repo_path and not os.path.isdir(full_path):
-                    warnings.append(f"Repo '{repo_name}': path '{repo_path}' does not exist or is not a directory")
+                    warnings.append(f"Repo '{repo_name}': path '{repo_path}' does not exist or is not a directory (Req 9.5)")
                 elif repo_path and os.path.exists(os.path.join(full_path, '.git')):
                     warnings.append(
-                        f"Repo '{repo_name}': type=directory but '{repo_path}' has .git (consider type=submodule?)"
+                        f"Repo '{repo_name}': type=directory but '{repo_path}' has .git (consider type=submodule?) (Req 9.3)"
                     )
 
             elif repo_type == 'root':
+                # Req 9.4: Root type path validation
                 if repo_path not in ['.', './', '']:
-                    errors.append(f"Repo '{repo_name}': type=root but path is '{repo_path}' (should be './' or empty)")
+                    errors.append(f"Repo '{repo_name}': type=root but path is '{repo_path}' (should be './' or empty) (Req 9.4)")
 
         # Check rules files exist
         rules_dir = os.path.join(ai_root, 'rules')

@@ -309,16 +309,33 @@ IFS=',' read -ra REPO_LIST <<< "$REPOS"
 
 # 根據 Coordination 策略執行
 if [[ "$COORDINATION" == "sequential" ]]; then
-  # 依序執行每個 repo
+  # 依序執行每個 repo (Req 17.1-17.4)
   for REPO in "${REPO_LIST[@]}"; do
     REPO=$(echo "$REPO" | tr -d ' ')
     echo "Processing repo: $REPO"
+    
+    # 獲取 repo type 以決定處理方式
+    REPO_TYPE=$(python3 -c "import yaml; c=yaml.safe_load(open('.ai/config/workflow.yaml')); print(next((r.get('type','directory') for r in c.get('repos',[]) if r.get('name')=='$REPO'), 'directory'))" 2>/dev/null || echo "directory")
+    echo "Repo type: $REPO_TYPE"
+    
     bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> .ai/temp/ticket-<ISSUE_NUMBER>.md $REPO
     
-    # 檢查結果，如果失敗則停止
+    # 檢查結果，如果失敗則停止 (Req 17.3)
     RESULT=$(cat .ai/results/issue-<ISSUE_NUMBER>.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))")
     if [[ "$RESULT" != "success" ]]; then
-      echo "Failed on repo $REPO, stopping sequential execution"
+      echo "Failed on repo $REPO (type: $REPO_TYPE), stopping sequential execution"
+      
+      # 對於 submodule type，檢查一致性狀態 (Req 17.4)
+      if [[ "$REPO_TYPE" == "submodule" ]]; then
+        CONSISTENCY=$(cat .ai/results/issue-<ISSUE_NUMBER>.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('consistency_status',''))")
+        if [[ "$CONSISTENCY" != "consistent" ]]; then
+          echo "WARNING: Submodule in inconsistent state: $CONSISTENCY"
+          RECOVERY=$(cat .ai/results/issue-<ISSUE_NUMBER>.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('recovery_command',''))")
+          if [[ -n "$RECOVERY" ]]; then
+            echo "Recovery command: $RECOVERY"
+          fi
+        fi
+      fi
       break
     fi
   done

@@ -98,7 +98,7 @@ if [[ "$DRY_RUN" == "false" ]]; then
 fi
 
 # ============================================================
-# 2. Remote branches
+# 2. Remote branches (including submodule branches)
 # ============================================================
 echo ""
 echo "## Checking remote branches..."
@@ -140,6 +140,74 @@ for branch in $REMOTE_BRANCHES; do
     CLEANED_BRANCHES=$((CLEANED_BRANCHES + 1))
   fi
 done
+
+# ============================================================
+# 2.1 Submodule branches cleanup (Req 12.1-12.3, 16.3)
+# ============================================================
+echo ""
+echo "## Checking submodule branches..."
+
+# Get list of submodules
+GITMODULES_PATH="$MONO_ROOT/.gitmodules"
+if [[ -f "$GITMODULES_PATH" ]]; then
+  SUBMODULE_PATHS=$(git config -f "$GITMODULES_PATH" --get-regexp path 2>/dev/null | awk '{print $2}' || true)
+  
+  for submodule_path in $SUBMODULE_PATHS; do
+    SUBMODULE_DIR="$MONO_ROOT/$submodule_path"
+    
+    if [[ -d "$SUBMODULE_DIR" && -e "$SUBMODULE_DIR/.git" ]]; then
+      echo "  Checking submodule: $submodule_path"
+      
+      # Fetch and prune in submodule
+      git -C "$SUBMODULE_DIR" fetch --prune 2>/dev/null || true
+      
+      # Find remote branches in submodule that match feat/ai-issue-*
+      SUBMODULE_REMOTE_BRANCHES=$(git -C "$SUBMODULE_DIR" branch -r --list 'origin/feat/ai-issue-*' 2>/dev/null || true)
+      
+      for branch in $SUBMODULE_REMOTE_BRANCHES; do
+        BRANCH_NAME="${branch#origin/}"
+        ISSUE_NUM=$(echo "$BRANCH_NAME" | grep -oP 'ai-issue-\K\d+' || echo "")
+        
+        if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
+          ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+          
+          if [[ "$ISSUE_STATE" == "OPEN" ]]; then
+            echo "    SKIP: $submodule_path:$BRANCH_NAME (issue #$ISSUE_NUM is still open)"
+            continue
+          fi
+        fi
+        
+        echo "    CLEAN: $submodule_path:$BRANCH_NAME"
+        if [[ "$DRY_RUN" == "false" ]]; then
+          git -C "$SUBMODULE_DIR" push origin --delete "$BRANCH_NAME" 2>/dev/null || echo "      WARN: Could not delete submodule remote branch"
+          CLEANED_BRANCHES=$((CLEANED_BRANCHES + 1))
+        fi
+      done
+      
+      # Clean local branches in submodule
+      SUBMODULE_LOCAL_BRANCHES=$(git -C "$SUBMODULE_DIR" branch --list 'feat/ai-issue-*' 2>/dev/null | sed 's/^[* ]*//' || true)
+      
+      for branch in $SUBMODULE_LOCAL_BRANCHES; do
+        ISSUE_NUM=$(echo "$branch" | grep -oP 'ai-issue-\K\d+' || echo "")
+        
+        if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
+          ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+          
+          if [[ "$ISSUE_STATE" == "OPEN" ]]; then
+            echo "    SKIP: $submodule_path:$branch (issue #$ISSUE_NUM is still open)"
+            continue
+          fi
+        fi
+        
+        echo "    CLEAN: $submodule_path:$branch (local)"
+        if [[ "$DRY_RUN" == "false" ]]; then
+          git -C "$SUBMODULE_DIR" branch -D "$branch" 2>/dev/null || echo "      WARN: Could not delete submodule local branch"
+          CLEANED_BRANCHES=$((CLEANED_BRANCHES + 1))
+        fi
+      done
+    fi
+  done
+fi
 
 # ============================================================
 # 3. Local branches

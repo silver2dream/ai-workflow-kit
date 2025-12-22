@@ -27,9 +27,37 @@ Run `awkit list-presets` to see all available presets.
 
 Edit `.ai/config/workflow.yaml`:
 
-- Set `repos[].type: directory`
+- Set `repos[].type` based on your project structure:
+  - `root`: Single repository (path must be `./`)
+  - `directory`: Subdirectory in monorepo (shared .git)
+  - `submodule`: Git submodule (independent .git)
 - Set `git.integration_branch` (default: `feat/example`)
 - Keep `specs.active: []` until you add your own spec
+
+Example configurations:
+
+```yaml
+# Single repo
+repos:
+  - name: root
+    path: ./
+    type: root
+
+# Monorepo with directories
+repos:
+  - name: backend
+    path: backend/
+    type: directory
+  - name: frontend
+    path: frontend/
+    type: directory
+
+# Monorepo with submodules
+repos:
+  - name: backend
+    path: backend/
+    type: submodule
+```
 
 If you don't use an integration/release branch split, set `git.integration_branch` to the same value as `git.release_branch` (for example: both `main`).
 

@@ -103,8 +103,57 @@ git checkout -b "$REVERT_BRANCH" "origin/$CURRENT_BRANCH"
 
 # Revert merge commit.
 echo "[rollback] Reverting commit $MERGE_COMMIT..."
+
+# Check if this is a submodule-related commit by looking at the diff
+SUBMODULE_CHANGES=""
+if git show "$MERGE_COMMIT" --name-only | grep -q "^Subproject commit"; then
+  SUBMODULE_CHANGES="true"
+  echo "[rollback] Detected submodule changes in merge commit"
+fi
+
+# For submodule commits, we need to handle the revert carefully (Req 18.1-18.4)
+if [[ "$SUBMODULE_CHANGES" == "true" ]]; then
+  echo "[rollback] Handling submodule revert..."
+  
+  # Get list of changed submodules
+  CHANGED_SUBMODULES=$(git diff-tree --no-commit-id --name-only -r "$MERGE_COMMIT" | while read -r path; do
+    if git ls-tree "$MERGE_COMMIT" "$path" 2>/dev/null | grep -q "^160000"; then
+      echo "$path"
+    fi
+  done)
+  
+  # Revert in submodules first (Req 18.1)
+  for submodule_path in $CHANGED_SUBMODULES; do
+    if [[ -d "$submodule_path" && -e "$submodule_path/.git" ]]; then
+      echo "[rollback] Reverting in submodule: $submodule_path"
+      
+      # Get the submodule commit before and after the merge
+      OLD_SUBMODULE_SHA=$(git rev-parse "$MERGE_COMMIT^:$submodule_path" 2>/dev/null || true)
+      NEW_SUBMODULE_SHA=$(git rev-parse "$MERGE_COMMIT:$submodule_path" 2>/dev/null || true)
+      
+      if [[ -n "$OLD_SUBMODULE_SHA" && -n "$NEW_SUBMODULE_SHA" && "$OLD_SUBMODULE_SHA" != "$NEW_SUBMODULE_SHA" ]]; then
+        echo "[rollback] Submodule $submodule_path: $NEW_SUBMODULE_SHA -> $OLD_SUBMODULE_SHA"
+        
+        # Try to revert in submodule (Req 18.2)
+        if ! git -C "$submodule_path" revert "$NEW_SUBMODULE_SHA" --no-edit 2>/dev/null; then
+          echo "[rollback] WARNING: Could not revert submodule commit. Will reset to old SHA."
+          git -C "$submodule_path" checkout "$OLD_SUBMODULE_SHA" 2>/dev/null || true
+        fi
+      fi
+    fi
+  done
+fi
+
+# Revert the parent commit (Req 18.3)
 if ! git revert "$MERGE_COMMIT" --no-edit; then
-  echo "[rollback] ERROR: Revert failed. Manual intervention required."
+  echo "[rollback] ERROR: Revert failed. Manual intervention required." >&2
+  
+  # Handle revert failure (Req 18.4)
+  if [[ "$SUBMODULE_CHANGES" == "true" ]]; then
+    echo "[rollback] HINT: Submodule revert may have partially succeeded." >&2
+    echo "[rollback] Check submodule states and consider manual cleanup." >&2
+  fi
+  
   git revert --abort 2>/dev/null || true
   git checkout "$CURRENT_BRANCH"
   git branch -D "$REVERT_BRANCH" 2>/dev/null || true
