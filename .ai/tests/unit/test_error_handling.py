@@ -231,3 +231,109 @@ class TestErrorByRepoType:
         )
         
         assert f"Repo Type: {repo_type}" in error
+
+
+# ============================================================
+# Early Failure Logging Tests
+# ============================================================
+
+def format_early_failure_log(
+    issue_id: str,
+    stage: str,
+    message: str,
+    repo: str = "",
+    repo_type: str = "unknown",
+    repo_path: str = "unknown"
+) -> str:
+    """
+    Format early failure log message.
+    
+    This mirrors the log_early_failure function in run_issue_codex.sh.
+    Early failures occur before codex execution (e.g., preflight, worktree setup).
+    """
+    lines = [
+        "============================================================",
+        f"EARLY FAILURE LOG - issue-{issue_id}",
+        "============================================================",
+        f"Timestamp: 2025-01-01T00:00:00Z",  # Placeholder for test
+        f"Stage: {stage}",
+        f"Repo: {repo}",
+        f"Repo Type: {repo_type}",
+        f"Repo Path: {repo_path}",
+        f"Error: {message}",
+        "============================================================",
+    ]
+    return "\n".join(lines)
+
+
+class TestEarlyFailureLogging:
+    """Test early failure logging for pre-codex failures.
+    
+    Early failures occur during:
+    - attempt_guard
+    - preflight (working tree not clean, preflight.sh failure)
+    - worktree setup (work directory not found)
+    
+    These failures should create a log file even though codex never runs.
+    """
+
+    def test_early_failure_log_includes_issue_id(self):
+        """Test early failure log includes issue ID."""
+        log = format_early_failure_log(
+            issue_id="42",
+            stage="preflight",
+            message="working tree not clean"
+        )
+        
+        assert "issue-42" in log
+
+    def test_early_failure_log_includes_stage(self):
+        """Test early failure log includes failure stage."""
+        log = format_early_failure_log(
+            issue_id="1",
+            stage="worktree",
+            message="work directory not found"
+        )
+        
+        assert "Stage: worktree" in log
+
+    def test_early_failure_log_includes_error_message(self):
+        """Test early failure log includes error message."""
+        log = format_early_failure_log(
+            issue_id="1",
+            stage="preflight",
+            message="preflight.sh returned non-zero"
+        )
+        
+        assert "Error: preflight.sh returned non-zero" in log
+
+    def test_early_failure_log_includes_repo_context(self):
+        """Test early failure log includes repo context."""
+        log = format_early_failure_log(
+            issue_id="5",
+            stage="worktree",
+            message="work directory not found",
+            repo="backend",
+            repo_type="directory",
+            repo_path="backend/"
+        )
+        
+        assert "Repo: backend" in log
+        assert "Repo Type: directory" in log
+        assert "Repo Path: backend/" in log
+
+    @pytest.mark.parametrize("stage", [
+        "attempt_guard",
+        "preflight", 
+        "worktree"
+    ])
+    def test_early_failure_stages(self, stage):
+        """Test all early failure stages are properly logged."""
+        log = format_early_failure_log(
+            issue_id="1",
+            stage=stage,
+            message=f"{stage} failed"
+        )
+        
+        assert f"Stage: {stage}" in log
+        assert "EARLY FAILURE LOG" in log

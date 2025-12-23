@@ -553,6 +553,29 @@ LOG_DIR="$MONO_ROOT/.ai/exe-logs"
 RUN_DIR="$MONO_ROOT/.ai/runs/issue-$ISSUE_ID"
 mkdir -p "$LOG_DIR" "$RUN_DIR" "$MONO_ROOT/.ai/results" "$MONO_ROOT/.ai/state" "$MONO_ROOT/.worktrees"
 
+# Define log file base early so early failures can be logged
+# This ensures log files are created even if script exits before codex execution
+CODEX_LOG_BASE="$LOG_DIR/issue-$ISSUE_ID.${REPO}.codex"
+EARLY_FAILURE_LOG="${CODEX_LOG_BASE}.early-failure.log"
+
+# Helper function to log early failures before codex execution
+log_early_failure() {
+  local stage="$1"
+  local message="$2"
+  {
+    echo "============================================================"
+    echo "EARLY FAILURE LOG - issue-$ISSUE_ID"
+    echo "============================================================"
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "Stage: $stage"
+    echo "Repo: $REPO"
+    echo "Repo Type: ${REPO_TYPE:-unknown}"
+    echo "Repo Path: ${REPO_PATH:-unknown}"
+    echo "Error: $message"
+    echo "============================================================"
+  } >> "$EARLY_FAILURE_LOG"
+}
+
 # Track execution start time
 EXEC_START_TIME=$(date +%s)
 
@@ -711,6 +734,7 @@ export AI_STATE_ROOT="$MONO_ROOT"
 trace_step_start "attempt_guard"
 if ! bash "$MONO_ROOT/.ai/scripts/attempt_guard.sh" "$ISSUE_ID" "codex-auto"; then
   record_error "attempt_guard failed"
+  log_early_failure "attempt_guard" "attempt_guard.sh returned non-zero"
   trace_step_end "failed" "attempt_guard failed"
   exit 2
 fi
@@ -723,7 +747,9 @@ WORK_DIR="$WT_DIR"  # Where codex will actually work
 
 if [[ "$REPO" != "root" ]]; then
   # For monorepo subdirectories, work inside the subdirectory
-  WORK_DIR="$WT_DIR/$REPO"
+  # Use REPO_PATH (from config) which may have trailing slash, normalize it
+  REPO_PATH_NORMALIZED="${REPO_PATH%/}"  # Remove trailing slash if present
+  WORK_DIR="$WT_DIR/$REPO_PATH_NORMALIZED"
 fi
 
 echo "[runner] preflight repo=$REPO type=$REPO_TYPE"
@@ -733,12 +759,14 @@ if [[ -n "$(git -C "$MONO_ROOT" status --porcelain)" ]]; then
   record_error "working tree not clean"
   echo "ERROR: working tree not clean. Commit/stash first." >&2
   git -C "$MONO_ROOT" status --porcelain >&2 || true
+  log_early_failure "preflight" "working tree not clean - uncommitted changes detected"
   trace_step_end "failed" "working tree not clean"
   exit 2
 fi
 # Run preflight for ALL repo types (Req 7.6, 7.7)
 if ! bash "$MONO_ROOT/.ai/scripts/preflight.sh" "$REPO_TYPE" "$REPO_PATH"; then
   record_error "preflight failed"
+  log_early_failure "preflight" "preflight.sh returned non-zero for repo_type=$REPO_TYPE repo_path=$REPO_PATH"
   trace_step_end "failed" "preflight failed"
   exit 2
 fi
@@ -749,7 +777,9 @@ if [[ ! -d "$WT_DIR" ]]; then
   # Pass repo_type and repo_path to new_worktree.sh (Req 14.5)
   WT_DIR="$(bash "$MONO_ROOT/.ai/scripts/new_worktree.sh" "$ISSUE_ID" "$BRANCH" "$REPO_TYPE" "$REPO_PATH")"
   if [[ "$REPO" != "root" ]]; then
-    WORK_DIR="$WT_DIR/$REPO"
+    # Use REPO_PATH (from config) which may have trailing slash, normalize it
+    REPO_PATH_NORMALIZED="${REPO_PATH%/}"
+    WORK_DIR="$WT_DIR/$REPO_PATH_NORMALIZED"
   else
     WORK_DIR="$WT_DIR"
   fi
@@ -760,6 +790,7 @@ if [[ ! -d "$WORK_DIR" ]]; then
   format_error "worktree_setup" "work directory not found: $WORK_DIR" \
     "Check that the repo path '$REPO_PATH' exists in the worktree"
   record_error "work directory not found: $WORK_DIR"
+  log_early_failure "worktree" "work directory not found: $WORK_DIR (expected at $WT_DIR/$REPO_PATH)"
   trace_step_end "failed" "work directory not found"
   exit 2
 fi
@@ -835,7 +866,7 @@ After making changes:
 - Do NOT commit or push - the runner will handle that.
 PROMPT
 
-CODEX_LOG_BASE="$LOG_DIR/issue-$ISSUE_ID.${REPO}.codex"
+# CODEX_LOG_BASE already defined early in script for early failure logging
 SUMMARY_FILE="$RUN_DIR/summary.txt"
 : > "$SUMMARY_FILE"
 

@@ -76,11 +76,15 @@ case "$REPO_TYPE" in
 
   directory)
     # Directory type: verify WORK_DIR exists (Req 3.3, 14.4)
-    WORK_DIR="$WT_DIR/$REPO_PATH"
+    # Normalize path by removing trailing slash
+    REPO_PATH_NORMALIZED="${REPO_PATH%/}"
+    WORK_DIR="$WT_DIR/$REPO_PATH_NORMALIZED"
     if [[ ! -d "$WORK_DIR" ]]; then
-      echo "ERROR: directory path '$REPO_PATH' does not exist in worktree." >&2
+      echo "ERROR: directory path '$REPO_PATH_NORMALIZED' does not exist in worktree." >&2
       echo "  Worktree: $WT_DIR" >&2
       echo "  Expected: $WORK_DIR" >&2
+      echo "  Available directories:" >&2
+      ls -la "$WT_DIR" >&2 || true
       # Cleanup failed worktree
       git -C "$ROOT" worktree remove --force "$WT_DIR" >&2 || true
       exit 2
