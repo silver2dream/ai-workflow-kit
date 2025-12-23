@@ -3,17 +3,18 @@
 [![CI](https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/silver2dream/ai-workflow-kit/badge)](https://securityscorecards.dev/viewer/?uri=github.com/silver2dream/ai-workflow-kit)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
-> An AI-assisted development workflow kit that drives **Spec ??Implement ??PR ??Merge**, designed to work with **Claude Code (Principal)** + **Codex (Worker)**, and compatible with **Kiro-style specs**.
+> An AI-assisted development workflow kit that drives **Spec â†’ Implement â†’ PR â†’ Merge**, designed to work with **Claude Code (Principal)** + **Codex (Worker)**, and compatible with **Kiro-style specs**.
 
-[English](README.md) | [ç¹é?ä¸­æ?](README-zh-TW.md)
+[English](README.md) | [ç¹é«”ä¸­æ–‡](README-zh-TW.md)
 
 ---
 
-## ?? Table of Contents
+## ğŸ“‹ Table of Contents
 
 - [Features](#-features)
 - [Architecture Overview](#-architecture-overview)
@@ -30,7 +31,7 @@
 
 ---
 
-## ??Features
+## âœ¨ Features
 
 ### Core Workflow
 - **Spec-driven**: reads `.ai/specs/<name>/tasks.md` (Kiro-compatible) to decide what to do next
@@ -39,35 +40,35 @@
 
 ### Kit Quality
 - **Offline Gate**: deterministic verification (no network required)
-- **Strict mode**: `--strict` enforces ?œno P0 findings??in audit (CI/release checks)
+- **Strict mode**: `--strict` enforces â€œno P0 findingsâ€ in audit (CI/release checks)
 - **Extensibility checks**: validates CI triggers on `feat/example` (branch alignment)
 
 ---
 
-## ??ï¸?Architecture Overview
+## ğŸ—ï¸ Architecture Overview
 
 ```
-?Œâ??€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€??
-??                                                             ??
-?? You ?€?€??kickoff.sh ?€?€??Claude Code (Principal)               ??
-??                             ??                              ??
-??                             ?œâ???read specs/tasks.md          ??
-??                             ?œâ???create GitHub Issue          ??
-??                             ?œâ???dispatch to Codex (Worker)   ??
-??                             ?œâ???review PR                    ??
-??                             ?œâ???merge or reject              ??
-??                             ?”â???loop                         ??
-??                                                             ??
-?? Morning ?€?€??gh pr list ?€?€??harvest                            ??
-??                                                             ??
-?”â??€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€??
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                                                              â”‚
+â”‚  You â”€â”€â–º kickoff.sh â”€â”€â–º Claude Code (Principal)               â”‚
+â”‚                              â”‚                               â”‚
+â”‚                              â”œâ”€â–º read specs/tasks.md          â”‚
+â”‚                              â”œâ”€â–º create GitHub Issue          â”‚
+â”‚                              â”œâ”€â–º dispatch to Codex (Worker)   â”‚
+â”‚                              â”œâ”€â–º review PR                    â”‚
+â”‚                              â”œâ”€â–º merge or reject              â”‚
+â”‚                              â””â”€â–º loop                         â”‚
+â”‚                                                              â”‚
+â”‚  Morning â”€â”€â–º gh pr list â”€â”€â–º harvest                            â”‚
+â”‚                                                              â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 More details: `docs/ai-workflow-architecture.md`.
 
 ---
 
-## ??ï¸?Technology Stack
+## ğŸ› ï¸ Technology Stack
 
 ### Offline (required)
 - `bash` (Windows: Git Bash / WSL)
@@ -81,25 +82,25 @@ More details: `docs/ai-workflow-architecture.md`.
 
 ---
 
-## ?? Project Structure
+## ğŸ“ Project Structure
 
 ```
 .
-?œâ??€ .ai/                         # kit (scripts/templates/rules/specs)
-??  ?œâ??€ config/workflow.yaml     # main config
-??  ?œâ??€ scripts/                 # automation scripts
-??  ?œâ??€ templates/               # generators (CLAUDE/AGENTS/CI)
-??  ?œâ??€ rules/                   # architecture + git workflow rules
-??  ?œâ??€ docs/evaluate.md         # evaluation standard
-??  ?”â??€ specs/                   # Kiro-style specs
-?œâ??€ .github/workflows/ci.yml     # root CI example
-?œâ??€ backend/                     # directory example (Go)
-?”â??€ frontend/                    # directory example (Unity skeleton)
+â”œâ”€â”€ .ai/                         # kit (scripts/templates/rules/specs)
+â”‚   â”œâ”€â”€ config/workflow.yaml     # main config
+â”‚   â”œâ”€â”€ scripts/                 # automation scripts
+â”‚   â”œâ”€â”€ templates/               # generators (CLAUDE/AGENTS/CI)
+â”‚   â”œâ”€â”€ rules/                   # architecture + git workflow rules
+â”‚   â”œâ”€â”€ docs/evaluate.md         # evaluation standard
+â”‚   â””â”€â”€ specs/                   # Kiro-style specs
+â”œâ”€â”€ .github/workflows/ci.yml     # root CI example
+â”œâ”€â”€ backend/                     # directory example (Go)
+â””â”€â”€ frontend/                    # directory example (Unity skeleton)
 ```
 
 ---
 
-## ?? Quick Start
+## ğŸš€ Quick Start
 
 ### 0) Install `awkit` (recommended)
 
@@ -202,7 +203,7 @@ touch .ai/state/STOP
 
 ---
 
-## ?™ï? Configuration
+## âš™ï¸ Configuration
 
 Main config: `.ai/config/workflow.yaml`
 
@@ -239,16 +240,16 @@ Spec folder structure (Kiro compatible):
 
 ```
 .ai/specs/<feature-name>/
-?œâ??€ requirements.md   # optional
-?œâ??€ design.md         # optional
-?”â??€ tasks.md          # required
+â”œâ”€â”€ requirements.md   # optional
+â”œâ”€â”€ design.md         # optional
+â””â”€â”€ tasks.md          # required
 ```
 
 To enable a spec, add its folder name to `specs.active` in `.ai/config/workflow.yaml`.
 
 ---
 
-## ?“¦ Directory Monorepo Example
+## ğŸ“¦ Directory Monorepo Example
 
 This repo ships with a minimal directory-type example:
 
@@ -259,7 +260,7 @@ This repo ships with a minimal directory-type example:
 
 ---
 
-## ?? CI
+## ğŸ” CI
 
 Root CI workflow: `.github/workflows/ci.yml`
 
@@ -273,7 +274,7 @@ It runs:
 
 ---
 
-## ?§ª Evaluation
+## ğŸ§ª Evaluation
 
 - For kit maintainers/CI only; regular users can skip.
 - Standard: `.ai/docs/evaluate.md`
@@ -281,7 +282,7 @@ It runs:
 
 ---
 
-## ?? Documentation
+## ğŸ“š Documentation
 
 ### For Users
 
@@ -307,7 +308,7 @@ It runs:
 
 ---
 
-## ?? Contributing
+## ğŸ¤ Contributing
 
 See [Contributing Guide](docs/developer/contributing.md) for:
 - Development setup
@@ -320,13 +321,11 @@ Quick reference:
 
 ---
 
-## ?? License
+## ğŸ“„ License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
 
----
-
-## ?? Security & Trust
+## ğŸ”’ Security & Trust
 
 AWK follows open source security best practices and is monitored by [OpenSSF Scorecard](https://securityscorecards.dev/).
 
@@ -336,35 +335,11 @@ AWK follows open source security best practices and is monitored by [OpenSSF Sco
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| **SECURITY.md** | ??| Vulnerability reporting policy and SLA |
-| **Branch Protection** | ??| Required reviews and CI checks |
-| **Code Review** | ??| All changes require PR review |
-| **CI/CD** | ??| Automated testing on all PRs |
-| **Dependency Updates** | ??| Dependabot enabled |
-| **Static Analysis** | ??| CodeQL scanning |
-| **Secret Scanning** | ?™ï? | Enable in repo settings |
-| **Signed Commits** | ?™ï? | Recommended for contributors |
-| **SBOM** | ?? | Coming soon |
-
-### OpenSSF Scorecard Checks
-
-| Check | Description |
-|-------|-------------|
-| **Security-Policy** | SECURITY.md with vulnerability reporting process |
-| **Branch-Protection** | Protected branches with required reviews |
-| **Code-Review** | Changes reviewed before merge |
-| **CI-Tests** | Automated tests run on PRs |
-| **Dependency-Update-Tool** | Dependabot for dependency updates |
-| **SAST** | Static Application Security Testing (CodeQL) |
-| **Token-Permissions** | Minimal GitHub token permissions |
-| **Pinned-Dependencies** | Dependencies pinned to specific versions |
-| **Vulnerabilities** | No known vulnerabilities in dependencies |
-
-### For Users
-
-- Review all AI-generated code before merging
-- Enable branch protection on your repositories
-- Keep dependencies up to date
-- Monitor audit logs in `.ai/state/`
+| **SECURITY.md** | âœ… | Vulnerability reporting policy and SLA |
+| **Branch Protection** | âœ… | Required reviews and CI checks |
+| **CI/CD** | âœ… | Automated testing on all PRs |
+| **Dependency Updates** | âœ… | Dependabot enabled |
+| **Static Analysis** | âœ… | CodeQL scanning |
+| **Token Permissions** | âœ… | Minimal GitHub token permissions |
 
 See [SECURITY.md](SECURITY.md) for full security policy and vulnerability reporting.
