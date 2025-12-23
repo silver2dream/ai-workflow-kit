@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: ["feat/example", "develop", "main"]
 
+permissions:
+  contents: read
+
 jobs:
   awk:
     runs-on: ubuntu-latest
