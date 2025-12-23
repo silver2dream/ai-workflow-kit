@@ -38,7 +38,7 @@ jobs:
             pack: zip
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v5
         with:
@@ -57,21 +57,49 @@ jobs:
         if: matrix.pack == 'tar.gz'
         run: |
           set -euo pipefail
-          tar -czf "dist/awkit_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" -C dist awkit
+          tar -czf "awkit_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" -C dist awkit
 
       - name: Package (zip)
         if: matrix.pack == 'zip'
         run: |
           set -euo pipefail
-          (cd dist && zip -9 "awkit_${{ matrix.goos }}_${{ matrix.goarch }}.zip" "awkit${{ matrix.ext }}")
+          (cd dist && zip -9 "../awkit_${{ matrix.goos }}_${{ matrix.goarch }}.zip" "awkit${{ matrix.ext }}")
 
-      - name: Upload Release Assets
+      - name: Set archive path
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.pack }}" = "tar.gz" ]; then
+            echo "ARCHIVE=awkit_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" >> "$GITHUB_ENV"
+          else
+            echo "ARCHIVE=awkit_${{ matrix.goos }}_${{ matrix.goarch }}.zip" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: awkit_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: awkit_*
+          merge-multiple: true
+
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            dist/awkit_*.tar.gz
-            dist/awkit_*.zip
+            dist/awkit_*
             install.sh
             install.ps1
-
+          overwrite_files: true
