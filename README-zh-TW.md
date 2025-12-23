@@ -119,12 +119,24 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 # 在當前目錄初始化 AWK
 awkit init
 
-# 或使用 preset
-awkit init --preset react-go
+# 使用 preset 並自動建立專案結構
+awkit init --preset go --scaffold
 
-# 或指定路徑
-awkit init /path/to/your-project --preset react-go
+# Monorepo：React + Go
+awkit init --preset react-go --scaffold
+
+# 預覽會建立哪些檔案
+awkit init --preset python --scaffold --dry-run
 ```
+
+### 可用的 Presets
+
+| 類別 | Presets |
+|------|---------|
+| Single-Repo | `generic`, `go`, `python`, `rust`, `dotnet`, `node` |
+| Monorepo | `react-go`, `react-python`, `unity-go`, `godot-go`, `unreal-go` |
+
+執行 `awkit list-presets` 查看詳細說明。scaffold 檔案結構請參考 [Getting Started](docs/getting-started.md)。
 
 注意：`awkit install` 是 `awkit init` 的別名（向後相容）。
 
@@ -269,13 +281,38 @@ Root CI workflow：`.github/workflows/ci.yml`
 
 ## 📚 文件
 
-- `docs/getting-started.md`
-- `docs/ai-workflow-architecture.md`
+### 使用者文件
+
+| 文件 | 說明 |
+|------|------|
+| [Getting Started](docs/user/getting-started.md) | 快速入門指南 |
+| [Configuration](docs/user/configuration.md) | workflow.yaml 參考 |
+| [Troubleshooting](docs/user/troubleshooting.md) | 錯誤排解 |
+| [FAQ](docs/user/faq.md) | 常見問題 |
+
+### 開發者文件
+
+| 文件 | 說明 |
+|------|------|
+| [Architecture](docs/developer/architecture.md) | 系統內部架構 |
+| [API Reference](docs/developer/api-reference.md) | Scripts & modules |
+| [Contributing](docs/developer/contributing.md) | 開發指南 |
+| [Testing](docs/developer/testing.md) | 測試框架 |
+
+### 其他
+
+- [Architecture Overview](docs/ai-workflow-architecture.md) - 高階系統設計
 
 ---
 
 ## 🤝 貢獻
 
+詳見 [Contributing Guide](docs/developer/contributing.md)：
+- 開發環境設定
+- 程式碼規範
+- PR 工作流
+
+快速參考：
 - 分支策略與 commit 格式：`.ai/rules/_kit/git-workflow.md`
 - PR base 預設 target `feat/example`
 

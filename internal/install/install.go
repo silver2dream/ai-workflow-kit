@@ -2,6 +2,7 @@ package install
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -19,13 +20,43 @@ type Options struct {
 	SkipConfig  bool // Skip workflow.yaml entirely (for upgrade)
 	NoGenerate  bool
 	WithCI      bool
+	Scaffold    bool // Execute scaffold after install
+	DryRun      bool // For scaffold dry-run
 }
 
 // InstallResult contains information about what was done
 type InstallResult struct {
-	ConfigSkipped bool
-	ConfigPath    string
+	ConfigSkipped  bool
+	ConfigPath     string
+	ScaffoldResult *ScaffoldResult
+	ScaffoldError  error
 }
+
+// ScaffoldOptions configures scaffold behavior
+type ScaffoldOptions struct {
+	Preset      string
+	TargetDir   string
+	ProjectName string
+	Force       bool
+	DryRun      bool
+}
+
+// ScaffoldResult contains scaffold operation results
+type ScaffoldResult struct {
+	Created []string
+	Skipped []string
+	Failed  []string
+	Errors  []error
+}
+
+// Error types for scaffold operations
+var (
+	ErrUnknownPreset      = errors.New("unknown preset")
+	ErrScaffoldConflict   = errors.New("file already exists")
+	ErrScaffoldFailed     = errors.New("scaffold failed")
+	ErrMissingPreset      = errors.New("--preset required for upgrade --scaffold")
+	ErrInvalidProjectName = errors.New("invalid project name: contains special characters")
+)
 
 func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) {
 	result := &InstallResult{}
@@ -81,6 +112,24 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 
 	if err := ensureClaudeLinks(targetDir); err != nil {
 		return nil, err
+	}
+
+	// Scaffold integration point (after all kit files are installed)
+	if opts.Scaffold {
+		scaffoldResult, err := Scaffold(targetDir, ScaffoldOptions{
+			Preset:      opts.Preset,
+			TargetDir:   targetDir,
+			ProjectName: opts.ProjectName,
+			Force:       opts.Force,
+			DryRun:      false,
+		})
+		if err != nil {
+			// Scaffold failure doesn't affect already installed AWK kit
+			result.ScaffoldResult = scaffoldResult
+			result.ScaffoldError = err
+		} else {
+			result.ScaffoldResult = scaffoldResult
+		}
 	}
 
 	if !opts.NoGenerate {
@@ -345,16 +394,49 @@ func applyPreset(kit fs.FS, targetDir string, opts Options) (skipped bool, err e
 	}
 
 	switch opts.Preset {
-	case "", "generic":
-		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetGeneric)
+	case "", "generic", "node":
+		// generic and node share the same preset (backward compatibility)
+		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetNode)
+	case "go":
+		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetGo)
+	case "python":
+		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetPython)
+	case "rust":
+		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetRust)
+	case "dotnet":
+		return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetDotnet)
 	case "react-go":
 		skipped, err = ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetReactGo)
 		if err != nil {
 			return skipped, err
 		}
-		return skipped, applyReactGoRules(kit, targetDir)
+		return skipped, applyPresetRules(kit, targetDir, "react-go")
+	case "react-python":
+		skipped, err = ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetReactPython)
+		if err != nil {
+			return skipped, err
+		}
+		return skipped, applyPresetRules(kit, targetDir, "react-python")
+	case "unity-go":
+		skipped, err = ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetUnityGo)
+		if err != nil {
+			return skipped, err
+		}
+		return skipped, applyPresetRules(kit, targetDir, "unity-go")
+	case "godot-go":
+		skipped, err = ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetGodotGo)
+		if err != nil {
+			return skipped, err
+		}
+		return skipped, applyPresetRules(kit, targetDir, "godot-go")
+	case "unreal-go":
+		skipped, err = ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, presetUnrealGo)
+		if err != nil {
+			return skipped, err
+		}
+		return skipped, applyPresetRules(kit, targetDir, "unreal-go")
 	default:
-		return false, fmt.Errorf("unknown preset: %q", opts.Preset)
+		return false, fmt.Errorf("%w: %q", ErrUnknownPreset, opts.Preset)
 	}
 }
 
@@ -371,18 +453,41 @@ func ensureWorkflowConfig(targetDir, projectName string, forceOverwrite bool, pr
 	return false, os.WriteFile(path, preset(projectName), 0o644)
 }
 
-func applyReactGoRules(kit fs.FS, targetDir string) error {
-	rules := []struct {
-		src string
-		dst string
-	}{
-		{src: ".ai/rules/_examples/backend-go.md", dst: ".ai/rules/backend-go.md"},
-		{src: ".ai/rules/_examples/frontend-react.md", dst: ".ai/rules/frontend-react.md"},
+// applyPresetRules copies rule files for the given preset
+func applyPresetRules(kit fs.FS, targetDir string, preset string) error {
+	ruleMap := map[string][]struct{ src, dst string }{
+		"react-go": {
+			{src: ".ai/rules/_examples/backend-go.md", dst: ".ai/rules/backend-go.md"},
+			{src: ".ai/rules/_examples/frontend-react.md", dst: ".ai/rules/frontend-react.md"},
+		},
+		"react-python": {
+			{src: ".ai/rules/_examples/backend-python.md", dst: ".ai/rules/backend-python.md"},
+			{src: ".ai/rules/_examples/frontend-react.md", dst: ".ai/rules/frontend-react.md"},
+		},
+		"unity-go": {
+			{src: ".ai/rules/_examples/backend-go.md", dst: ".ai/rules/backend-go.md"},
+			{src: ".ai/rules/_examples/frontend-unity.md", dst: ".ai/rules/frontend-unity.md"},
+		},
+		"godot-go": {
+			{src: ".ai/rules/_examples/backend-go.md", dst: ".ai/rules/backend-go.md"},
+			{src: ".ai/rules/_examples/frontend-godot.md", dst: ".ai/rules/frontend-godot.md"},
+		},
+		"unreal-go": {
+			{src: ".ai/rules/_examples/backend-go.md", dst: ".ai/rules/backend-go.md"},
+			{src: ".ai/rules/_examples/frontend-unreal.md", dst: ".ai/rules/frontend-unreal.md"},
+		},
 	}
+
+	rules, ok := ruleMap[preset]
+	if !ok {
+		return nil // No rules for this preset
+	}
+
 	for _, r := range rules {
 		b, err := fs.ReadFile(kit, r.src)
 		if err != nil {
-			return fmt.Errorf("missing embedded rule %s: %w", r.src, err)
+			// Rule file doesn't exist, skip with warning (don't fail)
+			continue
 		}
 		dstPath := filepath.Join(targetDir, filepath.FromSlash(r.dst))
 		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
@@ -422,65 +527,6 @@ func tryGenerate(targetDir string) error {
 		return err
 	}
 	return nil
-}
-
-var presetGeneric = func(projectName string) []byte {
-	content := fmt.Sprintf(`# AWK Configuration
-version: "1.0"
-
-project:
-  name: %q
-  description: "Project using AWK"
-  type: "single-repo"
-
-repos:
-  - name: root
-    path: ./
-    type: root
-    language: typescript
-    verify:
-      build: "npm run build"
-      test: "npm run test -- --run"
-
-git:
-  integration_branch: "feat/example"
-  release_branch: "main"
-  commit_format: "[type] subject"
-
-specs:
-  base_path: ".ai/specs"
-  files:
-    requirements: "requirements.md"
-    design: "design.md"
-    tasks: "tasks.md"
-  auto_generate_tasks: true
-  active: []
-
-tasks:
-  format:
-    uncompleted: "- [ ]"
-    completed: "- [x]"
-    optional: "- [ ]*"
-  source_priority:
-    - audit
-    - specs
-
-audit:
-  checks:
-    - dirty-worktree
-    - missing-tests
-    - missing-ci
-  custom: []
-
-github:
-  repo: ""
-
-rules:
-  kit:
-    - git-workflow
-  custom: []
-`, projectName)
-	return []byte(content)
 }
 
 var presetReactGo = func(projectName string) []byte {
@@ -630,3 +676,1156 @@ jobs:
         working-directory: frontend
         run: npm run build
 `
+
+// validateProjectName checks for invalid characters in project name
+func validateProjectName(name string) error {
+	if strings.ContainsAny(name, `/\$"';|&><`) || strings.Contains(name, "`") {
+		return ErrInvalidProjectName
+	}
+	return nil
+}
+
+// writeFileIfNotExists writes a file, skipping if exists unless force is true
+// Returns (created, skipped, err)
+func writeFileIfNotExists(path string, content []byte, force bool) (created bool, skipped bool, err error) {
+	path = filepath.Clean(path)
+	if _, err := os.Stat(path); err == nil {
+		if !force {
+			return false, true, nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, false, err
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return false, false, err
+	}
+	return true, false, nil
+}
+
+// Preset functions for new presets
+
+var presetGo = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (Go)
+version: "1.0"
+
+project:
+  name: %q
+  description: "Go project using AWK"
+  type: "single-repo"
+
+repos:
+  - name: root
+    path: ./
+    type: root
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom: []
+`, projectName)
+	return []byte(content)
+}
+
+var presetPython = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (Python)
+version: "1.0"
+
+project:
+  name: %q
+  description: "Python project using AWK"
+  type: "single-repo"
+
+repos:
+  - name: root
+    path: ./
+    type: root
+    language: python
+    verify:
+      build: "echo 'No build step'"
+      test: "python -m pytest tests/ -v --tb=short 2>/dev/null || echo 'No tests yet'"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom: []
+`, projectName)
+	return []byte(content)
+}
+
+var presetRust = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (Rust)
+version: "1.0"
+
+project:
+  name: %q
+  description: "Rust project using AWK"
+  type: "single-repo"
+
+repos:
+  - name: root
+    path: ./
+    type: root
+    language: rust
+    verify:
+      build: "cargo build"
+      test: "cargo test"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom: []
+`, projectName)
+	return []byte(content)
+}
+
+var presetDotnet = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (.NET)
+version: "1.0"
+
+project:
+  name: %q
+  description: ".NET project using AWK"
+  type: "single-repo"
+
+repos:
+  - name: root
+    path: ./
+    type: root
+    language: dotnet
+    verify:
+      build: "dotnet build"
+      test: "dotnet test"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom: []
+`, projectName)
+	return []byte(content)
+}
+
+var presetNode = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (Node.js/TypeScript)
+version: "1.0"
+
+project:
+  name: %q
+  description: "Node.js/TypeScript project using AWK"
+  type: "single-repo"
+
+repos:
+  - name: root
+    path: ./
+    type: root
+    language: typescript
+    verify:
+      build: "npm run build"
+      test: "npm run test -- --run"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom: []
+`, projectName)
+	return []byte(content)
+}
+
+var presetReactPython = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (React + Python)
+version: "1.0"
+
+project:
+  name: %q
+  description: "React + Python project using AWK"
+  type: "monorepo"
+
+repos:
+  - name: backend
+    path: backend/
+    type: directory
+    language: python
+    verify:
+      build: "echo 'No build step'"
+      test: "python -m pytest tests/ -v --tb=short 2>/dev/null || echo 'No tests yet'"
+
+  - name: frontend
+    path: frontend/
+    type: directory
+    language: typescript
+    node_version: "20"
+    package_manager: "npm"
+    verify:
+      build: "npm run build"
+      test: "npm run test -- --run"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - submodule-sync
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom:
+    - backend-python
+    - frontend-react
+`, projectName)
+	return []byte(content)
+}
+
+var presetUnityGo = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (Unity + Go)
+version: "1.0"
+
+project:
+  name: %q
+  description: "Unity + Go project using AWK"
+  type: "monorepo"
+
+repos:
+  - name: backend
+    path: backend/
+    type: directory
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+
+  - name: frontend
+    path: frontend/
+    type: directory
+    language: unity
+    verify:
+      build: "echo 'Unity build via Editor'"
+      test: "echo 'Unity tests via Editor'"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - submodule-sync
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom:
+    - backend-go
+    - frontend-unity
+`, projectName)
+	return []byte(content)
+}
+
+var presetGodotGo = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (Godot + Go)
+version: "1.0"
+
+project:
+  name: %q
+  description: "Godot + Go project using AWK"
+  type: "monorepo"
+
+repos:
+  - name: backend
+    path: backend/
+    type: directory
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+
+  - name: frontend
+    path: frontend/
+    type: directory
+    language: gdscript
+    verify:
+      build: "echo 'Godot build via Editor'"
+      test: "echo 'Godot tests via Editor'"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - submodule-sync
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom:
+    - backend-go
+    - frontend-godot
+`, projectName)
+	return []byte(content)
+}
+
+var presetUnrealGo = func(projectName string) []byte {
+	content := fmt.Sprintf(`# AWK Configuration (Unreal + Go)
+version: "1.0"
+
+project:
+  name: %q
+  description: "Unreal + Go project using AWK"
+  type: "monorepo"
+
+repos:
+  - name: backend
+    path: backend/
+    type: directory
+    language: go
+    verify:
+      build: "go build ./..."
+      test: "go test ./..."
+
+  - name: frontend
+    path: frontend/
+    type: directory
+    language: unreal
+    verify:
+      build: "echo 'Unreal build via Editor'"
+      test: "echo 'Unreal tests via Editor'"
+
+git:
+  integration_branch: "feat/example"
+  release_branch: "main"
+  commit_format: "[type] subject"
+
+specs:
+  base_path: ".ai/specs"
+  files:
+    requirements: "requirements.md"
+    design: "design.md"
+    tasks: "tasks.md"
+  auto_generate_tasks: true
+  active: []
+
+tasks:
+  format:
+    uncompleted: "- [ ]"
+    completed: "- [x]"
+    optional: "- [ ]*"
+  source_priority:
+    - audit
+    - specs
+
+audit:
+  checks:
+    - dirty-worktree
+    - submodule-sync
+    - missing-tests
+    - missing-ci
+  custom: []
+
+github:
+  repo: ""
+
+rules:
+  kit:
+    - git-workflow
+  custom:
+    - backend-go
+    - frontend-unreal
+`, projectName)
+	return []byte(content)
+}
+
+// Scaffold creates project structure based on preset
+func Scaffold(targetDir string, opts ScaffoldOptions) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	// Validate project name
+	if opts.ProjectName != "" {
+		if err := validateProjectName(opts.ProjectName); err != nil {
+			return result, err
+		}
+	}
+
+	// Resolve project name from directory if not provided
+	projectName := opts.ProjectName
+	if projectName == "" {
+		projectName = filepath.Base(targetDir)
+	}
+
+	// Determine scaffold type based on preset
+	switch opts.Preset {
+	case "", "generic", "node":
+		return scaffoldNode(targetDir, projectName, opts.Force, opts.DryRun)
+	case "go":
+		return scaffoldGo(targetDir, projectName, opts.Force, opts.DryRun)
+	case "python":
+		return scaffoldPython(targetDir, projectName, opts.Force, opts.DryRun)
+	case "rust":
+		return scaffoldRust(targetDir, projectName, opts.Force, opts.DryRun)
+	case "dotnet":
+		return scaffoldDotnet(targetDir, projectName, opts.Force, opts.DryRun)
+	case "react-go":
+		return scaffoldMonorepo(targetDir, projectName, "go", "react", opts.Force, opts.DryRun)
+	case "react-python":
+		return scaffoldMonorepo(targetDir, projectName, "python", "react", opts.Force, opts.DryRun)
+	case "unity-go":
+		return scaffoldMonorepo(targetDir, projectName, "go", "unity", opts.Force, opts.DryRun)
+	case "godot-go":
+		return scaffoldMonorepo(targetDir, projectName, "go", "godot", opts.Force, opts.DryRun)
+	case "unreal-go":
+		return scaffoldMonorepo(targetDir, projectName, "go", "unreal", opts.Force, opts.DryRun)
+	default:
+		return result, fmt.Errorf("%w: %q", ErrUnknownPreset, opts.Preset)
+	}
+}
+
+func scaffoldGo(targetDir, projectName string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path: filepath.Join(targetDir, "go.mod"),
+			content: []byte(fmt.Sprintf(`module %s
+
+go 1.22
+`, projectName)),
+		},
+		{
+			path: filepath.Join(targetDir, "main.go"),
+			content: []byte(`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, World!")
+}
+`),
+		},
+		{
+			path:    filepath.Join(targetDir, "README.md"),
+			content: []byte(fmt.Sprintf("# %s\n\nA Go project.\n", projectName)),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldPython(targetDir, projectName string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path: filepath.Join(targetDir, "pyproject.toml"),
+			content: []byte(fmt.Sprintf(`[project]
+name = "%s"
+version = "0.1.0"
+description = "A Python project"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+`, projectName)),
+		},
+		{
+			path:    filepath.Join(targetDir, "src", "__init__.py"),
+			content: []byte(""),
+		},
+		{
+			path: filepath.Join(targetDir, "src", "main.py"),
+			content: []byte(`def main():
+    print("Hello, World!")
+
+if __name__ == "__main__":
+    main()
+`),
+		},
+		{
+			path:    filepath.Join(targetDir, "tests", "__init__.py"),
+			content: []byte(""),
+		},
+		{
+			path: filepath.Join(targetDir, "tests", "test_placeholder.py"),
+			content: []byte(`def test_placeholder():
+    """Placeholder test to ensure pytest doesn't fail with 'no tests collected'."""
+    pass
+`),
+		},
+		{
+			path:    filepath.Join(targetDir, "README.md"),
+			content: []byte(fmt.Sprintf("# %s\n\nA Python project.\n", projectName)),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldRust(targetDir, projectName string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path: filepath.Join(targetDir, "Cargo.toml"),
+			content: []byte(fmt.Sprintf(`[package]
+name = "%s"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+`, projectName)),
+		},
+		{
+			path: filepath.Join(targetDir, "src", "main.rs"),
+			content: []byte(`fn main() {
+    println!("Hello, World!");
+}
+`),
+		},
+		{
+			path:    filepath.Join(targetDir, "README.md"),
+			content: []byte(fmt.Sprintf("# %s\n\nA Rust project.\n", projectName)),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldDotnet(targetDir, projectName string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path: filepath.Join(targetDir, projectName+".csproj"),
+			content: []byte(`<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "Program.cs"),
+			content: []byte(`Console.WriteLine("Hello, World!");
+`),
+		},
+		{
+			path:    filepath.Join(targetDir, "README.md"),
+			content: []byte(fmt.Sprintf("# %s\n\nA .NET project.\n", projectName)),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldNode(targetDir, projectName string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path: filepath.Join(targetDir, "package.json"),
+			content: []byte(fmt.Sprintf(`{
+  "name": "%s",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
+`, projectName)),
+		},
+		{
+			path: filepath.Join(targetDir, "tsconfig.json"),
+			content: []byte(`{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "src", "index.ts"),
+			content: []byte(`console.log("Hello, World!");
+`),
+		},
+		{
+			path:    filepath.Join(targetDir, "README.md"),
+			content: []byte(fmt.Sprintf("# %s\n\nA Node.js/TypeScript project.\n", projectName)),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldMonorepo(targetDir, projectName, backend, frontend string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	// Scaffold backend
+	backendDir := filepath.Join(targetDir, "backend")
+	var backendResult *ScaffoldResult
+	var err error
+
+	switch backend {
+	case "go":
+		backendResult, err = scaffoldGo(backendDir, projectName+"-backend", force, dryRun)
+	case "python":
+		backendResult, err = scaffoldPython(backendDir, projectName+"-backend", force, dryRun)
+	}
+	if err != nil {
+		return result, err
+	}
+	result.Created = append(result.Created, backendResult.Created...)
+	result.Skipped = append(result.Skipped, backendResult.Skipped...)
+	result.Failed = append(result.Failed, backendResult.Failed...)
+	result.Errors = append(result.Errors, backendResult.Errors...)
+
+	// Scaffold frontend
+	frontendDir := filepath.Join(targetDir, "frontend")
+	var frontendResult *ScaffoldResult
+
+	switch frontend {
+	case "react":
+		frontendResult, err = scaffoldReactFrontend(frontendDir, force, dryRun)
+	case "unity":
+		frontendResult, err = scaffoldUnityFrontend(frontendDir, force, dryRun)
+	case "godot":
+		frontendResult, err = scaffoldGodotFrontend(frontendDir, force, dryRun)
+	case "unreal":
+		frontendResult, err = scaffoldUnrealFrontend(frontendDir, force, dryRun)
+	}
+	if err != nil {
+		return result, err
+	}
+	result.Created = append(result.Created, frontendResult.Created...)
+	result.Skipped = append(result.Skipped, frontendResult.Skipped...)
+	result.Failed = append(result.Failed, frontendResult.Failed...)
+	result.Errors = append(result.Errors, frontendResult.Errors...)
+
+	if len(result.Failed) > 0 {
+		return result, ErrScaffoldFailed
+	}
+	return result, nil
+}
+
+func scaffoldReactFrontend(targetDir string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path: filepath.Join(targetDir, "package.json"),
+			content: []byte(`{
+  "name": "frontend",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "tsconfig.json"),
+			content: []byte(`{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "vite.config.ts"),
+			content: []byte(`import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+})
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "index.html"),
+			content: []byte(`<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "src", "main.tsx"),
+			content: []byte(`import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "src", "App.tsx"),
+			content: []byte(`function App() {
+  return (
+    <div>
+      <h1>Hello, World!</h1>
+    </div>
+  )
+}
+
+export default App
+`),
+		},
+		{
+			path:    filepath.Join(targetDir, "README.md"),
+			content: []byte("# Frontend\n\nReact frontend with Vite.\n"),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldUnityFrontend(targetDir string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path:    filepath.Join(targetDir, ".gitkeep"),
+			content: []byte(""),
+		},
+		{
+			path: filepath.Join(targetDir, "README.md"),
+			content: []byte(`# Frontend (Unity)
+
+This directory is a placeholder for the Unity project.
+
+## Setup
+
+1. Open Unity Hub
+2. Create a new Unity project in this directory
+3. The Unity project files will be created here
+
+Note: Unity projects should be created using the Unity Editor, not scaffolded.
+`),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldGodotFrontend(targetDir string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path: filepath.Join(targetDir, "project.godot"),
+			content: []byte(`; Godot Engine project file
+; Minimal configuration
+
+config_version=5
+
+[application]
+config/name="Frontend"
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "README.md"),
+			content: []byte(`# Frontend (Godot)
+
+Godot game project.
+
+## Setup
+
+1. Open Godot Engine
+2. Import this project
+3. Start developing your game
+
+The project.godot file contains minimal configuration.
+`),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+func scaffoldUnrealFrontend(targetDir string, force, dryRun bool) (*ScaffoldResult, error) {
+	result := &ScaffoldResult{}
+
+	files := []struct {
+		path    string
+		content []byte
+	}{
+		{
+			path:    filepath.Join(targetDir, ".gitkeep"),
+			content: []byte(""),
+		},
+		{
+			path: filepath.Join(targetDir, "README.md"),
+			content: []byte(`# Frontend (Unreal)
+
+This directory is a placeholder for the Unreal Engine project.
+
+## Setup
+
+1. Open Unreal Engine
+2. Create a new project in this directory
+3. The Unreal project files will be created here
+
+Note: Unreal projects should be created using the Unreal Editor, not scaffolded.
+`),
+		},
+	}
+
+	return scaffoldFiles(files, force, dryRun, result)
+}
+
+// scaffoldFiles is a helper that creates files and tracks results
+func scaffoldFiles(files []struct {
+	path    string
+	content []byte
+}, force, dryRun bool, result *ScaffoldResult) (*ScaffoldResult, error) {
+	for _, f := range files {
+		if dryRun {
+			// Check if file exists for dry-run reporting
+			if _, err := os.Stat(f.path); err == nil {
+				if !force {
+					result.Skipped = append(result.Skipped, f.path)
+				} else {
+					result.Created = append(result.Created, f.path)
+				}
+			} else {
+				result.Created = append(result.Created, f.path)
+			}
+			continue
+		}
+
+		created, skipped, err := writeFileIfNotExists(f.path, f.content, force)
+		if err != nil {
+			result.Failed = append(result.Failed, f.path)
+			result.Errors = append(result.Errors, err)
+			continue
+		}
+		if created {
+			result.Created = append(result.Created, f.path)
+		} else if skipped {
+			result.Skipped = append(result.Skipped, f.path)
+		}
+	}
+
+	if len(result.Failed) > 0 {
+		return result, ErrScaffoldFailed
+	}
+	return result, nil
+}
