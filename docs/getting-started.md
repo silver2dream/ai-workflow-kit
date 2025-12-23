@@ -15,13 +15,91 @@ awkit init --preset generic
 
 # Or specify a path
 awkit init /path/to/your-repo --preset generic
+
+# With scaffold to create project structure
+awkit init --preset go --scaffold
 ```
 
-Presets:
-- `generic`: single-repo template (edit to match your structure)
-- `react-go`: directory monorepo template for React (frontend) + Go (backend)
+## Available Presets
 
 Run `awkit list-presets` to see all available presets.
+
+### Single-Repo Presets
+
+| Preset | Description | Language | Scaffold Files |
+|--------|-------------|----------|----------------|
+| `generic` | Generic project (alias for node) | TypeScript | package.json, tsconfig.json, src/index.ts |
+| `go` | Go single-repo project | Go | go.mod, main.go |
+| `python` | Python single-repo project | Python | pyproject.toml, src/, tests/ |
+| `rust` | Rust single-repo project | Rust | Cargo.toml, src/main.rs |
+| `dotnet` | .NET single-repo project | .NET | .csproj, Program.cs |
+| `node` | Node.js/TypeScript single-repo | TypeScript | package.json, tsconfig.json, src/index.ts |
+
+### Monorepo Presets
+
+| Preset | Description | Frontend | Backend |
+|--------|-------------|----------|---------|
+| `react-go` | React frontend + Go backend | React/Vite | Go |
+| `react-python` | React frontend + Python backend | React/Vite | Python |
+| `unity-go` | Unity frontend + Go backend | Unity | Go |
+| `godot-go` | Godot frontend + Go backend | Godot | Go |
+| `unreal-go` | Unreal frontend + Go backend | Unreal | Go |
+
+## Using --scaffold
+
+The `--scaffold` flag creates a minimal project structure:
+
+```bash
+# Single-repo Go project
+awkit init --preset go --scaffold
+
+# Monorepo with React + Go
+awkit init --preset react-go --scaffold
+
+# Preview what would be created (dry-run)
+awkit init --preset python --scaffold --dry-run
+```
+
+### Scaffold File Structures
+
+**Go (`--preset go --scaffold`):**
+```
+.
+├── go.mod
+├── main.go
+└── README.md
+```
+
+**Python (`--preset python --scaffold`):**
+```
+.
+├── pyproject.toml
+├── src/
+│   ├── __init__.py
+│   └── main.py
+├── tests/
+│   ├── __init__.py
+│   └── test_placeholder.py
+└── README.md
+```
+
+**React + Go (`--preset react-go --scaffold`):**
+```
+.
+├── backend/
+│   ├── go.mod
+│   ├── main.go
+│   └── README.md
+└── frontend/
+    ├── package.json
+    ├── tsconfig.json
+    ├── vite.config.ts
+    ├── index.html
+    ├── src/
+    │   ├── main.tsx
+    │   └── App.tsx
+    └── README.md
+```
 
 ## 1) Configure `workflow.yaml`
 

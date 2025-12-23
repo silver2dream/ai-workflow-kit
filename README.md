@@ -119,12 +119,24 @@ Install AWK into a project:
 # Initialize AWK in current directory
 awkit init
 
-# Or with a preset
-awkit init --preset react-go
+# With a preset and scaffold
+awkit init --preset go --scaffold
 
-# Or specify a path
-awkit init /path/to/your-project --preset react-go
+# Monorepo with React + Go
+awkit init --preset react-go --scaffold
+
+# Preview what would be created
+awkit init --preset python --scaffold --dry-run
 ```
+
+### Available Presets
+
+| Category | Presets |
+|----------|---------|
+| Single-Repo | `generic`, `go`, `python`, `rust`, `dotnet`, `node` |
+| Monorepo | `react-go`, `react-python`, `unity-go`, `godot-go`, `unreal-go` |
+
+Run `awkit list-presets` for details. See [Getting Started](docs/getting-started.md) for scaffold file structures.
 
 Note: `awkit install` is an alias for `awkit init` (backward compatible).
 

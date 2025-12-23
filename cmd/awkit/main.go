@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -38,13 +39,25 @@ func init() {
 }
 
 var presets = []PresetInfo{
-	{Name: "generic", Description: "Generic single-repo project"},
-	{Name: "react-go", Description: "React frontend + Go backend monorepo"},
+	// Single-repo presets
+	{Name: "generic", Description: "Generic project (alias for node)", Category: "single-repo"},
+	{Name: "go", Description: "Go single-repo project", Category: "single-repo"},
+	{Name: "python", Description: "Python single-repo project", Category: "single-repo"},
+	{Name: "rust", Description: "Rust single-repo project", Category: "single-repo"},
+	{Name: "dotnet", Description: ".NET single-repo project", Category: "single-repo"},
+	{Name: "node", Description: "Node.js/TypeScript single-repo project", Category: "single-repo"},
+	// Monorepo presets
+	{Name: "react-go", Description: "React frontend + Go backend", Category: "monorepo"},
+	{Name: "react-python", Description: "React frontend + Python backend", Category: "monorepo"},
+	{Name: "unity-go", Description: "Unity frontend + Go backend", Category: "monorepo"},
+	{Name: "godot-go", Description: "Godot frontend + Go backend", Category: "monorepo"},
+	{Name: "unreal-go", Description: "Unreal frontend + Go backend", Category: "monorepo"},
 }
 
 type PresetInfo struct {
 	Name        string
 	Description string
+	Category    string // "single-repo" | "monorepo"
 }
 
 func availablePresetNames() string {
@@ -198,7 +211,8 @@ Arguments:
 
 Options:
   --preset        Project preset (%s) [default: generic]
-  --force         Overwrite all existing kit files
+  --scaffold      Create minimal project structure for the preset
+  --force         Overwrite all existing kit files (and scaffold files if --scaffold)
   --force-config  Overwrite only workflow.yaml (apply preset to existing project)
   --dry-run       Show what would be done without making changes
   --no-generate   Skip running generate.sh after init
@@ -208,6 +222,7 @@ Options:
 Examples:
   awkit init
   awkit init --preset react-go
+  awkit init --preset go --scaffold
   awkit init /path/to/project --force
   awkit init --preset react-go --force-config  # Apply preset to existing project
   awkit init --dry-run
@@ -229,6 +244,9 @@ Arguments:
   project_path    Path to the project (default: current directory)
 
 Options:
+  --scaffold      Supplement scaffold files for a preset (requires --preset)
+  --preset        Preset to use for scaffold (required with --scaffold)
+  --force         Overwrite scaffold files (only affects scaffold, not kit files)
   --dry-run       Show what would be updated without making changes
   --no-generate   Skip running generate.sh after upgrade
 
@@ -236,6 +254,8 @@ Examples:
   awkit upgrade
   awkit upgrade /path/to/project
   awkit upgrade --dry-run
+  awkit upgrade --scaffold --preset go
+  awkit upgrade --scaffold --preset react-go --force
 `)
 }
 
@@ -306,6 +326,7 @@ func cmdInit(args []string) int {
 	fs.Usage = usageInit
 
 	preset := fs.String("preset", "generic", "")
+	scaffold := fs.Bool("scaffold", false, "")
 	noGenerate := fs.Bool("no-generate", false, "")
 	withCI := fs.Bool("with-ci", true, "")
 	force := fs.Bool("force", false, "")
@@ -361,15 +382,21 @@ func cmdInit(args []string) int {
 	}
 	fmt.Printf("  Target:  %s\n", cyan(displayTarget))
 	fmt.Printf("  Preset:  %s\n", cyan(*preset))
+	if *scaffold && *preset == "generic" {
+		fmt.Printf("  Using default preset: %s\n", cyan("generic (node)"))
+	}
 	if *force {
 		fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
 	} else if *forceConfig {
 		fmt.Printf("  Mode:    %s\n", cyan("force-config (overwrite config only)"))
 	}
+	if *scaffold {
+		fmt.Printf("  Scaffold: %s\n", cyan("yes"))
+	}
 	fmt.Println("")
 
 	if *dryRun {
-		fmt.Println("Would create/update:")
+		fmt.Println(bold("AWK Kit files:"))
 		fmt.Println("  .ai/config/workflow.yaml")
 		fmt.Println("  .ai/scripts/")
 		fmt.Println("  .ai/scripts/lib/")
@@ -391,6 +418,44 @@ func cmdInit(args []string) int {
 		}
 		fmt.Println("  .gitignore (append AWK entries)")
 		fmt.Println("  .gitattributes (if missing)")
+
+		// Scaffold dry-run
+		if *scaffold {
+			resolvedProjectName := *projectName
+			if resolvedProjectName == "" {
+				resolvedProjectName = displayTarget
+				if resolvedProjectName == "." || resolvedProjectName == "./" {
+					if cwd, err := os.Getwd(); err == nil {
+						resolvedProjectName = cwd
+					}
+				}
+				resolvedProjectName = filepath.Base(resolvedProjectName)
+			}
+
+			scaffoldResult, _ := install.Scaffold(displayTarget, install.ScaffoldOptions{
+				Preset:      *preset,
+				TargetDir:   displayTarget,
+				ProjectName: resolvedProjectName,
+				Force:       *force,
+				DryRun:      true,
+			})
+
+			fmt.Println("")
+			fmt.Println(bold("Scaffold files:"))
+			for _, f := range scaffoldResult.Created {
+				fmt.Printf("  %s\n", f)
+			}
+			if len(scaffoldResult.Skipped) > 0 {
+				fmt.Println("")
+				fmt.Println(bold("Skipped (exists):"))
+				for _, f := range scaffoldResult.Skipped {
+					fmt.Printf("  %s\n", f)
+				}
+				fmt.Println("")
+				warn("%d files would be skipped. Use --force to overwrite.\n", len(scaffoldResult.Skipped))
+			}
+		}
+
 		fmt.Println("")
 		success("Dry run complete. No changes made.\n")
 		return 0
@@ -403,6 +468,7 @@ func cmdInit(args []string) int {
 		ForceConfig: *forceConfig,
 		NoGenerate:  *noGenerate,
 		WithCI:      *withCI,
+		Scaffold:    *scaffold,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "")
@@ -429,6 +495,40 @@ func cmdInit(args []string) int {
 		fmt.Printf("    awkit init --preset %s --force-config # Overwrite config only\n", *preset)
 	}
 
+	// Show scaffold results
+	if *scaffold && result != nil && result.ScaffoldResult != nil {
+		sr := result.ScaffoldResult
+		if len(sr.Created) > 0 {
+			fmt.Println("")
+			fmt.Println(bold("Scaffold files created:"))
+			for _, f := range sr.Created {
+				fmt.Printf("  %s\n", f)
+			}
+		}
+		if len(sr.Skipped) > 0 {
+			fmt.Println("")
+			warn("Scaffold files skipped (already exist):\n")
+			for _, f := range sr.Skipped {
+				fmt.Printf("  %s\n", f)
+			}
+		}
+		if len(sr.Failed) > 0 {
+			fmt.Println("")
+			errorf("Scaffold files failed:\n")
+			for i, f := range sr.Failed {
+				fmt.Printf("  %s: %v\n", f, sr.Errors[i])
+			}
+			fmt.Println("")
+			warn("Some files failed to create. Run 'awkit init --scaffold' again to retry.\n")
+		}
+	}
+
+	// Handle scaffold error
+	if result != nil && result.ScaffoldError != nil {
+		fmt.Println("")
+		warn("Scaffold completed with errors: %v\n", result.ScaffoldError)
+	}
+
 	fmt.Println("")
 	fmt.Println(bold("Next steps:"))
 	fmt.Printf("  1. %s\n", cyan("cd "+displayTarget))
@@ -439,12 +539,14 @@ func cmdInit(args []string) int {
 	warnUpdateAvailable()
 	return 0
 }
-
 func cmdUpgrade(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = usageUpgrade
 
+	scaffold := fs.Bool("scaffold", false, "")
+	preset := fs.String("preset", "", "")
+	force := fs.Bool("force", false, "")
 	dryRun := fs.Bool("dry-run", false, "")
 	noGenerate := fs.Bool("no-generate", false, "")
 	showHelp := fs.Bool("help", false, "")
@@ -457,6 +559,33 @@ func cmdUpgrade(args []string) int {
 	if *showHelp || *showHelpShort {
 		usageUpgrade()
 		return 0
+	}
+
+	// Validate: --scaffold requires --preset
+	if *scaffold && *preset == "" {
+		errorf("--preset required for upgrade --scaffold\n")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Usage: awkit upgrade --scaffold --preset <name>")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Run 'awkit list-presets' to see available presets.")
+		return 2
+	}
+
+	// Validate preset if provided
+	if *preset != "" {
+		validPreset := false
+		for _, p := range presets {
+			if p.Name == *preset {
+				validPreset = true
+				break
+			}
+		}
+		if !validPreset {
+			errorf("Unknown preset %q\n", *preset)
+			fmt.Fprintf(os.Stderr, "Available presets: %s\n", availablePresetNames())
+			fmt.Fprintf(os.Stderr, "\nRun 'awkit list-presets' for details.\n")
+			return 2
+		}
 	}
 
 	// Default to current directory
@@ -488,6 +617,9 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("Upgrading AWK...")
 	}
 	fmt.Printf("  Target: %s\n", cyan(displayTarget))
+	if *scaffold {
+		fmt.Printf("  Scaffold: %s (preset: %s)\n", cyan("yes"), cyan(*preset))
+	}
 	fmt.Println("")
 
 	if *dryRun {
@@ -505,6 +637,34 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("  .ai/config/workflow.yaml")
 		fmt.Println("  .ai/specs/")
 		fmt.Println("  .ai/rules/ (user rules)")
+
+		// Scaffold dry-run
+		if *scaffold {
+			projectName := filepath.Base(displayTarget)
+			scaffoldResult, _ := install.Scaffold(displayTarget, install.ScaffoldOptions{
+				Preset:      *preset,
+				TargetDir:   displayTarget,
+				ProjectName: projectName,
+				Force:       *force,
+				DryRun:      true,
+			})
+
+			fmt.Println("")
+			fmt.Println(bold("Scaffold files:"))
+			for _, f := range scaffoldResult.Created {
+				fmt.Printf("  %s\n", f)
+			}
+			if len(scaffoldResult.Skipped) > 0 {
+				fmt.Println("")
+				fmt.Println(bold("Skipped (exists):"))
+				for _, f := range scaffoldResult.Skipped {
+					fmt.Printf("  %s\n", f)
+				}
+				fmt.Println("")
+				warn("%d files would be skipped. Use --force to overwrite.\n", len(scaffoldResult.Skipped))
+			}
+		}
+
 		fmt.Println("")
 		success("Dry run complete. No changes made.\n")
 		return 0
@@ -529,6 +689,47 @@ func cmdUpgrade(args []string) int {
 	if result != nil && result.ConfigSkipped {
 		fmt.Println("")
 		info("  Config preserved: .ai/config/workflow.yaml\n")
+	}
+
+	// Handle scaffold for upgrade
+	if *scaffold {
+		projectName := filepath.Base(displayTarget)
+		scaffoldResult, scaffoldErr := install.Scaffold(displayTarget, install.ScaffoldOptions{
+			Preset:      *preset,
+			TargetDir:   displayTarget,
+			ProjectName: projectName,
+			Force:       *force,
+			DryRun:      false,
+		})
+
+		if scaffoldResult != nil {
+			if len(scaffoldResult.Created) > 0 {
+				fmt.Println("")
+				fmt.Println(bold("Scaffold files created:"))
+				for _, f := range scaffoldResult.Created {
+					fmt.Printf("  %s\n", f)
+				}
+			}
+			if len(scaffoldResult.Skipped) > 0 {
+				fmt.Println("")
+				warn("Scaffold files skipped (already exist):\n")
+				for _, f := range scaffoldResult.Skipped {
+					fmt.Printf("  %s\n", f)
+				}
+			}
+			if len(scaffoldResult.Failed) > 0 {
+				fmt.Println("")
+				errorf("Scaffold files failed:\n")
+				for i, f := range scaffoldResult.Failed {
+					fmt.Printf("  %s: %v\n", f, scaffoldResult.Errors[i])
+				}
+			}
+		}
+
+		if scaffoldErr != nil {
+			fmt.Println("")
+			warn("Scaffold completed with errors: %v\n", scaffoldErr)
+		}
 	}
 
 	fmt.Println("")
@@ -640,12 +841,23 @@ func cmdListPresets() int {
 	fmt.Println("")
 	fmt.Println(bold("Available presets:"))
 	fmt.Println("")
+
+	fmt.Println(bold("Single-Repo:"))
 	for _, p := range presets {
-		fmt.Printf("  %s\n", bold(p.Name))
-		fmt.Printf("    %s\n", p.Description)
-		fmt.Println("")
+		if p.Category == "single-repo" {
+			fmt.Printf("  %-12s %s\n", p.Name, p.Description)
+		}
 	}
-	fmt.Println("Usage: awkit init --preset <name>")
+	fmt.Println("")
+
+	fmt.Println(bold("Monorepo:"))
+	for _, p := range presets {
+		if p.Category == "monorepo" {
+			fmt.Printf("  %-12s %s\n", p.Name, p.Description)
+		}
+	}
+	fmt.Println("")
+	fmt.Println("Usage: awkit init --preset <name> [--scaffold]")
 	fmt.Println("")
 	return 0
 }
@@ -687,12 +899,12 @@ _awkit() {
             return 0
             ;;
         init|install)
-            local opts="--preset --force --force-config --dry-run --no-generate --with-ci --project-name --help"
+            local opts="--preset --scaffold --force --force-config --dry-run --no-generate --with-ci --project-name --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
             return 0
             ;;
         upgrade)
-            local opts="--dry-run --no-generate --help"
+            local opts="--scaffold --preset --force --dry-run --no-generate --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
             return 0
             ;;
@@ -702,7 +914,7 @@ _awkit() {
             return 0
             ;;
         --preset)
-            COMPREPLY=( $(compgen -W "generic react-go" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go" -- ${cur}) )
             return 0
             ;;
         completion)
@@ -735,7 +947,7 @@ _awkit() {
     )
 
     local -a presets
-    presets=(generic react-go)
+    presets=(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)
 
     _arguments -C \
         '1: :->command' \
@@ -749,7 +961,8 @@ _awkit() {
             case $words[2] in
                 init|install)
                     _arguments \
-                        '--preset[Project preset]:preset:(generic react-go)' \
+                        '--preset[Project preset]:preset:(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)' \
+                        '--scaffold[Create project structure]' \
                         '--force[Overwrite all existing files]' \
                         '--force-config[Overwrite only workflow.yaml]' \
                         '--dry-run[Show what would be done]' \
@@ -760,6 +973,9 @@ _awkit() {
                     ;;
                 upgrade)
                     _arguments \
+                        '--scaffold[Supplement scaffold files]' \
+                        '--preset[Preset for scaffold]:preset:(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)' \
+                        '--force[Overwrite scaffold files]' \
                         '--dry-run[Show what would be done]' \
                         '--no-generate[Skip generate.sh]' \
                         '*:directory:_files -/'
@@ -799,7 +1015,8 @@ complete -c awkit -n __fish_use_subcommand -a version -d 'Show version'
 complete -c awkit -n __fish_use_subcommand -a help -d 'Show help'
 
 # init/install options
-complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic react-go'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l scaffold -d 'Create project structure'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Overwrite all existing files'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l dry-run -d 'Show what would be done'
@@ -808,6 +1025,9 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l with-ci -d 'C
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name -d 'Override project name'
 
 # upgrade options
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l scaffold -d 'Supplement scaffold files'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset for scaffold' -xa 'generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force -d 'Overwrite scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-generate -d 'Skip generate.sh'
 
