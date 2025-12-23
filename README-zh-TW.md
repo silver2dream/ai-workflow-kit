@@ -3,6 +3,7 @@
 [![CI](https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/silver2dream/ai-workflow-kit/badge)](https://securityscorecards.dev/viewer/?uri=github.com/silver2dream/ai-workflow-kit)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
@@ -323,48 +324,3 @@ Root CI workflow：`.github/workflows/ci.yml`
 ## 📄 授權
 
 本專案採用 [Apache License 2.0](LICENSE) 授權。
-
----
-
-## 🔒 安全與信任
-
-AWK 遵循開源安全最佳實踐，並由 [OpenSSF Scorecard](https://securityscorecards.dev/) 監控。
-
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/silver2dream/ai-workflow-kit/badge)](https://securityscorecards.dev/viewer/?uri=github.com/silver2dream/ai-workflow-kit)
-
-### 安全功能
-
-| 功能 | 狀態 | 說明 |
-|------|------|------|
-| **SECURITY.md** | ✅ | 漏洞回報政策和 SLA |
-| **Branch Protection** | ✅ | 必要的 review 和 CI 檢查 |
-| **Code Review** | ✅ | 所有變更需要 PR review |
-| **CI/CD** | ✅ | 所有 PR 自動測試 |
-| **Dependency Updates** | ✅ | 啟用 Dependabot |
-| **Static Analysis** | ✅ | CodeQL 掃描 |
-| **Secret Scanning** | ⚙️ | 在 repo settings 中啟用 |
-| **Signed Commits** | ⚙️ | 建議貢獻者使用 |
-| **SBOM** | 🔜 | 即將推出 |
-
-### OpenSSF Scorecard 檢查項目
-
-| 檢查 | 說明 |
-|------|------|
-| **Security-Policy** | SECURITY.md 包含漏洞回報流程 |
-| **Branch-Protection** | 受保護的分支需要 review |
-| **Code-Review** | 變更在合併前需要 review |
-| **CI-Tests** | PR 上執行自動化測試 |
-| **Dependency-Update-Tool** | 使用 Dependabot 更新依賴 |
-| **SAST** | 靜態應用程式安全測試 (CodeQL) |
-| **Token-Permissions** | 最小化 GitHub token 權限 |
-| **Pinned-Dependencies** | 依賴固定到特定版本 |
-| **Vulnerabilities** | 依賴中無已知漏洞 |
-
-### 給使用者
-
-- 合併前審查所有 AI 生成的程式碼
-- 在你的 repository 啟用 branch protection
-- 保持依賴更新
-- 監控 `.ai/state/` 中的審計日誌
-
-完整安全政策和漏洞回報請參閱 [SECURITY.md](SECURITY.md)。
