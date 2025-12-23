@@ -10,8 +10,6 @@
 
 > An AI-assisted development workflow kit that drives **Spec → Implement → PR → Merge**, designed to work with **Claude Code (Principal)** + **Codex (Worker)**, and compatible with **Kiro-style specs**.
 
-[![Download](https://img.shields.io/badge/Download-Latest%20Release-brightgreen?style=for-the-badge&logo=github)](https://github.com/silver2dream/ai-workflow-kit/releases/latest)
-
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
 ---
@@ -52,7 +50,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│  You ──► awkit kickoff ──► Claude Code (Principal)            │
+│  You ──► kickoff.sh ──► Claude Code (Principal)               │
 │                              │                               │
 │                              ├─► read specs/tasks.md          │
 │                              ├─► create GitHub Issue          │
@@ -193,14 +191,6 @@ bash .ai/scripts/generate.sh
 
 ```bash
 gh auth login
-
-# Using awkit CLI (recommended)
-awkit kickoff --dry-run    # Preview what would happen
-awkit kickoff              # Start the workflow
-awkit kickoff --resume     # Resume from saved state
-awkit validate             # Validate config only
-
-# Or using bash script (legacy)
 bash .ai/scripts/kickoff.sh --dry-run
 bash .ai/scripts/kickoff.sh
 ```
