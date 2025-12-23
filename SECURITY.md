@@ -2,77 +2,140 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+The following versions of AWK (AI Workflow Kit) are currently supported with security updates:
+
+| Version | Supported |
+| ------- | --------- |
+| 1.x.x   | ✅ Yes    |
+| < 1.0   | ❌ No     |
+
+Only supported versions will receive security patches. Users are strongly encouraged to upgrade to a supported release.
+
+---
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security issue, please report it responsibly.
+We take security vulnerabilities seriously and appreciate responsible disclosure.
 
 ### How to Report
 
-1. **DO NOT** create a public GitHub issue for security vulnerabilities
-2. Email security concerns to: [security@example.com] (replace with actual email)
-3. Or use GitHub's private vulnerability reporting feature:
-   - Go to the repository's "Security" tab
-   - Click "Report a vulnerability"
+If you believe you have found a security vulnerability, please follow **one** of the options below:
+
+1. **DO NOT** open a public GitHub issue.
+
+2. Use GitHub's **Private Vulnerability Reporting** feature:
+   - Go to the repository's **Security** tab
+   - Click **Report a vulnerability**
+
+3. (Optional) Email security concerns to:  
+   **security@YOURDOMAIN.COM**  
+   *(Replace with a real address if available. If not, GitHub reporting is preferred.)*
 
 ### What to Include
 
-- Description of the vulnerability
+Please include as much information as possible:
+
+- A clear description of the vulnerability
 - Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+- Affected versions
+- Potential impact and severity
+- Suggested mitigation or fix (if known)
 
-### Response SLA
+---
 
-| Severity | Initial Response | Resolution Target |
-|----------|-----------------|-------------------|
-| Critical | 24 hours        | 7 days            |
-| High     | 48 hours        | 14 days           |
-| Medium   | 7 days          | 30 days           |
-| Low      | 14 days         | 90 days           |
+## Response SLA
+
+We aim to respond and remediate according to the following targets:
+
+| Severity  | Initial Response | Resolution Target |
+|-----------|------------------|-------------------|
+| Critical  | Within 24 hours  | 7 days            |
+| High      | Within 48 hours  | 14 days           |
+| Medium    | Within 7 days    | 30 days           |
+| Low       | Within 14 days   | 90 days           |
 
 ### What to Expect
 
-1. **Acknowledgment**: We will acknowledge receipt of your report within the SLA timeframe
-2. **Investigation**: We will investigate and validate the vulnerability
-3. **Fix Development**: We will develop and test a fix
-4. **Disclosure**: We will coordinate disclosure timing with you
-5. **Credit**: We will credit you in the security advisory (unless you prefer anonymity)
+1. **Acknowledgment** – Confirmation that we received your report
+2. **Investigation** – Validation and impact assessment
+3. **Fix Development** – Patch development and testing
+4. **Coordinated Disclosure** – Disclosure timing agreed with the reporter
+5. **Credit** – Public acknowledgment unless anonymity is requested
 
-## Security Best Practices
+---
 
-When using AWK (AI Workflow Kit):
+## Security Assurance & Verification
 
-1. **Never commit secrets** - Use environment variables or secret management
-2. **Review AI-generated code** - Always review before merging
-3. **Use branch protection** - Require reviews and CI checks
-4. **Keep dependencies updated** - Enable Dependabot alerts
-5. **Monitor audit logs** - Review `.ai/state/` logs regularly
+This project follows commonly accepted open source security best practices.  
+Security-related signals are **publicly verifiable** in this repository, including:
 
-## Security Features
+- Automated dependency vulnerability scanning (Dependabot)
+- Static application security testing (GitHub CodeQL)
+- OpenSSF Scorecard monitoring
+- GitHub branch protection and required pull request reviews
+- Secret scanning for known credential patterns
 
-AWK includes several security features:
+Users and reviewers are encouraged to inspect the repository's **Security** tab for up-to-date results.
 
-- **Path isolation**: Worker cannot access Principal session data
-- **Audit logging**: All operations are logged with session IDs
-- **GitHub integration**: Uses GitHub's security features (branch protection, required reviews)
-- **Secret scanning**: Checks for sensitive information in code changes
+---
 
-### GitHub Security Settings (Recommended)
+## Threat Model & Scope
 
-Enable these features in your repository settings:
+AWK is designed to mitigate risks related to:
 
-1. **Secret Scanning**: Settings → Security → Secret scanning → Enable
-2. **Push Protection**: Settings → Security → Push protection → Enable
-3. **Dependabot Alerts**: Settings → Security → Dependabot alerts → Enable
-4. **CodeQL Analysis**: Automatically enabled via `.github/workflows/codeql.yml`
+- Accidental exposure of secrets in AI-generated code
+- Unauthorized access between isolated AI worker sessions
+- Unreviewed automated code changes
+- Incomplete auditability of AI-driven workflows
+
+AWK **does not** protect against:
+
+- Malicious actions by trusted contributors
+- Compromised GitHub accounts or access tokens
+- Vulnerabilities in third-party dependencies or AI model providers
+- Misconfiguration of repository permissions or branch protection
+
+Security is a shared responsibility between the tool and its users.
+
+---
+
+## Supply Chain Security
+
+- Source code and installation scripts are hosted in this repository
+- Releases are distributed via GitHub Releases
+- Installation scripts are versioned and subject to code review
+- Users are strongly encouraged to **pin exact versions** instead of using `latest`
+- No binaries or scripts are fetched from untrusted third-party sources at install time
+
+---
+
+## Security Best Practices for Users
+
+When using AWK (AI Workflow Kit), users are responsible for:
+
+- Reviewing all AI-generated code before merging
+- Managing GitHub tokens using least-privilege scopes
+- Enabling branch protection and required reviews
+- Keeping dependencies up to date
+- Monitoring audit logs and workflow outputs
+- Ensuring compliance with their organization's security policies
+
+---
+
+## Built-in Security Features
+
+AWK includes the following security-oriented design features:
+
+- **Path isolation**: Worker sessions cannot access Principal session data
+- **Audit logging**: All workflow operations are logged with session identifiers
+- **Explicit workflow states**: Issue/PR labels act as a visible state machine
+- **GitHub-native controls**: Integrates with branch protection and review rules
+- **Secret detection**: Detects common sensitive patterns in generated changes
+
+---
 
 ## Acknowledgments
 
 We thank the following individuals for responsibly disclosing security issues:
 
-- (None yet - be the first!)
+- *(No disclosures yet — be the first!)*
