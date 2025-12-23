@@ -61,6 +61,15 @@
 **輸出**: `[PRINCIPAL] <time> | PREFLIGHT | 開始前置檢查...`
 
 ```bash
+# 0. 初始化 Principal Session (Req 1.1, 1.2, 1.3)
+# 這會檢查是否有其他 Principal 在運行，如果有則報錯退出
+# 如果舊 Principal 已死亡，會標記為 interrupted
+PRINCIPAL_SESSION_ID=$(bash .ai/scripts/session_manager.sh init_principal_session)
+export PRINCIPAL_SESSION_ID
+# 輸出: [PRINCIPAL] <time> | PREFLIGHT | ✓ Session 已初始化: $PRINCIPAL_SESSION_ID
+```
+
+```bash
 # 1. 確認 gh 已認證
 gh auth status
 # 輸出: [PRINCIPAL] <time> | PREFLIGHT | ✓ gh 已認證
@@ -237,6 +246,17 @@ cat <specs.base_path>/<spec_name>/tasks.md
 
 根據任務內容，創建 GitHub Issue（使用配置中的分支名稱）。
 
+```bash
+# 創建 Issue 後，記錄 issue_created action (Req 1.4)
+bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "issue_created" "{\"issue_id\":\"$ISSUE_NUMBER\",\"title\":\"$ISSUE_TITLE\"}"
+```
+
+```bash
+# 在 Issue 上加入 AWK tracking comment (Req 4.1)
+source .ai/scripts/github_comment.sh
+add_issue_comment "$ISSUE_NUMBER" "$PRINCIPAL_SESSION_ID" "principal" "issue_created" "{}"
+```
+
 **Ticket 模板（必填段落）：**
 ```markdown
 # <Title>
@@ -283,6 +303,11 @@ cat <specs.base_path>/<spec_name>/tasks.md
 **輸出**: `[PRINCIPAL] <time> | STEP-3 | 派工給 Worker (issue #N, repo: X)...`
 
 選擇優先級最高的 pending issue（P0 > P1 > P2，同優先級取編號最小）。
+
+```bash
+# 記錄 worker_dispatched action (Req 1.4)
+bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "worker_dispatched" "{\"issue_id\":\"$ISSUE_NUMBER\"}"
+```
 
 ```bash
 # 標記為進行中
@@ -378,6 +403,19 @@ bash .ai/scripts/run_issue_codex.sh <ISSUE_NUMBER> .ai/temp/ticket-<ISSUE_NUMBER
 cat .ai/results/issue-<ISSUE_NUMBER>.json
 ```
 
+```bash
+# 從 result.json 讀取 Worker session ID 和狀態
+WORKER_SESSION_ID=$(python3 -c "import json; print(json.load(open('.ai/results/issue-<ISSUE_NUMBER>.json')).get('session',{}).get('worker_session_id',''))" 2>/dev/null || echo "")
+WORKER_STATUS=$(python3 -c "import json; print(json.load(open('.ai/results/issue-<ISSUE_NUMBER>.json')).get('status',''))" 2>/dev/null || echo "")
+PR_URL=$(python3 -c "import json; print(json.load(open('.ai/results/issue-<ISSUE_NUMBER>.json')).get('pr_url',''))" 2>/dev/null || echo "")
+
+# 記錄 worker_completed action (Req 1.5)
+bash .ai/scripts/session_manager.sh update_worker_completion "$PRINCIPAL_SESSION_ID" "<ISSUE_NUMBER>" "$WORKER_SESSION_ID" "$WORKER_STATUS" "$PR_URL"
+
+# 更新 result.json 的 principal_session_id (Req 6.3)
+bash .ai/scripts/session_manager.sh update_result_with_principal_session "<ISSUE_NUMBER>" "$PRINCIPAL_SESSION_ID"
+```
+
 **輸出結果**: 
 - 成功: `[PRINCIPAL] <time> | STEP-4 | ✓ Worker 成功，PR: <url>`
 - 失敗: `[PRINCIPAL] <time> | STEP-4 | ✗ Worker 失敗: <reason>`
@@ -401,11 +439,61 @@ cat .ai/results/issue-<ISSUE_NUMBER>.json
 從 result.json 獲取 PR URL，提取 PR 編號。
 
 ```bash
+# 讀取 review 配置
+MAX_DIFF_SIZE=$(python3 -c "import yaml; c=yaml.safe_load(open('.ai/config/workflow.yaml')); print(c.get('review',{}).get('max_diff_size_bytes', 100000))" 2>/dev/null || echo "100000")
+WARN_LARGE_DIFF=$(python3 -c "import yaml; c=yaml.safe_load(open('.ai/config/workflow.yaml')); print(str(c.get('review',{}).get('warn_on_large_diff', True)).lower())" 2>/dev/null || echo "true")
+MAX_REVIEW_CYCLES=$(python3 -c "import yaml; c=yaml.safe_load(open('.ai/config/workflow.yaml')); print(c.get('review',{}).get('max_review_cycles', 3))" 2>/dev/null || echo "3")
+CI_TIMEOUT_SECONDS=$(python3 -c "import yaml; c=yaml.safe_load(open('.ai/config/workflow.yaml')); print(c.get('review',{}).get('ci_timeout_seconds', 1800))" 2>/dev/null || echo "1800")
+
 # 獲取 PR diff
 gh pr diff <PR_NUMBER>
 
 # 獲取 PR 統計（文件數和行數）
 gh pr view <PR_NUMBER> --json files,additions,deletions
+```
+
+**Large Diff 檢查 (Req 5.4)：**
+```bash
+# 檢查 PR 大小是否超過限制
+FILES_COUNT=$(gh pr view <PR_NUMBER> --json files -q '.files | length')
+LINES_CHANGED=$(gh pr view <PR_NUMBER> --json additions,deletions -q '.additions + .deletions')
+DIFF_SIZE=$(gh pr diff <PR_NUMBER> | wc -c)
+
+if [[ "$WARN_LARGE_DIFF" == "true" ]] && [[ "$DIFF_SIZE" -gt "$MAX_DIFF_SIZE" ]]; then
+  echo "[PRINCIPAL] ⚠️ Large diff detected: $DIFF_SIZE bytes > $MAX_DIFF_SIZE bytes"
+  # 記錄 large_diff_warning action
+  bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "large_diff_warning" "{\"issue_id\":\"<ISSUE_NUMBER>\",\"pr_number\":\"<PR_NUMBER>\",\"diff_size\":$DIFF_SIZE,\"threshold\":$MAX_DIFF_SIZE}"
+fi
+```
+
+**Review Cycle 計數 (Req 5.5, 5.6)：**
+```bash
+# 讀取 review cycle 計數
+REVIEW_COUNT_FILE=".ai/runs/issue-<ISSUE_NUMBER>/review_count.txt"
+mkdir -p ".ai/runs/issue-<ISSUE_NUMBER>"
+REVIEW_COUNT=0
+if [[ -f "$REVIEW_COUNT_FILE" ]]; then
+  REVIEW_COUNT=$(cat "$REVIEW_COUNT_FILE" || echo "0")
+fi
+
+# 檢查 needs-human-review 標籤是否被移除（人工介入後重置）
+HAS_HUMAN_REVIEW_LABEL=$(gh issue view <ISSUE_NUMBER> --json labels -q '.labels[].name' 2>/dev/null | grep -c "^needs-human-review$" || echo "0")
+if [[ "$HAS_HUMAN_REVIEW_LABEL" -eq 0 ]] && [[ "$REVIEW_COUNT" -ge "$MAX_REVIEW_CYCLES" ]]; then
+  echo "[PRINCIPAL] needs-human-review label removed, resetting review_count"
+  REVIEW_COUNT=0
+fi
+
+# 增加 review cycle 計數
+REVIEW_COUNT=$((REVIEW_COUNT + 1))
+echo "$REVIEW_COUNT" > "$REVIEW_COUNT_FILE"
+
+# 檢查是否超過最大 review cycles
+if [[ "$REVIEW_COUNT" -gt "$MAX_REVIEW_CYCLES" ]]; then
+  echo "[PRINCIPAL] ⚠️ Max review cycles ($MAX_REVIEW_CYCLES) exceeded"
+  gh issue edit <ISSUE_NUMBER> --add-label "needs-human-review"
+  gh issue comment <ISSUE_NUMBER> --body "已達到最大 review 次數 ($MAX_REVIEW_CYCLES)，需要人工審查。"
+  # 跳過此任務，繼續下一個
+fi
 ```
 
 **升級檢查（PR 大小）：**
@@ -455,6 +543,56 @@ cat .ai/rules/<repo-specific-rule>.md
 4. **無明顯 bug**：代碼邏輯是否合理？
 5. **安全檢查**：是否有敏感資訊洩露？
 
+**生成 AWK Review Comment (Req 5.1, 5.2, 5.9)：**
+
+審查完成後，生成符合 AWK 格式的 Review Comment：
+
+```bash
+# 計算 Diff Hash
+DIFF_HASH=$(gh pr diff <PR_NUMBER> | sha256sum | cut -c1-16)
+
+# 生成 Review Comment 並保存到臨時文件
+cat > .ai/temp/review-<PR_NUMBER>.md << EOF
+<!-- AWK Review -->
+
+## Review Summary
+
+Session: $PRINCIPAL_SESSION_ID
+Diff Hash: $DIFF_HASH
+
+### 程式碼符號 (Code Symbols):
+<列出新增/修改的 func/def/class>
+
+### 設計引用 (Design References):
+<引用相關的 design.md 章節>
+
+### 評分 (Score): <1-10>/10
+
+### 評分理由 (Reasoning):
+<說明評分原因>
+
+### 可改進之處 (Improvements):
+<列出可以改進的地方>
+
+### 潛在風險 (Risks):
+<列出潛在風險>
+EOF
+
+# 驗證 Review Comment (Req 5.3)
+VERIFY_EXIT=0
+bash .ai/scripts/verify_review.sh .ai/temp/review-<PR_NUMBER>.md || VERIFY_EXIT=$?
+
+if [[ "$VERIFY_EXIT" -eq 1 ]]; then
+  echo "[PRINCIPAL] ✗ Review comment verification failed"
+  # 重新生成 review comment
+fi
+
+if [[ "$VERIFY_EXIT" -eq 2 ]]; then
+  echo "[PRINCIPAL] Review score < 7, requesting changes"
+  # 跳到「審查不通過」流程
+fi
+```
+
 ### Step 6: 處理審查結果
 
 **輸出**: `[PRINCIPAL] <time> | STEP-6 | 處理審查結果...`
@@ -467,21 +605,56 @@ cat .ai/rules/<repo-specific-rule>.md
 # Approve PR
 gh pr review <PR_NUMBER> --approve --body "✅ AI Review 通過：符合架構規則，變更在範圍內。"
 
-# 等待 CI 通過（最多 10 分鐘）
-gh pr checks <PR_NUMBER> --watch --fail-fast
+# 記錄 pr_reviewed action (Req 1.4)
+bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "pr_reviewed" "{\"issue_id\":\"<ISSUE_NUMBER>\",\"pr_number\":\"<PR_NUMBER>\",\"decision\":\"approved\"}"
 
-# 如果 CI 失敗，不要合併，標記需要修復
-# gh issue edit <ISSUE_NUMBER> --add-label "ci-failed"
-# 回到 Step 1
+# 等待 CI 通過（使用配置的 timeout）
+CI_STATUS="pending"
+CI_TIMEOUT="false"
+if timeout "$CI_TIMEOUT_SECONDS" gh pr checks <PR_NUMBER> --watch --fail-fast; then
+  CI_STATUS="passed"
+else
+  # 檢查是否是 timeout
+  if [[ $? -eq 124 ]]; then
+    CI_TIMEOUT="true"
+    CI_STATUS="timeout"
+    # CI timeout 處理：創建 fix issue 並加入 ci-timeout 標籤
+    gh issue edit <ISSUE_NUMBER> --add-label "ci-timeout"
+    gh issue comment <ISSUE_NUMBER> --body "CI timeout after ${CI_TIMEOUT_SECONDS}s. Please investigate."
+  else
+    CI_STATUS="failed"
+  fi
+fi
+
+# 如果 CI 失敗或 timeout，不要合併，標記需要修復
+if [[ "$CI_STATUS" != "passed" ]]; then
+  gh issue edit <ISSUE_NUMBER> --add-label "ci-failed"
+  # 更新 review_audit (Req 6.4)
+  bash .ai/scripts/session_manager.sh update_result_with_review_audit "<ISSUE_NUMBER>" "$PRINCIPAL_SESSION_ID" "approved" "$CI_STATUS" "$CI_TIMEOUT" ""
+  # 回到 Step 1
+fi
 
 # CI 通過後，使用 auto-merge（會等待 branch protection 規則）
 gh pr merge <PR_NUMBER> --squash --delete-branch --auto
+
+# 獲取 merge timestamp
+MERGE_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# 更新 review_audit (Req 6.4)
+bash .ai/scripts/session_manager.sh update_result_with_review_audit "<ISSUE_NUMBER>" "$PRINCIPAL_SESSION_ID" "approved" "passed" "false" "$MERGE_TIMESTAMP"
+
+# 記錄 pr_merged action (Req 1.4)
+bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "pr_merged" "{\"issue_id\":\"<ISSUE_NUMBER>\",\"pr_number\":\"<PR_NUMBER>\",\"merge_timestamp\":\"$MERGE_TIMESTAMP\"}"
 
 # 關閉 Issue
 gh issue close <ISSUE_NUMBER> --comment "🎉 已合併！PR #<PR_NUMBER>"
 
 # 更新標籤
 gh issue edit <ISSUE_NUMBER> --add-label "review-pass"
+
+# 重置 fail_count 和刪除 review_count.txt (Req 5.8)
+rm -f .ai/runs/issue-<ISSUE_NUMBER>/fail_count.txt
+rm -f .ai/runs/issue-<ISSUE_NUMBER>/review_count.txt
 ```
 
 **輸出**: `[PRINCIPAL] <time> | STEP-6 | ✓ PR #N 已合併，issue #M 已關閉`
@@ -497,6 +670,12 @@ gh issue edit <ISSUE_NUMBER> --add-label "review-pass"
 gh pr review <PR_NUMBER> --request-changes --body "❌ 需要修正：
 <列出具體問題>
 "
+
+# 記錄 pr_reviewed action (Req 1.4)
+bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "pr_reviewed" "{\"issue_id\":\"<ISSUE_NUMBER>\",\"pr_number\":\"<PR_NUMBER>\",\"decision\":\"request_changes\"}"
+
+# 更新 review_audit (Req 6.4)
+bash .ai/scripts/session_manager.sh update_result_with_review_audit "<ISSUE_NUMBER>" "$PRINCIPAL_SESSION_ID" "request_changes" "" "false" ""
 
 # Update issue labels and requeue
 gh issue edit <ISSUE_NUMBER> --remove-label "pr-ready" --remove-label "in-progress" --add-label "review-fail"
@@ -519,6 +698,17 @@ gh issue comment <ISSUE_NUMBER> --body "Review failed. Please address the reques
 4. **人工中斷**：用戶說「停止」或「stop」
 5. **升級觸發**：匹配 `escalation.triggers` 且 action = `require_human_approval` 或 `pause_and_ask`
 6. **PR 過大**：超過 `escalation.max_single_pr_files` 或 `escalation.max_single_pr_lines`
+
+**停止時必須結束 Principal Session (Req 1.6)：**
+
+```bash
+# 根據停止原因選擇 exit_reason
+# all_tasks_complete | user_stopped | error_exit | interrupted | escalation_triggered
+EXIT_REASON="<根據停止條件選擇>"
+
+# 結束 Principal session
+bash .ai/scripts/session_manager.sh end_principal_session "$PRINCIPAL_SESSION_ID" "$EXIT_REASON"
+```
 
 ---
 

@@ -4,6 +4,19 @@
 
 ---
 
+## Step 0: 初始化 Session (Req 1.1)
+
+```bash
+# 檢查是否已有 Principal session
+PRINCIPAL_SESSION_ID=$(bash .ai/scripts/session_manager.sh get_current_session_id 2>/dev/null || echo "")
+
+# 如果沒有 session，初始化一個新的
+if [[ -z "$PRINCIPAL_SESSION_ID" ]]; then
+  PRINCIPAL_SESSION_ID=$(bash .ai/scripts/session_manager.sh init_principal_session)
+fi
+export PRINCIPAL_SESSION_ID
+```
+
 ## Step 1: 獲取 PR 信息
 
 ```bash
@@ -129,7 +142,35 @@ cat .ai/rules/frontend-unity.md
 ### 如果通過：
 
 ```bash
-gh pr review <PR_NUMBER> --approve --body "✅ AI Review 通過
+# 計算 Diff Hash
+DIFF_HASH=$(gh pr diff <PR_NUMBER> | sha256sum | cut -c1-16)
+
+# 生成 AWK Review Comment (Req 5.1, 5.2, 5.9)
+REVIEW_BODY="<!-- AWK Review -->
+
+## Review Summary
+
+Session: $PRINCIPAL_SESSION_ID
+Diff Hash: $DIFF_HASH
+
+### 程式碼符號 (Code Symbols):
+<列出新增/修改的 func/def/class>
+
+### 設計引用 (Design References):
+<引用相關的 design.md 章節>
+
+### 評分 (Score): 8/10
+
+### 評分理由 (Reasoning):
+程式碼品質良好，符合架構規範。
+
+### 可改進之處 (Improvements):
+<列出可以改進的地方，如果沒有則寫「無」>
+
+### 潛在風險 (Risks):
+<列出潛在風險，如果沒有則寫「無重大風險」>
+
+---
 
 **檢查項目：**
 - Git 規範：✓
@@ -137,6 +178,14 @@ gh pr review <PR_NUMBER> --approve --body "✅ AI Review 通過
 - 架構合規：✓
 - 代碼品質：✓
 "
+
+# 確保 review comment 在 approve 之前發布 (Req 5.1)
+gh pr comment <PR_NUMBER> --body "$REVIEW_BODY"
+
+gh pr review <PR_NUMBER> --approve --body "✅ AI Review 通過"
+
+# 記錄 pr_reviewed action (Req 1.4)
+bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "pr_reviewed" "{\"pr_number\":\"<PR_NUMBER>\",\"decision\":\"approved\"}"
 ```
 
 詢問是否要立即 merge：
@@ -147,7 +196,35 @@ gh pr merge <PR_NUMBER> --squash --delete-branch
 ### 如果不通過：
 
 ```bash
-gh pr review <PR_NUMBER> --request-changes --body "❌ 需要修正
+# 計算 Diff Hash
+DIFF_HASH=$(gh pr diff <PR_NUMBER> | sha256sum | cut -c1-16)
+
+# 生成 AWK Review Comment with request-changes
+REVIEW_BODY="<!-- AWK Review -->
+
+## Review Summary
+
+Session: $PRINCIPAL_SESSION_ID
+Diff Hash: $DIFF_HASH
+
+### 程式碼符號 (Code Symbols):
+<列出新增/修改的 func/def/class>
+
+### 設計引用 (Design References):
+<引用相關的 design.md 章節>
+
+### 評分 (Score): <1-6>/10
+
+### 評分理由 (Reasoning):
+<說明為什麼評分低>
+
+### 可改進之處 (Improvements):
+<列出需要修正的問題>
+
+### 潛在風險 (Risks):
+<列出潛在風險>
+
+---
 
 **問題：**
 1. <問題描述>
@@ -156,6 +233,11 @@ gh pr review <PR_NUMBER> --request-changes --body "❌ 需要修正
 **建議修正方式：**
 - <建議>
 "
+
+gh pr review <PR_NUMBER> --request-changes --body "$REVIEW_BODY"
+
+# 記錄 pr_reviewed action (Req 1.4)
+bash .ai/scripts/session_manager.sh append_session_action "$PRINCIPAL_SESSION_ID" "pr_reviewed" "{\"pr_number\":\"<PR_NUMBER>\",\"decision\":\"request_changes\"}"
 ```
 
 ---

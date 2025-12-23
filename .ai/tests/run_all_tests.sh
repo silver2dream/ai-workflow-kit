@@ -900,6 +900,100 @@ else
 fi
 
 # ============================================================
+# Test 27: Session Audit Tracking Tests
+# ============================================================
+echo ""
+echo "## Session Audit Tracking Tests (Properties 1-15)"
+
+# Test session_manager.sh (Property 1, 2, 15)
+if [[ -f "$SCRIPT_DIR/test_session_manager.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_session_manager.sh" > /dev/null 2>&1; then
+    log_pass "test_session_manager.sh passed (Property 1, 2, 15)"
+  else
+    log_fail "test_session_manager.sh failed"
+  fi
+else
+  log_skip "test_session_manager.sh not found"
+fi
+
+# Test github_comment.sh (Property 3, 10, 11)
+if [[ -f "$SCRIPT_DIR/test_github_comment.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_github_comment.sh" > /dev/null 2>&1; then
+    log_pass "test_github_comment.sh passed (Property 3, 10, 11)"
+  else
+    log_fail "test_github_comment.sh failed"
+  fi
+else
+  log_skip "test_github_comment.sh not found"
+fi
+
+# Test worker_session.sh (Property 4, 6)
+if [[ -f "$SCRIPT_DIR/test_worker_session.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_worker_session.sh" > /dev/null 2>&1; then
+    log_pass "test_worker_session.sh passed (Property 4, 6)"
+  else
+    log_fail "test_worker_session.sh failed"
+  fi
+else
+  log_skip "test_worker_session.sh not found"
+fi
+
+# Test principal_session.sh (Property 7)
+if [[ -f "$SCRIPT_DIR/test_principal_session.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_principal_session.sh" > /dev/null 2>&1; then
+    log_pass "test_principal_session.sh passed (Property 7)"
+  else
+    log_fail "test_principal_session.sh failed"
+  fi
+else
+  log_skip "test_principal_session.sh not found"
+fi
+
+# Test verify_review.sh (Property 12)
+if [[ -f "$SCRIPT_DIR/test_verify_review.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_verify_review.sh" > /dev/null 2>&1; then
+    log_pass "test_verify_review.sh passed (Property 12)"
+  else
+    log_fail "test_verify_review.sh failed"
+  fi
+else
+  log_skip "test_verify_review.sh not found"
+fi
+
+# Test review_flow.sh (Property 13, 14)
+if [[ -f "$SCRIPT_DIR/test_review_flow.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_review_flow.sh" > /dev/null 2>&1; then
+    log_pass "test_review_flow.sh passed (Property 13, 14)"
+  else
+    log_fail "test_review_flow.sh failed"
+  fi
+else
+  log_skip "test_review_flow.sh not found"
+fi
+
+# Test audit_merged_prs.sh (Property 5, 9)
+if [[ -f "$SCRIPT_DIR/test_audit_merged_prs.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_audit_merged_prs.sh" > /dev/null 2>&1; then
+    log_pass "test_audit_merged_prs.sh passed (Property 5, 9)"
+  else
+    log_fail "test_audit_merged_prs.sh failed"
+  fi
+else
+  log_skip "test_audit_merged_prs.sh not found"
+fi
+
+# Test worker_prompt_isolation.sh (Property 8)
+if [[ -f "$SCRIPT_DIR/test_worker_prompt_isolation.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_worker_prompt_isolation.sh" > /dev/null 2>&1; then
+    log_pass "test_worker_prompt_isolation.sh passed (Property 8)"
+  else
+    log_fail "test_worker_prompt_isolation.sh failed"
+  fi
+else
+  log_skip "test_worker_prompt_isolation.sh not found"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 echo ""
