@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # Result Recording with Multi-Repo Support
-# Requirements: 11.1-11.6, 24.3-24.5
+# Requirements: 11.1-11.6, 24.3-24.5, 2.2, 2.3, 6.2, 6.4, 6.5
 # ============================================================
 
 ISSUE_ID="${1:?usage: write_result.sh <issue_id> <status> <pr_url> <summary_file>}"
@@ -17,6 +17,13 @@ RESULTS_ROOT="${AI_RESULTS_ROOT:-$ROOT}"
 # Metrics from environment
 EXEC_DURATION="${AI_EXEC_DURATION:-0}"
 RETRY_COUNT="${AI_RETRY_COUNT:-0}"
+
+# Session fields from environment (Req 2.2, 2.3, 6.2)
+WORKER_SESSION_ID="${WORKER_SESSION_ID:-}"
+ATTEMPT_NUMBER="${AI_ATTEMPT_NUMBER:-1}"
+PREV_SESSION_IDS="${AI_PREV_SESSION_IDS:-[]}"
+PREV_FAILURE_REASON="${AI_PREV_FAILURE_REASON:-}"
+FAILURE_REASON="${AI_FAILURE_REASON:-}"
 
 # Multi-repo fields from environment (Req 11.1-11.6)
 REPO_TYPE="${AI_REPO_TYPE:-root}"
@@ -111,6 +118,21 @@ json_escape() {
   echo "  \"pr_url\": \"${PR_URL}\","
   echo "  \"summary_file\": \"${SUMMARY_FILE}\","
   echo "  \"submodule_status\": $(printf '%s' "$SUBMODULE_STATUS" | json_escape),"
+  echo "  \"session\": {"
+  echo "    \"worker_session_id\": \"$WORKER_SESSION_ID\","
+  echo "    \"principal_session_id\": \"\","
+  echo "    \"attempt_number\": $ATTEMPT_NUMBER,"
+  echo "    \"previous_session_ids\": $PREV_SESSION_IDS,"
+  echo "    \"previous_failure_reason\": $(printf '%s' "$PREV_FAILURE_REASON" | json_escape)"
+  echo "  },"
+  echo "  \"review_audit\": {"
+  echo "    \"reviewer_session_id\": \"\","
+  echo "    \"review_timestamp\": \"\","
+  echo "    \"ci_status\": \"\","
+  echo "    \"ci_timeout\": false,"
+  echo "    \"decision\": \"\","
+  echo "    \"merge_timestamp\": \"\""
+  echo "  },"
   echo "  \"metrics\": {"
   echo "    \"duration_seconds\": $EXEC_DURATION,"
   echo "    \"retry_count\": $RETRY_COUNT"
