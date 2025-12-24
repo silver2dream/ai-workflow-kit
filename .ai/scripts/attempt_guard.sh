@@ -36,7 +36,7 @@ fi
 # Req 8.6: Reset fail_count if worker-failed label was removed (human intervention)
 # If COUNT >= MAX but worker-failed label is absent, reset to allow retry
 if [[ "$COUNT" -ge "$MAX" ]]; then
-  HAS_WORKER_FAILED_LABEL=$(gh issue view "$ISSUE_ID" --json labels -q '.labels[].name' 2>/dev/null | grep -c "^worker-failed$" || echo "0")
+  HAS_WORKER_FAILED_LABEL=$(gh issue view "$ISSUE_ID" --json labels -q '.labels[].name' 2>/dev/null | grep -c "^worker-failed$" || true)
   if [[ "$HAS_WORKER_FAILED_LABEL" -eq 0 ]]; then
     echo "[attempt_guard] worker-failed label removed, resetting fail_count"
     COUNT=0
