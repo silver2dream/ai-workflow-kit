@@ -2,13 +2,19 @@ package kickoff
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
 
-// TestPreflightChecker_RunAll tests Property 1: Pre-flight checks scope
-// awkit only checks: lock file, config, PTY (NOT gh auth, working directory)
+// TestPreflightChecker_RunAll tests all pre-flight checks
+// Now includes: gh CLI, gh auth, claude CLI, codex CLI, git status, stop marker, lock, config, PTY
 func TestPreflightChecker_RunAll(t *testing.T) {
+	// Skip if gh CLI is not installed (CI environment may not have it)
+	if _, err := exec.LookPath("gh"); err != nil {
+		t.Skip("Skipping test: gh CLI not installed")
+	}
+
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "preflight-test-*")
 	if err != nil {
@@ -46,40 +52,139 @@ specs:
 	checker := NewPreflightChecker(configPath, lockFile)
 	results, err := checker.RunAll()
 
-	if err != nil {
-		t.Fatalf("RunAll failed: %v", err)
+	// May fail due to gh auth or git status - that's expected in test environment
+	// Just verify we get results
+	if len(results) == 0 {
+		t.Error("RunAll should return at least some results")
 	}
 
-	// Property 1: Should only have awkit-level checks
+	// Verify expected checks are present
 	expectedChecks := map[string]bool{
-		"Lock File": false,
-		"Config":    false,
-		"PTY":       false,
+		"gh CLI":      false,
+		"gh Auth":     false,
+		"claude CLI":  false,
+		"codex CLI":   false,
+		"Git Status":  false,
+		"Stop Marker": false,
+		"Lock File":   false,
+		"Config":      false,
+		"PTY":         false,
 	}
 
 	for _, result := range results {
 		if _, ok := expectedChecks[result.Name]; ok {
 			expectedChecks[result.Name] = true
-		} else {
-			t.Errorf("Unexpected check: %s (awkit should not check this)", result.Name)
 		}
 	}
 
-	// Verify all expected checks were performed
-	for name, found := range expectedChecks {
-		if !found {
-			t.Errorf("Missing expected check: %s", name)
-		}
+	// Check that at least gh CLI check was performed (first check)
+	if !expectedChecks["gh CLI"] {
+		t.Error("gh CLI check should be performed")
 	}
 
-	// Verify NO gh auth or working directory checks
-	for _, result := range results {
-		if result.Name == "gh auth" || result.Name == "GitHub Auth" {
-			t.Error("awkit should NOT check gh auth (Principal's responsibility)")
+	// If we got an error, it should be from one of the expected checks
+	if err != nil {
+		t.Logf("RunAll returned error (expected in test env): %v", err)
+	}
+}
+
+// TestPreflightChecker_CheckGhCLI tests gh CLI check
+func TestPreflightChecker_CheckGhCLI(t *testing.T) {
+	checker := NewPreflightChecker("", "")
+	result := checker.CheckGhCLI()
+
+	// Result depends on whether gh is installed
+	if _, err := exec.LookPath("gh"); err != nil {
+		if result.Passed {
+			t.Error("CheckGhCLI should fail when gh is not installed")
 		}
-		if result.Name == "Working Directory" || result.Name == "Git Status" {
-			t.Error("awkit should NOT check working directory (Principal's responsibility)")
+	} else {
+		if !result.Passed {
+			t.Errorf("CheckGhCLI should pass when gh is installed: %s", result.Message)
 		}
+	}
+}
+
+// TestPreflightChecker_CheckClaudeCLI tests claude CLI check
+func TestPreflightChecker_CheckClaudeCLI(t *testing.T) {
+	checker := NewPreflightChecker("", "")
+	result := checker.CheckClaudeCLI()
+
+	// Result depends on whether claude is installed
+	if _, err := exec.LookPath("claude"); err != nil {
+		if result.Passed {
+			t.Error("CheckClaudeCLI should fail when claude is not installed")
+		}
+	} else {
+		if !result.Passed {
+			t.Errorf("CheckClaudeCLI should pass when claude is installed: %s", result.Message)
+		}
+	}
+}
+
+// TestPreflightChecker_CheckCodexCLI tests codex CLI check (warning only)
+func TestPreflightChecker_CheckCodexCLI(t *testing.T) {
+	checker := NewPreflightChecker("", "")
+	result := checker.CheckCodexCLI()
+
+	// Codex check should always pass (it's a warning only)
+	if !result.Passed {
+		t.Errorf("CheckCodexCLI should always pass (warning only): %s", result.Message)
+	}
+
+	// If codex is not installed, should have warning flag
+	if _, err := exec.LookPath("codex"); err != nil {
+		if !result.Warning {
+			t.Error("CheckCodexCLI should set Warning flag when codex is not installed")
+		}
+	}
+}
+
+// TestPreflightChecker_CheckStopMarker tests STOP marker check
+func TestPreflightChecker_CheckStopMarker(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "preflight-stop-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Change to temp dir
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	checker := NewPreflightChecker("", "")
+
+	// Test 1: No STOP marker
+	result := checker.CheckStopMarker()
+	if !result.Passed {
+		t.Errorf("CheckStopMarker should pass when no marker exists: %s", result.Message)
+	}
+
+	// Test 2: STOP marker exists
+	stopDir := filepath.Join(tmpDir, ".ai", "state")
+	os.MkdirAll(stopDir, 0755)
+	stopFile := filepath.Join(stopDir, "STOP")
+	os.WriteFile(stopFile, []byte("test"), 0644)
+
+	result = checker.CheckStopMarker()
+	if result.Passed {
+		t.Error("CheckStopMarker should fail when marker exists")
+	}
+
+	// Test 3: STOP marker with force delete
+	checker.SetForceDelete(true)
+	result = checker.CheckStopMarker()
+	if !result.Passed {
+		t.Errorf("CheckStopMarker should pass with force delete: %s", result.Message)
+	}
+	if !result.Warning {
+		t.Error("CheckStopMarker should set Warning flag when force deleting")
+	}
+
+	// Verify marker was deleted
+	if _, err := os.Stat(stopFile); !os.IsNotExist(err) {
+		t.Error("STOP marker should be deleted with force delete")
 	}
 }
 
@@ -262,5 +367,20 @@ func TestNewPreflightChecker(t *testing.T) {
 
 	if checker.lockFile != "/path/to/lock" {
 		t.Errorf("lockFile = %q, want %q", checker.lockFile, "/path/to/lock")
+	}
+}
+
+// TestPreflightChecker_SetForceDelete tests force delete setting
+func TestPreflightChecker_SetForceDelete(t *testing.T) {
+	checker := NewPreflightChecker("", "")
+
+	if checker.forceDelete {
+		t.Error("forceDelete should be false by default")
+	}
+
+	checker.SetForceDelete(true)
+
+	if !checker.forceDelete {
+		t.Error("forceDelete should be true after SetForceDelete(true)")
 	}
 }

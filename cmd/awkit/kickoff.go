@@ -23,6 +23,7 @@ Options:
   --background  Run the workflow in background mode (output to log file)
   --resume      Resume from the last saved state
   --fresh       Ignore saved state and start fresh
+  --force       Auto-delete STOP marker without asking
 
 Examples:
   awkit kickoff
@@ -30,6 +31,7 @@ Examples:
   awkit kickoff --background
   awkit kickoff --resume
   awkit kickoff --fresh
+  awkit kickoff --force
 `)
 }
 
@@ -42,6 +44,7 @@ func cmdKickoff(args []string) int {
 	background := fs.Bool("background", false, "")
 	resume := fs.Bool("resume", false, "")
 	fresh := fs.Bool("fresh", false, "")
+	force := fs.Bool("force", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
@@ -68,11 +71,16 @@ func cmdKickoff(args []string) int {
 
 	// Pre-flight checks
 	preflight := kickoff.NewPreflightChecker(configPath, lockFile)
+	preflight.SetForceDelete(*force)
 	results, err := preflight.RunAll()
 
 	for _, r := range results {
 		if r.Passed {
-			output.Success(fmt.Sprintf("%s: %s", r.Name, r.Message))
+			if r.Warning {
+				output.Warning(fmt.Sprintf("%s: %s", r.Name, r.Message))
+			} else {
+				output.Success(fmt.Sprintf("%s: %s", r.Name, r.Message))
+			}
 		} else {
 			output.Error(fmt.Sprintf("%s: %s", r.Name, r.Message))
 		}
@@ -148,10 +156,11 @@ func cmdKickoff(args []string) int {
 	}
 
 	// Build Claude CLI command
+	// Use -p to pass the prompt directly (like: echo "/start-work --autonomous" | claude --print)
 	claudeCmd := "claude"
 	claudeArgs := []string{
-		"--print", "text",
-		"-p", filepath.Join(".ai", "commands", "start-work.md"),
+		"--print",
+		"-p", "/start-work --autonomous",
 	}
 
 	fmt.Println("")

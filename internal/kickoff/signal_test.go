@@ -2,22 +2,47 @@ package kickoff
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
-// TestSignalHandler_ShutdownTimeout tests Property 18: Graceful shutdown timing (30s)
-func TestSignalHandler_ShutdownTimeout(t *testing.T) {
+// TestSignalHandler_GracefulTimeout tests graceful shutdown timing
+func TestSignalHandler_GracefulTimeout(t *testing.T) {
 	handler := NewSignalHandler(nil, nil, nil)
 
-	// Property 18: Default timeout should be 30 seconds
-	if handler.timeout != ShutdownTimeout {
-		t.Errorf("timeout = %v, want %v", handler.timeout, ShutdownTimeout)
+	// Default graceful timeout should be 60 seconds
+	expectedGraceful := 60 * time.Second
+	if handler.gracefulTO != expectedGraceful {
+		t.Errorf("gracefulTO = %v, want %v", handler.gracefulTO, expectedGraceful)
 	}
 
-	expectedTimeout := 30 * time.Second
-	if ShutdownTimeout != expectedTimeout {
-		t.Errorf("ShutdownTimeout = %v, want %v", ShutdownTimeout, expectedTimeout)
+	// Default force kill timeout should be 10 seconds
+	expectedForceKill := 10 * time.Second
+	if handler.forceKillTO != expectedForceKill {
+		t.Errorf("forceKillTO = %v, want %v", handler.forceKillTO, expectedForceKill)
+	}
+}
+
+// TestGracefulTimeout_Constant tests the graceful timeout constant
+func TestGracefulTimeout_Constant(t *testing.T) {
+	if GracefulTimeout != 60*time.Second {
+		t.Errorf("GracefulTimeout = %v, want 60s", GracefulTimeout)
+	}
+}
+
+// TestForceKillTimeout_Constant tests the force kill timeout constant
+func TestForceKillTimeout_Constant(t *testing.T) {
+	if ForceKillTimeout != 10*time.Second {
+		t.Errorf("ForceKillTimeout = %v, want 10s", ForceKillTimeout)
+	}
+}
+
+// TestStopMarkerPath_Constant tests the stop marker path constant
+func TestStopMarkerPath_Constant(t *testing.T) {
+	expected := ".ai/state/STOP"
+	if StopMarkerPath != expected {
+		t.Errorf("StopMarkerPath = %q, want %q", StopMarkerPath, expected)
 	}
 }
 
@@ -122,8 +147,12 @@ func TestNewSignalHandler(t *testing.T) {
 		t.Error("state not set correctly")
 	}
 
-	if handler.timeout != ShutdownTimeout {
-		t.Errorf("timeout = %v, want %v", handler.timeout, ShutdownTimeout)
+	if handler.gracefulTO != GracefulTimeout {
+		t.Errorf("gracefulTO = %v, want %v", handler.gracefulTO, GracefulTimeout)
+	}
+
+	if handler.forceKillTO != ForceKillTimeout {
+		t.Errorf("forceKillTO = %v, want %v", handler.forceKillTO, ForceKillTimeout)
 	}
 
 	if handler.output == nil {
@@ -174,14 +203,6 @@ func TestSignalHandler_MonitorsCopied(t *testing.T) {
 	}
 }
 
-// TestShutdownTimeout_Constant tests the shutdown timeout constant
-func TestShutdownTimeout_Constant(t *testing.T) {
-	// Property 18: 30 second timeout
-	if ShutdownTimeout != 30*time.Second {
-		t.Errorf("ShutdownTimeout = %v, want 30s", ShutdownTimeout)
-	}
-}
-
 // TestSignalHandler_WithExecutor tests handler with executor
 func TestSignalHandler_WithExecutor(t *testing.T) {
 	executor, _ := NewPTYExecutor("echo", []string{"test"})
@@ -205,4 +226,86 @@ func TestSignalHandler_NilComponents(t *testing.T) {
 	handler.AddMonitor(nil)
 	handler.RemoveMonitor(nil)
 	handler.SetCleanupCallback(nil)
+}
+
+// TestSignalHandler_CreateStopMarker tests STOP marker creation
+func TestSignalHandler_CreateStopMarker(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "signal-stop-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Change to temp dir to test STOP marker creation
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	handler := NewSignalHandler(nil, nil, nil)
+
+	// Create STOP marker
+	err = handler.createStopMarker()
+	if err != nil {
+		t.Fatalf("createStopMarker failed: %v", err)
+	}
+
+	// Verify STOP marker exists
+	stopPath := filepath.Join(tmpDir, StopMarkerPath)
+	if _, err := os.Stat(stopPath); os.IsNotExist(err) {
+		t.Error("STOP marker was not created")
+	}
+
+	// Verify content
+	content, err := os.ReadFile(stopPath)
+	if err != nil {
+		t.Fatalf("Failed to read STOP marker: %v", err)
+	}
+
+	if len(content) == 0 {
+		t.Error("STOP marker is empty")
+	}
+
+	// Remove STOP marker
+	handler.removeStopMarker()
+
+	// Verify STOP marker is removed
+	if _, err := os.Stat(stopPath); !os.IsNotExist(err) {
+		t.Error("STOP marker was not removed")
+	}
+}
+
+// TestSignalHandler_CreateStopMarker_CreatesDirectory tests that createStopMarker creates the directory
+func TestSignalHandler_CreateStopMarker_CreatesDirectory(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "signal-stop-dir-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Change to temp dir
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	handler := NewSignalHandler(nil, nil, nil)
+
+	// Verify .ai/state doesn't exist yet
+	stateDir := filepath.Join(tmpDir, ".ai", "state")
+	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {
+		t.Skip("State directory already exists")
+	}
+
+	// Create STOP marker (should create directory)
+	err = handler.createStopMarker()
+	if err != nil {
+		t.Fatalf("createStopMarker failed: %v", err)
+	}
+
+	// Verify directory was created
+	if _, err := os.Stat(stateDir); os.IsNotExist(err) {
+		t.Error("State directory was not created")
+	}
+
+	// Cleanup
+	handler.removeStopMarker()
 }
