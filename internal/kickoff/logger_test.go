@@ -126,8 +126,10 @@ func TestRotatingLogger_RotationTrigger(t *testing.T) {
 	logger.maxSize = 50
 
 	// Write enough data to trigger rotation
+	// Add small delay between writes to ensure different timestamps for rotated files
 	for i := 0; i < 10; i++ {
 		logger.Write([]byte("this is a test log message\n"))
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	logger.Close()
