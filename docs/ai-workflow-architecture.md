@@ -437,22 +437,26 @@ These scripts are not part of the automatic workflow loop, but can be used manua
 ## 9. Quick Start
 
 ```bash
-# 1. 確認環境（kickoff.sh 會自動檢查）
+# 1. 確認環境（awkit kickoff 會自動檢查）
 claude --version    # Claude Code CLI
 codex --version     # Codex CLI
 gh auth status      # GitHub 認證
 
 # 2. 啟動工作流
-# 方式 A: 一鍵啟動（推薦）
-bash .ai/scripts/kickoff.sh
+# 方式 A: 使用 awkit CLI（推薦）
+awkit kickoff              # 啟動工作流
+awkit kickoff --dry-run    # 只做前置檢查
+awkit kickoff --background # 背景執行（睡前啟動）
+awkit kickoff --resume     # 從上次狀態恢復
+awkit kickoff --fresh      # 忽略舊狀態，重新開始
+awkit validate             # 只驗證配置
 
-# 方式 B: 背景執行（睡前啟動）
+# 方式 B: 使用 bash 腳本（legacy）
+bash .ai/scripts/kickoff.sh
+bash .ai/scripts/kickoff.sh --dry-run
 bash .ai/scripts/kickoff.sh --background
 
-# 方式 C: 只做前置檢查
-bash .ai/scripts/kickoff.sh --dry-run
-
-# 方式 D: 手動進入 Claude Code
+# 方式 C: 手動進入 Claude Code
 claude
 > /start-work
 

@@ -188,7 +188,7 @@ specs:
 ### 3. 執行審計
 
 ```bash
-bash .ai/scripts/kickoff.sh --dry-run
+awkit kickoff --dry-run
 ```
 
 `--dry-run` 會顯示將執行的操作，但不會實際執行。
@@ -202,7 +202,7 @@ bash .ai/scripts/kickoff.sh --dry-run
 gh auth login
 
 # 啟動工作流程
-bash .ai/scripts/kickoff.sh
+awkit kickoff
 ```
 
 ### 5. 停止工作流程
@@ -267,6 +267,10 @@ brew install bash
 | `awkit check-update` | 檢查 CLI 更新 |
 | `awkit version` | 顯示版本 |
 | `awkit help <command>` | 顯示命令說明 |
+| `awkit kickoff` | 啟動工作流程 |
+| `awkit kickoff --dry-run` | 預覽工作流程 |
+| `awkit kickoff --resume` | 從上次狀態恢復 |
+| `awkit validate` | 驗證配置 |
 
 ### init 選項
 

@@ -136,6 +136,10 @@ AWK supports three repository types configured in `.ai/config/workflow.yaml`:
 
 ### Start Work
 ```bash
+# 使用 awkit CLI（建議）
+awkit kickoff
+
+# 或使用 bash 腳本（legacy）
 bash .ai/scripts/kickoff.sh
 ```
 

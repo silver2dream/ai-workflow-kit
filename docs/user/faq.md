@@ -53,11 +53,12 @@ bash .ai/scripts/generate.sh
 
 ## 工作流程
 
-### Q: kickoff.sh 和 generate.sh 有什麼差別？
+### Q: awkit kickoff 和 generate.sh 有什麼差別？
 
 **A:**
 - `generate.sh` - 根據 workflow.yaml 生成設定檔 (CLAUDE.md, AGENTS.md 等)
-- `kickoff.sh` - 啟動完整的 AI 工作流程 (審計、建立 Issue、執行任務)
+- `awkit kickoff` - 啟動完整的 AI 工作流程 (審計、建立 Issue、執行任務)
+- `kickoff.sh` - legacy bash 版本，建議使用 `awkit kickoff` 取代
 
 ---
 

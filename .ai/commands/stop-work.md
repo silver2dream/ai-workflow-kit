@@ -111,4 +111,4 @@ bash .ai/scripts/notify.sh --summary
 rm .ai/state/STOP
 ```
 
-然後使用 `/start-work` 或 `bash .ai/scripts/kickoff.sh`。
+然後使用 `/start-work` 或 `awkit kickoff`。

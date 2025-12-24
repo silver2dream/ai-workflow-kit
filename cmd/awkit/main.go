@@ -106,6 +106,10 @@ func run() int {
 		return cmdUninstall(os.Args[2:])
 	case "upgrade":
 		return cmdUpgrade(os.Args[2:])
+	case "kickoff":
+		return cmdKickoff(os.Args[2:])
+	case "validate":
+		return cmdValidate(os.Args[2:])
 	case "list-presets":
 		return cmdListPresets()
 	case "completion":
@@ -133,6 +137,8 @@ Commands:
   init          Initialize AWK in a project (or current directory)
   upgrade       Upgrade AWK kit files (preserves workflow.yaml)
   uninstall     Remove AWK from a project
+  kickoff       Start the AI workflow with PTY and progress monitoring
+  validate      Validate workflow configuration
   list-presets  Show available project presets
   check-update  Check for CLI updates
   completion    Generate shell completion script
@@ -142,6 +148,9 @@ Commands:
 Examples:
   awkit init
   awkit init --preset react-go
+  awkit kickoff
+  awkit kickoff --dry-run
+  awkit validate
   awkit upgrade
   awkit init /path/to/project
   awkit uninstall .
@@ -184,6 +193,10 @@ func cmdHelp(command string) int {
 		usageUpgrade()
 	case "uninstall":
 		usageUninstall()
+	case "kickoff":
+		usageKickoff()
+	case "validate":
+		usageValidate()
 	case "list-presets":
 		fmt.Println("Show available project presets with descriptions.")
 		fmt.Println("\nUsage: awkit list-presets")
