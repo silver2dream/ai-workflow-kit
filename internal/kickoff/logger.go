@@ -82,7 +82,9 @@ func (l *RotatingLogger) Write(p []byte) (n int, err error) {
 // Rotate closes the current log file and creates a new one
 func (l *RotatingLogger) Rotate() error {
 	if l.current != nil {
-		l.current.Close()
+		if err := l.current.Close(); err != nil {
+			return fmt.Errorf("failed to close current log file: %w", err)
+		}
 		l.current = nil
 	}
 
