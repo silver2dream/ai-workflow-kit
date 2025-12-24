@@ -601,3 +601,76 @@ func TestUpgradeNoCommitFlag(t *testing.T) {
 		t.Errorf("cmdUpgrade() exit code = %d, want 0", exitCode)
 	}
 }
+
+// TestUpgradeCIMigration verifies that upgrade automatically migrates CI workflow
+func TestUpgradeCIMigration(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-upgrade-ci-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create minimal .ai directory
+	aiDir := filepath.Join(tmpDir, ".ai")
+	if err := os.MkdirAll(aiDir, 0755); err != nil {
+		t.Fatalf("failed to create .ai dir: %v", err)
+	}
+
+	// Create old CI file with awk job (simulating old version)
+	ciDir := filepath.Join(tmpDir, ".github", "workflows")
+	if err := os.MkdirAll(ciDir, 0755); err != nil {
+		t.Fatalf("failed to create .github/workflows dir: %v", err)
+	}
+	oldCI := `name: ci
+on: [push]
+jobs:
+  awk:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "old awk job"
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "backend"
+  custom-job:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "user custom job"
+`
+	ciPath := filepath.Join(ciDir, "ci.yml")
+	if err := os.WriteFile(ciPath, []byte(oldCI), 0644); err != nil {
+		t.Fatalf("failed to write old CI file: %v", err)
+	}
+
+	// Run upgrade (should auto-migrate awk job but preserve other jobs)
+	exitCode := cmdUpgrade([]string{tmpDir, "--no-commit"})
+	if exitCode != 0 {
+		t.Errorf("cmdUpgrade() exit code = %d, want 0", exitCode)
+	}
+
+	// Verify awk job is removed but other jobs preserved
+	content, err := os.ReadFile(ciPath)
+	if err != nil {
+		t.Fatalf("failed to read CI file: %v", err)
+	}
+	contentStr := string(content)
+
+	// awk job should be removed (auto-migration)
+	if strings.Contains(contentStr, "awk:") {
+		t.Error("CI file should NOT contain 'awk:' job after auto-migration")
+	}
+	if strings.Contains(contentStr, "old awk job") {
+		t.Error("CI file should NOT contain 'old awk job' after auto-migration")
+	}
+
+	// User's custom jobs should be preserved
+	if !strings.Contains(contentStr, "backend:") {
+		t.Error("CI file should preserve 'backend:' job")
+	}
+	if !strings.Contains(contentStr, "custom-job:") {
+		t.Error("CI file should preserve 'custom-job:' (user's custom job)")
+	}
+	if !strings.Contains(contentStr, "user custom job") {
+		t.Error("CI file should preserve user's custom job content")
+	}
+}

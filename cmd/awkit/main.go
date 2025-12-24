@@ -230,7 +230,6 @@ Options:
   --force-config  Overwrite only workflow.yaml (apply preset to existing project)
   --dry-run       Show what would be done without making changes
   --no-generate   Skip running generate.sh after init
-  --with-ci       Create CI workflow if missing [default: true]
   --project-name  Override project name in config
 
 Examples:
@@ -250,6 +249,8 @@ func usageUpgrade() {
 
 This command updates scripts, templates, commands, rules, and docs
 while preserving your workflow.yaml configuration.
+
+CI workflow is automatically migrated (removes deprecated awk job).
 
 Usage:
   awkit upgrade [project_path] [options]
@@ -344,7 +345,6 @@ func cmdInit(args []string) int {
 	preset := fs.String("preset", "generic", "")
 	scaffold := fs.Bool("scaffold", false, "")
 	noGenerate := fs.Bool("no-generate", false, "")
-	withCI := fs.Bool("with-ci", true, "")
 	force := fs.Bool("force", false, "")
 	forceConfig := fs.Bool("force-config", false, "")
 	dryRun := fs.Bool("dry-run", false, "")
@@ -451,9 +451,7 @@ func cmdInit(args []string) int {
 		fmt.Println("  .worktrees/ (gitignored)")
 		fmt.Println("  .claude/rules -> .ai/rules (symlink)")
 		fmt.Println("  .claude/commands -> .ai/commands (symlink)")
-		if *withCI {
-			fmt.Println("  .github/workflows/ci.yml (if missing)")
-		}
+		fmt.Println("  .github/workflows/ci.yml (if missing)")
 		fmt.Println("  .gitignore (append AWK entries)")
 		fmt.Println("  .gitattributes (if missing)")
 
@@ -504,8 +502,9 @@ func cmdInit(args []string) int {
 		ProjectName: *projectName,
 		Force:       *force,
 		ForceConfig: *forceConfig,
+		ForceCI:     *force, // --force also overwrites CI
 		NoGenerate:  *noGenerate,
-		WithCI:      *withCI,
+		WithCI:      true, // CI is always created by default
 		Scaffold:    *scaffold,
 	})
 	if err != nil {
@@ -691,6 +690,7 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("  .ai/commands/")
 		fmt.Println("  .ai/docs/")
 		fmt.Println("  .ai/tests/")
+		fmt.Println("  .github/workflows/ci.yml (migrate deprecated awk job)")
 		fmt.Println("")
 		fmt.Println("Would preserve:")
 		fmt.Println("  .ai/config/workflow.yaml")
@@ -734,7 +734,8 @@ func cmdUpgrade(args []string) int {
 		Force:      true, // Overwrite kit files
 		SkipConfig: true, // Preserve workflow.yaml
 		NoGenerate: *noGenerate,
-		WithCI:     false, // Don't touch CI on upgrade
+		WithCI:     true,  // Always migrate CI
+		ForceCI:    false, // Never force-replace CI on upgrade (only migrate)
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "")
@@ -1014,7 +1015,7 @@ _awkit() {
             return 0
             ;;
         init|install)
-            local opts="--preset --scaffold --force --force-config --dry-run --no-generate --with-ci --project-name --help"
+            local opts="--preset --scaffold --force --force-config --dry-run --no-generate --project-name --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
             return 0
             ;;
@@ -1082,7 +1083,6 @@ _awkit() {
                         '--force-config[Overwrite only workflow.yaml]' \
                         '--dry-run[Show what would be done]' \
                         '--no-generate[Skip generate.sh]' \
-                        '--with-ci[Create CI workflow]' \
                         '--project-name[Override project name]:name:' \
                         '*:directory:_files -/'
                     ;;
@@ -1137,7 +1137,6 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Ove
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l dry-run -d 'Show what would be done'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l no-generate -d 'Skip generate.sh'
-complete -c awkit -n '__fish_seen_subcommand_from init install' -l with-ci -d 'Create CI workflow'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name -d 'Override project name'
 
 # upgrade options

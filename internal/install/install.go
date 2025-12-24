@@ -17,6 +17,7 @@ type Options struct {
 	ProjectName string
 	Force       bool
 	ForceConfig bool // Only overwrite workflow.yaml
+	ForceCI     bool // Overwrite CI workflow file
 	SkipConfig  bool // Skip workflow.yaml entirely (for upgrade)
 	NoGenerate  bool
 	WithCI      bool
@@ -105,7 +106,7 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	}
 
 	if opts.WithCI {
-		if err := ensureCIWorkflow(targetDir); err != nil {
+		if err := ensureCIWorkflow(targetDir, opts.ForceCI); err != nil {
 			return nil, err
 		}
 	}
@@ -500,17 +501,77 @@ func applyPresetRules(kit fs.FS, targetDir string, preset string) error {
 	return nil
 }
 
-func ensureCIWorkflow(targetDir string) error {
+func ensureCIWorkflow(targetDir string, force bool) error {
 	path := filepath.Join(targetDir, ".github", "workflows", "ci.yml")
-	if _, err := os.Stat(path); err == nil {
-		return nil
+
+	// Check if file exists
+	existingContent, err := os.ReadFile(path)
+	if err == nil {
+		// File exists - check if migration is needed
+		migrated, migratedContent := migrateCIWorkflow(existingContent)
+		if migrated {
+			// Migration happened, write the migrated content
+			return os.WriteFile(path, migratedContent, 0o644)
+		}
+		// No migration needed, respect force flag
+		if !force {
+			return nil
+		}
 	}
+
+	// Create directory if needed
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
 	content := strings.TrimSpace(ciWorkflowYAML) + "\n"
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// migrateCIWorkflow checks for and removes deprecated AWK CI jobs
+// Returns (migrated bool, newContent []byte)
+func migrateCIWorkflow(content []byte) (bool, []byte) {
+	lines := strings.Split(string(content), "\n")
+	var result []string
+	migrated := false
+	inAwkJob := false
+	awkJobIndent := 0
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+
+		// Detect start of awk job (old deprecated job)
+		if strings.TrimSpace(line) == "awk:" && strings.HasSuffix(strings.TrimRight(line, " \t"), ":") {
+			// Found awk: job definition
+			awkJobIndent = len(line) - len(strings.TrimLeft(line, " \t"))
+			inAwkJob = true
+			migrated = true
+			continue
+		}
+
+		// If we're in awk job, skip until we hit a line with same or less indentation
+		if inAwkJob {
+			currentIndent := len(line) - len(strings.TrimLeft(line, " \t"))
+			// Empty lines are part of the job
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			// If indentation is greater, still in awk job
+			if currentIndent > awkJobIndent {
+				continue
+			}
+			// We've exited the awk job
+			inAwkJob = false
+		}
+
+		result = append(result, line)
+	}
+
+	if migrated {
+		// Clean up any double blank lines that might result
+		return true, []byte(strings.Join(result, "\n"))
+	}
+	return false, content
 }
 
 func tryGenerate(targetDir string) error {
@@ -636,12 +697,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm install
 
       - name: Test
         working-directory: frontend
