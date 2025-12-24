@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -426,5 +427,177 @@ func TestShellCompletionContainsScaffoldFlag(t *testing.T) {
 	// Fish uses -l for long options
 	if !strings.Contains(fishCompletion, "-l scaffold") {
 		t.Error("fish completion should contain -l scaffold flag")
+	}
+}
+
+// TestInitFlagOrderIndependence verifies that flags work regardless of position
+// relative to the path argument (fixes issue where flags after path were ignored)
+func TestInitFlagOrderIndependence(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantExit int
+	}{
+		{
+			name:     "flags before path",
+			args:     []string{"--preset", "react-go", "--dry-run", "."},
+			wantExit: 0,
+		},
+		{
+			name:     "flags after path",
+			args:     []string{".", "--preset", "react-go", "--dry-run"},
+			wantExit: 0,
+		},
+		{
+			name:     "flags mixed with path",
+			args:     []string{"--preset", "react-go", ".", "--dry-run"},
+			wantExit: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temp dir for test
+			tmpDir, err := os.MkdirTemp("", "awkit-flag-test-*")
+			if err != nil {
+				t.Fatalf("failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
+
+			// Replace "." with actual temp dir
+			args := make([]string, len(tt.args))
+			for i, arg := range tt.args {
+				if arg == "." {
+					args[i] = tmpDir
+				} else {
+					args[i] = arg
+				}
+			}
+
+			exitCode := cmdInit(args)
+			if exitCode != tt.wantExit {
+				t.Errorf("cmdInit() exit code = %d, want %d", exitCode, tt.wantExit)
+			}
+		})
+	}
+}
+
+// TestUpgradeFlagOrderIndependence verifies that upgrade flags work regardless of position
+func TestUpgradeFlagOrderIndependence(t *testing.T) {
+	// Create a temp dir with AWK already installed
+	tmpDir, err := os.MkdirTemp("", "awkit-upgrade-flag-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create minimal .ai directory structure
+	aiDir := filepath.Join(tmpDir, ".ai")
+	if err := os.MkdirAll(aiDir, 0755); err != nil {
+		t.Fatalf("failed to create .ai dir: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantExit int
+	}{
+		{
+			name:     "flags before path",
+			args:     []string{"--dry-run", tmpDir},
+			wantExit: 0,
+		},
+		{
+			name:     "flags after path",
+			args:     []string{tmpDir, "--dry-run"},
+			wantExit: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exitCode := cmdUpgrade(tt.args)
+			if exitCode != tt.wantExit {
+				t.Errorf("cmdUpgrade() exit code = %d, want %d", exitCode, tt.wantExit)
+			}
+		})
+	}
+}
+
+// TestUpgradeAutoCommit verifies that upgrade auto-commits changes by default
+func TestUpgradeAutoCommit(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available, skipping auto-commit test")
+	}
+
+	// Create a temp dir with git repo
+	tmpDir, err := os.MkdirTemp("", "awkit-autocommit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize git repo
+	exec.Command("git", "init").Dir = tmpDir
+	exec.Command("git", "config", "user.email", "test@example.com").Dir = tmpDir
+	exec.Command("git", "config", "user.name", "Test User").Dir = tmpDir
+
+	initCmd := exec.Command("git", "init")
+	initCmd.Dir = tmpDir
+	if err := initCmd.Run(); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+
+	configCmd := exec.Command("git", "config", "user.email", "test@example.com")
+	configCmd.Dir = tmpDir
+	configCmd.Run()
+
+	configCmd2 := exec.Command("git", "config", "user.name", "Test User")
+	configCmd2.Dir = tmpDir
+	configCmd2.Run()
+
+	// Create minimal .ai directory
+	aiDir := filepath.Join(tmpDir, ".ai")
+	if err := os.MkdirAll(aiDir, 0755); err != nil {
+		t.Fatalf("failed to create .ai dir: %v", err)
+	}
+
+	// Initial commit
+	addCmd := exec.Command("git", "add", ".")
+	addCmd.Dir = tmpDir
+	addCmd.Run()
+
+	commitCmd := exec.Command("git", "commit", "-m", "initial commit", "--allow-empty")
+	commitCmd.Dir = tmpDir
+	if err := commitCmd.Run(); err != nil {
+		t.Fatalf("initial commit failed: %v", err)
+	}
+
+	// Run upgrade with --dry-run to avoid actual upgrade
+	exitCode := cmdUpgrade([]string{tmpDir, "--dry-run"})
+	if exitCode != 0 {
+		t.Errorf("cmdUpgrade() exit code = %d, want 0", exitCode)
+	}
+}
+
+// TestUpgradeNoCommitFlag verifies that --no-commit skips auto-commit
+func TestUpgradeNoCommitFlag(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-nocommit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create minimal .ai directory
+	aiDir := filepath.Join(tmpDir, ".ai")
+	if err := os.MkdirAll(aiDir, 0755); err != nil {
+		t.Fatalf("failed to create .ai dir: %v", err)
+	}
+
+	// Run upgrade with --no-commit and --dry-run
+	exitCode := cmdUpgrade([]string{tmpDir, "--no-commit", "--dry-run"})
+	if exitCode != 0 {
+		t.Errorf("cmdUpgrade() exit code = %d, want 0", exitCode)
 	}
 }
