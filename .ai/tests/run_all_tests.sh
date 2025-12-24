@@ -344,23 +344,23 @@ fi
 echo ""
 echo "## Multi-Repo Tests"
 
-# Test start-work.md has multi-repo support
-if grep -q 'Coordination' "$AI_ROOT/commands/start-work.md"; then
-  log_pass "start-work.md supports Coordination"
+# Test dispatch-worker.md has multi-repo support (modular architecture)
+if grep -q 'Coordination' "$AI_ROOT/commands/dispatch-worker.md"; then
+  log_pass "dispatch-worker.md supports Coordination"
 else
-  log_fail "start-work.md missing Coordination support"
+  log_fail "dispatch-worker.md missing Coordination support"
 fi
 
-if grep -q 'sequential' "$AI_ROOT/commands/start-work.md" && grep -q 'parallel' "$AI_ROOT/commands/start-work.md"; then
-  log_pass "start-work.md supports sequential/parallel modes"
+if grep -q 'sequential' "$AI_ROOT/commands/dispatch-worker.md" && grep -q 'parallel' "$AI_ROOT/commands/dispatch-worker.md"; then
+  log_pass "dispatch-worker.md supports sequential/parallel modes"
 else
-  log_fail "start-work.md missing execution modes"
+  log_fail "dispatch-worker.md missing execution modes"
 fi
 
-if grep -q 'Multi-Repo' "$AI_ROOT/commands/start-work.md"; then
-  log_pass "start-work.md has multi-repo documentation"
+if grep -q 'Multi-Repo' "$AI_ROOT/commands/dispatch-worker.md"; then
+  log_pass "dispatch-worker.md has multi-repo documentation"
 else
-  log_fail "start-work.md missing multi-repo documentation"
+  log_fail "dispatch-worker.md missing multi-repo documentation"
 fi
 
 # ============================================================

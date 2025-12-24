@@ -128,16 +128,17 @@ fi
 echo ""
 echo "## Multi-Repo Coordination"
 
-if grep -q "sequential" "$AI_ROOT/commands/start-work.md" && grep -q "parallel" "$AI_ROOT/commands/start-work.md"; then
-  log_pass "start-work.md supports execution modes"
+# Multi-repo logic is in dispatch-worker.md (modular architecture)
+if grep -q "sequential" "$AI_ROOT/commands/dispatch-worker.md" && grep -q "parallel" "$AI_ROOT/commands/dispatch-worker.md"; then
+  log_pass "dispatch-worker.md supports execution modes"
 else
-  log_fail "start-work.md missing execution modes"
+  log_fail "dispatch-worker.md missing execution modes"
 fi
 
-if grep -q "directory" "$AI_ROOT/commands/start-work.md"; then
-  log_pass "start-work.md handles directory type"
+if grep -q "directory" "$AI_ROOT/commands/dispatch-worker.md"; then
+  log_pass "dispatch-worker.md handles directory type"
 else
-  log_skip "start-work.md directory type handling"
+  log_skip "dispatch-worker.md directory type handling"
 fi
 
 # ============================================================

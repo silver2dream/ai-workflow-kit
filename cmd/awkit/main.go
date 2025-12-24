@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -262,6 +263,7 @@ Options:
   --force         Overwrite scaffold files (only affects scaffold, not kit files)
   --dry-run       Show what would be updated without making changes
   --no-generate   Skip running generate.sh after upgrade
+  --no-commit     Skip auto-commit of upgrade changes
 
 Examples:
   awkit upgrade
@@ -269,6 +271,7 @@ Examples:
   awkit upgrade --dry-run
   awkit upgrade --scaffold --preset go
   awkit upgrade --scaffold --preset react-go --force
+  awkit upgrade --no-commit  # Manual commit control
 `)
 }
 
@@ -349,7 +352,29 @@ func cmdInit(args []string) int {
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
-	if err := fs.Parse(args); err != nil {
+	// Reorder args to put flags before positional arguments
+	// This is needed because flag.Parse stops at the first non-flag argument
+	var flags []string
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			flags = append(flags, arg)
+			// Check if this flag takes a value
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && strings.Contains(arg, "=") == false {
+				// Flags that take values: --preset, --project-name
+				if arg == "--preset" || arg == "--project-name" {
+					i++
+					flags = append(flags, args[i])
+				}
+			}
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+	reorderedArgs := append(flags, positional...)
+
+	if err := fs.Parse(reorderedArgs); err != nil {
 		return 2
 	}
 
@@ -562,10 +587,31 @@ func cmdUpgrade(args []string) int {
 	force := fs.Bool("force", false, "")
 	dryRun := fs.Bool("dry-run", false, "")
 	noGenerate := fs.Bool("no-generate", false, "")
+	noCommit := fs.Bool("no-commit", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
-	if err := fs.Parse(args); err != nil {
+	// Reorder args to put flags before positional arguments
+	var flags []string
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			flags = append(flags, arg)
+			// Check if this flag takes a value
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && strings.Contains(arg, "=") == false {
+				if arg == "--preset" {
+					i++
+					flags = append(flags, args[i])
+				}
+			}
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+	reorderedArgs := append(flags, positional...)
+
+	if err := fs.Parse(reorderedArgs); err != nil {
 		return 2
 	}
 
@@ -704,6 +750,22 @@ func cmdUpgrade(args []string) int {
 		info("  Config preserved: .ai/config/workflow.yaml\n")
 	}
 
+	// Auto-commit upgrade changes (unless --no-commit)
+	if !*noCommit && !*dryRun {
+		if err := autoCommitUpgrade(targetDir); err != nil {
+			fmt.Println("")
+			warn("Failed to auto-commit changes: %v\n", err)
+			fmt.Println("")
+			fmt.Println("Please commit manually:")
+			fmt.Printf("  %s\n", cyan("git add .ai/ .claude/ CLAUDE.md AGENTS.md"))
+			fmt.Printf("  %s\n", cyan(`git commit -m "[chore] upgrade awkit"`))
+		} else {
+			fmt.Println("")
+			success("Changes committed automatically\n")
+			fmt.Printf("  Commit message: %s\n", cyan("[chore] upgrade awkit"))
+		}
+	}
+
 	// Handle scaffold for upgrade
 	if *scaffold {
 		projectName := filepath.Base(displayTarget)
@@ -752,6 +814,46 @@ func cmdUpgrade(args []string) int {
 
 	warnUpdateAvailable()
 	return 0
+}
+
+// autoCommitUpgrade attempts to automatically commit upgrade changes
+func autoCommitUpgrade(targetDir string) error {
+	// Check if git is available
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return fmt.Errorf("git not found in PATH")
+	}
+
+	// Check if we're in a git repository
+	checkCmd := exec.Command(gitPath, "rev-parse", "--git-dir")
+	checkCmd.Dir = targetDir
+	if err := checkCmd.Run(); err != nil {
+		return fmt.Errorf("not a git repository")
+	}
+
+	// Add awkit-related files
+	addCmd := exec.Command(gitPath, "add", ".ai/", ".claude/", "CLAUDE.md", "AGENTS.md")
+	addCmd.Dir = targetDir
+	if err := addCmd.Run(); err != nil {
+		return fmt.Errorf("git add failed: %w", err)
+	}
+
+	// Check if there are changes to commit
+	statusCmd := exec.Command(gitPath, "diff", "--cached", "--quiet")
+	statusCmd.Dir = targetDir
+	if err := statusCmd.Run(); err == nil {
+		// No changes to commit
+		return nil
+	}
+
+	// Commit the changes
+	commitCmd := exec.Command(gitPath, "commit", "-m", "[chore] upgrade awkit")
+	commitCmd.Dir = targetDir
+	if err := commitCmd.Run(); err != nil {
+		return fmt.Errorf("git commit failed: %w", err)
+	}
+
+	return nil
 }
 
 func cmdUninstall(args []string) int {
@@ -917,7 +1019,7 @@ _awkit() {
             return 0
             ;;
         upgrade)
-            local opts="--scaffold --preset --force --dry-run --no-generate --help"
+            local opts="--scaffold --preset --force --dry-run --no-generate --no-commit --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
             return 0
             ;;
@@ -991,6 +1093,7 @@ _awkit() {
                         '--force[Overwrite scaffold files]' \
                         '--dry-run[Show what would be done]' \
                         '--no-generate[Skip generate.sh]' \
+                        '--no-commit[Skip auto-commit]' \
                         '*:directory:_files -/'
                     ;;
                 uninstall)
@@ -1043,6 +1146,7 @@ complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset 
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force -d 'Overwrite scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-generate -d 'Skip generate.sh'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-commit -d 'Skip auto-commit'
 
 # uninstall options
 complete -c awkit -n '__fish_seen_subcommand_from uninstall' -l dry-run -d 'Show what would be removed'

@@ -611,31 +611,6 @@ on:
     branches: ["feat/example", "main"]
 
 jobs:
-  awk:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyyaml jsonschema jinja2
-
-      - name: Evaluate (offline)
-        run: bash .ai/scripts/evaluate.sh --offline
-
-      - name: Evaluate (strict)
-        run: bash .ai/scripts/evaluate.sh --offline --strict
-
-      - name: Test suite
-        run: bash .ai/tests/run_all_tests.sh
-
   backend:
     runs-on: ubuntu-latest
     steps:
