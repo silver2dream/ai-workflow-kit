@@ -217,8 +217,15 @@ if generate_ci:
         try:
             template = env.get_template(template_name)
             verify = repo.get("verify") or {}
+            
+            # Determine working directory for directory type repos
+            working_dir = ""
+            if repo_type == "directory" and repo_path != "./":
+                working_dir = repo_path.rstrip("/")
+            
             ci_context = {
                 "name": repo_name,
+                "working_directory": working_dir,
                 "integration_branch": integration_branch,
                 "release_branch": release_branch,
                 "build_cmd": verify.get("build", "echo 'build'"),
