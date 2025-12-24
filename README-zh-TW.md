@@ -10,6 +10,8 @@
 
 > 「睡前啟動，早上收割」的 AI 開發工作流 Kit：以 **Spec → 實作 → PR → 合併** 為主線，搭配 **Claude Code (Principal)** + **Codex (Worker)** 完成閉環；Spec 格式與 **Kiro** 相容。
 
+[![下載](https://img.shields.io/badge/下載-最新版本-brightgreen?style=for-the-badge&logo=github)](https://github.com/silver2dream/ai-workflow-kit/releases/latest)
+
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
 ---
@@ -50,7 +52,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│  You ──► kickoff.sh ──► Claude Code (Principal)               │
+│  You ──► awkit kickoff ──► Claude Code (Principal)            │
 │                              │                               │
 │                              ├─► read specs/tasks.md          │
 │                              ├─► create GitHub Issue          │
@@ -191,6 +193,14 @@ bash .ai/scripts/generate.sh
 
 ```bash
 gh auth login
+
+# 使用 awkit CLI（建議）
+awkit kickoff --dry-run    # 預覽會執行什麼
+awkit kickoff              # 啟動工作流
+awkit kickoff --resume     # 從上次狀態恢復
+awkit validate             # 只驗證設定
+
+# 或使用 bash 腳本（legacy）
 bash .ai/scripts/kickoff.sh --dry-run
 bash .ai/scripts/kickoff.sh
 ```

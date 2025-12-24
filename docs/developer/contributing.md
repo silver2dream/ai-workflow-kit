@@ -477,7 +477,10 @@ python3 -m pytest .ai/tests/unit/test_errors.py::TestAWKError::test_to_dict -v
 ### Q: 如何在本地測試 Shell 腳本？
 
 ```bash
-# Dry-run 模式
+# 使用 awkit CLI（推薦）
+awkit kickoff --dry-run
+
+# 或使用 bash 腳本
 bash .ai/scripts/kickoff.sh --dry-run
 
 # 啟用 debug 輸出

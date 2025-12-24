@@ -265,7 +265,7 @@ final_grade = grade(min(total_score, cap))
 
 | ID | 驗證方式 | PASS 條件 |
 |----|----------|-----------|
-| N1 | `bash .ai/scripts/kickoff.sh --dry-run` | exit 0 |
+| N1 | `awkit kickoff --dry-run` 或 `bash .ai/scripts/kickoff.sh --dry-run` | exit 0 |
 | N2 | rollback dry-run 輸出包含預期訊息 | 見下方說明 |
 | N3 | `bash .ai/scripts/stats.sh --json` | 輸出有效 JSON |
 

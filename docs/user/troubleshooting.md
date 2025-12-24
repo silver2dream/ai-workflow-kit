@@ -249,8 +249,8 @@ claude --print --dangerously-skip-permissions < .ai/scripts/principal_boot.txt
 **原因：** Principal 在執行前置檢查和分析，但沒有輸出進度
 
 **解決：**
-1. 升級到最新版本：`awkit upgrade && bash .ai/scripts/generate.sh`
-2. 新版本會輸出進度訊息：`[PRINCIPAL] <time> | <phase> | <message>`
+1. 使用 `awkit kickoff` 取代 `kickoff.sh`（提供 PTY 即時輸出和 Spinner 動畫）
+2. 或升級到最新版本：`awkit upgrade && bash .ai/scripts/generate.sh`
 
 ---
 

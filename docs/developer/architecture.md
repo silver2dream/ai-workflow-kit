@@ -71,7 +71,7 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Code
 │   ├── validate_config.py         # 驗證配置檔
 │   ├── query_traces.py            # 查詢執行追蹤
 │   │
-│   ├── kickoff.sh                 # 啟動工作流程
+│   ├── kickoff.sh                 # 啟動工作流程 (legacy, 建議用 awkit kickoff)
 │   ├── run_issue_codex.sh         # 執行單一 Issue
 │   ├── write_result.sh            # 寫入執行結果
 │   ├── generate.sh                # 生成設定檔
@@ -245,7 +245,7 @@ python3 .ai/scripts/query_traces.py --issue-id 123 --json
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│  [kickoff.sh]                                                │
+│  [awkit kickoff] 或 [kickoff.sh]                             │
 │       │                                                      │
 │       ├─► run_script scan_repo ──► state/repo_scan.json     │
 │       │                                                      │
@@ -394,7 +394,8 @@ python3 -m pytest .ai/tests/unit -v
                                │
                                ▼
                     ┌─────────────────────┐
-                    │     kickoff.sh      │
+                    │  awkit kickoff 或   │
+                    │  kickoff.sh (legacy)│
                     │  (工作流程入口)       │
                     └──────────┬──────────┘
                                │

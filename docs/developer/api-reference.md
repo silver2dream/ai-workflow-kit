@@ -415,12 +415,24 @@ def summarize_trace(trace: Dict[str, Any]) -> Dict[str, Any]
 
 ## Shell Scripts
 
-### kickoff.sh
+### kickoff.sh (Legacy)
 
-啟動工作流程入口。
+啟動工作流程入口（建議使用 `awkit kickoff` 取代）。
 
 ```bash
 bash .ai/scripts/kickoff.sh [--dry-run] [--background] [--help]
+```
+
+### awkit kickoff (推薦)
+
+Go 實作的工作流程啟動命令，提供更好的 UX：
+- PTY 即時輸出
+- Issue Monitor 顯示 Worker 進度
+- Spinner 動畫
+
+```bash
+awkit kickoff [--dry-run] [--background] [--resume] [--fresh]
+awkit validate  # 只驗證配置
 ```
 
 ### run_issue_codex.sh

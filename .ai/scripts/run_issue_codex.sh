@@ -1267,6 +1267,12 @@ if command -v gh >/dev/null 2>&1; then
 fi
 trace_step_end "success"
 
+# Reset fail_count on success so subsequent runs start fresh
+if [[ -f "$RUN_DIR/fail_count.txt" ]]; then
+  echo "[runner] resetting fail_count (success)"
+  rm -f "$RUN_DIR/fail_count.txt"
+fi
+
 echo "DONE: repo=$REPO type=$REPO_TYPE branch=$BRANCH"
 echo "PR:   $PR_URL"
 echo "LOG:  $CODEX_LOG"
