@@ -274,7 +274,12 @@ This repo ships with a minimal directory-type example:
 
 Root CI workflow: `.github/workflows/ci.yml`
 
-Note: this repo ships a hand-maintained CI example. `bash .ai/scripts/generate.sh` does **not** modify workflows unless you pass `--generate-ci`.
+**For user projects:**
+- `awkit init` automatically creates a CI workflow for your project
+- `awkit upgrade` automatically migrates deprecated CI configurations (removes old `awk` job)
+
+**For this repo (awkit itself):**
+This repo ships a hand-maintained CI example. `bash .ai/scripts/generate.sh` does **not** modify workflows unless you pass `--generate-ci`.
 
 It runs:
 - AWK evaluation: `bash .ai/scripts/evaluate.sh --offline` and `--offline --strict`

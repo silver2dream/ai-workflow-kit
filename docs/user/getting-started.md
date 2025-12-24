@@ -278,12 +278,12 @@ brew install bash
 awkit init [path] [options]
 
 Options:
-  --preset <name>     使用指定 preset (generic, react-go)
+  --preset <name>     使用指定 preset (generic, react-go, go, python 等)
+  --scaffold          建立專案基本結構
   --force             覆蓋所有現有檔案
   --force-config      只覆蓋 workflow.yaml
   --dry-run           預覽操作，不實際執行
   --no-generate       跳過執行 generate.sh
-  --with-ci           建立 CI workflow (預設: true)
   --project-name      覆蓋專案名稱
 ```
 
@@ -293,6 +293,12 @@ Options:
 awkit upgrade [path] [options]
 
 Options:
+  --scaffold          補充 scaffold 檔案 (需要 --preset)
+  --preset <name>     scaffold 使用的 preset
+  --force             覆蓋 scaffold 檔案
   --dry-run           預覽操作，不實際執行
   --no-generate       跳過執行 generate.sh
+  --no-commit         跳過自動 commit
 ```
+
+> **注意：** CI workflow 會在 `init` 時自動建立，`upgrade` 時會自動遷移（移除舊版的 awk job）。

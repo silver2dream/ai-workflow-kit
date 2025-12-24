@@ -1173,3 +1173,114 @@ func TestCIWorkflowDoesNotContainAWKJob(t *testing.T) {
 		t.Error("CI workflow should NOT contain 'run_all_tests.sh' (awkit-specific)")
 	}
 }
+
+// TestCIWorkflowMigration verifies that upgrade removes deprecated awk job
+func TestCIWorkflowMigration(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-ci-migration-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create old CI file with deprecated awk job
+	ciDir := filepath.Join(tmpDir, ".github", "workflows")
+	if err := os.MkdirAll(ciDir, 0755); err != nil {
+		t.Fatalf("failed to create .github/workflows dir: %v", err)
+	}
+
+	oldCI := `name: ci
+
+on:
+  push:
+    branches: ["feat/example"]
+  pull_request:
+    branches: ["feat/example", "main"]
+
+jobs:
+  awk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run AWK tests
+        run: bash .ai/scripts/evaluate.sh
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Go test
+        working-directory: backend
+        run: go test ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+`
+	ciPath := filepath.Join(ciDir, "ci.yml")
+	if err := os.WriteFile(ciPath, []byte(oldCI), 0644); err != nil {
+		t.Fatalf("failed to write old CI file: %v", err)
+	}
+
+	// Test migration function directly
+	migrated, newContent := migrateCIWorkflow([]byte(oldCI))
+	if !migrated {
+		t.Error("migrateCIWorkflow should return migrated=true for CI with awk job")
+	}
+
+	newContentStr := string(newContent)
+
+	// Verify awk job is removed
+	if strings.Contains(newContentStr, "awk:") {
+		t.Error("Migrated CI should NOT contain 'awk:' job")
+	}
+	if strings.Contains(newContentStr, "evaluate.sh") {
+		t.Error("Migrated CI should NOT contain 'evaluate.sh'")
+	}
+
+	// Verify other jobs are preserved
+	if !strings.Contains(newContentStr, "backend:") {
+		t.Error("Migrated CI should preserve 'backend:' job")
+	}
+	if !strings.Contains(newContentStr, "frontend:") {
+		t.Error("Migrated CI should preserve 'frontend:' job")
+	}
+	if !strings.Contains(newContentStr, "go test") {
+		t.Error("Migrated CI should preserve backend test command")
+	}
+	if !strings.Contains(newContentStr, "npm run build") {
+		t.Error("Migrated CI should preserve frontend build command")
+	}
+}
+
+// TestCIWorkflowNoMigrationNeeded verifies that CI without awk job is not modified
+func TestCIWorkflowNoMigrationNeeded(t *testing.T) {
+	cleanCI := `name: ci
+
+on: [push]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - run: go test ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
+`
+	migrated, newContent := migrateCIWorkflow([]byte(cleanCI))
+	if migrated {
+		t.Error("migrateCIWorkflow should return migrated=false for CI without awk job")
+	}
+	if string(newContent) != cleanCI {
+		t.Error("Content should be unchanged when no migration needed")
+	}
+}
