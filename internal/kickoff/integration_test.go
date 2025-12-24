@@ -2,6 +2,7 @@ package kickoff
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -13,7 +14,34 @@ import (
 // =============================================================================
 
 // TestIntegration_PreflightToLockRelease tests the full preflight -> lock flow
+// This test requires a clean git working directory and external tools
 func TestIntegration_PreflightToLockRelease(t *testing.T) {
+	// Skip in short mode (CI/automated tests)
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Skip if external dependencies are not available
+	if _, err := exec.LookPath("gh"); err != nil {
+		t.Skip("Skipping: gh CLI not installed")
+	}
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("Skipping: claude CLI not installed")
+	}
+	// Check gh auth status
+	if err := exec.Command("gh", "auth", "status").Run(); err != nil {
+		t.Skip("Skipping: gh not authenticated")
+	}
+	// Check git is available and we're in a repo
+	if err := exec.Command("git", "status").Run(); err != nil {
+		t.Skip("Skipping: not in a git repository")
+	}
+	// Check working directory is clean (required for preflight)
+	output, err := exec.Command("git", "status", "--porcelain").Output()
+	if err != nil || len(output) > 0 {
+		t.Skip("Skipping: working directory not clean")
+	}
+
 	tmpDir, err := os.MkdirTemp("", "integration-e2e-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)

@@ -71,8 +71,9 @@ func cmdValidate(args []string) int {
 	output.Success("Required fields: OK")
 
 	// Validate paths
-	baseDir := filepath.Dir(filepath.Dir(*configPath)) // Go up from .ai/config
-	if baseDir == "." {
+	// baseDir should be the project root (parent of .ai directory)
+	baseDir := filepath.Dir(filepath.Dir(filepath.Dir(*configPath))) // Go up from .ai/config/workflow.yaml
+	if baseDir == "." || baseDir == "" {
 		baseDir, _ = os.Getwd()
 	}
 
