@@ -690,6 +690,70 @@ echo "[PRINCIPAL] $(date +%H:%M:%S) | ✓ 審查評論已發布"
 
 ---
 
+## Step 11.5: 檢查 Submodule 變更（如適用）
+
+```bash
+# 檢查是否涉及 submodule 變更
+echo "[PRINCIPAL] $(date +%H:%M:%S) | 檢查 submodule 變更..."
+
+SUBMODULE_CHANGES=false
+SUBMODULE_WARNING=""
+
+# 檢查 PR 是否包含 submodule 指針變更
+if echo "$MODIFIED_FILES" | grep -qE '^\+Subproject commit|submodule'; then
+  SUBMODULE_CHANGES=true
+  echo "[PRINCIPAL] $(date +%H:%M:%S) | ⚠ 檢測到 submodule 變更"
+fi
+
+# 從 workflow.yaml 檢查是否有 submodule 類型的 repo
+HAS_SUBMODULE_REPOS=$(python3 -c "
+import yaml
+try:
+    config = yaml.safe_load(open('.ai/config/workflow.yaml'))
+    repos = config.get('repos', {})
+    for name, repo in repos.items():
+        if repo.get('type') == 'submodule':
+            print('true')
+            break
+    else:
+        print('false')
+except:
+    print('false')
+" 2>/dev/null || echo "false")
+
+if [[ "$HAS_SUBMODULE_REPOS" == "true" ]] && [[ "$SUBMODULE_CHANGES" == "true" ]]; then
+  echo "[PRINCIPAL] $(date +%H:%M:%S) | 驗證 submodule 一致性..."
+  
+  # 檢查 submodule 是否指向有效的 commit
+  SUBMODULE_STATUS=$(git submodule status 2>/dev/null || echo "")
+  
+  if echo "$SUBMODULE_STATUS" | grep -q "^-"; then
+    SUBMODULE_WARNING="⚠ Submodule 未初始化"
+    echo "[PRINCIPAL] $(date +%H:%M:%S) | $SUBMODULE_WARNING"
+  elif echo "$SUBMODULE_STATUS" | grep -q "^+"; then
+    SUBMODULE_WARNING="⚠ Submodule 有本地變更"
+    echo "[PRINCIPAL] $(date +%H:%M:%S) | $SUBMODULE_WARNING"
+  else
+    echo "[PRINCIPAL] $(date +%H:%M:%S) | ✓ Submodule 狀態正常"
+  fi
+  
+  # 如果有 submodule 問題，添加到審查評論
+  if [[ -n "$SUBMODULE_WARNING" ]]; then
+    REVIEW_COMMENT="${REVIEW_COMMENT}
+### Submodule 狀態:
+
+$SUBMODULE_WARNING
+
+請確保 submodule 指向正確的 commit，並且父 repo 和 submodule 的變更保持一致。
+"
+  fi
+fi
+
+echo "[PRINCIPAL] $(date +%H:%M:%S) | ✓ Submodule 檢查完成"
+```
+
+---
+
 ## Step 12: 批准或請求修改
 
 ```bash
