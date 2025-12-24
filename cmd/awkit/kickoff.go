@@ -2,13 +2,11 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
@@ -158,12 +156,10 @@ func cmdKickoff(args []string) int {
 	}
 
 	// Build Claude CLI command
-	// Use stream-json format for real-time streaming output
+	// Use -p to pass the prompt directly (like: echo "/start-work --autonomous" | claude --print)
 	claudeCmd := "claude"
 	claudeArgs := []string{
 		"--print",
-		"--output-format", "stream-json",
-		"--verbose",
 		"-p", "/start-work --autonomous",
 	}
 
@@ -248,17 +244,13 @@ func cmdKickoff(args []string) int {
 		},
 	)
 
-	// Read and process output (stream-json format)
+	// Read and process output
 	outputReader := executor.Output()
 	scanner := bufio.NewScanner(outputReader)
 
-	// Increase scanner buffer for large JSON lines
-	const maxScanTokenSize = 1024 * 1024 // 1MB
-	buf := make([]byte, maxScanTokenSize)
-	scanner.Buffer(buf, maxScanTokenSize)
-
 	// Also write to logger if in background mode
 	var writers []io.Writer
+	writers = append(writers, os.Stdout)
 	if logger != nil {
 		writers = append(writers, logger)
 	}
@@ -266,24 +258,15 @@ func cmdKickoff(args []string) int {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Parse JSON to extract text content
-		text := extractTextFromStreamJSON(line)
-		if text == "" {
-			continue
-		}
-
 		// Pause spinner while printing
 		if currentSpinner != nil {
 			currentSpinner.Pause()
 			currentSpinner.ClearLine()
 		}
 
-		// Write to stdout
-		fmt.Println(text)
-
-		// Write to logger if in background mode
+		// Write to all outputs
 		for _, w := range writers {
-			fmt.Fprintln(w, text)
+			fmt.Fprintln(w, line)
 		}
 
 		// Resume spinner
@@ -292,7 +275,7 @@ func cmdKickoff(args []string) int {
 		}
 
 		// Parse for STEP-3/STEP-4
-		parser.Parse(text)
+		parser.Parse(line)
 	}
 
 	// Wait for executor to finish
@@ -326,62 +309,4 @@ func formatDuration(d time.Duration) string {
 	minutes := int(d.Minutes())
 	seconds := int(d.Seconds()) % 60
 	return fmt.Sprintf("%d:%02d", minutes, seconds)
-}
-
-// extractTextFromStreamJSON extracts text content from Claude CLI stream-json output
-// Stream JSON format has different event types:
-// - {"type":"system","subtype":"init",...} - initialization
-// - {"type":"assistant","message":{...}} - assistant response with content
-// - {"type":"result","subtype":"success",...} - final result
-func extractTextFromStreamJSON(line string) string {
-	if line == "" {
-		return ""
-	}
-
-	// Quick check if it's JSON
-	if line[0] != '{' {
-		return line // Not JSON, return as-is
-	}
-
-	// Parse JSON
-	var event map[string]interface{}
-	if err := json.Unmarshal([]byte(line), &event); err != nil {
-		return "" // Invalid JSON, skip
-	}
-
-	eventType, _ := event["type"].(string)
-
-	switch eventType {
-	case "assistant":
-		// Extract text from assistant message
-		message, ok := event["message"].(map[string]interface{})
-		if !ok {
-			return ""
-		}
-		content, ok := message["content"].([]interface{})
-		if !ok {
-			return ""
-		}
-
-		var texts []string
-		for _, item := range content {
-			if contentItem, ok := item.(map[string]interface{}); ok {
-				if contentItem["type"] == "text" {
-					if text, ok := contentItem["text"].(string); ok {
-						texts = append(texts, text)
-					}
-				}
-			}
-		}
-		return strings.Join(texts, "\n")
-
-	case "result":
-		// Skip result event - it's just a summary of what was already output
-		// The actual content was already streamed via "assistant" events
-		return ""
-
-	default:
-		// Skip other event types (system, etc.)
-		return ""
-	}
 }
