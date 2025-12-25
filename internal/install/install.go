@@ -93,6 +93,13 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		return nil, err
 	}
 
+	// Copy .ai/skills/ directory if it exists in the kit
+	if _, err := fs.Stat(kit, ".ai/skills"); err == nil {
+		if err := copyDir(kit, ".ai/skills", filepath.Join(targetDir, ".ai", "skills"), opts.Force); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := ensureRuntimeDirs(targetDir); err != nil {
 		return nil, err
 	}
@@ -338,13 +345,18 @@ func ensureClaudeLinks(targetDir string) error {
 			target: filepath.Join(claudeDir, "rules"),
 		},
 		{
-			name:   "commands",
-			source: filepath.Join(targetDir, ".ai", "commands"),
-			target: filepath.Join(claudeDir, "commands"),
+			name:   "skills",
+			source: filepath.Join(targetDir, ".ai", "skills"),
+			target: filepath.Join(claudeDir, "skills"),
 		},
 	}
 
 	for _, l := range links {
+		// Skip if source doesn't exist
+		if _, err := os.Stat(l.source); os.IsNotExist(err) {
+			continue
+		}
+
 		_ = os.RemoveAll(l.target)
 		relSource, err := filepath.Rel(filepath.Dir(l.target), l.source)
 		if err != nil {
@@ -355,6 +367,7 @@ func ensureClaudeLinks(targetDir string) error {
 			continue
 		}
 
+		// Symlink failed (e.g., Windows without admin), fall back to copy
 		if err := copyOSDir(l.source, l.target); err != nil {
 			return fmt.Errorf("failed to create .claude/%s (symlink+copy both failed): %w", l.name, err)
 		}

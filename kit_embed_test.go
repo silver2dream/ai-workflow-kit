@@ -48,12 +48,14 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		".ai/templates/AGENTS.md.j2",
 		".ai/templates/git-workflow.md.j2",
 
-		// Commands
-		".ai/commands/start-work.md",
-		".ai/commands/stop-work.md",
-		".ai/commands/review-pr.md",
-		".ai/commands/dispatch-worker.md",
-		".ai/commands/analyze-next.md",
+		// Commands (deprecated - all moved to scripts and skills)
+		// preflight.md also deprecated - preflight now handled by Go code
+
+		// New scripts (from skills refactor)
+		".ai/scripts/analyze_next.sh",
+		".ai/scripts/dispatch_worker.sh",
+		".ai/scripts/check_result.sh",
+		".ai/scripts/stop_work.sh",
 
 		// Rules
 		".ai/rules/_kit/git-workflow.md",
@@ -82,13 +84,17 @@ func TestKitFSContainsRequiredDirectories(t *testing.T) {
 		".ai/scripts",
 		".ai/scripts/lib",
 		".ai/templates",
-		".ai/commands",
 		".ai/rules/_kit",
 		".ai/rules/_examples",
 		".ai/docs",
 		".ai/tests",
 		".ai/tests/fixtures",
 		".ai/tests/unit",
+		// Skills (source of truth in .ai/skills/, symlinked to .claude/skills/)
+		".ai/skills/principal-workflow",
+		".ai/skills/principal-workflow/phases",
+		".ai/skills/principal-workflow/tasks",
+		".ai/skills/principal-workflow/references",
 	}
 
 	for _, dir := range requiredDirs {

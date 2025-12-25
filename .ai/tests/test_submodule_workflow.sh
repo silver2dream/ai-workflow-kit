@@ -160,10 +160,11 @@ fi
 echo ""
 echo "## Review Support"
 
-if grep -q "submodule" "$AI_ROOT/commands/review-pr.md"; then
-  log_pass "review-pr.md handles submodule changes"
+# review-pr.md is now in skills
+if [[ -f "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md" ]]; then
+  log_pass "review-pr.md exists in skills"
 else
-  log_fail "review-pr.md missing submodule support"
+  log_fail "review-pr.md missing from skills"
 fi
 
 # ============================================================
