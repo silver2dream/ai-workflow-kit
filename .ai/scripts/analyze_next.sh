@@ -13,7 +13,9 @@ set -euo pipefail
 # 初始化
 # ============================================================
 log() {
-  echo "[PRINCIPAL] $(date +%H:%M:%S) | $*" >&2
+  local msg="[PRINCIPAL] $(date +%H:%M:%S) | $*"
+  echo "$msg" >&2
+  printf '%s\n' "$msg" >> .ai/exe-logs/analyze_next.log 2>/dev/null || true
 }
 
 # 初始化輸出變數

@@ -11,7 +11,7 @@ set -euo pipefail
 #   - CLAUDE.md
 #   - AGENTS.md
 #   - .ai/rules/_kit/git-workflow.md
-#   - .claude/{rules,commands} (symlink or copy to .ai/{rules,commands})
+#   - .claude/{rules,skills} (symlink or copy to .ai/{rules,skills})
 #
 # Optional:
 #   --generate-ci   Generate workflow(s) under .github/workflows/ from templates
@@ -269,7 +269,7 @@ else:
     print("[generate] Skipping CI generation (use --generate-ci to enable).")
 
 # ============================================================
-# Mirror .ai/{rules,commands} into .claude/{rules,commands}
+# Mirror .ai/{rules,skills} into .claude/{rules,skills}
 # ============================================================
 ai_root = os.path.dirname(os.path.dirname(os.path.abspath(config_file)))
 claude_dir = os.path.join(output_dir, '.claude')
@@ -289,9 +289,16 @@ except Exception as e:
     print(f"[generate] ERROR generating claude settings: {e}")
 
 ai_rules = os.path.join(ai_root, 'rules')
-ai_commands = os.path.join(ai_root, 'commands')
+ai_skills = os.path.join(ai_root, 'skills')
 claude_rules = os.path.join(claude_dir, 'rules')
-claude_commands = os.path.join(claude_dir, 'commands')
+claude_skills = os.path.join(claude_dir, 'skills')
+
+# Clean up deprecated .claude/commands if it exists
+claude_commands_deprecated = os.path.join(claude_dir, 'commands')
+if os.path.islink(claude_commands_deprecated):
+    os.unlink(claude_commands_deprecated)
+elif os.path.isdir(claude_commands_deprecated):
+    shutil.rmtree(claude_commands_deprecated)
 
 def create_symlink(source, target, name):
     """Create symlink from target to source; fall back to copy if needed."""
@@ -325,13 +332,15 @@ if os.path.exists(ai_rules):
     if not create_symlink(ai_rules, claude_rules, 'rules'):
         symlink_ok = False
 
-if os.path.exists(ai_commands):
-    if not create_symlink(ai_commands, claude_commands, 'commands'):
+if os.path.exists(ai_skills):
+    if not create_symlink(ai_skills, claude_skills, 'skills'):
         symlink_ok = False
 
 if not symlink_ok:
     print(f"[generate] NOTE: Using file copy instead of symlinks.")
-    print(f"[generate] Run 'bash .ai/scripts/generate.sh' after modifying .ai/rules/ or .ai/commands/")
+    print(f"[generate] Run 'bash .ai/scripts/generate.sh' after modifying .ai/rules/ or .ai/skills/")
+
+print("[generate] Done!")
 
 print("[generate] Done!")
 PYTHON

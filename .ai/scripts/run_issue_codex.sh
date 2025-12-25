@@ -854,12 +854,21 @@ IMPORTANT: You are working in a SUBMODULE within a monorepo.
     ;;
 esac
 
+# ============================================================
+# Fetch AWK Review comments from Issue (for retry scenarios)
+# ============================================================
+AWK_REVIEW_COMMENTS=""
+if command -v gh >/dev/null 2>&1; then
+  # Get comments containing "AWK Review" (Principal's review feedback)
+  AWK_REVIEW_COMMENTS=$(gh issue view "$ISSUE_ID" --json comments --jq '.comments[] | select(.body | contains("AWK Review")) | "---\n\(.createdAt):\n\(.body)"' 2>/dev/null | tail -c 4000 || echo "")
+fi
+
 PROMPT_FILE="$RUN_DIR/prompt.txt"
 cat > "$PROMPT_FILE" <<PROMPT
 You are an automated coding agent running inside a git worktree.
 
 Repo rules:
-- Read and follow CLAUDE.md and AGENTS.md.
+- Read and follow AGENTS.md.
 - Keep changes minimal and strictly within ticket scope.
 $WORK_DIR_INSTRUCTION
 IMPORTANT: Do NOT run any git commands (commit, push, etc.) or create PRs.
@@ -886,13 +895,29 @@ Attempting to access them will result in task failure.
 
 Ticket:
 $(cat "$TASK_PATH")
+PROMPT
+
+# Append AWK Review comments if any (for retry scenarios)
+if [[ -n "$AWK_REVIEW_COMMENTS" ]]; then
+  cat >> "$PROMPT_FILE" <<REVIEW
+
+============================================================
+PREVIOUS REVIEW FEEDBACK (IMPORTANT - Address these issues!)
+============================================================
+$AWK_REVIEW_COMMENTS
+============================================================
+REVIEW
+fi
+
+# Append final instructions
+cat >> "$PROMPT_FILE" <<FINAL
 
 After making changes:
 - Print: git status --porcelain
 - Print: git diff
 - Run verification commands from the ticket.
 - Do NOT commit or push - the runner will handle that.
-PROMPT
+FINAL
 
 # CODEX_LOG_BASE already defined early in script for early failure logging
 SUMMARY_FILE="$RUN_DIR/summary.txt"
@@ -1212,19 +1237,29 @@ trace_step_end "success"
 PR_URL=""
 trace_step_start "create_pr"
 if command -v gh >/dev/null 2>&1; then
-  PR_URL="$(gh pr create \
-    --base "$PR_BASE" \
-    --head "$BRANCH" \
-    --title "$COMMIT_MSG" \
-    --body "Closes #$ISSUE_ID
+  # Check if PR already exists for this branch
+  EXISTING_PR_URL="$(gh pr view "$BRANCH" --json url -q .url 2>/dev/null || true)"
+  
+  if [[ -n "$EXISTING_PR_URL" ]]; then
+    # PR already exists (retry scenario), just use existing PR
+    PR_URL="$EXISTING_PR_URL"
+    echo "[runner] PR already exists: $PR_URL" | tee -a "$SUMMARY_FILE"
+  else
+    # Create new PR
+    PR_URL="$(gh pr create \
+      --base "$PR_BASE" \
+      --head "$BRANCH" \
+      --title "$COMMIT_MSG" \
+      --body "Closes #$ISSUE_ID
 
 $COMMIT_MSG" \
-    --json url -q .url 2>/dev/null || true)"
+      --json url -q .url 2>/dev/null || true)"
+  fi
 fi
 
 if [[ -z "$PR_URL" ]]; then
   record_error "PR not created"
-  echo "ERROR: PR not created. Ensure 'gh auth login' and required repo permissions." | tee -a "$SUMMARY_FILE"
+  echo "ERROR: PR not created or found. Ensure 'gh auth login' and required repo permissions." | tee -a "$SUMMARY_FILE"
   trace_step_end "failed" "PR not created"
   export AI_RESULTS_ROOT="$MONO_ROOT"
   export AI_REPO_NAME="$REPO"
