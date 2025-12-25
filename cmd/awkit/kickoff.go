@@ -100,6 +100,24 @@ func cmdKickoff(args []string) int {
 		return 0
 	}
 
+	// Initialize loop_count for Loop Safety mechanism
+	loopCountFile := filepath.Join(".ai", "state", "loop_count")
+	if err := os.MkdirAll(filepath.Dir(loopCountFile), 0755); err != nil {
+		output.Error(fmt.Sprintf("Failed to create state directory: %v", err))
+		return 1
+	}
+	if err := os.WriteFile(loopCountFile, []byte("0"), 0644); err != nil {
+		output.Error(fmt.Sprintf("Failed to initialize loop_count: %v", err))
+		return 1
+	}
+
+	// Initialize consecutive_failures
+	consecutiveFailuresFile := filepath.Join(".ai", "state", "consecutive_failures")
+	if err := os.WriteFile(consecutiveFailuresFile, []byte("0"), 0644); err != nil {
+		output.Error(fmt.Sprintf("Failed to initialize consecutive_failures: %v", err))
+		return 1
+	}
+
 	// Lock manager
 	lock := kickoff.NewLockManager(lockFile)
 	lock.SetupSignalHandler()
@@ -159,12 +177,13 @@ func cmdKickoff(args []string) int {
 
 	// Build Claude CLI command
 	// Use stream-json format for real-time streaming output
+	// Use principal-workflow Skill for deterministic workflow execution
 	claudeCmd := "claude"
 	claudeArgs := []string{
 		"--print",
 		"--output-format", "stream-json",
 		"--verbose",
-		"-p", "/start-work --autonomous",
+		"-p", "Use the principal-workflow Skill. Start the main loop immediately.",
 	}
 
 	fmt.Println("")

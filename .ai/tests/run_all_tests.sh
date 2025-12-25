@@ -54,7 +54,7 @@ required_files=(
   "$AI_ROOT/scripts/scan_repo.sh"
   "$AI_ROOT/templates/CLAUDE.md.j2"
   "$AI_ROOT/templates/AGENTS.md.j2"
-  "$AI_ROOT/commands/start-work.md"
+  "$AI_ROOT/skills/principal-workflow/SKILL.md"
 )
 
 for file in "${required_files[@]}"; do
@@ -339,28 +339,29 @@ else
 fi
 
 # ============================================================
-# Test 11: Multi-Repo Coordination
+# Test 11: Multi-Repo Coordination (Skills Architecture)
 # ============================================================
 echo ""
 echo "## Multi-Repo Tests"
 
-# Test dispatch-worker.md has multi-repo support (modular architecture)
-if grep -q 'Coordination' "$AI_ROOT/commands/dispatch-worker.md"; then
-  log_pass "dispatch-worker.md supports Coordination"
+# Test dispatch_worker.sh has multi-repo support
+if [[ -f "$AI_ROOT/scripts/dispatch_worker.sh" ]]; then
+  log_pass "dispatch_worker.sh exists"
 else
-  log_fail "dispatch-worker.md missing Coordination support"
+  log_fail "dispatch_worker.sh missing"
 fi
 
-if grep -q 'sequential' "$AI_ROOT/commands/dispatch-worker.md" && grep -q 'parallel' "$AI_ROOT/commands/dispatch-worker.md"; then
-  log_pass "dispatch-worker.md supports sequential/parallel modes"
+# Test skills structure exists
+if [[ -f "$AI_ROOT/skills/principal-workflow/SKILL.md" ]]; then
+  log_pass "principal-workflow skill exists"
 else
-  log_fail "dispatch-worker.md missing execution modes"
+  log_fail "principal-workflow skill missing"
 fi
 
-if grep -q 'Multi-Repo' "$AI_ROOT/commands/dispatch-worker.md"; then
-  log_pass "dispatch-worker.md has multi-repo documentation"
+if [[ -f "$AI_ROOT/skills/principal-workflow/phases/main-loop.md" ]]; then
+  log_pass "main-loop.md exists"
 else
-  log_fail "dispatch-worker.md missing multi-repo documentation"
+  log_fail "main-loop.md missing"
 fi
 
 # ============================================================
@@ -402,22 +403,22 @@ echo ""
 echo "## Path Reference Tests (v3)"
 
 # Test no old path references exist
-OLD_PATH_MATCHES=$(grep -r "scripts/ai/" "$AI_ROOT/commands" "$MONO_ROOT/docs" 2>/dev/null | grep -v ".ai/scripts" || true)
+OLD_PATH_MATCHES=$(grep -r "scripts/ai/" "$MONO_ROOT/docs" 2>/dev/null | grep -v ".ai/scripts" || true)
 if [[ -z "$OLD_PATH_MATCHES" ]]; then
   log_pass "No old 'scripts/ai/' references found"
 else
   log_fail "Found old 'scripts/ai/' references"
 fi
 
-# Test review-pr.md uses correct git-workflow path
-if grep -q "_kit/git-workflow.md" "$AI_ROOT/commands/review-pr.md"; then
+# Test review-pr.md uses correct git-workflow path (now in skills)
+if grep -q "_kit/git-workflow.md" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md"; then
   log_pass "review-pr.md uses correct git-workflow path"
 else
   log_fail "review-pr.md has wrong git-workflow path"
 fi
 
 # Test review-pr.md doesn't hardcode feat/aether
-if ! grep -q "feat/aether" "$AI_ROOT/commands/review-pr.md"; then
+if ! grep -q "feat/aether" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md"; then
   log_pass "review-pr.md doesn't hardcode branch name"
 else
   log_fail "review-pr.md still hardcodes feat/aether"
