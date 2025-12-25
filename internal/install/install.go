@@ -100,6 +100,18 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		}
 	}
 
+	// Clean up deprecated .ai/commands/ directory (replaced by .ai/skills/)
+	deprecatedCommandsDir := filepath.Join(targetDir, ".ai", "commands")
+	if _, err := os.Stat(deprecatedCommandsDir); err == nil {
+		_ = os.RemoveAll(deprecatedCommandsDir)
+	}
+
+	// Clean up deprecated .claude/commands symlink/directory
+	deprecatedClaudeCommands := filepath.Join(targetDir, ".claude", "commands")
+	if _, err := os.Stat(deprecatedClaudeCommands); err == nil {
+		_ = os.RemoveAll(deprecatedClaudeCommands)
+	}
+
 	if err := ensureRuntimeDirs(targetDir); err != nil {
 		return nil, err
 	}
