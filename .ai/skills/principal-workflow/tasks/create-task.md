@@ -21,6 +21,14 @@
 
    ## Acceptance Criteria
    - [ ] <驗收標準>
+   - [ ] Unit tests added for new functionality
+   - [ ] Existing tests updated if modifying functionality
+   - [ ] All tests pass (`go test ./...` or equivalent)
+
+   ## Testing Requirements
+   - New features MUST have corresponding unit tests
+   - Modified features MUST have updated or new test cases
+   - Test coverage should cover happy path and error cases
 
    ## Metadata
    - **Spec**: <SPEC_NAME>

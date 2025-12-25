@@ -13,7 +13,9 @@ set -euo pipefail
 # 初始化
 # ============================================================
 log() {
-  echo "[PRINCIPAL] $(date +%H:%M:%S) | $*" >&2
+  local msg="[PRINCIPAL] $(date +%H:%M:%S) | $*"
+  echo "$msg" >&2
+  echo "$msg" >> .ai/exe-logs/stop_work.log 2>/dev/null || true
 }
 
 EXIT_REASON="${1:-unknown}"

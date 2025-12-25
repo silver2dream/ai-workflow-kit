@@ -410,11 +410,12 @@ else
   log_fail "Found old 'scripts/ai/' references"
 fi
 
-# Test review-pr.md uses correct git-workflow path (now in skills)
-if grep -q "_kit/git-workflow.md" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md"; then
-  log_pass "review-pr.md uses correct git-workflow path"
+# Test review-pr.md uses worktree-based review (new architecture)
+if grep -q "prepare_review.sh" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md" && \
+   grep -q "submit_review.sh" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md"; then
+  log_pass "review-pr.md uses worktree-based review scripts"
 else
-  log_fail "review-pr.md has wrong git-workflow path"
+  log_fail "review-pr.md missing review scripts"
 fi
 
 # Test review-pr.md doesn't hardcode feat/aether
@@ -898,6 +899,17 @@ if [[ -f "$SCRIPT_DIR/test_submodule_workflow.sh" ]]; then
   fi
 else
   log_skip "test_submodule_workflow.sh not found"
+fi
+
+# Test review scripts (prepare_review.sh, submit_review.sh)
+if [[ -f "$SCRIPT_DIR/test_review_scripts.sh" ]]; then
+  if bash "$SCRIPT_DIR/test_review_scripts.sh" > /dev/null 2>&1; then
+    log_pass "test_review_scripts.sh passed"
+  else
+    log_fail "test_review_scripts.sh failed"
+  fi
+else
+  log_skip "test_review_scripts.sh not found"
 fi
 
 # ============================================================

@@ -2,10 +2,10 @@
 
 ## Step 1: 決定下一步
 
-呼叫決策腳本（stdout=變數, stderr=log）：
+呼叫決策腳本（stdout=變數, stderr=log 顯示在終端）：
 
 ```bash
-eval "$(bash .ai/scripts/analyze_next.sh 2>> .ai/exe-logs/analyze_next.log)"
+eval "$(bash .ai/scripts/analyze_next.sh)"
 ```
 
 輸出變數：
@@ -37,8 +37,8 @@ bash .ai/scripts/stop_work.sh "contract_violation"
 |-------------|------|
 | `generate_tasks` | **Read** `tasks/generate-tasks.md`，執行任務生成 |
 | `create_task` | **Read** `tasks/create-task.md`，執行 Issue 創建 |
-| `dispatch_worker` | `bash .ai/scripts/dispatch_worker.sh "$ISSUE_NUMBER" 2>> .ai/exe-logs/dispatch.log` |
-| `check_result` | `bash .ai/scripts/check_result.sh "$ISSUE_NUMBER" 2>> .ai/exe-logs/check.log` |
+| `dispatch_worker` | `bash .ai/scripts/dispatch_worker.sh "$ISSUE_NUMBER"` |
+| `check_result` | `bash .ai/scripts/check_result.sh "$ISSUE_NUMBER"` |
 | `review_pr` | **Read** `tasks/review-pr.md`，執行 PR 審查 |
 | `all_complete` | `bash .ai/scripts/stop_work.sh "all_tasks_complete"` 然後結束 |
 | `none` | `bash .ai/scripts/stop_work.sh "${EXIT_REASON:-none}"` 然後結束 |

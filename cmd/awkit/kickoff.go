@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -116,6 +117,19 @@ func cmdKickoff(args []string) int {
 	if err := os.WriteFile(consecutiveFailuresFile, []byte("0"), 0644); err != nil {
 		output.Error(fmt.Sprintf("Failed to initialize consecutive_failures: %v", err))
 		return 1
+	}
+
+	// Initialize Principal session
+	sessionCmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "init_principal_session")
+	sessionOutput, err := sessionCmd.Output()
+	if err != nil {
+		output.Warning(fmt.Sprintf("Failed to initialize session: %v", err))
+		// Continue without session - not fatal
+	} else {
+		sessionID := strings.TrimSpace(string(sessionOutput))
+		if sessionID != "" {
+			output.Success(fmt.Sprintf("Session: %s", sessionID))
+		}
 	}
 
 	// Lock manager

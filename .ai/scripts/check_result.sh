@@ -12,7 +12,9 @@ set -euo pipefail
 # 初始化
 # ============================================================
 log() {
-  echo "[PRINCIPAL] $(date +%H:%M:%S) | $*" >&2
+  local msg="[PRINCIPAL] $(date +%H:%M:%S) | $*"
+  echo "$msg" >&2
+  echo "$msg" >> .ai/exe-logs/check_result.log 2>/dev/null || true
 }
 
 ISSUE_NUMBER="${1:-}"

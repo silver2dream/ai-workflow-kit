@@ -5,66 +5,89 @@
 ## 輸入
 
 - `PR_NUMBER`: PR 編號（必填）
-- `ISSUE_NUMBER`: 關聯 Issue（可選）
+- `ISSUE_NUMBER`: 關聯 Issue（由 analyze_next.sh 提供）
 
 ## 步驟
 
-### 1. 獲取 PR 信息
+### 1. 獲取審查資訊
+
+執行一次腳本獲取所有需要的資訊：
 
 ```bash
-gh pr view "$PR_NUMBER" --json title,body,additions,deletions,files,baseRefName
-gh pr diff "$PR_NUMBER"
+bash .ai/scripts/prepare_review.sh "$PR_NUMBER" "$ISSUE_NUMBER"
 ```
 
-### 2. 執行 5 項審查標準
+輸出包含：
+- `PRINCIPAL_SESSION_ID`: 審查者 session
+- `CI_STATUS`: CI 狀態（passed/failed）
+- `DIFF_HASH`: diff 的 hash
+- `WORKTREE_PATH`: worktree 路徑
+- Ticket 需求（Issue 內容）
+- PR diff
+- PR commits
 
-1. **Commit 格式**：符合 `[type] subject`
-2. **範圍限制**：變更在 ticket scope 內
-3. **架構合規**：符合 `.ai/rules/_kit/git-workflow.md`
-4. **代碼質量**：無調試代碼、無明顯 bug
-5. **安全檢查**：無敏感資訊洩露
+### 2. 切換到 Worktree 審查代碼
 
-### 3. 生成 AWK Review Comment
+```bash
+cd .worktrees/issue-$ISSUE_NUMBER
+```
+
+在 worktree 中，根據 ticket 需求審查實際代碼。你可以直接讀取任何檔案。
+
+### 3. 執行審查
+
+**對照 ticket 需求和實際代碼，執行以下 6 項審查：**
+
+1. **需求符合度**：PR 是否完成了 ticket 所要求的功能？
+2. **Commit 格式**：是否符合 `[type] subject`（小寫）？
+3. **範圍限制**：有無超出 ticket scope 的修改？
+4. **架構合規**：是否符合專案規範？
+5. **代碼質量**：有無調試代碼、明顯 bug？
+6. **安全檢查**：有無敏感資訊洩露？
+
+**評分標準：**
+- 9-10：完美完成需求，代碼質量優秀
+- 7-8：完成需求，代碼質量良好
+- 5-6：部分完成需求，或有明顯問題
+- 3-4：大部分需求未完成
+- 1-2：完全不符合需求，或有安全問題
+
+### 4. 提交審查結果
+
+準備審查內容（markdown 格式），然後執行：
+
+```bash
+bash .ai/scripts/submit_review.sh "$PR_NUMBER" "$ISSUE_NUMBER" "$SCORE" "$CI_STATUS" "$REVIEW_BODY"
+```
+
+其中 `$REVIEW_BODY` 是你的審查內容，格式：
 
 ```markdown
-<!-- AWK Review -->
+### Code Symbols (New/Modified)
+- `func NewHandler()`
+- `type Config struct`
 
-## Review Summary
+### Score Reason
+完成 ticket 需求，代碼質量良好
 
-**Diff Hash**: <sha256 前 16 字元>
-**Review Cycle**: <N>
+### Suggested Improvements
+- 可以加入更多錯誤處理
 
-### 評分: <N>/10
-
-### 評分理由:
-<詳細說明>
-
-### 可改進之處:
-<建議>
-
-### 潛在風險:
-<風險>
+### Potential Risks
+- 無明顯風險
 ```
 
-### 4. 驗證 Review
-
-```bash
-bash .ai/scripts/verify_review.sh ".ai/temp/review-$PR_NUMBER.md"
-```
-
-### 5. 發布審查
-
-- 分數 >= 7：`gh pr review "$PR_NUMBER" --approve`
-- 分數 < 7：`gh pr review "$PR_NUMBER" --request-changes`
-
-### 6. 自動合併（如果 approve）
-
-```bash
-gh pr merge "$PR_NUMBER" --squash --delete-branch --auto
-```
+腳本會自動：
+- 發布 AWK Review Comment
+- 發布 GitHub Review（approve 或 request-changes）
+- 如果通過且 CI passed：合併 PR、關閉 Issue、更新 tasks.md、清理 worktree
+- 如果不通過：加回 ai-task 標籤讓 Worker 重做
 
 ## 輸出
 
-- PR 已審查
-- 如果 approve 且 CI 通過，PR 已合併
-- 回到 main-loop
+- `RESULT=merged`: PR 已合併
+- `RESULT=approved_ci_failed`: 審查通過但 CI 失敗
+- `RESULT=changes_requested`: 審查不通過
+- `RESULT=merge_failed`: 合併失敗
+
+回到 main-loop。
