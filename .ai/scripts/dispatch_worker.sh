@@ -76,6 +76,13 @@ if [[ "$ISSUE_LABELS" =~ "in-progress" ]]; then
   exit 0
 fi
 
+if [[ "$ISSUE_LABELS" =~ "worker-failed" ]]; then
+  log "✗ Issue 已標記為 worker-failed，需要人工介入"
+  WORKER_STATUS="failed"
+  echo "WORKER_STATUS=$WORKER_STATUS"
+  exit 1
+fi
+
 log "✓ Issue 驗證通過"
 
 # ============================================================
@@ -167,19 +174,18 @@ if [[ "$WORKER_STATUS" == "success" ]] && [[ -n "$PR_URL" ]]; then
   echo "0" > .ai/state/consecutive_failures 2>/dev/null || true
 else
   log "✗ Worker 失敗"
-  
-  # 讀取失敗次數
+
+  # 讀取失敗次數（由 attempt_guard.sh 管理，這裡只讀取）
   FAIL_COUNT_FILE=".ai/runs/issue-$ISSUE_NUMBER/fail_count.txt"
   mkdir -p ".ai/runs/issue-$ISSUE_NUMBER"
-  
+
   FAIL_COUNT=0
   if [[ -f "$FAIL_COUNT_FILE" ]]; then
     FAIL_COUNT=$(cat "$FAIL_COUNT_FILE" 2>/dev/null || echo "0")
   fi
-  
-  FAIL_COUNT=$((FAIL_COUNT + 1))
-  echo "$FAIL_COUNT" > "$FAIL_COUNT_FILE"
-  
+
+  # 注意：不要在這裡遞增 fail_count，attempt_guard.sh 已經處理了
+
   log "失敗次數: $FAIL_COUNT / 3"
   
   # 更新 consecutive_failures

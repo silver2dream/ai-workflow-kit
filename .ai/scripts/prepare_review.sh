@@ -25,7 +25,21 @@ PRINCIPAL_SESSION_ID=$(bash .ai/scripts/session_manager.sh get_current_session_i
 # ============================================================
 # 2. CI Status
 # ============================================================
-CI_STATUS=$(gh pr checks "$PR_NUMBER" --json state --jq '.[].state' 2>/dev/null | sort -u | grep -q "FAILURE" && echo "failed" || echo "passed")
+# Try --json first (gh >= 2.12), fall back to parsing text output for older versions
+CI_STATUS="passed"
+CI_OUTPUT=$(gh pr checks "$PR_NUMBER" --json state --jq '.[].state' 2>/dev/null || true)
+if [[ -n "$CI_OUTPUT" ]]; then
+  # New gh version with --json support
+  if echo "$CI_OUTPUT" | grep -q "FAILURE"; then
+    CI_STATUS="failed"
+  fi
+else
+  # Fallback for older gh versions: parse text output (e.g., "backend  pass  21s  ...")
+  CI_OUTPUT=$(gh pr checks "$PR_NUMBER" 2>/dev/null || true)
+  if echo "$CI_OUTPUT" | grep -qE '\bfail\b'; then
+    CI_STATUS="failed"
+  fi
+fi
 
 # ============================================================
 # 3. Diff Hash

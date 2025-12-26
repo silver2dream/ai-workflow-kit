@@ -123,7 +123,7 @@ fi
 # ============================================================
 log "✗ Worker 失敗或無 PR 創建"
 
-# 讀取失敗次數
+# 讀取失敗次數（由 attempt_guard.sh 管理，這裡只讀取）
 FAIL_COUNT_FILE=".ai/runs/issue-$ISSUE_NUMBER/fail_count.txt"
 mkdir -p ".ai/runs/issue-$ISSUE_NUMBER"
 
@@ -132,14 +132,10 @@ if [[ -f "$FAIL_COUNT_FILE" ]]; then
   FAIL_COUNT=$(cat "$FAIL_COUNT_FILE" 2>/dev/null || echo "0")
 fi
 
-FAIL_COUNT=$((FAIL_COUNT + 1))
-echo "$FAIL_COUNT" > "$FAIL_COUNT_FILE"
+# 注意：不要在這裡遞增 fail_count，attempt_guard.sh 已經處理了
+# 注意：不要在這裡遞增 consecutive_failures，dispatch_worker.sh 已經處理了
 
 log "失敗次數: $FAIL_COUNT / 3"
-
-# 更新 consecutive_failures
-CONSECUTIVE_FAILURES=$(cat .ai/state/consecutive_failures 2>/dev/null || echo "0")
-echo "$((CONSECUTIVE_FAILURES + 1))" > .ai/state/consecutive_failures
 
 if [[ "$FAIL_COUNT" -ge 3 ]]; then
   log "✗ 達到最大重試次數 (3)"
