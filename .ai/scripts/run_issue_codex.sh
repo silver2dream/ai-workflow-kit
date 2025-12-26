@@ -20,7 +20,27 @@ source "$AI_ROOT/scripts/github_comment.sh"
 # ============================================================
 WORKER_SESSION_ID=$(generate_session_id "worker")
 export WORKER_SESSION_ID
-echo "[runner] worker_session_id=$WORKER_SESSION_ID"
+
+# ============================================================
+# Worker Log Function (writes to log file, not stdout/stderr)
+# ============================================================
+WORKER_LOG_FILE="$AI_ROOT/exe-logs/issue-${ISSUE_ID}.worker.log"
+export WORKER_LOG_FILE
+mkdir -p "$(dirname "$WORKER_LOG_FILE")"
+
+worker_log() {
+  local msg="[WORKER] $(date +%H:%M:%S) | $*"
+  printf '%s\n' "$msg" >> "$WORKER_LOG_FILE" 2>/dev/null || true
+}
+
+# Also log with tee to summary file
+worker_log_tee() {
+  local msg="[WORKER] $(date +%H:%M:%S) | $*"
+  printf '%s\n' "$msg" >> "$WORKER_LOG_FILE" 2>/dev/null || true
+  printf '%s\n' "$msg" >> "$SUMMARY_FILE" 2>/dev/null || true
+}
+
+worker_log "worker_session_id=$WORKER_SESSION_ID"
 
 # ============================================================
 # Repo Type Detection Functions
@@ -127,7 +147,7 @@ check_submodule_boundary() {
   
   if [[ -n "$outside_files" ]]; then
     if [[ "$allow_parent" == "true" ]]; then
-      echo "[runner] WARNING: Changes outside submodule boundary (allowed by config):" >&2
+      worker_log "WARNING: Changes outside submodule boundary (allowed by config):"
       echo "$outside_files" >&2
       return 0
     else
@@ -148,13 +168,13 @@ git_commit_submodule() {
   local commit_msg="$3"
   local submodule_dir="$wt_dir/$submodule_path"
   
-  echo "[runner] submodule commit: $submodule_path" >&2
+  worker_log "submodule commit: $submodule_path"
   
   # Stage and commit in submodule first (Req 6.1)
   git -C "$submodule_dir" add -A
   
   if git -C "$submodule_dir" diff --cached --quiet; then
-    echo "[runner] no changes in submodule" >&2
+    worker_log "no changes in submodule"
     return 1
   fi
   
@@ -165,7 +185,7 @@ git_commit_submodule() {
   
   # Record submodule SHA (Req 6.2)
   SUBMODULE_SHA="$(git -C "$submodule_dir" rev-parse HEAD)"
-  echo "[runner] submodule SHA: $SUBMODULE_SHA" >&2
+  worker_log "submodule SHA: $SUBMODULE_SHA"
   
   # Update parent's submodule reference (Req 6.2)
   git -C "$wt_dir" add "$submodule_path"
@@ -178,7 +198,7 @@ git_commit_submodule() {
   
   # Record parent SHA
   PARENT_SHA="$(git -C "$wt_dir" rev-parse HEAD)"
-  echo "[runner] parent SHA: $PARENT_SHA" >&2
+  worker_log "parent SHA: $PARENT_SHA"
   
   return 0
 }
@@ -190,7 +210,7 @@ git_push_submodule() {
   local branch="$3"
   local submodule_dir="$wt_dir/$submodule_path"
   
-  echo "[runner] submodule push: $submodule_path" >&2
+  worker_log "submodule push: $submodule_path"
   
   # Get submodule's default branch for push
   local submodule_branch
@@ -208,7 +228,7 @@ git_push_submodule() {
     return 2
   fi
   
-  echo "[runner] submodule pushed to origin/$submodule_branch" >&2
+  worker_log "submodule pushed to origin/$submodule_branch"
   
   # Push parent (Req 6.4)
   if ! git -C "$wt_dir" push -u origin "$branch"; then
@@ -218,7 +238,7 @@ git_push_submodule() {
     return 2
   fi
   
-  echo "[runner] parent pushed to origin/$branch" >&2
+  worker_log "parent pushed to origin/$branch"
   CONSISTENCY_STATUS="consistent"
   
   return 0
@@ -259,7 +279,7 @@ check_script_modifications() {
   
   if [[ -n "$violations" ]]; then
     if [[ "$allow_script_changes" == "true" ]]; then
-      echo "[runner] WARNING: Script modifications detected (allowed by approval flag):" >&2
+      worker_log "WARNING: Script modifications detected (allowed by approval flag):"
       echo "$violations" >&2
       return 0
     else
@@ -317,7 +337,7 @@ check_sensitive_info() {
   
   if [[ -n "$found_secrets" ]]; then
     if [[ "$allow_secrets" == "true" ]]; then
-      echo "[runner] WARNING: Potential sensitive information detected (allowed by flag):" >&2
+      worker_log "WARNING: Potential sensitive information detected (allowed by flag):"
       echo "$found_secrets" >&2
       return 0
     else
@@ -470,7 +490,7 @@ setup_submodule_branch() {
   local submodule_dir="$1"
   local branch_name="$2"
   
-  echo "[runner] setup submodule branch: $branch_name" >&2
+  worker_log "setup submodule branch: $branch_name"
   
   # Get submodule's default branch (Req 16.2)
   local default_branch
@@ -478,20 +498,20 @@ setup_submodule_branch() {
   
   # Check if branch already exists (Req 16.4)
   if git -C "$submodule_dir" show-ref --verify --quiet "refs/heads/$branch_name"; then
-    echo "[runner] reusing existing submodule branch: $branch_name" >&2
+    worker_log "reusing existing submodule branch: $branch_name"
     git -C "$submodule_dir" checkout "$branch_name" >&2
     return 0
   fi
   
   # Check if branch exists on remote
   if git -C "$submodule_dir" show-ref --verify --quiet "refs/remotes/origin/$branch_name"; then
-    echo "[runner] checking out remote submodule branch: $branch_name" >&2
+    worker_log "checking out remote submodule branch: $branch_name"
     git -C "$submodule_dir" checkout -b "$branch_name" "origin/$branch_name" >&2
     return 0
   fi
   
   # Create new branch from default branch (Req 16.1)
-  echo "[runner] creating new submodule branch from $default_branch" >&2
+  worker_log "creating new submodule branch from $default_branch"
   git -C "$submodule_dir" checkout -b "$branch_name" "origin/$default_branch" >&2 || \
     git -C "$submodule_dir" checkout -b "$branch_name" >&2
   
@@ -547,7 +567,7 @@ fi
 export REPO_TYPE
 export REPO_PATH
 
-echo "[runner] repo=$REPO type=$REPO_TYPE path=$REPO_PATH"
+worker_log "repo=$REPO type=$REPO_TYPE path=$REPO_PATH"
 
 RELEASE_FLAG="$(grep -iE '^- +Release:' "$TASK_PATH" | head -n 1 | sed -E 's/^- +Release:\s*//I' | tr -d '\r' || echo "false")"
 RELEASE_FLAG="$(echo "$RELEASE_FLAG" | awk '{print tolower($0)}')"
@@ -765,7 +785,7 @@ if [[ "$REPO" != "root" ]]; then
   WORK_DIR="$WT_DIR/$REPO_PATH_NORMALIZED"
 fi
 
-echo "[runner] preflight repo=$REPO type=$REPO_TYPE"
+worker_log "preflight repo=$REPO type=$REPO_TYPE"
 trace_step_start "preflight"
 # Always check monorepo root is clean
 if [[ -n "$(git -C "$MONO_ROOT" status --porcelain)" ]]; then
@@ -808,7 +828,7 @@ if [[ ! -d "$WORK_DIR" ]]; then
   exit 2
 fi
 
-echo "[runner] worktree=$WT_DIR work_dir=$WORK_DIR"
+worker_log "worktree=$WT_DIR work_dir=$WORK_DIR"
 trace_step_end "success"
 
 cd "$WT_DIR"
@@ -818,7 +838,7 @@ git checkout -q "$BRANCH" || true
 MODE="${AI_BRANCH_MODE:-reuse}" # reuse|reset
 if [[ "$MODE" == "reset" ]]; then
   BASE_REF="${AI_RESET_BASE:-origin/$INTEGRATION_BRANCH}"
-  echo "[runner] reset branch to $BASE_REF"
+  worker_log "reset branch to $BASE_REF"
   git fetch origin --prune >/dev/null 2>&1 || true
   git reset --hard "$BASE_REF"
 fi
@@ -944,7 +964,7 @@ if [[ -f "$RESULT_FILE" ]]; then
     AI_PREV_SESSION_IDS=$(echo "$PREV_SESSIONS" | _jq -c --arg sid "$PREV_SESSION_ID" '. + [$sid]')
     # Get previous failure reason if available
     AI_PREV_FAILURE_REASON=$(_jq -r '.session.previous_failure_reason // ""' "$RESULT_FILE" 2>/dev/null || echo "")
-    echo "[runner] retry attempt $AI_ATTEMPT_NUMBER (previous: $PREV_SESSION_ID)"
+    worker_log "retry attempt $AI_ATTEMPT_NUMBER (previous: $PREV_SESSION_ID)"
   fi
 fi
 
@@ -962,7 +982,7 @@ if command -v gh >/dev/null 2>&1; then
     EXTRA_DATA="| Attempt | $AI_ATTEMPT_NUMBER |"
   fi
   add_issue_comment "$ISSUE_ID" "$WORKER_SESSION_ID" "worker_start" "" "$EXTRA_DATA" 2>/dev/null || true
-  echo "[runner] posted worker_start comment to Issue #$ISSUE_ID"
+  worker_log "posted worker_start comment to Issue #$ISSUE_ID"
 fi
 trace_step_end "success"
 
@@ -974,7 +994,7 @@ set +e
 while [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; do
   ATTEMPT=$((ATTEMPT + 1))
   CODEX_LOG="${CODEX_LOG_BASE}.attempt-${ATTEMPT}.log"
-  echo "[runner] codex attempt $ATTEMPT/$MAX_ATTEMPTS" | tee -a "$SUMMARY_FILE"
+  worker_log_tee "codex attempt $ATTEMPT/$MAX_ATTEMPTS"
   trace_step_start "codex_exec_attempt_$ATTEMPT"
   NO_RETRY=""
   if command -v codex >/dev/null 2>&1; then
@@ -1001,7 +1021,7 @@ while [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; do
     NO_RETRY="true"
   fi
 
-  echo "[runner] codex attempt $ATTEMPT rc=$RC" | tee -a "$SUMMARY_FILE"
+  worker_log_tee "codex attempt $ATTEMPT rc=$RC"
 
   if [[ "$RC" -eq 0 ]]; then
     trace_step_end "success" "" "{\"attempt\": $ATTEMPT}"
@@ -1014,7 +1034,7 @@ while [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; do
   fi
 
   if [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; then
-    echo "[runner] retry in ${RETRY_DELAY}s" | tee -a "$SUMMARY_FILE"
+    worker_log_tee "retry in ${RETRY_DELAY}s"
     sleep "$RETRY_DELAY"
   fi
 done
@@ -1030,7 +1050,7 @@ export AI_EXEC_DURATION="$EXEC_DURATION"
 
 if [[ "$RC" -ne 0 ]]; then
   record_error "codex failed rc=$RC"
-  echo "[runner] codex failed rc=$RC" | tee -a "$SUMMARY_FILE"
+  worker_log_tee "codex failed rc=$RC"
   
   # ============================================================
   # Extract failure reason for retry tracking (Req 8.3)
@@ -1065,7 +1085,7 @@ if [[ "$RC" -ne 0 ]]; then
 | Duration | $(format_duration "$AI_EXEC_DURATION") |
 | Exit Code | $RC |"
     add_issue_comment "$ISSUE_ID" "$WORKER_SESSION_ID" "worker_complete" "" "$EXTRA_DATA" 2>/dev/null || true
-    echo "[runner] posted worker_complete (failed) comment to Issue #$ISSUE_ID"
+    worker_log "posted worker_complete (failed) comment to Issue #$ISSUE_ID"
   fi
   trace_step_end "success"
   
@@ -1128,7 +1148,7 @@ trace_step_start "git_commit"
 
 # Clean up any stale index.lock files (may be left by sandbox restrictions)
 if [[ -f "$WT_DIR/.git/index.lock" ]]; then
-  echo "[runner] WARNING: Removing stale index.lock" | tee -a "$SUMMARY_FILE"
+  worker_log_tee "WARNING: Removing stale index.lock"
   rm -f "$WT_DIR/.git/index.lock" 2>/dev/null || true
 fi
 
@@ -1137,7 +1157,7 @@ fi
 if [[ -f "$WT_DIR/.git" ]]; then
   ACTUAL_GIT_DIR="$(cat "$WT_DIR/.git" | sed 's/gitdir: //')"
   if [[ -f "$ACTUAL_GIT_DIR/index.lock" ]]; then
-    echo "[runner] WARNING: Removing stale index.lock from gitdir" | tee -a "$SUMMARY_FILE"
+    worker_log_tee "WARNING: Removing stale index.lock from gitdir"
     rm -f "$ACTUAL_GIT_DIR/index.lock" 2>/dev/null || true
   fi
 fi
@@ -1243,7 +1263,7 @@ if command -v gh >/dev/null 2>&1; then
   if [[ -n "$EXISTING_PR_URL" ]]; then
     # PR already exists (retry scenario), just use existing PR
     PR_URL="$EXISTING_PR_URL"
-    echo "[runner] PR already exists: $PR_URL" | tee -a "$SUMMARY_FILE"
+    worker_log_tee "PR already exists: $PR_URL"
   else
     # Create new PR
     PR_URL="$(gh pr create \
@@ -1298,13 +1318,13 @@ trace_step_start "worker_complete_comment"
 if command -v gh >/dev/null 2>&1; then
   EXTRA_DATA=$(build_worker_complete_extra "$PR_URL" "$AI_EXEC_DURATION")
   add_issue_comment "$ISSUE_ID" "$WORKER_SESSION_ID" "worker_complete" "" "$EXTRA_DATA" 2>/dev/null || true
-  echo "[runner] posted worker_complete comment to Issue #$ISSUE_ID"
+  worker_log "posted worker_complete comment to Issue #$ISSUE_ID"
 fi
 trace_step_end "success"
 
 # Reset fail_count on success so subsequent runs start fresh
 if [[ -f "$RUN_DIR/fail_count.txt" ]]; then
-  echo "[runner] resetting fail_count (success)"
+  worker_log "resetting fail_count (success)"
   rm -f "$RUN_DIR/fail_count.txt"
 fi
 

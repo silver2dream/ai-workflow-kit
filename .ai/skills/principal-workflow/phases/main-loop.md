@@ -37,11 +37,20 @@ bash .ai/scripts/stop_work.sh "contract_violation"
 |-------------|------|
 | `generate_tasks` | **Read** `tasks/generate-tasks.md`，執行任務生成 |
 | `create_task` | **Read** `tasks/create-task.md`，執行 Issue 創建 |
-| `dispatch_worker` | `bash .ai/scripts/dispatch_worker.sh "$ISSUE_NUMBER"` |
+| `dispatch_worker` | `bash .ai/scripts/dispatch_worker.sh "$ISSUE_NUMBER"` ⚠️ **同步等待，不要讀 log 或監控** |
 | `check_result` | `bash .ai/scripts/check_result.sh "$ISSUE_NUMBER"` |
 | `review_pr` | **Read** `tasks/review-pr.md`，執行 PR 審查 |
 | `all_complete` | `bash .ai/scripts/stop_work.sh "all_tasks_complete"` 然後結束 |
 | `none` | `bash .ai/scripts/stop_work.sh "${EXIT_REASON:-none}"` 然後結束 |
+
+## ⚠️ CRITICAL: dispatch_worker 行為規範
+
+執行 `dispatch_worker.sh` 時：
+1. **腳本是同步的** - 會等待 Worker 完成才返回
+2. **不要讀取 log 檔案** - 這會浪費 context
+3. **不要監控進度** - 腳本會處理一切
+4. **不要輸出 Worker 狀態描述** - 等腳本返回 `WORKER_STATUS` 即可
+5. **執行後直接 eval 結果，回到 Step 1**
 
 ## Step 4: Loop Safety
 

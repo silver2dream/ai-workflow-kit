@@ -51,6 +51,26 @@ The Skill handles:
 
 ---
 
+## ⚠️ CRITICAL RULES
+
+### Context Management
+- **DO NOT** read log files to monitor Worker progress
+- **DO NOT** output verbose descriptions of what Worker is doing
+- **DO NOT** poll or check status repeatedly
+- Scripts are **synchronous** - they return when done, just wait
+
+### dispatch_worker Behavior
+When executing `dispatch_worker.sh`:
+1. Run the script and **wait for it to return**
+2. The script handles all Worker coordination internally
+3. **DO NOT** read `.ai/exe-logs/` or any log files
+4. **DO NOT** describe Worker progress or status
+5. Just `eval` the output and continue to next loop iteration
+
+Violating these rules will cause **context overflow** and workflow failure.
+
+---
+
 ## REPO TYPE SUPPORT
 
 AWK supports three repository types configured in `.ai/config/workflow.yaml`:
@@ -96,6 +116,8 @@ touch .ai/state/STOP
 | Rules | `.ai/rules/` |
 | Specs | `.ai/specs/` |
 | Results | `.ai/results/` |
+| Principal Log | `.ai/exe-logs/principal.log` |
+| Worker Logs | `.ai/exe-logs/issue-{N}.worker.log` |
 
 ---
 

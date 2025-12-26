@@ -28,7 +28,7 @@ func TestSpinner_NonTTY(t *testing.T) {
 
 	// Check output - should have static message
 	output := buf.String()
-	if !strings.Contains(output, "[#42] Worker 執行中...") {
+	if !strings.Contains(output, "[#42] Worker running...") {
 		t.Errorf("Expected static message, got %q", output)
 	}
 

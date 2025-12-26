@@ -50,6 +50,46 @@ func TestExtractTextFromStreamJSON(t *testing.T) {
 			input:    `{"type":"assistant","message":{}}`,
 			expected: "",
 		},
+		{
+			name:     "tool_use Bash command (capital B)",
+			input:    `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"bash .ai/scripts/dispatch_worker.sh 15"}}]}}`,
+			expected: "[EXEC] bash .ai/scripts/dispatch_worker.sh 15",
+		},
+		{
+			name:     "tool_use bash command (lowercase)",
+			input:    `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"bash","input":{"command":"go test ./..."}}]}}`,
+			expected: "[EXEC] go test ./...",
+		},
+		{
+			name:     "user message with tool_result",
+			input:    `{"type":"user","message":{"content":[{"type":"tool_result","content":"[WORKER] worker_session_id=worker-123\nWorker completed"}]}}`,
+			expected: "[WORKER] worker_session_id=worker-123\nWorker completed",
+		},
+		{
+			name:     "user message with tool_result and whitespace",
+			input:    `{"type":"user","message":{"content":[{"type":"tool_result","content":"[PRINCIPAL] 10:00:05 | test\r\n"}]}}`,
+			expected: "[PRINCIPAL] 10:00:05 | test",
+		},
+		{
+			name:     "mixed text and tool_use in assistant",
+			input:    `{"type":"assistant","message":{"content":[{"type":"text","text":"Running dispatch..."},{"type":"tool_use","name":"Bash","input":{"command":"dispatch_worker.sh 10"}}]}}`,
+			expected: "Running dispatch...\n[EXEC] dispatch_worker.sh 10",
+		},
+		{
+			name:     "content_block_delta with text",
+			input:    `{"type":"content_block_delta","delta":{"text":"streaming text"}}`,
+			expected: "streaming text",
+		},
+		{
+			name:     "content_block_delta without text",
+			input:    `{"type":"content_block_delta","delta":{}}`,
+			expected: "",
+		},
+		{
+			name:     "tool_use non-bash (should be ignored)",
+			input:    `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"path":"test.txt"}}]}}`,
+			expected: "",
+		},
 	}
 
 	for _, tt := range tests {

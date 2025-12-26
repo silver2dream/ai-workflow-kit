@@ -15,6 +15,8 @@ const (
 	SpinnerInterval = 100 * time.Millisecond
 )
 
+// Note: colorGreen and colorReset are defined in output.go
+
 // Spinner displays an animated spinner during Worker execution
 type Spinner struct {
 	issueID    int
@@ -127,7 +129,7 @@ func (s *Spinner) loop() {
 	if !s.isTTY {
 		s.mu.Lock()
 		if !s.printed {
-			fmt.Fprintf(s.writer, "[#%d] Worker 執行中...\n", s.issueID)
+			fmt.Fprintf(s.writer, "[#%d] Worker running...\n", s.issueID)
 			s.printed = true
 		}
 		s.mu.Unlock()
@@ -167,9 +169,9 @@ func (s *Spinner) render() {
 	frame := s.frames[s.frameIndex]
 	s.frameIndex = (s.frameIndex + 1) % len(s.frames)
 
-	// Format: ⠋ [#N] Worker 執行中... (M:SS)
-	fmt.Fprintf(s.writer, "\r%c [#%d] Worker 執行中... (%d:%02d)",
-		frame, s.issueID, minutes, seconds)
+	// Format: ⠋ [#N] Worker running... (M:SS) with green spinner
+	fmt.Fprintf(s.writer, "\r%s%c%s [#%d] Worker running... (%d:%02d)",
+		colorGreen, frame, colorReset, s.issueID, minutes, seconds)
 }
 
 // Duration returns how long the spinner has been running

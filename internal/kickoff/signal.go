@@ -26,6 +26,7 @@ type SignalHandler struct {
 	executor    *PTYExecutor
 	state       *StateManager
 	lock        *LockManager
+	fanIn       *FanInManager
 	monitors    []*IssueMonitor
 	output      *OutputFormatter
 	gracefulTO  time.Duration
@@ -69,6 +70,13 @@ func (s *SignalHandler) RemoveMonitor(m *IssueMonitor) {
 // SetCleanupCallback sets a callback to be called during cleanup
 func (s *SignalHandler) SetCleanupCallback(cb func()) {
 	s.onCleanup = cb
+}
+
+// SetFanInManager sets the FanInManager for cleanup
+func (s *SignalHandler) SetFanInManager(fanIn *FanInManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fanIn = fanIn
 }
 
 // Setup registers signal handlers for graceful shutdown
@@ -231,6 +239,11 @@ func (s *SignalHandler) cleanup(monitors []*IssueMonitor, graceful bool) {
 	// Stop all monitors
 	for _, m := range monitors {
 		m.Stop("process_exit")
+	}
+
+	// Stop fan-in manager (stops all tailers, waits, closes channel)
+	if s.fanIn != nil {
+		s.fanIn.Stop()
 	}
 
 	// Run cleanup callback

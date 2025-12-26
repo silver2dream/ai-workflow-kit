@@ -130,6 +130,77 @@ func TestOutputParser_ParseSTEP4(t *testing.T) {
 	}
 }
 
+func TestOutputParser_NewSkillsFormat(t *testing.T) {
+	tests := []struct {
+		name          string
+		line          string
+		expectStart   bool
+		expectEnd     bool
+		expectedIssue int
+	}{
+		{
+			name:          "dispatch format Chinese",
+			line:          "[PRINCIPAL] 10:00:05 | 派工 Issue #15",
+			expectStart:   true,
+			expectedIssue: 15,
+		},
+		{
+			name:          "dispatch_worker.sh call with quotes",
+			line:          `[EXEC] bash .ai/scripts/dispatch_worker.sh "15"`,
+			expectStart:   true,
+			expectedIssue: 15,
+		},
+		{
+			name:          "dispatch_worker.sh call without quotes",
+			line:          `[EXEC] bash .ai/scripts/dispatch_worker.sh 42`,
+			expectStart:   true,
+			expectedIssue: 42,
+		},
+		{
+			name:      "worker complete Chinese",
+			line:      "[PRINCIPAL] 10:10:30 | Worker 執行完成 (exit code: 0)",
+			expectEnd: true,
+		},
+		{
+			name:      "worker status output",
+			line:      "WORKER_STATUS=success",
+			expectEnd: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var startCalled bool
+			var endCalled bool
+			var receivedIssue int
+
+			parser := NewOutputParser(
+				func(issueID int) {
+					startCalled = true
+					receivedIssue = issueID
+				},
+				func() {
+					endCalled = true
+				},
+			)
+
+			parser.Parse(tt.line)
+
+			if startCalled != tt.expectStart {
+				t.Errorf("Expected start called=%v, got %v", tt.expectStart, startCalled)
+			}
+
+			if tt.expectStart && receivedIssue != tt.expectedIssue {
+				t.Errorf("Expected issue %d, got %d", tt.expectedIssue, receivedIssue)
+			}
+
+			if endCalled != tt.expectEnd {
+				t.Errorf("Expected end called=%v, got %v", tt.expectEnd, endCalled)
+			}
+		})
+	}
+}
+
 func TestOutputParser_NilCallbacks(t *testing.T) {
 	// Should not panic with nil callbacks
 	parser := NewOutputParser(nil, nil)
@@ -137,6 +208,8 @@ func TestOutputParser_NilCallbacks(t *testing.T) {
 	// These should not panic
 	parser.Parse("[PRINCIPAL] 10:43:45 | STEP-3    | issue #42")
 	parser.Parse("[PRINCIPAL] 10:44:30 | STEP-4    | done")
+	parser.Parse("[PRINCIPAL] 10:00:05 | 派工 Issue #15")
+	parser.Parse("WORKER_STATUS=success")
 }
 
 func TestOutputParser_MultipleIssues(t *testing.T) {
