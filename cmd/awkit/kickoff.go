@@ -447,6 +447,40 @@ func extractTextFromStreamJSON(line string) string {
 							}
 						}
 					}
+				case "tool_use":
+					// Show bash commands being executed
+					toolName, _ := contentItem["name"].(string)
+					if toolName == "Bash" || toolName == "bash" || toolName == "execute_bash" {
+						if input, ok := contentItem["input"].(map[string]any); ok {
+							if cmd, ok := input["command"].(string); ok {
+								texts = append(texts, fmt.Sprintf("[EXEC] %s", cmd))
+							}
+						}
+					}
+				}
+			}
+		}
+		return strings.Join(texts, "\n")
+
+	case "user":
+		// Extract tool_result from user message (contains bash output)
+		message, ok := event["message"].(map[string]any)
+		if !ok {
+			return ""
+		}
+		content, ok := message["content"].([]any)
+		if !ok {
+			return ""
+		}
+
+		var texts []string
+		for _, item := range content {
+			if contentItem, ok := item.(map[string]any); ok {
+				contentType, _ := contentItem["type"].(string)
+				if contentType == "tool_result" {
+					if output, ok := contentItem["content"].(string); ok && output != "" {
+						texts = append(texts, strings.TrimSpace(output))
+					}
 				}
 			}
 		}
