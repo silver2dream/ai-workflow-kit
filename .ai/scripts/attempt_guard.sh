@@ -23,6 +23,13 @@ RUN_DIR="$ROOT/.ai/runs/issue-$ISSUE_ID"
 STATE_DIR="$ROOT/.ai/state"
 mkdir -p "$RUN_DIR" "$STATE_DIR"
 
+# Worker log function (uses WORKER_LOG_FILE from parent script)
+worker_log() {
+  if [[ -n "${WORKER_LOG_FILE:-}" ]]; then
+    printf '[WORKER] %s | %s\n' "$(date +%H:%M:%S)" "$*" >> "$WORKER_LOG_FILE" 2>/dev/null || true
+  fi
+}
+
 MAX="${AI_MAX_ATTEMPTS:-3}"
 COUNT_FILE="$RUN_DIR/fail_count.txt"
 HISTORY_FILE="$STATE_DIR/failure_history.jsonl"
@@ -38,7 +45,7 @@ fi
 if [[ "$COUNT" -ge "$MAX" ]]; then
   HAS_WORKER_FAILED_LABEL=$(gh issue view "$ISSUE_ID" --json labels -q '.labels[].name' 2>/dev/null | grep -c "^worker-failed$" || true)
   if [[ "$HAS_WORKER_FAILED_LABEL" -eq 0 ]]; then
-    echo "[attempt_guard] worker-failed label removed, resetting fail_count"
+    worker_log "worker-failed label removed, resetting fail_count"
     COUNT=0
     echo "$COUNT" > "$COUNT_FILE"
   fi
@@ -63,14 +70,14 @@ PATTERN_ID=$(echo "$ANALYSIS" | python3 -c "import sys,json; d=json.load(sys.std
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 echo "{\"timestamp\":\"$TIMESTAMP\",\"issue_id\":$ISSUE_ID,\"attempt\":$COUNT,\"pattern_id\":\"$PATTERN_ID\",\"type\":\"$ERROR_TYPE\",\"retryable\":$RETRYABLE}" >> "$HISTORY_FILE"
 
-echo "[attempt_guard] issue=$ISSUE_ID label=$LABEL attempt=$COUNT/$MAX"
-echo "[attempt_guard] error_type=$ERROR_TYPE retryable=$RETRYABLE"
+worker_log "issue=$ISSUE_ID label=$LABEL attempt=$COUNT/$MAX"
+worker_log "error_type=$ERROR_TYPE retryable=$RETRYABLE"
 
 # Stop immediately for non-retryable failures.
 if [[ "$MATCHED" == "true" ]] && [[ "$RETRYABLE" == "false" ]]; then
-  echo "[attempt_guard] NON-RETRYABLE ERROR: $ERROR_TYPE" >&2
+  worker_log "NON-RETRYABLE ERROR: $ERROR_TYPE"
   if [[ -n "$SUGGESTION" ]]; then
-    echo "[attempt_guard] Suggestion: $SUGGESTION" >&2
+    worker_log "Suggestion: $SUGGESTION"
   fi
   exit 1
 fi
@@ -81,7 +88,7 @@ echo "$COUNT" > "$COUNT_FILE"
 
 # Stop-loss when exceeding max attempts.
 if [[ "$COUNT" -gt "$MAX" ]]; then
-  echo "[attempt_guard] STOP-LOSS: exceeded max attempts ($MAX)" >&2
+  worker_log "STOP-LOSS: exceeded max attempts ($MAX)"
   exit 3
 fi
 
@@ -89,10 +96,10 @@ fi
 if [[ "$MATCHED" == "true" ]] && [[ "$RETRYABLE" == "true" ]]; then
   RETRY_DELAY=$(echo "$ANALYSIS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('retry_delay_seconds',0))" 2>/dev/null || echo "0")
   if [[ "$RETRY_DELAY" -gt 0 ]]; then
-    echo "[attempt_guard] Waiting ${RETRY_DELAY}s before retry..."
+    worker_log "Waiting ${RETRY_DELAY}s before retry..."
     sleep "$RETRY_DELAY"
   fi
 fi
 
-echo "[attempt_guard] OK to proceed with attempt $COUNT"
+worker_log "OK to proceed with attempt $COUNT"
 exit 0

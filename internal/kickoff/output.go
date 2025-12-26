@@ -21,6 +21,7 @@ const (
 	colorRed    = "\033[31m"
 	colorGreen  = "\033[32m"
 	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
 	colorCyan   = "\033[36m"
 	colorBold   = "\033[1m"
 )
@@ -124,4 +125,24 @@ func (o *OutputFormatter) Cyan(s string) string {
 		return colorCyan + s + colorReset
 	}
 	return s
+}
+
+// ColorizeLogLine colorizes [PRINCIPAL] and [WORKER] labels in log lines
+// [PRINCIPAL] gets blue color, [WORKER] gets green color
+func (o *OutputFormatter) ColorizeLogLine(line string) string {
+	if !o.useColors {
+		return line
+	}
+
+	// Colorize [PRINCIPAL] label with blue
+	if len(line) >= 11 && line[:11] == "[PRINCIPAL]" {
+		return colorBlue + "[PRINCIPAL]" + colorReset + line[11:]
+	}
+
+	// Colorize [WORKER] label with green
+	if len(line) >= 8 && line[:8] == "[WORKER]" {
+		return colorGreen + "[WORKER]" + colorReset + line[8:]
+	}
+
+	return line
 }

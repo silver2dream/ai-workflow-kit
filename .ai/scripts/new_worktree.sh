@@ -15,6 +15,13 @@ ROOT="$(git rev-parse --show-toplevel)"
 WT_DIR="$ROOT/.worktrees/issue-$ISSUE_ID"
 CONFIG_FILE="$ROOT/.ai/config/workflow.yaml"
 
+# Worker log function (uses WORKER_LOG_FILE from parent script)
+worker_log() {
+  if [[ -n "${WORKER_LOG_FILE:-}" ]]; then
+    printf '[WORKER] %s | %s\n' "$(date +%H:%M:%S)" "$*" >> "$WORKER_LOG_FILE" 2>/dev/null || true
+  fi
+}
+
 # Read integration branch from config
 if [[ -f "$CONFIG_FILE" ]]; then
   DEFAULT_BASE=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c['git']['integration_branch'])" 2>/dev/null || echo "develop")
@@ -34,7 +41,7 @@ if [[ -d "$WT_DIR" ]]; then
 fi
 
 # Ensure base is up to date once (no loops)
-echo "[new_worktree] fetch origin" >&2
+worker_log "fetch origin"
 git -C "$ROOT" fetch origin --prune >&2
 
 # Ensure local base exists
@@ -69,7 +76,7 @@ git -C "$ROOT" worktree add "$WT_DIR" "$BRANCH" >&2
 case "$REPO_TYPE" in
   root)
     # Root type: init all submodules (Req 2.3)
-    echo "[new_worktree] init submodules (root type)" >&2
+    worker_log "init submodules (root type)"
     git -C "$WT_DIR" submodule sync --recursive >&2 || true
     git -C "$WT_DIR" submodule update --init --recursive >&2 || true
     ;;
@@ -89,12 +96,12 @@ case "$REPO_TYPE" in
       git -C "$ROOT" worktree remove --force "$WT_DIR" >&2 || true
       exit 2
     fi
-    echo "[new_worktree] verified directory exists: $WORK_DIR" >&2
+    worker_log "verified directory exists: $WORK_DIR"
     ;;
 
   submodule)
     # Submodule type: init specific submodule (Req 4.1-4.5, 14.4)
-    echo "[new_worktree] init submodule: $REPO_PATH" >&2
+    worker_log "init submodule: $REPO_PATH"
     
     # Sync and init the specific submodule
     git -C "$WT_DIR" submodule sync "$REPO_PATH" >&2 || true
@@ -119,7 +126,7 @@ case "$REPO_TYPE" in
       exit 2
     fi
     
-    echo "[new_worktree] submodule initialized: $SUBMODULE_DIR" >&2
+    worker_log "submodule initialized: $SUBMODULE_DIR"
     ;;
 
   *)

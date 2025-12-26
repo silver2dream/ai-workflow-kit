@@ -215,6 +215,16 @@ func cmdKickoff(args []string) int {
 	signalHandler := kickoff.NewSignalHandler(executor, state, lock)
 	signalHandler.Setup()
 
+	// Create fan-in manager for log aggregation
+	fanIn := kickoff.NewFanInManager(1000)
+	defer fanIn.Stop()
+
+	// Register fan-in manager with signal handler for cleanup
+	signalHandler.SetFanInManager(fanIn)
+
+	// Start principal log tailer
+	fanIn.StartPrincipalTailer(logDir)
+
 	// Start executor
 	if err := executor.Start(); err != nil {
 		output.Error(fmt.Sprintf("Failed to start Claude CLI: %v", err))
@@ -229,8 +239,9 @@ func cmdKickoff(args []string) int {
 	var currentMonitor *kickoff.IssueMonitor
 	var currentSpinner *kickoff.Spinner
 
-	parser := kickoff.NewOutputParser(
+	parser := kickoff.NewOutputParserWithTailerCallbacks(
 		func(issueID int) {
+			// onIssueStart - Start spinner and monitor
 			// Stop previous monitor if any
 			if currentMonitor != nil {
 				currentMonitor.Stop("new_issue")
@@ -265,30 +276,57 @@ func cmdKickoff(args []string) int {
 			currentMonitor.Start()
 		},
 		func() {
-			// STEP-4 detected
+			// onIssueEnd - Worker complete detected
 			if currentMonitor != nil {
-				currentMonitor.Stop("step4_detected")
+				currentMonitor.Stop("worker_complete")
 				signalHandler.RemoveMonitor(currentMonitor)
 			}
 			if currentSpinner != nil {
 				duration := currentSpinner.Duration()
-				currentSpinner.Stop(fmt.Sprintf("✓ [#%d] Worker 完成 (%s)",
+				currentSpinner.Stop(fmt.Sprintf("✓ [#%d] Worker completed (%s)",
 					currentMonitor.IssueID(),
 					formatDuration(duration)))
 			}
 			currentMonitor = nil
 			currentSpinner = nil
 		},
+		func(issueID int) {
+			// onDispatchWorker - Start worker tailer
+			fanIn.StartWorkerTailer(logDir, issueID)
+		},
+		func() {
+			// onWorkerStatus - Stop worker tailer
+			fanIn.StopWorkerTailer()
+		},
 	)
 
-	// Read and process output (stream-json format)
+	// Read and process output (stream-json format) via goroutine
 	outputReader := executor.Output()
-	scanner := bufio.NewScanner(outputReader)
 
 	// Increase scanner buffer for large JSON lines
 	const maxScanTokenSize = 1024 * 1024 // 1MB
-	buf := make([]byte, maxScanTokenSize)
-	scanner.Buffer(buf, maxScanTokenSize)
+
+	// Claude stream producer goroutine
+	go func() {
+		defer fanIn.Stop() // Close channel when executor finishes (unblocks main loop)
+
+		scanner := bufio.NewScanner(outputReader)
+		buf := make([]byte, maxScanTokenSize)
+		scanner.Buffer(buf, maxScanTokenSize)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// Parse JSON to extract text content
+			text := extractTextFromStreamJSON(line)
+			if text == "" {
+				continue
+			}
+
+			// Send to fan-in channel
+			fanIn.SendClaudeLine(text)
+		}
+	}()
 
 	// Also write to logger if in background mode
 	var writers []io.Writer
@@ -296,27 +334,21 @@ func cmdKickoff(args []string) int {
 		writers = append(writers, logger)
 	}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Parse JSON to extract text content
-		text := extractTextFromStreamJSON(line)
-		if text == "" {
-			continue
-		}
-
+	// Main goroutine: consume from fan-in channel
+	for logLine := range fanIn.Channel() {
 		// Pause spinner while printing
 		if currentSpinner != nil {
 			currentSpinner.Pause()
 			currentSpinner.ClearLine()
 		}
 
-		// Write to stdout
-		fmt.Println(text)
+		// Colorize log labels and write to stdout
+		colorizedLine := output.ColorizeLogLine(logLine.Text)
+		fmt.Println(colorizedLine)
 
-		// Write to logger if in background mode
+		// Write to logger if in background mode (no color)
 		for _, w := range writers {
-			fmt.Fprintln(w, text)
+			fmt.Fprintln(w, logLine.Text)
 		}
 
 		// Resume spinner
@@ -324,16 +356,18 @@ func cmdKickoff(args []string) int {
 			currentSpinner.Resume()
 		}
 
-		// Parse for STEP-3/STEP-4
-		parser.Parse(text)
+		// Parse for workflow events
+		parser.Parse(logLine.Text)
 	}
 
 	// Wait for executor to finish
+	exitCode := 0
 	if err := executor.Wait(); err != nil {
 		// Check if it was a signal
 		if !signalHandler.IsShutdown() {
 			output.Error(fmt.Sprintf("Claude CLI exited with error: %v", err))
 		}
+		exitCode = 1
 	}
 
 	// Cleanup
@@ -346,10 +380,12 @@ func cmdKickoff(args []string) int {
 
 	executor.Close()
 
-	fmt.Println("")
-	output.Success("Workflow completed")
+	if exitCode == 0 {
+		fmt.Println("")
+		output.Success("Workflow completed")
+	}
 
-	return 0
+	return exitCode
 }
 
 func formatDuration(d time.Duration) string {
@@ -377,7 +413,7 @@ func extractTextFromStreamJSON(line string) string {
 	}
 
 	// Parse JSON
-	var event map[string]interface{}
+	var event map[string]any
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		return "" // Invalid JSON, skip
 	}
@@ -387,26 +423,71 @@ func extractTextFromStreamJSON(line string) string {
 	switch eventType {
 	case "assistant":
 		// Extract text from assistant message
-		message, ok := event["message"].(map[string]interface{})
+		message, ok := event["message"].(map[string]any)
 		if !ok {
 			return ""
 		}
-		content, ok := message["content"].([]interface{})
+		content, ok := message["content"].([]any)
 		if !ok {
 			return ""
 		}
 
 		var texts []string
 		for _, item := range content {
-			if contentItem, ok := item.(map[string]interface{}); ok {
-				if contentItem["type"] == "text" {
+			if contentItem, ok := item.(map[string]any); ok {
+				contentType, _ := contentItem["type"].(string)
+				switch contentType {
+				case "text":
 					if text, ok := contentItem["text"].(string); ok {
 						texts = append(texts, text)
+					}
+				case "tool_use":
+					// Show bash commands being executed
+					toolName, _ := contentItem["name"].(string)
+					if toolName == "Bash" || toolName == "bash" || toolName == "execute_bash" {
+						if input, ok := contentItem["input"].(map[string]any); ok {
+							if cmd, ok := input["command"].(string); ok {
+								texts = append(texts, fmt.Sprintf("[EXEC] %s", cmd))
+							}
+						}
 					}
 				}
 			}
 		}
 		return strings.Join(texts, "\n")
+
+	case "user":
+		// Extract tool_result from user message (contains bash output)
+		message, ok := event["message"].(map[string]any)
+		if !ok {
+			return ""
+		}
+		content, ok := message["content"].([]any)
+		if !ok {
+			return ""
+		}
+
+		var texts []string
+		for _, item := range content {
+			if contentItem, ok := item.(map[string]any); ok {
+				contentType, _ := contentItem["type"].(string)
+				if contentType == "tool_result" {
+					if output, ok := contentItem["content"].(string); ok && output != "" {
+						texts = append(texts, strings.TrimSpace(output))
+					}
+				}
+			}
+		}
+		return strings.Join(texts, "\n")
+
+	case "content_block_delta":
+		// Handle streaming content deltas
+		if delta, ok := event["delta"].(map[string]any); ok {
+			if text, ok := delta["text"].(string); ok {
+				return text
+			}
+		}
+		return ""
 
 	case "result":
 		// Skip result event - it's just a summary of what was already output
