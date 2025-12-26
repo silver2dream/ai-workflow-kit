@@ -422,7 +422,8 @@ func extractTextFromStreamJSON(line string) string {
 
 	switch eventType {
 	case "assistant":
-		// Extract text from assistant message
+		// Only extract Bash tool_use commands, skip text content (Claude's narration)
+		// The tailers handle [PRINCIPAL] and [WORKER] log output
 		message, ok := event["message"].(map[string]any)
 		if !ok {
 			return ""
@@ -436,13 +437,8 @@ func extractTextFromStreamJSON(line string) string {
 		for _, item := range content {
 			if contentItem, ok := item.(map[string]any); ok {
 				contentType, _ := contentItem["type"].(string)
-				switch contentType {
-				case "text":
-					if text, ok := contentItem["text"].(string); ok {
-						texts = append(texts, text)
-					}
-				case "tool_use":
-					// Show bash commands being executed
+				// Only extract Bash commands, skip "text" (Claude's narration)
+				if contentType == "tool_use" {
 					toolName, _ := contentItem["name"].(string)
 					if toolName == "Bash" || toolName == "bash" || toolName == "execute_bash" {
 						if input, ok := contentItem["input"].(map[string]any); ok {
@@ -457,36 +453,12 @@ func extractTextFromStreamJSON(line string) string {
 		return strings.Join(texts, "\n")
 
 	case "user":
-		// Extract tool_result from user message (contains bash output)
-		message, ok := event["message"].(map[string]any)
-		if !ok {
-			return ""
-		}
-		content, ok := message["content"].([]any)
-		if !ok {
-			return ""
-		}
-
-		var texts []string
-		for _, item := range content {
-			if contentItem, ok := item.(map[string]any); ok {
-				contentType, _ := contentItem["type"].(string)
-				if contentType == "tool_result" {
-					if output, ok := contentItem["content"].(string); ok && output != "" {
-						texts = append(texts, strings.TrimSpace(output))
-					}
-				}
-			}
-		}
-		return strings.Join(texts, "\n")
+		// Skip tool_result extraction - the tailers handle log output
+		// The eval-able variables (NEXT_ACTION=...) are for Claude's context, not user display
+		return ""
 
 	case "content_block_delta":
-		// Handle streaming content deltas
-		if delta, ok := event["delta"].(map[string]any); ok {
-			if text, ok := delta["text"].(string); ok {
-				return text
-			}
-		}
+		// Skip streaming text deltas - we don't want Claude's narration
 		return ""
 
 	case "result":

@@ -1258,22 +1258,23 @@ PR_URL=""
 trace_step_start "create_pr"
 if command -v gh >/dev/null 2>&1; then
   # Check if PR already exists for this branch
-  EXISTING_PR_URL="$(gh pr view "$BRANCH" --json url -q .url 2>/dev/null || true)"
-  
+  # Use gh pr list which has better compatibility across gh versions
+  EXISTING_PR_URL="$(gh pr list --head "$BRANCH" --json url -q '.[0].url' 2>/dev/null || true)"
+
   if [[ -n "$EXISTING_PR_URL" ]]; then
     # PR already exists (retry scenario), just use existing PR
     PR_URL="$EXISTING_PR_URL"
     worker_log_tee "PR already exists: $PR_URL"
   else
     # Create new PR
+    # gh pr create outputs the URL directly on success
     PR_URL="$(gh pr create \
       --base "$PR_BASE" \
       --head "$BRANCH" \
       --title "$COMMIT_MSG" \
       --body "Closes #$ISSUE_ID
 
-$COMMIT_MSG" \
-      --json url -q .url 2>/dev/null || true)"
+$COMMIT_MSG" 2>&1 | grep -oE 'https://github.com/[^[:space:]]+/pull/[0-9]+' | head -1 || true)"
   fi
 fi
 

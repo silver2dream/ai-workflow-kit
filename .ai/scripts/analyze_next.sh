@@ -48,6 +48,7 @@ ACTIVE_SPECS=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); 
 LABEL_TASK=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('task', 'ai-task'))" 2>/dev/null || echo "ai-task")
 LABEL_IN_PROGRESS=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('in_progress', 'in-progress'))" 2>/dev/null || echo "in-progress")
 LABEL_PR_READY=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('pr_ready', 'pr-ready'))" 2>/dev/null || echo "pr-ready")
+LABEL_WORKER_FAILED=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('worker_failed', 'worker-failed'))" 2>/dev/null || echo "worker-failed")
 
 log "配置已載入"
 
@@ -169,7 +170,7 @@ log "無 pr-ready issues"
 # ============================================================
 log "檢查 pending issues..."
 
-PENDING_ISSUES=$(gh issue list --label "$LABEL_TASK" --state open --json number,labels --jq '.[] | select(.labels | map(.name) | (contains(["'"$LABEL_IN_PROGRESS"'"]) or contains(["'"$LABEL_PR_READY"'"])) | not) | .number' 2>/dev/null || echo "")
+PENDING_ISSUES=$(gh issue list --label "$LABEL_TASK" --state open --json number,labels --jq '.[] | select(.labels | map(.name) | (contains(["'"$LABEL_IN_PROGRESS"'"]) or contains(["'"$LABEL_PR_READY"'"]) or contains(["'"$LABEL_WORKER_FAILED"'"])) | not) | .number' 2>/dev/null || echo "")
 
 if [[ -n "$PENDING_ISSUES" ]]; then
   ISSUE_NUMBER=$(echo "$PENDING_ISSUES" | head -1)

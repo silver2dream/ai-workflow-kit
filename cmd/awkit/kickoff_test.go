@@ -26,14 +26,14 @@ func TestExtractTextFromStreamJSON(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "assistant message with text",
+			name:     "assistant message with text (skipped - Claude narration)",
 			input:    `{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from Claude!"}]}}`,
-			expected: "Hello from Claude!",
+			expected: "",
 		},
 		{
-			name:     "assistant message with multiple text blocks",
+			name:     "assistant message with multiple text blocks (skipped)",
 			input:    `{"type":"assistant","message":{"content":[{"type":"text","text":"Line 1"},{"type":"text","text":"Line 2"}]}}`,
-			expected: "Line 1\nLine 2",
+			expected: "",
 		},
 		{
 			name:     "result event (should be skipped)",
@@ -61,24 +61,24 @@ func TestExtractTextFromStreamJSON(t *testing.T) {
 			expected: "[EXEC] go test ./...",
 		},
 		{
-			name:     "user message with tool_result",
+			name:     "user message with tool_result (skipped - tailers handle logs)",
 			input:    `{"type":"user","message":{"content":[{"type":"tool_result","content":"[WORKER] worker_session_id=worker-123\nWorker completed"}]}}`,
-			expected: "[WORKER] worker_session_id=worker-123\nWorker completed",
+			expected: "",
 		},
 		{
-			name:     "user message with tool_result and whitespace",
+			name:     "user message with tool_result and whitespace (skipped)",
 			input:    `{"type":"user","message":{"content":[{"type":"tool_result","content":"[PRINCIPAL] 10:00:05 | test\r\n"}]}}`,
-			expected: "[PRINCIPAL] 10:00:05 | test",
+			expected: "",
 		},
 		{
-			name:     "mixed text and tool_use in assistant",
+			name:     "mixed text and tool_use in assistant (only EXEC)",
 			input:    `{"type":"assistant","message":{"content":[{"type":"text","text":"Running dispatch..."},{"type":"tool_use","name":"Bash","input":{"command":"dispatch_worker.sh 10"}}]}}`,
-			expected: "Running dispatch...\n[EXEC] dispatch_worker.sh 10",
+			expected: "[EXEC] dispatch_worker.sh 10",
 		},
 		{
-			name:     "content_block_delta with text",
+			name:     "content_block_delta with text (skipped - Claude narration)",
 			input:    `{"type":"content_block_delta","delta":{"text":"streaming text"}}`,
-			expected: "streaming text",
+			expected: "",
 		},
 		{
 			name:     "content_block_delta without text",
