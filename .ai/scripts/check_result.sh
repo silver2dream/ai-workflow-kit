@@ -96,7 +96,7 @@ if [[ "$WORKER_STATUS" == "success" ]] && [[ -n "$PR_URL" ]]; then
   log "✓ Worker 成功，PR 已創建: $PR_URL"
   
   # 提取 PR 編號
-  PR_NUMBER=$(echo "$PR_URL" | grep -oP '(?<=pull/)\d+' || echo "")
+  PR_NUMBER=$(echo "$PR_URL" | sed -n 's|.*/pull/\([0-9]*\).*|\1|p')
   
   if [[ -n "$PR_NUMBER" ]]; then
     log "PR Number: #$PR_NUMBER"

@@ -134,16 +134,16 @@ if [[ -n "$PR_READY_ISSUES" ]]; then
   if [[ -f "$RESULT_FILE" ]]; then
     PR_URL=$(python3 -c "import json; print(json.load(open('$RESULT_FILE')).get('pr_url',''))" 2>/dev/null || echo "")
     if [[ -n "$PR_URL" ]]; then
-      PR_NUMBER=$(echo "$PR_URL" | grep -oP '(?<=pull/)\d+' || echo "")
+      PR_NUMBER=$(echo "$PR_URL" | sed -n 's|.*/pull/\([0-9]*\).*|\1|p')
     fi
   fi
   
   if [[ -z "$PR_NUMBER" ]]; then
-    PR_NUMBER=$(echo "$ISSUE_BODY" | grep -oP '(?<=#)\d+(?=\s|$)' | head -1 || echo "")
+    PR_NUMBER=$(echo "$ISSUE_BODY" | sed -n 's/.*#\([0-9][0-9]*\).*/\1/p' | head -1)
   fi
   
   if [[ -z "$PR_NUMBER" ]]; then
-    PR_NUMBER=$(echo "$ISSUE_BODY" | grep -oP '(?<=pull/)\d+' | head -1 || echo "")
+    PR_NUMBER=$(echo "$ISSUE_BODY" | sed -n 's|.*/pull/\([0-9]*\).*|\1|p' | head -1)
   fi
   
   if [[ -n "$PR_NUMBER" ]]; then
@@ -170,7 +170,7 @@ log "無 pr-ready issues"
 # ============================================================
 log "檢查 pending issues..."
 
-PENDING_ISSUES=$(gh issue list --label "$LABEL_TASK" --state open --json number,labels --jq '.[] | select(.labels | map(.name) | (contains(["'"$LABEL_IN_PROGRESS"'"]) or contains(["'"$LABEL_PR_READY"'"]) or contains(["'"$LABEL_WORKER_FAILED"'"])) | not) | .number' 2>/dev/null || echo "")
+PENDING_ISSUES=$(gh issue list --label "$LABEL_TASK" --state open --json number,labels --jq '.[] | select(.labels | map(.name) | (any(. == "'"$LABEL_IN_PROGRESS"'") or any(. == "'"$LABEL_PR_READY"'") or any(. == "'"$LABEL_WORKER_FAILED"'")) | not) | .number' 2>/dev/null || echo "")
 
 if [[ -n "$PENDING_ISSUES" ]]; then
   ISSUE_NUMBER=$(echo "$PENDING_ISSUES" | head -1)

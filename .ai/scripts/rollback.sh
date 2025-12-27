@@ -67,7 +67,7 @@ if [[ -z "$MERGE_COMMIT" ]]; then
 fi
 
 # Extract issue number from PR body.
-ISSUE_NUMBER=$(echo "$PR_BODY" | grep -oP '(?i)(?:closes|fixes|resolves)\s*#\K\d+' | head -1 || echo "")
+ISSUE_NUMBER=$(echo "$PR_BODY" | grep -iE '(closes|fixes|resolves)\s*#[0-9]+' | sed -n 's/.*#\([0-9]*\).*/\1/p' | head -1)
 echo "[rollback] Original Issue: ${ISSUE_NUMBER:-none}"
 
 # Dry run mode.

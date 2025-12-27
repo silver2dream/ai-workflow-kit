@@ -100,9 +100,12 @@ echo "$ISSUE_BODY" > "$TICKET_FILE"
 log "✓ Ticket 文件已保存：$TICKET_FILE"
 
 # 解析 ticket metadata
-REPO=$(echo "$ISSUE_BODY" | grep -oP '(?<=\*\*Repo\*\*: )[^\n]+' | head -1 || echo "")
+REPO=$(echo "$ISSUE_BODY" | sed -n 's/.*\*\*Repo\*\*: \([^[:cntrl:]]*\).*/\1/p' | head -1)
 if [[ -z "$REPO" ]]; then
-  REPO=$(echo "$ISSUE_BODY" | grep -oP '(?<=- Repo: )[^\n]+' | head -1 || echo "root")
+  REPO=$(echo "$ISSUE_BODY" | sed -n 's/.*- Repo: \([^[:cntrl:]]*\).*/\1/p' | head -1)
+fi
+if [[ -z "$REPO" ]]; then
+  REPO="root"
 fi
 
 log "Repo: $REPO"

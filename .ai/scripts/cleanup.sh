@@ -72,7 +72,7 @@ for wt in $WORKTREES; do
   # Only clean issue worktrees.
   if [[ "$wt" == *"issue-"* ]] || [[ "$wt" == *".worktrees"* ]]; then
     # Extract issue number.
-    ISSUE_NUM=$(echo "$wt" | grep -oP 'issue-\K\d+' || echo "")
+    ISSUE_NUM=$(echo "$wt" | sed -n 's/.*issue-\([0-9]*\).*/\1/p' || echo "")
     
     if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
       # Check issue state.
@@ -114,7 +114,7 @@ for branch in $REMOTE_BRANCHES; do
   BRANCH_NAME="${branch#origin/}"
   
   # Extract issue number (from feat/ai-issue-N).
-  ISSUE_NUM=$(echo "$BRANCH_NAME" | grep -oP 'ai-issue-\K\d+' || echo "")
+  ISSUE_NUM=$(echo "$BRANCH_NAME" | sed -n 's/.*ai-issue-\([0-9]*\).*/\1/p' || echo "")
   
   if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
     # Check PR state.
@@ -166,7 +166,7 @@ if [[ -f "$GITMODULES_PATH" ]]; then
       
       for branch in $SUBMODULE_REMOTE_BRANCHES; do
         BRANCH_NAME="${branch#origin/}"
-        ISSUE_NUM=$(echo "$BRANCH_NAME" | grep -oP 'ai-issue-\K\d+' || echo "")
+        ISSUE_NUM=$(echo "$BRANCH_NAME" | sed -n 's/.*ai-issue-\([0-9]*\).*/\1/p' || echo "")
         
         if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
           ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
@@ -188,7 +188,7 @@ if [[ -f "$GITMODULES_PATH" ]]; then
       SUBMODULE_LOCAL_BRANCHES=$(git -C "$SUBMODULE_DIR" branch --list 'feat/ai-issue-*' 2>/dev/null | sed 's/^[* ]*//' || true)
       
       for branch in $SUBMODULE_LOCAL_BRANCHES; do
-        ISSUE_NUM=$(echo "$branch" | grep -oP 'ai-issue-\K\d+' || echo "")
+        ISSUE_NUM=$(echo "$branch" | sed -n 's/.*ai-issue-\([0-9]*\).*/\1/p' || echo "")
         
         if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
           ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
@@ -219,7 +219,7 @@ LOCAL_BRANCHES=$(git branch --list 'feat/ai-issue-*' 2>/dev/null | sed 's/^[* ]*
 
 for branch in $LOCAL_BRANCHES; do
   # Extract issue number (from feat/ai-issue-N).
-  ISSUE_NUM=$(echo "$branch" | grep -oP 'ai-issue-\K\d+' || echo "")
+  ISSUE_NUM=$(echo "$branch" | sed -n 's/.*ai-issue-\([0-9]*\).*/\1/p' || echo "")
   
   if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
     ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
@@ -250,7 +250,7 @@ if [[ -d "$RUNS_DIR" ]]; then
   
   for run_dir in $OLD_RUNS; do
     # Extract issue number.
-    ISSUE_NUM=$(basename "$run_dir" | grep -oP 'issue-\K\d+' || echo "")
+    ISSUE_NUM=$(basename "$run_dir" | sed -n 's/.*issue-\([0-9]*\).*/\1/p' || echo "")
     
     if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
       ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
