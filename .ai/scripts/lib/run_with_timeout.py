@@ -52,29 +52,34 @@ def _kill_process_tree(proc: subprocess.Popen[bytes]) -> None:
 
     if os.name == "nt":
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
             )
-            return
-        except Exception:
-            pass
+            if result.returncode == 0:
+                return
+            _eprint(
+                f"[TIMEOUT] taskkill returned {result.returncode} for pid {proc.pid}; falling back to proc.kill()"
+            )
+        except Exception as e:
+            _eprint(f"[TIMEOUT] failed to taskkill process tree for pid {proc.pid}: {e}")
         try:
             proc.kill()
-        except Exception:
-            pass
+        except Exception as e:
+            _eprint(f"[TIMEOUT] failed to kill process pid {proc.pid} on Windows: {e}")
         return
 
     # POSIX: try TERM then KILL the whole process group.
     try:
         os.killpg(proc.pid, signal.SIGTERM)
-    except Exception:
+    except Exception as e:
+        _eprint(f"[TIMEOUT] failed to send SIGTERM to process group for pid {proc.pid}: {e}")
         try:
             proc.terminate()
-        except Exception:
-            pass
+        except Exception as e2:
+            _eprint(f"[TIMEOUT] failed to terminate process pid {proc.pid}: {e2}")
 
     deadline = time.time() + 2.0
     while time.time() < deadline:
@@ -84,11 +89,12 @@ def _kill_process_tree(proc: subprocess.Popen[bytes]) -> None:
 
     try:
         os.killpg(proc.pid, signal.SIGKILL)
-    except Exception:
+    except Exception as e:
+        _eprint(f"[TIMEOUT] failed to send SIGKILL to process group for pid {proc.pid}: {e}")
         try:
             proc.kill()
-        except Exception:
-            pass
+        except Exception as e2:
+            _eprint(f"[TIMEOUT] failed to kill process pid {proc.pid} after SIGKILL failure: {e2}")
 
 
 def main(argv: list[str]) -> int:
@@ -136,4 +142,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
-
