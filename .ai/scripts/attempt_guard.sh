@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Timeout helpers
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/timeout.sh"
+
 # ============================================================================
 # attempt_guard.sh - Track attempts and stop on non-retryable failures.
 # ============================================================================
@@ -43,7 +46,7 @@ fi
 # Req 8.6: Reset fail_count if worker-failed label was removed (human intervention)
 # If COUNT >= MAX but worker-failed label is absent, reset to allow retry
 if [[ "$COUNT" -ge "$MAX" ]]; then
-  HAS_WORKER_FAILED_LABEL=$(gh issue view "$ISSUE_ID" --json labels -q '.labels[].name' 2>/dev/null | grep -c "^worker-failed$" || true)
+  HAS_WORKER_FAILED_LABEL=$(gh_with_timeout issue view "$ISSUE_ID" --json labels -q '.labels[].name' 2>/dev/null | grep -c "^worker-failed$" || true)
   if [[ "$HAS_WORKER_FAILED_LABEL" -eq 0 ]]; then
     worker_log "worker-failed label removed, resetting fail_count"
     COUNT=0

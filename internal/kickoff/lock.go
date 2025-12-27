@@ -23,6 +23,12 @@ type LockManager struct {
 	acquired bool
 }
 
+// ProcessAlive reports whether a process with the given PID is still running.
+// This is exposed for other packages (e.g. offline status inspection).
+func ProcessAlive(pid int) bool {
+	return processAlive(pid)
+}
+
 // NewLockManager creates a new LockManager for the given lock file path
 func NewLockManager(lockFile string) *LockManager {
 	return &LockManager{

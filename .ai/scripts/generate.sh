@@ -341,6 +341,4 @@ if not symlink_ok:
     print(f"[generate] Run 'bash .ai/scripts/generate.sh' after modifying .ai/rules/ or .ai/skills/")
 
 print("[generate] Done!")
-
-print("[generate] Done!")
 PYTHON

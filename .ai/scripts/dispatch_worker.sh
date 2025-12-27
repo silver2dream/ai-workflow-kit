@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+# Timeout helpers
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/timeout.sh"
+
 # ============================================================
 # 初始化
 # ============================================================
@@ -48,7 +52,7 @@ log "Session ID: $PRINCIPAL_SESSION_ID"
 # ============================================================
 log "獲取 Issue 信息..."
 
-ISSUE_DATA=$(gh issue view "$ISSUE_NUMBER" --json number,title,body,labels,state 2>&1) || {
+ISSUE_DATA=$(gh_with_timeout issue view "$ISSUE_NUMBER" --json number,title,body,labels,state 2>&1) || {
   log "✗ 無法獲取 Issue 信息"
   echo "WORKER_STATUS=$WORKER_STATUS"
   exit 1
@@ -100,9 +104,12 @@ echo "$ISSUE_BODY" > "$TICKET_FILE"
 log "✓ Ticket 文件已保存：$TICKET_FILE"
 
 # 解析 ticket metadata
-REPO=$(echo "$ISSUE_BODY" | grep -oP '(?<=\*\*Repo\*\*: )[^\n]+' | head -1 || echo "")
+REPO=$(echo "$ISSUE_BODY" | sed -n 's/.*\*\*Repo\*\*: \([^[:cntrl:]]*\).*/\1/p' | head -1)
 if [[ -z "$REPO" ]]; then
-  REPO=$(echo "$ISSUE_BODY" | grep -oP '(?<=- Repo: )[^\n]+' | head -1 || echo "root")
+  REPO=$(echo "$ISSUE_BODY" | sed -n 's/.*- Repo: \([^[:cntrl:]]*\).*/\1/p' | head -1)
+fi
+if [[ -z "$REPO" ]]; then
+  REPO="root"
 fi
 
 log "Repo: $REPO"
@@ -112,7 +119,7 @@ log "Repo: $REPO"
 # ============================================================
 log "標記 Issue 為 in-progress..."
 
-gh issue edit "$ISSUE_NUMBER" --add-label "in-progress" 2>/dev/null || true
+gh_with_timeout issue edit "$ISSUE_NUMBER" --add-label "in-progress" 2>/dev/null || true
 
 log "✓ Issue 已標記為 in-progress"
 
@@ -163,7 +170,7 @@ if [[ "$WORKER_STATUS" == "success" ]] && [[ -n "$PR_URL" ]]; then
   log "✓ Worker 成功"
   
   # 更新 Issue 標籤
-  gh issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "pr-ready" 2>/dev/null || true
+  gh_with_timeout issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "pr-ready" 2>/dev/null || true
   
   log "✓ Issue 標籤已更新 (in-progress → pr-ready)"
   
@@ -195,9 +202,9 @@ else
   if [[ "$FAIL_COUNT" -ge 3 ]]; then
     log "✗ 達到最大重試次數 (3)"
     
-    gh issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "worker-failed" 2>/dev/null || true
+    gh_with_timeout issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "worker-failed" 2>/dev/null || true
     
-    gh issue comment "$ISSUE_NUMBER" --body "Worker 已失敗 3 次，需要人工介入。
+    gh_with_timeout issue comment "$ISSUE_NUMBER" --body "Worker 已失敗 3 次，需要人工介入。
 
 請檢查：
 1. 任務描述是否清晰
@@ -212,7 +219,7 @@ else
   else
     log "將在下一輪重試 (attempt $FAIL_COUNT/3)"
     
-    gh issue edit "$ISSUE_NUMBER" --remove-label "in-progress" 2>/dev/null || true
+    gh_with_timeout issue edit "$ISSUE_NUMBER" --remove-label "in-progress" 2>/dev/null || true
     
     log "✓ 已移除 in-progress 標籤"
   fi

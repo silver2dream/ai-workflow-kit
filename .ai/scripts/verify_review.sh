@@ -65,7 +65,7 @@ fi
 # ============================================================
 # 2. Extract and verify Session ID (Req 7.4 - Anti-Forgery)
 # ============================================================
-SESSION_ID=$(echo "$REVIEW_CONTENT" | grep -oP '(?<=Session: )[a-z]+-[0-9]{8}-[0-9]{6}-[a-f0-9]{4}' | head -1 || echo "")
+SESSION_ID=$(echo "$REVIEW_CONTENT" | sed -n 's/.*Session: \([a-z]*-[0-9]*-[0-9]*-[a-f0-9]*\).*/\1/p' | head -1)
 
 if [[ -z "$SESSION_ID" ]]; then
   ERRORS+=("Missing or invalid Session ID")
@@ -86,7 +86,7 @@ fi
 # ============================================================
 # 3. Extract and verify Diff Hash
 # ============================================================
-DIFF_HASH=$(echo "$REVIEW_CONTENT" | grep -oP '(?<=Diff Hash: )[a-f0-9]{8,}' | head -1 || echo "")
+DIFF_HASH=$(echo "$REVIEW_CONTENT" | sed -n 's/.*Diff Hash: \([a-f0-9]*\).*/\1/p' | head -1)
 
 if [[ -z "$DIFF_HASH" ]]; then
   ERRORS+=("Missing Diff Hash")
@@ -115,11 +115,11 @@ fi
 # ============================================================
 # 6. Extract and verify score (1-10)
 # ============================================================
-SCORE=$(echo "$REVIEW_CONTENT" | grep -oP '(?<=評分|Score)[:\s]*([0-9]+)' | grep -oP '[0-9]+' | head -1 || echo "")
+SCORE=$(echo "$REVIEW_CONTENT" | sed -n 's/.*[評分Score][:\s]*\([0-9]*\).*/\1/p' | head -1)
 
 if [[ -z "$SCORE" ]]; then
   # Try alternative patterns
-  SCORE=$(echo "$REVIEW_CONTENT" | grep -oP '[0-9]+/10' | grep -oP '^[0-9]+' | head -1 || echo "")
+  SCORE=$(echo "$REVIEW_CONTENT" | sed -n 's/.*\([0-9][0-9]*\)\/10.*/\1/p' | head -1)
 fi
 
 if [[ -z "$SCORE" ]]; then

@@ -8,6 +8,9 @@ AI_ROOT="$(dirname "$SCRIPT_DIR")"
 MONO_ROOT="$(dirname "$AI_ROOT")"
 cd "$MONO_ROOT"
 
+# Timeout helpers
+source "$SCRIPT_DIR/lib/timeout.sh"
+
 # === 參數解析 ===
 MODE="--offline"
 STRICT=false
@@ -360,7 +363,7 @@ if [ "$MODE" = "--online" ]; then
   if ! command -v gh > /dev/null 2>&1; then
     echo "[SKIP] gh CLI not installed"
     echo "Score cap: 8.5 (B)"
-  elif ! gh auth status > /dev/null 2>&1; then
+  elif ! gh_with_timeout auth status > /dev/null 2>&1; then
     echo "[SKIP] gh not authenticated"
     echo "Score cap: 8.5 (B)"
   elif ! command -v curl > /dev/null 2>&1; then

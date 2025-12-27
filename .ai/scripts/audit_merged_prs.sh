@@ -13,6 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY_REVIEW="$SCRIPT_DIR/verify_review.sh"
 SESSION_LOG_DIR=".ai/state/principal/sessions"
 
+# Timeout helpers
+source "$SCRIPT_DIR/lib/timeout.sh"
+
 # Cross-platform jq wrapper
 _jq() {
   if command -v jq &>/dev/null; then
@@ -61,7 +64,7 @@ echo "============================================"
 echo ""
 
 # Build gh command
-GH_CMD="gh pr list --state merged --limit $LIMIT --json number,title,mergedAt,body,comments"
+GH_CMD="gh_with_timeout pr list --state merged --limit $LIMIT --json number,title,mergedAt,body,comments"
 if [[ -n "$SINCE" ]]; then
   echo "Auditing PRs merged since: $SINCE"
 else
@@ -126,7 +129,7 @@ echo "$MERGED_PRS" | _jq -c '.[]' | while read -r pr; do
   fi
   
   # Extract Session ID
-  SESSION_ID=$(echo "$AWK_REVIEW" | grep -oP '(?<=Session: )[a-z]+-[0-9]{8}-[0-9]{6}-[a-f0-9]{4}' | head -1 || echo "")
+  SESSION_ID=$(echo "$AWK_REVIEW" | sed -n 's/.*Session: \([a-z]*-[0-9]*-[0-9]*-[a-f0-9]*\).*/\1/p' | head -1)
   if [[ -z "$SESSION_ID" ]]; then
     echo "  ⚠ Missing or invalid Session ID"
     SUSPICIOUS=$((SUSPICIOUS + 1))
@@ -143,7 +146,7 @@ echo "$MERGED_PRS" | _jq -c '.[]' | while read -r pr; do
   fi
   
   # Extract Diff Hash
-  DIFF_HASH=$(echo "$AWK_REVIEW" | grep -oP '(?<=Diff Hash: )[a-f0-9]{8,}' | head -1 || echo "")
+  DIFF_HASH=$(echo "$AWK_REVIEW" | sed -n 's/.*Diff Hash: \([a-f0-9]*\).*/\1/p' | head -1)
   if [[ -z "$DIFF_HASH" ]]; then
     echo "  ⚠ Missing Diff Hash"
     SUSPICIOUS=$((SUSPICIOUS + 1))
@@ -160,9 +163,9 @@ echo "$MERGED_PRS" | _jq -c '.[]' | while read -r pr; do
   fi
   
   # Extract and check score
-  SCORE=$(echo "$AWK_REVIEW" | grep -oP '(?<=評分|Score)[:\s]*([0-9]+)' | grep -oP '[0-9]+' | head -1 || echo "")
+  SCORE=$(echo "$AWK_REVIEW" | sed -n 's/.*[評分Score][:\s]*\([0-9]*\).*/\1/p' | head -1)
   if [[ -z "$SCORE" ]]; then
-    SCORE=$(echo "$AWK_REVIEW" | grep -oP '[0-9]+/10' | grep -oP '^[0-9]+' | head -1 || echo "")
+    SCORE=$(echo "$AWK_REVIEW" | sed -n 's/.*\([0-9][0-9]*\)\/10.*/\1/p' | head -1)
   fi
   
   if [[ -z "$SCORE" ]]; then

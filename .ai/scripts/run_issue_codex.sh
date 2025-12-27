@@ -14,6 +14,7 @@ CONFIG_FILE="$AI_ROOT/config/workflow.yaml"
 # ============================================================
 source "$AI_ROOT/scripts/session_manager.sh"
 source "$AI_ROOT/scripts/github_comment.sh"
+source "$AI_ROOT/scripts/lib/timeout.sh"
 
 # ============================================================
 # Generate Worker Session ID (Req 2.1)
@@ -222,7 +223,7 @@ git_push_submodule() {
   fi
   
   # Push submodule first (Req 6.3)
-  if ! git -C "$submodule_dir" push -u origin "$submodule_branch"; then
+  if ! git_with_timeout -C "$submodule_dir" push -u origin "$submodule_branch"; then
     echo "ERROR: submodule push failed" >&2
     CONSISTENCY_STATUS="submodule_push_failed"
     return 2
@@ -231,7 +232,7 @@ git_push_submodule() {
   worker_log "submodule pushed to origin/$submodule_branch"
   
   # Push parent (Req 6.4)
-  if ! git -C "$wt_dir" push -u origin "$branch"; then
+  if ! git_with_timeout -C "$wt_dir" push -u origin "$branch"; then
     echo "ERROR: parent push failed (submodule already pushed)" >&2
     CONSISTENCY_STATUS="parent_push_failed_submodule_pushed"
     echo "RECOVERY: git -C '$submodule_dir' reset --hard HEAD~1 && git push -f origin $submodule_branch" >&2
@@ -450,7 +451,7 @@ except Exception:
   
   # Try a dry-run push to check permission (Req 28.1, 28.2)
   local allowed="false"
-  if git push --dry-run "$remote_url" HEAD:refs/heads/__permission_check__ 2>/dev/null; then
+  if git_with_timeout push --dry-run "$remote_url" HEAD:refs/heads/__permission_check__ 2>/dev/null; then
     allowed="true"
   fi
   
@@ -652,9 +653,11 @@ data = {
     "steps": [],
 }
 
-with open(path, "w", encoding="utf-8") as handle:
+tmp_path = path + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2, ensure_ascii=True)
     handle.write("\n")
+os.replace(tmp_path, path)
 PY
 }
 
@@ -713,9 +716,11 @@ data["steps"] = steps
 if error_message:
     data["error"] = error_message
 
-with open(path, "w", encoding="utf-8") as handle:
+tmp_path = path + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2, ensure_ascii=True)
     handle.write("\n")
+os.replace(tmp_path, path)
 PY
 }
 
@@ -754,9 +759,11 @@ data["duration_seconds"] = duration
 if error_message:
     data["error"] = error_message
 
-with open(path, "w", encoding="utf-8") as handle:
+tmp_path = path + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=2, ensure_ascii=True)
     handle.write("\n")
+os.replace(tmp_path, path)
 PY
 }
 
@@ -832,14 +839,14 @@ worker_log "worktree=$WT_DIR work_dir=$WORK_DIR"
 trace_step_end "success"
 
 cd "$WT_DIR"
-git fetch origin --prune >/dev/null 2>&1 || true
+git_with_timeout fetch origin --prune >/dev/null 2>&1 || true
 git checkout -q "$BRANCH" || true
 
 MODE="${AI_BRANCH_MODE:-reuse}" # reuse|reset
 if [[ "$MODE" == "reset" ]]; then
   BASE_REF="${AI_RESET_BASE:-origin/$INTEGRATION_BRANCH}"
   worker_log "reset branch to $BASE_REF"
-  git fetch origin --prune >/dev/null 2>&1 || true
+  git_with_timeout fetch origin --prune >/dev/null 2>&1 || true
   git reset --hard "$BASE_REF"
 fi
 
@@ -880,7 +887,7 @@ esac
 AWK_REVIEW_COMMENTS=""
 if command -v gh >/dev/null 2>&1; then
   # Get comments containing "AWK Review" (Principal's review feedback)
-  AWK_REVIEW_COMMENTS=$(gh issue view "$ISSUE_ID" --json comments --jq '.comments[] | select(.body | contains("AWK Review")) | "---\n\(.createdAt):\n\(.body)"' 2>/dev/null | tail -c 4000 || echo "")
+  AWK_REVIEW_COMMENTS=$(gh_with_timeout issue view "$ISSUE_ID" --json comments --jq '.comments[] | select(.body | contains("AWK Review")) | "---\n\(.createdAt):\n\(.body)"' 2>/dev/null | tail -c 4000 || echo "")
 fi
 
 PROMPT_FILE="$RUN_DIR/prompt.txt"
@@ -1012,7 +1019,8 @@ while [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; do
     fi
     # Read prompt from stdin (new codex CLI style)
     # Log output via shell redirection instead of --log-file
-    $CODEX_CMD < "$PROMPT_FILE" 2>&1 | tee -a "$SUMMARY_FILE" "$CODEX_LOG"
+    CODEX_TIMEOUT="${AI_CODEX_TIMEOUT:-1800}"
+    run_with_timeout "$CODEX_TIMEOUT" $CODEX_CMD < "$PROMPT_FILE" 2>&1 | tee -a "$SUMMARY_FILE" "$CODEX_LOG"
     RC=${PIPESTATUS[0]}
   else
     record_error "codex CLI not found in PATH"
@@ -1027,7 +1035,12 @@ while [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; do
     trace_step_end "success" "" "{\"attempt\": $ATTEMPT}"
     break
   fi
-  trace_step_end "failed" "codex rc=$RC" "{\"attempt\": $ATTEMPT}"
+  if [[ "$RC" -eq 124 ]]; then
+    worker_log_tee "ERROR: codex timeout after ${CODEX_TIMEOUT}s"
+    trace_step_end "failed" "codex timeout after ${CODEX_TIMEOUT}s" "{\"attempt\": $ATTEMPT, \"timeout_seconds\": $CODEX_TIMEOUT}"
+  else
+    trace_step_end "failed" "codex rc=$RC" "{\"attempt\": $ATTEMPT}"
+  fi
 
   if [[ -n "$NO_RETRY" ]]; then
     break
@@ -1049,18 +1062,29 @@ EXEC_DURATION=$((EXEC_END_TIME - EXEC_START_TIME))
 export AI_EXEC_DURATION="$EXEC_DURATION"
 
 if [[ "$RC" -ne 0 ]]; then
-  record_error "codex failed rc=$RC"
-  worker_log_tee "codex failed rc=$RC"
+  if [[ "$RC" -eq 124 ]]; then
+    record_error "codex timeout after ${CODEX_TIMEOUT}s"
+    worker_log_tee "codex timeout after ${CODEX_TIMEOUT}s"
+    export AI_FAILURE_STAGE="codex_timeout"
+  else
+    record_error "codex failed rc=$RC"
+    worker_log_tee "codex failed rc=$RC"
+    export AI_FAILURE_STAGE="codex_exec"
+  fi
   
   # ============================================================
   # Extract failure reason for retry tracking (Req 8.3)
   # ============================================================
   AI_FAILURE_REASON=""
-  if [[ -f "$CODEX_LOG" ]]; then
-    AI_FAILURE_REASON=$(tail -n 50 "$CODEX_LOG" | grep -iE "ERROR|FAILED|Exception|error:" | head -n 5 | tr '\n' ' ' || echo "Unknown error")
-  fi
-  if [[ -z "$AI_FAILURE_REASON" ]]; then
-    AI_FAILURE_REASON="codex exit code $RC"
+  if [[ "$RC" -eq 124 ]]; then
+    AI_FAILURE_REASON="codex timeout after ${CODEX_TIMEOUT}s"
+  else
+    if [[ -f "$CODEX_LOG" ]]; then
+      AI_FAILURE_REASON=$(tail -n 50 "$CODEX_LOG" | grep -iE "ERROR|FAILED|Exception|error:" | head -n 5 | tr '\n' ' ' || echo "Unknown error")
+    fi
+    if [[ -z "$AI_FAILURE_REASON" ]]; then
+      AI_FAILURE_REASON="codex exit code $RC"
+    fi
   fi
   export AI_FAILURE_REASON
   
@@ -1246,7 +1270,7 @@ if [[ "$REPO_TYPE" == "submodule" ]]; then
   fi
 else
   # Root/Directory type: standard push
-  if ! git push -u origin "$BRANCH"; then
+  if ! git_with_timeout push -u origin "$BRANCH"; then
     record_error "git push failed"
     trace_step_end "failed" "git push failed"
     exit 2
@@ -1259,7 +1283,7 @@ trace_step_start "create_pr"
 if command -v gh >/dev/null 2>&1; then
   # Check if PR already exists for this branch
   # Use gh pr list which has better compatibility across gh versions
-  EXISTING_PR_URL="$(gh pr list --head "$BRANCH" --json url -q '.[0].url' 2>/dev/null || true)"
+  EXISTING_PR_URL="$(gh_with_timeout pr list --head "$BRANCH" --json url -q '.[0].url' 2>/dev/null || true)"
 
   if [[ -n "$EXISTING_PR_URL" ]]; then
     # PR already exists (retry scenario), just use existing PR
@@ -1268,7 +1292,7 @@ if command -v gh >/dev/null 2>&1; then
   else
     # Create new PR
     # gh pr create outputs the URL directly on success
-    PR_URL="$(gh pr create \
+    PR_URL="$(gh_with_timeout pr create \
       --base "$PR_BASE" \
       --head "$BRANCH" \
       --title "$COMMIT_MSG" \

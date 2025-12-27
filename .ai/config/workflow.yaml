@@ -173,6 +173,7 @@ github:
     review_pass: "review-pass"
     review_fail: "review-fail"
     worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
 
 # ============================================================
 # Rules Configuration

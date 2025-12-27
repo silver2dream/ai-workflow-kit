@@ -39,6 +39,9 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		".ai/scripts/lib/__init__.py",
 		".ai/scripts/lib/errors.py",
 		".ai/scripts/lib/logger.py",
+		".ai/scripts/lib/run_with_timeout.py",
+		".ai/scripts/lib/timeout.sh",
+		".ai/scripts/lib/hash.sh",
 
 		// Other script files
 		".ai/scripts/principal_boot.txt",

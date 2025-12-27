@@ -7,6 +7,10 @@
 
 set -euo pipefail
 
+# Timeout helpers
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/timeout.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/hash.sh"
+
 log() {
   local msg="[PRINCIPAL] $(date +%H:%M:%S) | $*"
   echo "$msg" >> .ai/exe-logs/principal.log 2>/dev/null || true
@@ -27,7 +31,7 @@ PRINCIPAL_SESSION_ID=$(bash .ai/scripts/session_manager.sh get_current_session_i
 # ============================================================
 # Try --json first (gh >= 2.12), fall back to parsing text output for older versions
 CI_STATUS="passed"
-CI_OUTPUT=$(gh pr checks "$PR_NUMBER" --json state --jq '.[].state' 2>/dev/null || true)
+CI_OUTPUT=$(gh_with_timeout pr checks "$PR_NUMBER" --json state --jq '.[].state' 2>/dev/null || true)
 if [[ -n "$CI_OUTPUT" ]]; then
   # New gh version with --json support
   if echo "$CI_OUTPUT" | grep -q "FAILURE"; then
@@ -35,7 +39,7 @@ if [[ -n "$CI_OUTPUT" ]]; then
   fi
 else
   # Fallback for older gh versions: parse text output (e.g., "backend  pass  21s  ...")
-  CI_OUTPUT=$(gh pr checks "$PR_NUMBER" 2>/dev/null || true)
+  CI_OUTPUT=$(gh_with_timeout pr checks "$PR_NUMBER" 2>/dev/null || true)
   if echo "$CI_OUTPUT" | grep -qE '\bfail\b'; then
     CI_STATUS="failed"
   fi
@@ -44,7 +48,7 @@ fi
 # ============================================================
 # 3. Diff Hash
 # ============================================================
-DIFF_HASH=$(gh pr diff "$PR_NUMBER" 2>/dev/null | sha256sum | cut -c1-16)
+DIFF_HASH=$(gh_with_timeout pr diff "$PR_NUMBER" 2>/dev/null | sha256_16 || echo "")
 
 # ============================================================
 # 4. Worktree Path
@@ -77,7 +81,7 @@ EOF
 # ============================================================
 echo "## TICKET REQUIREMENTS (Issue #$ISSUE_NUMBER)"
 echo ""
-gh issue view "$ISSUE_NUMBER" --json title,body,labels 2>/dev/null || echo "ERROR: Cannot fetch issue"
+gh_with_timeout issue view "$ISSUE_NUMBER" --json title,body,labels 2>/dev/null || echo "ERROR: Cannot fetch issue"
 echo ""
 
 # ============================================================
@@ -98,7 +102,7 @@ echo "============================================================"
 echo "## PR DIFF"
 echo "============================================================"
 echo ""
-gh pr diff "$PR_NUMBER" 2>/dev/null || echo "ERROR: Cannot fetch diff"
+gh_with_timeout pr diff "$PR_NUMBER" 2>/dev/null || echo "ERROR: Cannot fetch diff"
 echo ""
 
 # ============================================================
@@ -108,7 +112,7 @@ echo "============================================================"
 echo "## PR COMMITS"
 echo "============================================================"
 echo ""
-gh pr view "$PR_NUMBER" --json commits --jq '.commits[] | "- \(.oid[0:7]) \(.messageHeadline)"' 2>/dev/null || echo "ERROR: Cannot fetch commits"
+gh_with_timeout pr view "$PR_NUMBER" --json commits --jq '.commits[] | "- \(.oid[0:7]) \(.messageHeadline)"' 2>/dev/null || echo "ERROR: Cannot fetch commits"
 echo ""
 
 echo "============================================================"

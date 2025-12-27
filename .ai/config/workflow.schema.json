@@ -120,7 +120,8 @@
             "pr_ready": { "type": "string" },
             "review_pass": { "type": "string" },
             "review_fail": { "type": "string" },
-            "worker_failed": { "type": "string" }
+            "worker_failed": { "type": "string" },
+            "needs_human_review": { "type": "string" }
           }
         }
       }

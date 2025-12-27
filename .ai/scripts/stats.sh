@@ -14,6 +14,9 @@ set -euo pipefail
 MONO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$MONO_ROOT"
 
+# Timeout helpers
+source "$MONO_ROOT/.ai/scripts/lib/timeout.sh"
+
 OUTPUT_FORMAT="text"
 SAVE_HISTORY="true"
 for arg in "$@"; do
@@ -32,16 +35,16 @@ HISTORY_FILE="$MONO_ROOT/.ai/state/stats_history.jsonl"
 # ----------------------------------------------------------------------------
 
 # GitHub issues
-ISSUES_TOTAL=$(gh issue list --label ai-task --state all --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-ISSUES_OPEN=$(gh issue list --label ai-task --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+ISSUES_TOTAL=$(gh_with_timeout issue list --label ai-task --state all --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+ISSUES_OPEN=$(gh_with_timeout issue list --label ai-task --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 ISSUES_CLOSED=$((ISSUES_TOTAL - ISSUES_OPEN))
-ISSUES_FAILED=$(gh issue list --label worker-failed --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-ISSUES_IN_PROGRESS=$(gh issue list --label in-progress --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-ISSUES_PR_READY=$(gh issue list --label pr-ready --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+ISSUES_FAILED=$(gh_with_timeout issue list --label worker-failed --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+ISSUES_IN_PROGRESS=$(gh_with_timeout issue list --label in-progress --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+ISSUES_PR_READY=$(gh_with_timeout issue list --label pr-ready --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
 # GitHub PRs
-PRS_OPEN=$(gh pr list --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-PRS_MERGED=$(gh pr list --state merged --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+PRS_OPEN=$(gh_with_timeout pr list --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+PRS_MERGED=$(gh_with_timeout pr list --state merged --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
 # Local results
 RESULTS_DIR="$MONO_ROOT/.ai/results"

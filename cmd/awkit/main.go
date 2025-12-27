@@ -111,6 +111,10 @@ func run() int {
 		return cmdKickoff(os.Args[2:])
 	case "validate":
 		return cmdValidate(os.Args[2:])
+	case "status":
+		return cmdStatus(os.Args[2:])
+	case "next":
+		return cmdNext(os.Args[2:])
 	case "list-presets":
 		return cmdListPresets()
 	case "completion":
@@ -140,6 +144,8 @@ Commands:
   uninstall     Remove AWK from a project
   kickoff       Start the AI workflow with PTY and progress monitoring
   validate      Validate workflow configuration
+  status        Show offline workflow status
+  next          Show suggested next actions (offline)
   list-presets  Show available project presets
   check-update  Check for CLI updates
   completion    Generate shell completion script
@@ -198,6 +204,10 @@ func cmdHelp(command string) int {
 		usageKickoff()
 	case "validate":
 		usageValidate()
+	case "status":
+		usageStatus()
+	case "next":
+		usageNext()
 	case "list-presets":
 		fmt.Println("Show available project presets with descriptions.")
 		fmt.Println("\nUsage: awkit list-presets")
@@ -1007,7 +1017,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall list-presets check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next list-presets check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1055,6 +1065,10 @@ _awkit() {
         'install:Alias for init'
         'upgrade:Upgrade AWK kit files (preserves config)'
         'uninstall:Remove AWK from a project'
+        'kickoff:Start the AI workflow'
+        'validate:Validate workflow configuration'
+        'status:Show offline workflow status'
+        'next:Show suggested next actions (offline)'
         'list-presets:Show available presets'
         'check-update:Check for CLI updates'
         'completion:Generate shell completion'
@@ -1124,6 +1138,10 @@ complete -c awkit -n __fish_use_subcommand -a init -d 'Initialize AWK in a proje
 complete -c awkit -n __fish_use_subcommand -a install -d 'Alias for init'
 complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files (preserves config)'
 complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a project'
+complete -c awkit -n __fish_use_subcommand -a kickoff -d 'Start the AI workflow'
+complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
+complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'
+complete -c awkit -n __fish_use_subcommand -a next -d 'Show suggested next actions (offline)'
 complete -c awkit -n __fish_use_subcommand -a list-presets -d 'Show available presets'
 complete -c awkit -n __fish_use_subcommand -a check-update -d 'Check for CLI updates'
 complete -c awkit -n __fish_use_subcommand -a completion -d 'Generate shell completion'

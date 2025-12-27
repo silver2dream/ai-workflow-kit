@@ -71,8 +71,70 @@ if [[ "$CONSISTENCY_STATUS" != "consistent" && "$REPO_TYPE" == "submodule" ]]; t
   esac
 fi
 
+sanitize_int() {
+  local value="${1:-0}"
+  local default="${2:-0}"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+  printf '%s' "$default"
+}
+
+sanitize_json_array() {
+  local raw="${1:-}"
+  if [[ -z "$raw" ]]; then
+    printf '[]'
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    PREV_JSON="$raw" python3 - <<'PY'
+import json
+import os
+import sys
+
+raw = os.environ.get("PREV_JSON", "")
+try:
+    v = json.loads(raw)
+    if isinstance(v, list):
+        sys.stdout.write(json.dumps(v, separators=(",", ":")))
+    else:
+        sys.stdout.write("[]")
+except Exception:
+    sys.stdout.write("[]")
+PY
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    PREV_JSON="$raw" python - <<'PY'
+import json
+import os
+import sys
+
+raw = os.environ.get("PREV_JSON", "")
+try:
+    v = json.loads(raw)
+    if isinstance(v, list):
+        sys.stdout.write(json.dumps(v, separators=(",", ":")))
+    else:
+        sys.stdout.write("[]")
+except Exception:
+    sys.stdout.write("[]")
+PY
+    return 0
+  fi
+  printf '[]'
+}
+
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 OUT="$OUT_DIR/issue-$ISSUE_ID.json"
+OUT_TMP="${OUT}.tmp.$$"
+trap 'rm -f "$OUT_TMP" 2>/dev/null || true' EXIT
+
+ATTEMPT_NUMBER="$(sanitize_int "$ATTEMPT_NUMBER" "1")"
+EXEC_DURATION="$(sanitize_int "$EXEC_DURATION" "0")"
+RETRY_COUNT="$(sanitize_int "$RETRY_COUNT" "0")"
+PREV_SESSION_IDS="$(sanitize_json_array "$PREV_SESSION_IDS")"
 
 json_escape() {
   local input
@@ -102,42 +164,62 @@ json_escape() {
 
 {
   echo "{"
-  echo "  \"issue_id\": \"$ISSUE_ID\","
-  echo "  \"status\": \"$STATUS\","
-  echo "  \"repo\": \"$REPO_NAME\","
-  echo "  \"repo_type\": \"$REPO_TYPE\","
-  echo "  \"work_dir\": \"$WORK_DIR\","
-  echo "  \"branch\": \"$BRANCH\","
-  echo "  \"base_branch\": \"$BASE_BRANCH\","
-  echo "  \"head_sha\": \"$HEAD_SHA\","
-  echo "  \"submodule_sha\": \"$SUBMODULE_SHA\","
-  echo "  \"consistency_status\": \"$CONSISTENCY_STATUS\","
-  echo "  \"failure_stage\": \"$FAILURE_STAGE\","
+  echo "  \"issue_id\": $(printf '%s' "$ISSUE_ID" | json_escape),"
+  echo "  \"status\": $(printf '%s' "$STATUS" | json_escape),"
+  echo "  \"repo\": $(printf '%s' "$REPO_NAME" | json_escape),"
+  echo "  \"repo_type\": $(printf '%s' "$REPO_TYPE" | json_escape),"
+  echo "  \"work_dir\": $(printf '%s' "$WORK_DIR" | json_escape),"
+  echo "  \"branch\": $(printf '%s' "$BRANCH" | json_escape),"
+  echo "  \"base_branch\": $(printf '%s' "$BASE_BRANCH" | json_escape),"
+  echo "  \"head_sha\": $(printf '%s' "$HEAD_SHA" | json_escape),"
+  echo "  \"submodule_sha\": $(printf '%s' "$SUBMODULE_SHA" | json_escape),"
+  echo "  \"consistency_status\": $(printf '%s' "$CONSISTENCY_STATUS" | json_escape),"
+  echo "  \"failure_stage\": $(printf '%s' "$FAILURE_STAGE" | json_escape),"
   echo "  \"recovery_command\": $(printf '%s' "$RECOVERY_COMMAND" | json_escape),"
-  echo "  \"timestamp_utc\": \"$TS\","
-  echo "  \"pr_url\": \"${PR_URL}\","
-  echo "  \"summary_file\": \"${SUMMARY_FILE}\","
+  echo "  \"timestamp_utc\": $(printf '%s' "$TS" | json_escape),"
+  echo "  \"pr_url\": $(printf '%s' "$PR_URL" | json_escape),"
+  echo "  \"summary_file\": $(printf '%s' "$SUMMARY_FILE" | json_escape),"
   echo "  \"submodule_status\": $(printf '%s' "$SUBMODULE_STATUS" | json_escape),"
   echo "  \"session\": {"
-  echo "    \"worker_session_id\": \"$WORKER_SESSION_ID\","
-  echo "    \"principal_session_id\": \"\","
+  echo "    \"worker_session_id\": $(printf '%s' "$WORKER_SESSION_ID" | json_escape),"
+  echo "    \"principal_session_id\": $(printf '%s' "" | json_escape),"
   echo "    \"attempt_number\": $ATTEMPT_NUMBER,"
   echo "    \"previous_session_ids\": $PREV_SESSION_IDS,"
   echo "    \"previous_failure_reason\": $(printf '%s' "$PREV_FAILURE_REASON" | json_escape)"
   echo "  },"
   echo "  \"review_audit\": {"
-  echo "    \"reviewer_session_id\": \"\","
-  echo "    \"review_timestamp\": \"\","
-  echo "    \"ci_status\": \"\","
+  echo "    \"reviewer_session_id\": $(printf '%s' "" | json_escape),"
+  echo "    \"review_timestamp\": $(printf '%s' "" | json_escape),"
+  echo "    \"ci_status\": $(printf '%s' "" | json_escape),"
   echo "    \"ci_timeout\": false,"
-  echo "    \"decision\": \"\","
-  echo "    \"merge_timestamp\": \"\""
+  echo "    \"decision\": $(printf '%s' "" | json_escape),"
+  echo "    \"merge_timestamp\": $(printf '%s' "" | json_escape)"
   echo "  },"
   echo "  \"metrics\": {"
   echo "    \"duration_seconds\": $EXEC_DURATION,"
   echo "    \"retry_count\": $RETRY_COUNT"
   echo "  }"
   echo "}"
-} > "$OUT"
+} > "$OUT_TMP"
+
+if command -v python3 >/dev/null 2>&1; then
+  python3 - "$OUT_TMP" <<'PY' >/dev/null
+import json
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    json.load(handle)
+PY
+elif command -v python >/dev/null 2>&1; then
+  python - "$OUT_TMP" <<'PY' >/dev/null
+import json
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    json.load(handle)
+PY
+fi
+
+mv -f "$OUT_TMP" "$OUT"
 
 echo "[write_result] wrote $OUT"

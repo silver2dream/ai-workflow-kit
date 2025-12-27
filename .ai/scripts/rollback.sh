@@ -18,6 +18,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Timeout helpers
+source "$SCRIPT_DIR/lib/timeout.sh"
+
 PR_NUMBER="${1:?usage: rollback.sh <PR_NUMBER> [--dry-run]}"
 DRY_RUN="${2:-}"
 
@@ -30,14 +33,14 @@ if ! command -v gh &> /dev/null; then
 fi
 
 # Require auth.
-if ! gh auth status &> /dev/null; then
+if ! gh_with_timeout auth status &> /dev/null; then
   echo "[rollback] ERROR: gh not authenticated. Run 'gh auth login'"
   exit 1
 fi
 
 # Fetch PR info.
 echo "[rollback] Fetching PR info..."
-PR_INFO=$(gh pr view "$PR_NUMBER" --json title,body,mergeCommit,headRefName,state,mergedAt 2>/dev/null)
+PR_INFO=$(gh_with_timeout pr view "$PR_NUMBER" --json title,body,mergeCommit,headRefName,state,mergedAt 2>/dev/null)
 
 if [[ -z "$PR_INFO" ]]; then
   echo "[rollback] ERROR: PR #$PR_NUMBER not found"
@@ -67,7 +70,7 @@ if [[ -z "$MERGE_COMMIT" ]]; then
 fi
 
 # Extract issue number from PR body.
-ISSUE_NUMBER=$(echo "$PR_BODY" | grep -oP '(?i)(?:closes|fixes|resolves)\s*#\K\d+' | head -1 || echo "")
+ISSUE_NUMBER=$(echo "$PR_BODY" | grep -iE '(closes|fixes|resolves)\s*#[0-9]+' | sed -n 's/.*#\([0-9]*\).*/\1/p' | head -1)
 echo "[rollback] Original Issue: ${ISSUE_NUMBER:-none}"
 
 # Dry run mode.
@@ -98,7 +101,7 @@ echo "[rollback] Current branch: $CURRENT_BRANCH"
 REVERT_BRANCH="revert-pr-$PR_NUMBER"
 echo "[rollback] Creating revert branch: $REVERT_BRANCH"
 
-git fetch origin "$CURRENT_BRANCH"
+git_with_timeout fetch origin "$CURRENT_BRANCH"
 git checkout -b "$REVERT_BRANCH" "origin/$CURRENT_BRANCH"
 
 # Revert merge commit.
@@ -162,11 +165,11 @@ fi
 
 # Push revert branch.
 echo "[rollback] Pushing revert branch..."
-git push origin "$REVERT_BRANCH"
+git_with_timeout push origin "$REVERT_BRANCH"
 
 # Create revert PR.
 echo "[rollback] Creating revert PR..."
-REVERT_PR_URL=$(gh pr create \
+REVERT_PR_URL=$(gh_with_timeout pr create \
   --title "Revert: $PR_TITLE" \
   --body "This reverts PR #$PR_NUMBER (commit $MERGE_COMMIT).
 
@@ -186,7 +189,7 @@ echo "[rollback] Revert PR created: $REVERT_PR_URL"
 # Reopen original issue if present.
 if [[ -n "$ISSUE_NUMBER" ]]; then
   echo "[rollback] Reopening issue #$ISSUE_NUMBER..."
-  gh issue reopen "$ISSUE_NUMBER" --comment "Reopened due to rollback of PR #$PR_NUMBER.
+  gh_with_timeout issue reopen "$ISSUE_NUMBER" --comment "Reopened due to rollback of PR #$PR_NUMBER.
 
 Revert PR: $REVERT_PR_URL" 2>/dev/null || echo "[rollback] WARN: Could not reopen issue #$ISSUE_NUMBER"
 fi

@@ -13,6 +13,9 @@ set -euo pipefail
 MONO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$MONO_ROOT"
 
+# Timeout helpers
+source "$MONO_ROOT/.ai/scripts/lib/timeout.sh"
+
 DRY_RUN=false
 BACKGROUND=false
 FORCE=false
@@ -84,7 +87,7 @@ fi
 ok "gh CLI installed"
 
 # 2. Check gh auth
-if ! gh auth status &>/dev/null; then
+if ! gh_with_timeout auth status &>/dev/null; then
   error "gh not authenticated. Use one of:"
   echo "  1. Interactive: gh auth login"
   echo "  2. Environment: export GH_TOKEN=ghp_xxxx"

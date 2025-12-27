@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Timeout helpers
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/timeout.sh"
+
 # ============================================================
 # Preflight Checks for Multi-Repo Support
 # Requirements: 7.1-7.7, 19.1-19.4, 23.1-23.4
@@ -104,7 +108,7 @@ check_remote_accessible() {
   fi
   
   # Try to reach remote (Req 19.1, 19.2)
-  if git ls-remote --exit-code "$remote_url" HEAD >/dev/null 2>&1; then
+  if git_with_timeout ls-remote --exit-code "$remote_url" HEAD >/dev/null 2>&1; then
     update_cache "$REMOTE_CACHE_FILE" "$cache_key" "true"
     return 0
   else
@@ -138,7 +142,7 @@ case "$REPO_TYPE" in
 
     echo "[preflight] init submodules"
     git submodule sync --recursive
-    git submodule update --init --recursive
+    git_with_timeout submodule update --init --recursive
 
     echo "[preflight] verify submodule working trees clean + pinned SHAs exist on origin"
     paths="$(git config -f .gitmodules --get-regexp path 2>/dev/null | awk '{print $2}' || true)"
@@ -151,7 +155,7 @@ case "$REPO_TYPE" in
       fi
 
       sha="$(git -C "$p" rev-parse HEAD)"
-      if ! git -C "$p" fetch -q origin "$sha" --depth=1 2>/dev/null; then
+      if ! git_with_timeout -C "$p" fetch -q origin "$sha" --depth=1 2>/dev/null; then
         echo "ERROR: submodule '$p' pinned sha '$sha' not found on origin (not our ref / missing commit)." >&2
         echo "HINT: push the commit to origin or update root to a reachable commit (merged into integration branch)." >&2
         exit 2
@@ -218,7 +222,7 @@ case "$REPO_TYPE" in
     # Verify pinned SHA exists on origin (Req 7.4, 7.5)
     echo "[preflight] verify submodule pinned SHA on origin"
     sha="$(git -C "$ROOT/$REPO_PATH" rev-parse HEAD)"
-    if ! git -C "$ROOT/$REPO_PATH" fetch -q origin "$sha" --depth=1 2>/dev/null; then
+    if ! git_with_timeout -C "$ROOT/$REPO_PATH" fetch -q origin "$sha" --depth=1 2>/dev/null; then
       echo "ERROR: submodule '$REPO_PATH' pinned sha '$sha' not found on origin." >&2
       echo "HINT: push the commit to origin or update root to a reachable commit." >&2
       exit 2
