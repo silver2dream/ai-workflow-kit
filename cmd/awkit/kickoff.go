@@ -102,6 +102,11 @@ func cmdKickoff(args []string) int {
 		return 0
 	}
 
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		output.Error(fmt.Sprintf("Failed to create log directory: %v", err))
+		return 1
+	}
+
 	// Initialize loop_count for Loop Safety mechanism
 	loopCountFile := filepath.Join(".ai", "state", "loop_count")
 	if err := os.MkdirAll(filepath.Dir(loopCountFile), 0755); err != nil {

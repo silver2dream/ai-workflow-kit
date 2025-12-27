@@ -9,6 +9,9 @@
 
 set -euo pipefail
 
+# Timeout helpers
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/timeout.sh"
+
 # ============================================================
 # 初始化
 # ============================================================
@@ -49,14 +52,14 @@ fi
 # ============================================================
 log "統計工作流結果..."
 
-TOTAL_ISSUES=$(gh issue list --label "ai-task" --json number --jq '. | length' 2>/dev/null || echo "0")
-OPEN_ISSUES=$(gh issue list --label "ai-task" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
+TOTAL_ISSUES=$(gh_with_timeout issue list --label "ai-task" --json number --jq '. | length' 2>/dev/null || echo "0")
+OPEN_ISSUES=$(gh_with_timeout issue list --label "ai-task" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
 CLOSED_ISSUES=$((TOTAL_ISSUES - OPEN_ISSUES))
 
-IN_PROGRESS=$(gh issue list --label "in-progress" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
-PR_READY=$(gh issue list --label "pr-ready" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
-WORKER_FAILED=$(gh issue list --label "worker-failed" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
-NEEDS_REVIEW=$(gh issue list --label "needs-human-review" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
+IN_PROGRESS=$(gh_with_timeout issue list --label "in-progress" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
+PR_READY=$(gh_with_timeout issue list --label "pr-ready" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
+WORKER_FAILED=$(gh_with_timeout issue list --label "worker-failed" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
+NEEDS_REVIEW=$(gh_with_timeout issue list --label "needs-human-review" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
 
 log "總 Issues: $TOTAL_ISSUES"
 log "已關閉: $CLOSED_ISSUES"

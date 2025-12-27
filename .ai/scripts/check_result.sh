@@ -8,6 +8,9 @@
 
 set -euo pipefail
 
+# Timeout helpers
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/timeout.sh"
+
 # ============================================================
 # 初始化
 # ============================================================
@@ -103,7 +106,7 @@ if [[ "$WORKER_STATUS" == "success" ]] && [[ -n "$PR_URL" ]]; then
   fi
   
   # 更新 issue 標籤
-  gh issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "pr-ready" 2>/dev/null || true
+  gh_with_timeout issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "pr-ready" 2>/dev/null || true
   
   log "✓ Issue 標籤已更新 (in-progress → pr-ready)"
   
@@ -140,9 +143,9 @@ log "失敗次數: $FAIL_COUNT / 3"
 if [[ "$FAIL_COUNT" -ge 3 ]]; then
   log "✗ 達到最大重試次數 (3)"
   
-  gh issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "worker-failed" 2>/dev/null || true
+  gh_with_timeout issue edit "$ISSUE_NUMBER" --remove-label "in-progress" --add-label "worker-failed" 2>/dev/null || true
   
-  gh issue comment "$ISSUE_NUMBER" --body "Worker 已失敗 3 次，需要人工介入。
+  gh_with_timeout issue comment "$ISSUE_NUMBER" --body "Worker 已失敗 3 次，需要人工介入。
 
 請檢查：
 1. 任務描述是否清晰
@@ -157,7 +160,7 @@ if [[ "$FAIL_COUNT" -ge 3 ]]; then
 else
   log "將在下一輪重試 (attempt $FAIL_COUNT/3)"
   
-  gh issue edit "$ISSUE_NUMBER" --remove-label "in-progress" 2>/dev/null || true
+  gh_with_timeout issue edit "$ISSUE_NUMBER" --remove-label "in-progress" 2>/dev/null || true
   
   CHECK_RESULT_STATUS="failed_will_retry"
 fi

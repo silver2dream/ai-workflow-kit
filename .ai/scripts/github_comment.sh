@@ -6,6 +6,9 @@
 
 set -euo pipefail
 
+# Timeout helpers
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/timeout.sh"
+
 # ============================================================
 # Constants
 # ============================================================
@@ -56,7 +59,7 @@ ${extra_data}"
   fi
   
   # Post comment to GitHub
-  gh issue comment "$issue_id" --body "$comment"
+  gh_with_timeout issue comment "$issue_id" --body "$comment"
   
   echo "[COMMENT] Added AWK comment to Issue #${issue_id}: ${comment_type}" >&2
 }
@@ -135,7 +138,7 @@ ${risks}"
   fi
   
   # Post comment to GitHub
-  gh pr comment "$pr_number" --body "$comment"
+  gh_with_timeout pr comment "$pr_number" --body "$comment"
   
   echo "[COMMENT] Added AWK review comment to PR #${pr_number}" >&2
 }

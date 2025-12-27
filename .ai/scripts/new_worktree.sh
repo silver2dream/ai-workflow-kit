@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Timeout helpers
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/timeout.sh"
+
 # ============================================================
 # Worktree Creation with Multi-Repo Support
 # Requirements: 2.3, 3.3, 4.1-4.5, 14.1-14.5
@@ -42,7 +45,7 @@ fi
 
 # Ensure base is up to date once (no loops)
 worker_log "fetch origin"
-git -C "$ROOT" fetch origin --prune >&2
+git_with_timeout -C "$ROOT" fetch origin --prune >&2
 
 # Ensure local base exists
 if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BASE"; then
@@ -54,7 +57,7 @@ fi
 
 # Fast-forward base
 git -C "$ROOT" checkout -q "$BASE" >&2
-git -C "$ROOT" pull --ff-only origin "$BASE" >&2 || true
+git_with_timeout -C "$ROOT" pull --ff-only origin "$BASE" >&2 || true
 
 # Ensure target branch exists (local or from remote) (Req 14.1, 14.2)
 if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
@@ -78,7 +81,7 @@ case "$REPO_TYPE" in
     # Root type: init all submodules (Req 2.3)
     worker_log "init submodules (root type)"
     git -C "$WT_DIR" submodule sync --recursive >&2 || true
-    git -C "$WT_DIR" submodule update --init --recursive >&2 || true
+    git_with_timeout -C "$WT_DIR" submodule update --init --recursive >&2 || true
     ;;
 
   directory)
@@ -105,7 +108,7 @@ case "$REPO_TYPE" in
     
     # Sync and init the specific submodule
     git -C "$WT_DIR" submodule sync "$REPO_PATH" >&2 || true
-    git -C "$WT_DIR" submodule update --init --recursive "$REPO_PATH" >&2
+    git_with_timeout -C "$WT_DIR" submodule update --init --recursive "$REPO_PATH" >&2
     
     # Verify submodule directory exists (Req 4.4)
     SUBMODULE_DIR="$WT_DIR/$REPO_PATH"

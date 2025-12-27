@@ -43,14 +43,14 @@ else
 fi
 
 # Test 3: prepare_review.sh fetches Issue content
-if grep -q "gh issue view" "$AI_ROOT/scripts/prepare_review.sh"; then
+if grep -Eq "gh(_with_timeout)? issue view" "$AI_ROOT/scripts/prepare_review.sh"; then
   log_pass "prepare_review.sh fetches Issue content"
 else
   log_fail "prepare_review.sh doesn't fetch Issue content"
 fi
 
 # Test 4: prepare_review.sh fetches PR diff
-if grep -q "gh pr diff" "$AI_ROOT/scripts/prepare_review.sh"; then
+if grep -Eq "gh(_with_timeout)? pr diff" "$AI_ROOT/scripts/prepare_review.sh"; then
   log_pass "prepare_review.sh fetches PR diff"
 else
   log_fail "prepare_review.sh doesn't fetch PR diff"
@@ -82,7 +82,7 @@ else
 fi
 
 # Test 8: submit_review.sh posts Issue comment on rejection
-if grep -q 'gh issue comment.*AWK Review' "$AI_ROOT/scripts/submit_review.sh"; then
+if grep -Eq 'gh(_with_timeout)? issue comment.*AWK Review' "$AI_ROOT/scripts/submit_review.sh"; then
   log_pass "submit_review.sh posts Issue comment on rejection"
 else
   log_fail "submit_review.sh doesn't post Issue comment on rejection"
@@ -96,14 +96,15 @@ else
 fi
 
 # Test 10: submit_review.sh merges PR on success
-if grep -q "gh pr merge" "$AI_ROOT/scripts/submit_review.sh"; then
+if grep -Eq "gh(_with_timeout)? pr merge" "$AI_ROOT/scripts/submit_review.sh"; then
   log_pass "submit_review.sh merges PR on success"
 else
   log_fail "submit_review.sh doesn't merge PR"
 fi
 
 # Test 11: submit_review.sh updates tasks.md on merge
-if grep -q 'sed.*\[x\]' "$AI_ROOT/scripts/submit_review.sh"; then
+if grep -q 'sed.*\[x\]' "$AI_ROOT/scripts/submit_review.sh" || \
+   grep -Fq 'replace("[ ]", "[x]"' "$AI_ROOT/scripts/submit_review.sh"; then
   log_pass "submit_review.sh updates tasks.md on merge"
 else
   log_fail "submit_review.sh doesn't update tasks.md"

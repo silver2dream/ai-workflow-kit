@@ -13,6 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY_REVIEW="$SCRIPT_DIR/verify_review.sh"
 SESSION_LOG_DIR=".ai/state/principal/sessions"
 
+# Timeout helpers
+source "$SCRIPT_DIR/lib/timeout.sh"
+
 # Cross-platform jq wrapper
 _jq() {
   if command -v jq &>/dev/null; then
@@ -61,7 +64,7 @@ echo "============================================"
 echo ""
 
 # Build gh command
-GH_CMD="gh pr list --state merged --limit $LIMIT --json number,title,mergedAt,body,comments"
+GH_CMD="gh_with_timeout pr list --state merged --limit $LIMIT --json number,title,mergedAt,body,comments"
 if [[ -n "$SINCE" ]]; then
   echo "Auditing PRs merged since: $SINCE"
 else

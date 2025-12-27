@@ -10,6 +10,12 @@
 set -euo pipefail
 
 # ============================================================
+# Timeout helpers
+# ============================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/timeout.sh"
+
+# ============================================================
 # 初始化
 # ============================================================
 log() {
@@ -92,6 +98,7 @@ LABEL_TASK=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); pr
 LABEL_IN_PROGRESS=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('in_progress', 'in-progress'))" 2>/dev/null || echo "in-progress")
 LABEL_PR_READY=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('pr_ready', 'pr-ready'))" 2>/dev/null || echo "pr-ready")
 LABEL_WORKER_FAILED=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('worker_failed', 'worker-failed'))" 2>/dev/null || echo "worker-failed")
+LABEL_NEEDS_REVIEW=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')); print(c.get('github',{}).get('labels',{}).get('needs_human_review', 'needs-human-review'))" 2>/dev/null || echo "needs-human-review")
 
 log "配置已載入"
 
@@ -141,7 +148,7 @@ fi
 # ============================================================
 log "檢查 in-progress issues..."
 
-IN_PROGRESS_ISSUES=$(gh issue list --label "$LABEL_IN_PROGRESS" --state open --json number --jq '.[].number' 2>/dev/null || echo "")
+IN_PROGRESS_ISSUES=$(gh_with_timeout issue list --label "$LABEL_IN_PROGRESS" --state open --json number --jq '.[].number' 2>/dev/null || echo "")
 
 if [[ -n "$IN_PROGRESS_ISSUES" ]]; then
   ISSUE_NUMBER=$(echo "$IN_PROGRESS_ISSUES" | head -1)
@@ -163,7 +170,7 @@ log "無 in-progress issues"
 # ============================================================
 log "檢查 pr-ready issues..."
 
-PR_READY_ISSUES=$(gh issue list --label "$LABEL_PR_READY" --state open --json number,body --jq '.[] | "\(.number)|\(.body)"' 2>/dev/null || echo "")
+PR_READY_ISSUES=$(gh_with_timeout issue list --label "$LABEL_PR_READY" --state open --json number,body --jq '.[] | "\(.number)|\(.body)"' 2>/dev/null || echo "")
 
 if [[ -n "$PR_READY_ISSUES" ]]; then
   ISSUE_LINE=$(echo "$PR_READY_ISSUES" | head -1)
@@ -201,7 +208,7 @@ if [[ -n "$PR_READY_ISSUES" ]]; then
     exit 0
   else
     log "⚠ 無法提取 PR 編號，移除 pr-ready 標籤"
-    gh issue edit "$ISSUE_NUMBER" --remove-label "$LABEL_PR_READY" 2>/dev/null || true
+    gh_with_timeout issue edit "$ISSUE_NUMBER" --remove-label "$LABEL_PR_READY" 2>/dev/null || true
     ISSUE_NUMBER=""
   fi
 fi
@@ -209,11 +216,46 @@ fi
 log "無 pr-ready issues"
 
 # ============================================================
+# Step 2.5: 檢查需要人工介入的 issues
+# ============================================================
+log "檢查需要人工介入的 issues..."
+
+WORKER_FAILED_ISSUES=$(gh_with_timeout issue list --label "$LABEL_WORKER_FAILED" --state open --json number --jq '.[].number' 2>/dev/null || echo "")
+if [[ -n "$WORKER_FAILED_ISSUES" ]]; then
+  ISSUE_NUMBER=$(echo "$WORKER_FAILED_ISSUES" | head -1)
+  log "✗ 發現 worker-failed issue: #$ISSUE_NUMBER"
+  NEXT_ACTION="none"
+  EXIT_REASON="worker_failed"
+  echo "NEXT_ACTION=$NEXT_ACTION"
+  echo "ISSUE_NUMBER=$ISSUE_NUMBER"
+  echo "PR_NUMBER=$PR_NUMBER"
+  echo "SPEC_NAME=$SPEC_NAME"
+  echo "TASK_LINE=$TASK_LINE"
+  echo "EXIT_REASON=$EXIT_REASON"
+  exit 0
+fi
+
+NEEDS_REVIEW_ISSUES=$(gh_with_timeout issue list --label "$LABEL_NEEDS_REVIEW" --state open --json number --jq '.[].number' 2>/dev/null || echo "")
+if [[ -n "$NEEDS_REVIEW_ISSUES" ]]; then
+  ISSUE_NUMBER=$(echo "$NEEDS_REVIEW_ISSUES" | head -1)
+  log "✗ 發現需要人工審查的 issue: #$ISSUE_NUMBER"
+  NEXT_ACTION="none"
+  EXIT_REASON="needs_human_review"
+  echo "NEXT_ACTION=$NEXT_ACTION"
+  echo "ISSUE_NUMBER=$ISSUE_NUMBER"
+  echo "PR_NUMBER=$PR_NUMBER"
+  echo "SPEC_NAME=$SPEC_NAME"
+  echo "TASK_LINE=$TASK_LINE"
+  echo "EXIT_REASON=$EXIT_REASON"
+  exit 0
+fi
+
+# ============================================================
 # Step 3: 檢查 pending Issues
 # ============================================================
 log "檢查 pending issues..."
 
-PENDING_ISSUES=$(gh issue list --label "$LABEL_TASK" --state open --json number,labels --jq '.[] | select(.labels | map(.name) | (any(. == "'"$LABEL_IN_PROGRESS"'") or any(. == "'"$LABEL_PR_READY"'") or any(. == "'"$LABEL_WORKER_FAILED"'")) | not) | .number' 2>/dev/null || echo "")
+PENDING_ISSUES=$(gh_with_timeout issue list --label "$LABEL_TASK" --state open --json number,labels --jq '.[] | select(.labels | map(.name) | (any(. == "'"$LABEL_IN_PROGRESS"'") or any(. == "'"$LABEL_PR_READY"'") or any(. == "'"$LABEL_WORKER_FAILED"'") or any(. == "'"$LABEL_NEEDS_REVIEW"'")) | not) | .number' 2>/dev/null || echo "")
 
 if [[ -n "$PENDING_ISSUES" ]]; then
   ISSUE_NUMBER=$(echo "$PENDING_ISSUES" | head -1)
@@ -293,7 +335,7 @@ log "無未完成任務"
 # ============================================================
 log "檢查是否全部完成..."
 
-OPEN_TASK_COUNT=$(gh issue list --label "$LABEL_TASK" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
+OPEN_TASK_COUNT=$(gh_with_timeout issue list --label "$LABEL_TASK" --state open --json number --jq '. | length' 2>/dev/null || echo "0")
 
 if [[ "$OPEN_TASK_COUNT" -eq 0 ]]; then
   log "✓ 所有任務已完成！"

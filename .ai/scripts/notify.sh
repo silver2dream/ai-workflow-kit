@@ -12,6 +12,9 @@ set -euo pipefail
 MONO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$MONO_ROOT"
 
+# Timeout helpers
+source "$MONO_ROOT/.ai/scripts/lib/timeout.sh"
+
 # ----------------------------------------------------------------------------
 # Config (env overrides)
 # ----------------------------------------------------------------------------
@@ -50,11 +53,11 @@ fi
 # ----------------------------------------------------------------------------
 if [[ "$SEND_SUMMARY" == "true" ]]; then
   # Collect stats.
-  ISSUES_CLOSED=$(gh issue list --label ai-task --state closed --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-  ISSUES_OPEN=$(gh issue list --label ai-task --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-  ISSUES_FAILED=$(gh issue list --label worker-failed --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-  PRS_MERGED=$(gh pr list --state merged --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-  PRS_OPEN=$(gh pr list --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  ISSUES_CLOSED=$(gh_with_timeout issue list --label ai-task --state closed --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  ISSUES_OPEN=$(gh_with_timeout issue list --label ai-task --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  ISSUES_FAILED=$(gh_with_timeout issue list --label worker-failed --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  PRS_MERGED=$(gh_with_timeout pr list --state merged --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  PRS_OPEN=$(gh_with_timeout pr list --state open --json number --limit 500 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
   
   TITLE="AI Workflow Summary"
   MESSAGE="Closed: $ISSUES_CLOSED | Open: $ISSUES_OPEN | Failed: $ISSUES_FAILED | PRs merged: $PRS_MERGED | PRs open: $PRS_OPEN"

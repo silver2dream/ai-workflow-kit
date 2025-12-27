@@ -17,6 +17,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
 MONO_ROOT="$(dirname "$AI_ROOT")"
 
+# Timeout helpers
+source "$SCRIPT_DIR/lib/timeout.sh"
+
 DRY_RUN=false
 DAYS=7
 FORCE=false
@@ -76,7 +79,7 @@ for wt in $WORKTREES; do
     
     if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
       # Check issue state.
-      ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+      ISSUE_STATE=$(gh_with_timeout issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
       
       if [[ "$ISSUE_STATE" == "OPEN" ]]; then
         echo "  SKIP: $wt (issue #$ISSUE_NUM is still open)"
@@ -104,7 +107,7 @@ echo ""
 echo "## Checking remote branches..."
 
 # Prune remote branches.
-git fetch --prune 2>/dev/null || true
+git_with_timeout fetch --prune 2>/dev/null || true
 
 # Find remote branches that match feat/ai-issue-*.
 REMOTE_BRANCHES=$(git branch -r --list 'origin/feat/ai-issue-*' 2>/dev/null || true)
@@ -118,7 +121,7 @@ for branch in $REMOTE_BRANCHES; do
   
   if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
     # Check PR state.
-    PR_STATE=$(gh pr list --head "$BRANCH_NAME" --json state -q '.[0].state' 2>/dev/null || echo "")
+    PR_STATE=$(gh_with_timeout pr list --head "$BRANCH_NAME" --json state -q '.[0].state' 2>/dev/null || echo "")
     
     if [[ "$PR_STATE" == "OPEN" ]]; then
       echo "  SKIP: $BRANCH_NAME (PR is still open)"
@@ -126,7 +129,7 @@ for branch in $REMOTE_BRANCHES; do
     fi
     
     # Check issue state.
-    ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+    ISSUE_STATE=$(gh_with_timeout issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
     
     if [[ "$ISSUE_STATE" == "OPEN" ]]; then
       echo "  SKIP: $BRANCH_NAME (issue #$ISSUE_NUM is still open)"
@@ -136,7 +139,7 @@ for branch in $REMOTE_BRANCHES; do
   
   echo "  CLEAN: $BRANCH_NAME"
   if [[ "$DRY_RUN" == "false" ]]; then
-    git push origin --delete "$BRANCH_NAME" 2>/dev/null || echo "    WARN: Could not delete remote branch"
+    git_with_timeout push origin --delete "$BRANCH_NAME" 2>/dev/null || echo "    WARN: Could not delete remote branch"
     CLEANED_BRANCHES=$((CLEANED_BRANCHES + 1))
   fi
 done
@@ -159,7 +162,7 @@ if [[ -f "$GITMODULES_PATH" ]]; then
       echo "  Checking submodule: $submodule_path"
       
       # Fetch and prune in submodule
-      git -C "$SUBMODULE_DIR" fetch --prune 2>/dev/null || true
+      git_with_timeout -C "$SUBMODULE_DIR" fetch --prune 2>/dev/null || true
       
       # Find remote branches in submodule that match feat/ai-issue-*
       SUBMODULE_REMOTE_BRANCHES=$(git -C "$SUBMODULE_DIR" branch -r --list 'origin/feat/ai-issue-*' 2>/dev/null || true)
@@ -169,7 +172,7 @@ if [[ -f "$GITMODULES_PATH" ]]; then
         ISSUE_NUM=$(echo "$BRANCH_NAME" | sed -n 's/.*ai-issue-\([0-9]*\).*/\1/p' || echo "")
         
         if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
-          ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+          ISSUE_STATE=$(gh_with_timeout issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
           
           if [[ "$ISSUE_STATE" == "OPEN" ]]; then
             echo "    SKIP: $submodule_path:$BRANCH_NAME (issue #$ISSUE_NUM is still open)"
@@ -179,7 +182,7 @@ if [[ -f "$GITMODULES_PATH" ]]; then
         
         echo "    CLEAN: $submodule_path:$BRANCH_NAME"
         if [[ "$DRY_RUN" == "false" ]]; then
-          git -C "$SUBMODULE_DIR" push origin --delete "$BRANCH_NAME" 2>/dev/null || echo "      WARN: Could not delete submodule remote branch"
+          git_with_timeout -C "$SUBMODULE_DIR" push origin --delete "$BRANCH_NAME" 2>/dev/null || echo "      WARN: Could not delete submodule remote branch"
           CLEANED_BRANCHES=$((CLEANED_BRANCHES + 1))
         fi
       done
@@ -191,7 +194,7 @@ if [[ -f "$GITMODULES_PATH" ]]; then
         ISSUE_NUM=$(echo "$branch" | sed -n 's/.*ai-issue-\([0-9]*\).*/\1/p' || echo "")
         
         if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
-          ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+          ISSUE_STATE=$(gh_with_timeout issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
           
           if [[ "$ISSUE_STATE" == "OPEN" ]]; then
             echo "    SKIP: $submodule_path:$branch (issue #$ISSUE_NUM is still open)"
@@ -222,7 +225,7 @@ for branch in $LOCAL_BRANCHES; do
   ISSUE_NUM=$(echo "$branch" | sed -n 's/.*ai-issue-\([0-9]*\).*/\1/p' || echo "")
   
   if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
-    ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+    ISSUE_STATE=$(gh_with_timeout issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
     
     if [[ "$ISSUE_STATE" == "OPEN" ]]; then
       echo "  SKIP: $branch (issue #$ISSUE_NUM is still open)"
@@ -253,7 +256,7 @@ if [[ -d "$RUNS_DIR" ]]; then
     ISSUE_NUM=$(basename "$run_dir" | sed -n 's/.*issue-\([0-9]*\).*/\1/p' || echo "")
     
     if [[ -n "$ISSUE_NUM" ]] && [[ "$FORCE" != "true" ]]; then
-      ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+      ISSUE_STATE=$(gh_with_timeout issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
       
       if [[ "$ISSUE_STATE" == "OPEN" ]]; then
         echo "  SKIP: $run_dir (issue #$ISSUE_NUM is still open)"
