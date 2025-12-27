@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
@@ -119,6 +120,20 @@ func cmdKickoff(args []string) int {
 		return 1
 	}
 
+	principalSessionID := ""
+	var endSessionOnce sync.Once
+	endPrincipalSession := func(reason string) {
+		if principalSessionID == "" {
+			return
+		}
+		endSessionOnce.Do(func() {
+			cmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "end_principal_session", principalSessionID, reason)
+			cmd.Stdout = io.Discard
+			cmd.Stderr = io.Discard
+			_ = cmd.Run()
+		})
+	}
+
 	// Initialize Principal session
 	sessionCmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "init_principal_session")
 	sessionOutput, err := sessionCmd.Output()
@@ -128,13 +143,14 @@ func cmdKickoff(args []string) int {
 	} else {
 		sessionID := strings.TrimSpace(string(sessionOutput))
 		if sessionID != "" {
+			principalSessionID = sessionID
+			defer endPrincipalSession("aborted")
 			output.Success(fmt.Sprintf("Session: %s", sessionID))
 		}
 	}
 
 	// Lock manager
 	lock := kickoff.NewLockManager(lockFile)
-	lock.SetupSignalHandler()
 
 	if err := lock.Acquire(); err != nil {
 		output.Error(fmt.Sprintf("Failed to acquire lock: %v", err))
@@ -213,6 +229,9 @@ func cmdKickoff(args []string) int {
 
 	// Signal handler
 	signalHandler := kickoff.NewSignalHandler(executor, state, lock)
+	signalHandler.SetCleanupCallback(func() {
+		endPrincipalSession("interrupted")
+	})
 	signalHandler.Setup()
 
 	// Create fan-in manager for log aggregation
@@ -383,6 +402,9 @@ func cmdKickoff(args []string) int {
 	if exitCode == 0 {
 		fmt.Println("")
 		output.Success("Workflow completed")
+		endPrincipalSession("completed")
+	} else {
+		endPrincipalSession("failed")
 	}
 
 	return exitCode

@@ -26,6 +26,49 @@ TASK_LINE=""
 EXIT_REASON=""
 
 # ============================================================
+# Session action recording (best-effort, no stdout)
+# ============================================================
+PRINCIPAL_SESSION_ID="${PRINCIPAL_SESSION_ID:-}"
+if [[ -z "$PRINCIPAL_SESSION_ID" ]]; then
+  PRINCIPAL_SESSION_ID=$(bash .ai/scripts/session_manager.sh get_current_session_id 2>/dev/null || echo "")
+fi
+
+record_next_action() {
+  local sid="${PRINCIPAL_SESSION_ID:-}"
+  if [[ -z "$sid" ]]; then
+    sid=$(bash .ai/scripts/session_manager.sh get_current_session_id 2>/dev/null || echo "")
+  fi
+  if [[ -z "$sid" ]]; then
+    return 0
+  fi
+
+  export NEXT_ACTION ISSUE_NUMBER PR_NUMBER SPEC_NAME TASK_LINE EXIT_REASON
+
+  local data
+  data=$(python3 - <<'PY' 2>/dev/null || echo "{}"
+import json
+import os
+
+print(json.dumps(
+    {
+        "next_action": os.environ.get("NEXT_ACTION", ""),
+        "issue_number": os.environ.get("ISSUE_NUMBER", ""),
+        "pr_number": os.environ.get("PR_NUMBER", ""),
+        "spec_name": os.environ.get("SPEC_NAME", ""),
+        "task_line": os.environ.get("TASK_LINE", ""),
+        "exit_reason": os.environ.get("EXIT_REASON", ""),
+    },
+    ensure_ascii=True,
+))
+PY
+  )
+
+  bash .ai/scripts/session_manager.sh append_session_action "$sid" "next_action" "$data" 2>/dev/null || true
+}
+
+trap record_next_action EXIT
+
+# ============================================================
 # 讀取配置
 # ============================================================
 CONFIG_FILE=".ai/config/workflow.yaml"

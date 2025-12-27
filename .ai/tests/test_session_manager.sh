@@ -220,6 +220,30 @@ else
   log_fail "Action timestamp format incorrect: $ACTION_TS"
 fi
 
+# Test: invalid JSON action_data falls back to raw text (do not lose action)
+INVALID_JSON='{"path":"C:\Users\me"}'
+bash "$SESSION_MANAGER" append_session_action "$SESSION_ID" "invalid_json_action" "$INVALID_JSON" 2>/dev/null
+ACTION_COUNT=$(_jq '.actions | length' ".ai/state/principal/sessions/${SESSION_ID}.json")
+if [[ "$ACTION_COUNT" -eq 2 ]]; then
+  log_pass "append_session_action records action even with invalid JSON"
+else
+  log_fail "Invalid JSON action not recorded (count: $ACTION_COUNT)"
+fi
+
+PARSE_ERROR=$(_jq -r '.actions[1].data._parse_error // ""' ".ai/state/principal/sessions/${SESSION_ID}.json")
+if [[ "$PARSE_ERROR" == "invalid_json" ]]; then
+  log_pass "Invalid JSON records parse_error"
+else
+  log_fail "Expected parse_error=invalid_json, got: $PARSE_ERROR"
+fi
+
+RAW_DATA=$(_jq -r '.actions[1].data._raw // ""' ".ai/state/principal/sessions/${SESSION_ID}.json")
+if [[ "$RAW_DATA" == "$INVALID_JSON" ]]; then
+  log_pass "Invalid JSON records raw payload"
+else
+  log_fail "Raw payload mismatch: expected $INVALID_JSON, got: $RAW_DATA"
+fi
+
 # Test: end_principal_session adds ended_at and exit_reason
 bash "$SESSION_MANAGER" end_principal_session "$SESSION_ID" "test_complete" 2>/dev/null
 if _jq -e '.ended_at' ".ai/state/principal/sessions/${SESSION_ID}.json" >/dev/null 2>&1; then
@@ -233,6 +257,48 @@ if [[ "$EXIT_REASON" == "test_complete" ]]; then
   log_pass "end_principal_session sets exit_reason"
 else
   log_fail "exit_reason mismatch: $EXIT_REASON"
+fi
+
+# ============================================================
+# Regression: init_principal_session MUST NOT overwrite ended sessions
+# ============================================================
+echo ""
+echo "## Regression: preserve ended session exit_reason"
+
+# Simulate a previous session that ended normally, but whose PID is now stale.
+PREV_SESSION_ID="principal-20250101-000000-dead"
+mkdir -p ".ai/state/principal/sessions"
+cat > ".ai/state/principal/sessions/${PREV_SESSION_ID}.json" <<'EOF'
+{
+  "session_id": "principal-20250101-000000-dead",
+  "started_at": "2025-01-01T00:00:00Z",
+  "ended_at": "2025-01-01T00:10:00Z",
+  "exit_reason": "all_tasks_complete",
+  "actions": []
+}
+EOF
+
+cat > ".ai/state/principal/session.json" <<EOF
+{
+  "session_id": "$PREV_SESSION_ID",
+  "started_at": "2025-01-01T00:00:00Z",
+  "pid": 99999,
+  "pid_start_time": 0
+}
+EOF
+
+NEW_SESSION_ID=$(bash "$SESSION_MANAGER" init_principal_session 2>/dev/null | tr -d '\r')
+if [[ -n "$NEW_SESSION_ID" ]]; then
+  log_pass "init_principal_session succeeds with stale previous PID"
+else
+  log_fail "init_principal_session did not return a new session id"
+fi
+
+PREV_EXIT_REASON=$(_jq -r '.exit_reason // ""' ".ai/state/principal/sessions/${PREV_SESSION_ID}.json")
+if [[ "$PREV_EXIT_REASON" == "all_tasks_complete" ]]; then
+  log_pass "previous ended session exit_reason preserved"
+else
+  log_fail "previous ended session exit_reason changed: $PREV_EXIT_REASON"
 fi
 
 # ============================================================

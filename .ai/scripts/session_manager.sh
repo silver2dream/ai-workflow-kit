@@ -121,10 +121,13 @@ init_principal_session() {
       exit 1
     fi
     
-    # Old Principal is dead, mark as interrupted
+    # Old Principal is dead, mark as interrupted (only if not already ended)
     if [[ -n "$prev_session_id" ]] && [[ -f "$SESSIONS_DIR/${prev_session_id}.json" ]]; then
-      echo "[SESSION] Marking previous session $prev_session_id as interrupted" >&2
-      end_principal_session "$prev_session_id" "interrupted"
+      prev_ended_at=$(_jq -r '.ended_at // ""' "$SESSIONS_DIR/${prev_session_id}.json" 2>/dev/null || echo "")
+      if [[ -z "$prev_ended_at" || "$prev_ended_at" == "null" ]]; then
+        echo "[SESSION] Marking previous session $prev_session_id as interrupted" >&2
+        end_principal_session "$prev_session_id" "interrupted"
+      fi
     fi
   fi
   
@@ -190,18 +193,35 @@ append_session_action() {
   
   local timestamp
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  
-  # Create temp file with action JSON to avoid Windows quoting issues
-  local action_tmp="${log_file}.action.tmp"
-  printf '{"type":"%s","timestamp":"%s","data":%s}' "$action_type" "$timestamp" "$action_data" > "$action_tmp"
-  
-  # Use --slurpfile to read action from file (avoids shell quoting)
-  _jq --slurpfile action "$action_tmp" '.actions += $action' "$log_file" > "${log_file}.tmp" \
-    && mv "${log_file}.tmp" "$log_file"
-  
-  rm -f "$action_tmp"
-  
-  echo "[SESSION] Recorded action: $action_type" >&2
+
+  # Write action_data to temp file to avoid Windows quoting issues.
+  # We'll parse it with jq's fromjson, and fall back to recording raw text if invalid.
+  local data_tmp="${log_file}.data.tmp"
+  printf '%s' "$action_data" > "$data_tmp"
+
+  if _jq --arg type "$action_type" \
+        --arg timestamp "$timestamp" \
+        --rawfile rawdata "$data_tmp" \
+        '
+          .actions = (if (.actions | type) == "array" then .actions else [] end) |
+          ($rawdata | rtrimstr("\n") | rtrimstr("\r")) as $raw |
+          .actions += [{
+            "type": $type,
+            "timestamp": $timestamp,
+            "data": (try ($raw | fromjson) catch {"_raw": $raw, "_parse_error": "invalid_json"})
+          }]
+        ' \
+        "$log_file" > "${log_file}.tmp"; then
+    mv "${log_file}.tmp" "$log_file"
+    rm -f "$data_tmp"
+    echo "[SESSION] Recorded action: $action_type" >&2
+    return 0
+  fi
+
+  rm -f "${log_file}.tmp" 2>/dev/null || true
+  echo "[ERROR] Failed to append action to session log: $log_file" >&2
+  echo "[ERROR] Action data saved at: $data_tmp" >&2
+  return 1
 }
 
 # ============================================================
