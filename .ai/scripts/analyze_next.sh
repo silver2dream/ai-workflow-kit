@@ -221,7 +221,7 @@ if [[ -n "$ACTIVE_SPECS" ]]; then
     fi
     
     # 查找未完成且沒有 Issue 引用的任務
-    UNCOMPLETED_TASK=$(grep -n '^\- \[ \] [0-9]' "$TASKS_FILE" | grep -v '<!-- Issue #' | head -1 || echo "")
+    UNCOMPLETED_TASK=$(grep -n '^\- \[ \]' "$TASKS_FILE" | grep -v '<!-- Issue #' | head -1 || echo "")
     
     if [[ -n "$UNCOMPLETED_TASK" ]]; then
       TASK_LINE=$(echo "$UNCOMPLETED_TASK" | cut -d':' -f1)
