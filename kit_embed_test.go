@@ -34,6 +34,7 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		".ai/scripts/scan_repo.py",
 		".ai/scripts/parse_tasks.py",
 		".ai/scripts/query_traces.py",
+		".ai/scripts/create_task.py",
 
 		// Python lib module (critical - was missing before)
 		".ai/scripts/lib/__init__.py",

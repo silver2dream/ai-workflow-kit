@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -225,6 +228,7 @@ func cmdKickoff(args []string) int {
 	output.Info(fmt.Sprintf("Starting workflow for project: %s", config.Project.Name))
 	fmt.Println("")
 
+	if os.Getenv("AWKIT_KICKOFF_LEGACY") == "1" {
 	// Create PTY executor
 	executor, err := kickoff.NewPTYExecutor(claudeCmd, claudeArgs)
 	if err != nil {
@@ -404,15 +408,147 @@ func cmdKickoff(args []string) int {
 
 	executor.Close()
 
-	if exitCode == 0 {
-		fmt.Println("")
-		output.Success("Workflow completed")
-		endPrincipalSession("completed")
-	} else {
+	if exitCode != 0 {
 		endPrincipalSession("failed")
+		return exitCode
 	}
 
-	return exitCode
+	// Respect STOP marker mid-run (created by Ctrl+C or manual request).
+	if fileExists(filepath.Join(".ai", "state", "STOP")) {
+		fmt.Println("")
+		output.Warning("Workflow stopped (STOP marker present)")
+		endPrincipalSession("stopped")
+		return 0
+	}
+
+	next, err := runAnalyzeNext(context.Background(), analyzeNextArgs{
+		Timeout:            30 * time.Second,
+		PrincipalSessionID: principalSessionID,
+	})
+	if err != nil {
+		fmt.Println("")
+		output.Warning(fmt.Sprintf("Workflow paused (failed to determine next action: %v)", err))
+		output.Info("Run `awkit status` for offline details.")
+		endPrincipalSession("paused")
+		return 1
+	}
+
+	fmt.Println("")
+	if next.NextAction == "all_complete" {
+		output.Success("Workflow completed")
+		endPrincipalSession("completed")
+		return 0
+	}
+
+	if next.NextAction == "none" {
+		reason := strings.TrimSpace(next.ExitReason)
+		if reason == "" {
+			reason = "none"
+		}
+		output.Warning(fmt.Sprintf("Workflow stopped (%s)%s", reason, formatAnalyzeNextContext(next)))
+		endPrincipalSession("stopped")
+		return 1
+	}
+
+	output.Warning(fmt.Sprintf("Workflow paused (pending: %s)%s", next.NextAction, formatAnalyzeNextContext(next)))
+	endPrincipalSession("paused")
+	return 1
+	}
+
+	// Multi-session loop: restart Principal when pending work remains.
+	stopMarker := filepath.Join(".ai", "state", "STOP")
+	maxSessions := getEnvInt("AWKIT_MAX_SESSIONS", 50)
+	restartDelay := 3 * time.Second
+
+	signalHandler := kickoff.NewSignalHandler(nil, state, lock)
+	signalHandler.SetCleanupCallback(func() {
+		endPrincipalSession("interrupted")
+	})
+	signalHandler.Setup()
+
+	var lastNext analyzeNextVars
+
+	for sessionIndex := 1; sessionIndex <= maxSessions; sessionIndex++ {
+		if fileExists(stopMarker) {
+			fmt.Println("")
+			output.Warning("Workflow stopped (STOP marker present)")
+			endPrincipalSession("stopped")
+			return 0
+		}
+
+		if sessionIndex == 1 {
+			output.Info(fmt.Sprintf("Starting Principal session (1/%d)...", maxSessions))
+		} else {
+			output.Info(fmt.Sprintf("Restarting Principal session (%d/%d)...", sessionIndex, maxSessions))
+		}
+
+		exitCode, err := runClaudeSession(runClaudeSessionArgs{
+			ClaudeCmd:     claudeCmd,
+			ClaudeArgs:    claudeArgs,
+			LogDir:        logDir,
+			Logger:        logger,
+			SignalHandler: signalHandler,
+			Output:        output,
+		})
+		if err != nil {
+			fmt.Println("")
+			output.Error(fmt.Sprintf("Workflow failed (Claude session error): %v", err))
+			endPrincipalSession("failed")
+			return 1
+		}
+		if exitCode != 0 {
+			fmt.Println("")
+			output.Error("Workflow failed (Claude session exited with error)")
+			endPrincipalSession("failed")
+			return 1
+		}
+
+		if fileExists(stopMarker) {
+			fmt.Println("")
+			output.Warning("Workflow stopped (STOP marker present)")
+			endPrincipalSession("stopped")
+			return 0
+		}
+
+		next, err := runAnalyzeNext(context.Background(), analyzeNextArgs{
+			Timeout:            30 * time.Second,
+			PrincipalSessionID: principalSessionID,
+		})
+		if err != nil {
+			fmt.Println("")
+			output.Warning(fmt.Sprintf("Workflow paused (failed to determine next action: %v)", err))
+			output.Info("Run `awkit status` for offline details.")
+			endPrincipalSession("paused")
+			return 1
+		}
+		lastNext = next
+
+		switch next.NextAction {
+		case "all_complete":
+			fmt.Println("")
+			output.Success("Workflow completed")
+			endPrincipalSession("completed")
+			return 0
+		case "none":
+			reason := strings.TrimSpace(next.ExitReason)
+			if reason == "" {
+				reason = "none"
+			}
+			fmt.Println("")
+			output.Warning(fmt.Sprintf("Workflow stopped (%s)%s", reason, formatAnalyzeNextContext(next)))
+			endPrincipalSession("stopped")
+			return 1
+		default:
+			output.Info(fmt.Sprintf("Pending: %s%s (restarting in %s)", next.NextAction, formatAnalyzeNextContext(next), restartDelay))
+			time.Sleep(restartDelay)
+		}
+	}
+
+	fmt.Println("")
+	output.Warning(fmt.Sprintf("Workflow paused (max sessions reached: %d)%s", maxSessions, formatAnalyzeNextContext(lastNext)))
+	output.Info("Run `awkit status` for offline details.")
+	endPrincipalSession("paused")
+	return 1
 }
 
 func formatDuration(d time.Duration) string {
@@ -497,4 +633,265 @@ func extractTextFromStreamJSON(line string) string {
 		// Skip other event types (system, etc.)
 		return ""
 	}
+}
+
+type analyzeNextVars struct {
+	NextAction  string
+	IssueNumber string
+	PRNumber    string
+	SpecName    string
+	TaskLine    string
+	ExitReason  string
+}
+
+type analyzeNextArgs struct {
+	Timeout            time.Duration
+	PrincipalSessionID string
+}
+
+func runAnalyzeNext(ctx context.Context, args analyzeNextArgs) (analyzeNextVars, error) {
+	ctx, cancel := context.WithTimeout(ctx, args.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bash", ".ai/scripts/analyze_next.sh")
+	if strings.TrimSpace(args.PrincipalSessionID) != "" {
+		cmd.Env = append(os.Environ(), "PRINCIPAL_SESSION_ID="+args.PrincipalSessionID)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		if msg == "" {
+			msg = err.Error()
+		}
+		return analyzeNextVars{}, fmt.Errorf("analyze_next.sh failed: %s", msg)
+	}
+
+	return parseAnalyzeNextOutput(stdout.String()), nil
+}
+
+func parseAnalyzeNextOutput(out string) analyzeNextVars {
+	var v analyzeNextVars
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "NEXT_ACTION":
+			v.NextAction = strings.TrimSpace(value)
+		case "ISSUE_NUMBER":
+			v.IssueNumber = strings.TrimSpace(value)
+		case "PR_NUMBER":
+			v.PRNumber = strings.TrimSpace(value)
+		case "SPEC_NAME":
+			v.SpecName = strings.TrimSpace(value)
+		case "TASK_LINE":
+			v.TaskLine = strings.TrimSpace(value)
+		case "EXIT_REASON":
+			v.ExitReason = strings.TrimSpace(value)
+		}
+	}
+	return v
+}
+
+func formatAnalyzeNextContext(v analyzeNextVars) string {
+	parts := make([]string, 0, 4)
+	if strings.TrimSpace(v.SpecName) != "" {
+		parts = append(parts, "spec="+v.SpecName)
+	}
+	if strings.TrimSpace(v.TaskLine) != "" {
+		parts = append(parts, "line="+v.TaskLine)
+	}
+	if strings.TrimSpace(v.IssueNumber) != "" {
+		parts = append(parts, "issue="+v.IssueNumber)
+	}
+	if strings.TrimSpace(v.PRNumber) != "" {
+		parts = append(parts, "pr="+v.PRNumber)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, " ") + ")"
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func getEnvInt(name string, defaultValue int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return defaultValue
+	}
+	return value
+}
+
+type runClaudeSessionArgs struct {
+	ClaudeCmd     string
+	ClaudeArgs    []string
+	LogDir        string
+	Logger        *kickoff.RotatingLogger
+	SignalHandler *kickoff.SignalHandler
+	Output        *kickoff.OutputFormatter
+}
+
+func runClaudeSession(args runClaudeSessionArgs) (int, error) {
+	executor, err := kickoff.NewPTYExecutor(args.ClaudeCmd, args.ClaudeArgs)
+	if err != nil {
+		return 1, fmt.Errorf("failed to create executor: %w", err)
+	}
+	defer executor.Close()
+
+	args.SignalHandler.SetExecutor(executor)
+
+	fanIn := kickoff.NewFanInManager(1000)
+	defer fanIn.Stop()
+
+	args.SignalHandler.SetFanInManager(fanIn)
+	fanIn.StartPrincipalTailer(args.LogDir)
+
+	if err := executor.Start(); err != nil {
+		return 1, fmt.Errorf("failed to start Claude CLI: %w", err)
+	}
+
+	if executor.IsFallback() {
+		args.Output.Warning("PTY initialization failed, using standard execution")
+	}
+
+	var currentMonitor *kickoff.IssueMonitor
+	var currentSpinner *kickoff.Spinner
+
+	parser := kickoff.NewOutputParserWithTailerCallbacks(
+		func(issueID int) {
+			if currentMonitor != nil {
+				currentMonitor.Stop("new_issue")
+			}
+			if currentSpinner != nil {
+				currentSpinner.Stop("")
+			}
+
+			currentSpinner = kickoff.NewSpinner(issueID, os.Stdout)
+			currentMonitor = kickoff.NewIssueMonitor(issueID, currentSpinner)
+
+			currentMonitor.SetCommentCallback(func(commentType, prURL string) {
+				if currentSpinner != nil {
+					currentSpinner.Pause()
+					currentSpinner.ClearLine()
+				}
+
+				if prURL != "" {
+					args.Output.WorkerMessage(issueID, fmt.Sprintf("%s (PR: %s)", commentType, prURL))
+				} else {
+					args.Output.WorkerMessage(issueID, commentType)
+				}
+
+				if currentSpinner != nil {
+					currentSpinner.Resume()
+				}
+			})
+
+			args.SignalHandler.AddMonitor(currentMonitor)
+			currentSpinner.Start()
+			currentMonitor.Start()
+		},
+		func() {
+			if currentMonitor != nil {
+				currentMonitor.Stop("worker_complete")
+				args.SignalHandler.RemoveMonitor(currentMonitor)
+			}
+			if currentSpinner != nil {
+				duration := currentSpinner.Duration()
+				currentSpinner.Stop(fmt.Sprintf("??[#%d] Worker completed (%s)",
+					currentMonitor.IssueID(),
+					formatDuration(duration)))
+			}
+			currentMonitor = nil
+			currentSpinner = nil
+		},
+		func(issueID int) {
+			fanIn.StartWorkerTailer(args.LogDir, issueID)
+		},
+		func() {
+			fanIn.StopWorkerTailer()
+		},
+	)
+
+	outputReader := executor.Output()
+	const maxScanTokenSize = 1024 * 1024 // 1MB
+
+	go func() {
+		defer fanIn.Stop()
+
+		scanner := bufio.NewScanner(outputReader)
+		buf := make([]byte, maxScanTokenSize)
+		scanner.Buffer(buf, maxScanTokenSize)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			text := extractTextFromStreamJSON(line)
+			if text == "" {
+				continue
+			}
+			fanIn.SendClaudeLine(text)
+		}
+	}()
+
+	var writers []io.Writer
+	if args.Logger != nil {
+		writers = append(writers, args.Logger)
+	}
+
+	for logLine := range fanIn.Channel() {
+		if currentSpinner != nil {
+			currentSpinner.Pause()
+			currentSpinner.ClearLine()
+		}
+
+		colorizedLine := args.Output.ColorizeLogLine(logLine.Text)
+		fmt.Println(colorizedLine)
+
+		for _, w := range writers {
+			fmt.Fprintln(w, logLine.Text)
+		}
+
+		if currentSpinner != nil {
+			currentSpinner.Resume()
+		}
+
+		parser.Parse(logLine.Text)
+	}
+
+	exitCode := 0
+	if err := executor.Wait(); err != nil {
+		if !args.SignalHandler.IsShutdown() {
+			args.Output.Error(fmt.Sprintf("Claude CLI exited with error: %v", err))
+		}
+		exitCode = 1
+	}
+
+	if currentMonitor != nil {
+		currentMonitor.Stop("process_exit")
+	}
+	if currentSpinner != nil {
+		currentSpinner.Stop("")
+	}
+
+	return exitCode, nil
 }

@@ -140,6 +140,27 @@ fi
 
 log "Repo: $REPO"
 
+# Best-effort: extract Spec + Task Line for offline audit and auto-marking tasks.md on merge.
+SPEC_NAME_META=$(
+  printf '%s' "$ISSUE_BODY" | python3 -c 'import re,sys; body=sys.stdin.read(); m=re.search(r"(?im)^\\s*[-*]\\s*\\*\\*spec\\*\\*\\s*:\\s*(.+?)\\s*$", body); print(m.group(1).strip() if m else "")' 2>/dev/null || echo ""
+)
+TASK_LINE_META=$(
+  printf '%s' "$ISSUE_BODY" | python3 -c 'import re,sys; body=sys.stdin.read(); m=re.search(r"(?im)^\\s*[-*]\\s*\\*\\*task\\s+line\\*\\*\\s*:\\s*(\\d+)\\s*$", body); print(m.group(1).strip() if m else "")' 2>/dev/null || echo ""
+)
+
+if [[ "$SPEC_NAME_META" == *"/"* || "$SPEC_NAME_META" == *$'\\'* || "$SPEC_NAME_META" == *".."* ]]; then
+  SPEC_NAME_META=""
+fi
+if [[ ! "$TASK_LINE_META" =~ ^[0-9]+$ ]]; then
+  TASK_LINE_META=""
+fi
+
+if [[ -n "$SPEC_NAME_META" && -n "$TASK_LINE_META" ]]; then
+  log "Task mapping: $SPEC_NAME_META (line $TASK_LINE_META)"
+  export AI_SPEC_NAME="$SPEC_NAME_META"
+  export AI_TASK_LINE="$TASK_LINE_META"
+fi
+
 # ============================================================
 # 標記 Issue 為 in-progress
 # ============================================================

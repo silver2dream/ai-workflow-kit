@@ -101,3 +101,42 @@ func TestExtractTextFromStreamJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestParseAnalyzeNextOutput(t *testing.T) {
+	out := `
+NEXT_ACTION=create_task
+ISSUE_NUMBER=
+PR_NUMBER=
+SPEC_NAME=snake-arena
+TASK_LINE=7
+EXIT_REASON=
+`
+
+	got := parseAnalyzeNextOutput(out)
+	if got.NextAction != "create_task" {
+		t.Fatalf("NextAction = %q, want %q", got.NextAction, "create_task")
+	}
+	if got.SpecName != "snake-arena" {
+		t.Fatalf("SpecName = %q, want %q", got.SpecName, "snake-arena")
+	}
+	if got.TaskLine != "7" {
+		t.Fatalf("TaskLine = %q, want %q", got.TaskLine, "7")
+	}
+	if got.ExitReason != "" {
+		t.Fatalf("ExitReason = %q, want empty", got.ExitReason)
+	}
+}
+
+func TestFormatAnalyzeNextContext(t *testing.T) {
+	ctx := formatAnalyzeNextContext(analyzeNextVars{
+		NextAction:  "create_task",
+		SpecName:    "snake-arena",
+		TaskLine:    "7",
+		IssueNumber: "",
+		PRNumber:    "",
+		ExitReason:  "",
+	})
+	if ctx != " (spec=snake-arena line=7)" {
+		t.Fatalf("formatAnalyzeNextContext() = %q, want %q", ctx, " (spec=snake-arena line=7)")
+	}
+}
