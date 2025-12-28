@@ -21,6 +21,8 @@ bash .ai/scripts/prepare_review.sh "$PR_NUMBER" "$ISSUE_NUMBER"
 - `PRINCIPAL_SESSION_ID`: 審查者 session
 - `CI_STATUS`: CI 狀態（passed/failed）
 - `DIFF_HASH`: diff 的 hash
+- `DIFF_BYTES`: diff 大小（bytes）
+- `REVIEW_DIR`: 審查產物目錄（包含 diff/review/evidence log）
 - `WORKTREE_PATH`: worktree 路徑
 - Ticket 需求（Issue 內容）
 - PR diff
@@ -52,6 +54,16 @@ cd .worktrees/issue-$ISSUE_NUMBER
 - 3-4：大部分需求未完成
 - 1-2：完全不符合需求，或有安全問題
 
+**硬性規則（可證明審查）**
+
+你的 `$REVIEW_BODY` 必須包含至少 3 行 `EVIDENCE:`（一行一條），每一條都必須是 PR diff 中「可直接搜尋到」的原始字串。
+
+格式（擇一）：
+- `EVIDENCE: <file> | <needle>`（推薦，會限定在該檔案的 diff 區段內驗證）
+- `EVIDENCE: <needle>`
+
+若缺少或無法驗證，`submit_review.sh` 會中止審查、移除 `pr-ready`、加上 `needs-human-review`，避免主迴圈無限重試。
+
 ### 4. 提交審查結果
 
 準備審查內容（markdown 格式），然後執行：
@@ -66,6 +78,11 @@ bash .ai/scripts/submit_review.sh "$PR_NUMBER" "$ISSUE_NUMBER" "$SCORE" "$CI_STA
 ### Code Symbols (New/Modified)
 - `func NewHandler()`
 - `type Config struct`
+
+### Evidence
+EVIDENCE: backend/internal/rooms/room_manager.go | type RoomManager struct
+EVIDENCE: backend/internal/rooms/room_manager.go | func (m *RoomManager) JoinRoom(
+EVIDENCE: backend/internal/rooms/room_manager_test.go | room full
 
 ### Score Reason
 完成 ticket 需求，代碼質量良好
@@ -88,6 +105,7 @@ bash .ai/scripts/submit_review.sh "$PR_NUMBER" "$ISSUE_NUMBER" "$SCORE" "$CI_STA
 - `RESULT=merged`: PR 已合併
 - `RESULT=approved_ci_failed`: 審查通過但 CI 失敗
 - `RESULT=changes_requested`: 審查不通過
+- `RESULT=review_blocked`: 審查被阻擋（evidence 無法驗證或缺少依賴）
 - `RESULT=merge_failed`: 合併失敗
 
 回到 main-loop。

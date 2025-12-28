@@ -173,6 +173,9 @@ bash .ai/scripts/generate.sh
 # 只套用不同的 preset 到 workflow.yaml
 awkit init --preset react-go --force-config
 
+# 升級 kit 檔案，並覆蓋 workflow.yaml（需要 --preset）
+awkit upgrade --force-config --preset react-go
+
 # 完整重置：更新 kit 檔案並套用 preset 到 workflow.yaml
 awkit init --preset react-go --force
 ```

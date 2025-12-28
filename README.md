@@ -173,6 +173,9 @@ Other update options:
 # Apply a different preset to workflow.yaml only
 awkit init --preset react-go --force-config
 
+# Upgrade kit files and overwrite workflow.yaml (requires --preset)
+awkit upgrade --force-config --preset react-go
+
 # Full reset: update kit files AND apply preset to workflow.yaml
 awkit init --preset react-go --force
 ```
