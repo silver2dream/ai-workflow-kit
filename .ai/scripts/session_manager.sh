@@ -7,28 +7,86 @@
 set -euo pipefail
 
 # ============================================================
-# Cross-platform jq wrapper (handles Windows .exe)
+# Cross-platform python wrapper (python3 preferred)
 # ============================================================
-_jq() {
-  if command -v jq &>/dev/null; then
-    jq "$@"
-  elif command -v jq.exe &>/dev/null; then
-    jq.exe "$@"
-  elif [[ -x "/mnt/c/Users/user/bin/jq.exe" ]]; then
-    /mnt/c/Users/user/bin/jq.exe "$@"
-  else
-    echo "[ERROR] jq not found. Please install jq." >&2
-    return 1
+_py() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$@"
+    return $?
   fi
+  if command -v python >/dev/null 2>&1; then
+    python "$@"
+    return $?
+  fi
+
+  echo "[ERROR] python not found. Please install python3." >&2
+  return 127
+}
+
+# ============================================================
+# resolve_state_root()
+# Return the main worktree root even when running inside a git worktree.
+# - Honors AI_STATE_ROOT if provided.
+# - Uses git common dir when available: <common_dir>/.. is the main worktree root.
+# ============================================================
+resolve_state_root() {
+  if [[ -n "${AI_STATE_ROOT:-}" ]]; then
+    printf '%s\n' "${AI_STATE_ROOT}"
+    return 0
+  fi
+
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local common_dir=""
+    common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [[ -z "$common_dir" ]]; then
+      common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+      if [[ -n "$common_dir" ]]; then
+        common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P || true)"
+      fi
+    fi
+
+    if [[ -n "$common_dir" ]]; then
+      printf '%s\n' "$(dirname "$common_dir")"
+      return 0
+    fi
+
+    git rev-parse --show-toplevel 2>/dev/null || pwd -P 2>/dev/null || pwd
+    return 0
+  fi
+
+  pwd -P 2>/dev/null || pwd
 }
 
 # ============================================================
 # Constants
 # ============================================================
-readonly SESSION_STATE_DIR=".ai/state/principal"
+readonly STATE_ROOT="$(resolve_state_root)"
+readonly SESSION_STATE_DIR="$STATE_ROOT/.ai/state/principal"
 readonly SESSION_FILE="$SESSION_STATE_DIR/session.json"
 readonly SESSIONS_DIR="$SESSION_STATE_DIR/sessions"
-readonly RESULTS_DIR=".ai/results"
+readonly RESULTS_DIR="$STATE_ROOT/.ai/results"
+
+_json_get_or_default() {
+  local path="${1:?}"
+  local key="${2:?}"
+  local default="${3:-}"
+
+  _py - "$path" "$key" "$default" <<'PY'
+import json
+import sys
+
+path, key, default = sys.argv[1:4]
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    value = data.get(key, default)
+    if value is None:
+        value = ""
+    sys.stdout.write(str(value))
+except Exception:
+    sys.stdout.write(str(default))
+PY
+}
 
 # ============================================================
 # generate_session_id()
@@ -111,9 +169,9 @@ init_principal_session() {
   # Check if session.json exists (another Principal might be running)
   if [[ -f "$SESSION_FILE" ]]; then
     local prev_pid prev_start prev_session_id
-    prev_pid=$(_jq -r '.pid // 0' "$SESSION_FILE" 2>/dev/null || echo "0")
-    prev_start=$(_jq -r '.pid_start_time // 0' "$SESSION_FILE" 2>/dev/null || echo "0")
-    prev_session_id=$(_jq -r '.session_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+    prev_pid="$(_json_get_or_default "$SESSION_FILE" "pid" "0")"
+    prev_start="$(_json_get_or_default "$SESSION_FILE" "pid_start_time" "0")"
+    prev_session_id="$(_json_get_or_default "$SESSION_FILE" "session_id" "")"
     
     if [[ "$prev_pid" != "0" ]] && check_principal_running "$prev_pid" "$prev_start"; then
       echo "[ERROR] Another Principal is already running (PID: $prev_pid, Session: $prev_session_id)" >&2
@@ -123,7 +181,7 @@ init_principal_session() {
     
     # Old Principal is dead, mark as interrupted (only if not already ended)
     if [[ -n "$prev_session_id" ]] && [[ -f "$SESSIONS_DIR/${prev_session_id}.json" ]]; then
-      prev_ended_at=$(_jq -r '.ended_at // ""' "$SESSIONS_DIR/${prev_session_id}.json" 2>/dev/null || echo "")
+      prev_ended_at="$(_json_get_or_default "$SESSIONS_DIR/${prev_session_id}.json" "ended_at" "")"
       if [[ -z "$prev_ended_at" || "$prev_ended_at" == "null" ]]; then
         echo "[SESSION] Marking previous session $prev_session_id as interrupted" >&2
         end_principal_session "$prev_session_id" "interrupted"
@@ -166,11 +224,34 @@ EOF
 # Returns: session ID string or empty if not found
 # ============================================================
 get_current_session_id() {
-  if [[ -f "$SESSION_FILE" ]]; then
-    _jq -r '.session_id // ""' "$SESSION_FILE" 2>/dev/null || echo ""
-  else
+  if [[ ! -f "$SESSION_FILE" ]]; then
     echo ""
+    return 1
   fi
+
+  local session_id=""
+  if ! session_id="$(_py - "$SESSION_FILE" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+value = data.get("session_id") or ""
+sys.stdout.write(str(value))
+PY
+)"; then
+    echo ""
+    return 1
+  fi
+
+  if [[ -z "$session_id" ]]; then
+    echo ""
+    return 1
+  fi
+
+  echo "$session_id"
+  return 0
 }
 
 
@@ -194,25 +275,44 @@ append_session_action() {
   local timestamp
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  # Write action_data to temp file to avoid Windows quoting issues.
-  # We'll parse it with jq's fromjson, and fall back to recording raw text if invalid.
+  # Write action_data to temp file to avoid shell quoting issues.
   local data_tmp="${log_file}.data.tmp"
   printf '%s' "$action_data" > "$data_tmp"
 
-  if _jq --arg type "$action_type" \
-        --arg timestamp "$timestamp" \
-        --rawfile rawdata "$data_tmp" \
-        '
-          .actions = (if (.actions | type) == "array" then .actions else [] end) |
-          ($rawdata | rtrimstr("\n") | rtrimstr("\r")) as $raw |
-          .actions += [{
-            "type": $type,
-            "timestamp": $timestamp,
-            "data": (try ($raw | fromjson) catch {"_raw": $raw, "_parse_error": "invalid_json"})
-          }]
-        ' \
-        "$log_file" > "${log_file}.tmp"; then
-    mv "${log_file}.tmp" "$log_file"
+  if _py - "$log_file" "$action_type" "$timestamp" "$data_tmp" <<'PY'; then
+import json
+import os
+import sys
+
+log_file, action_type, timestamp, data_tmp = sys.argv[1:5]
+
+with open(data_tmp, "r", encoding="utf-8") as handle:
+    raw = handle.read().rstrip("\n").rstrip("\r")
+
+try:
+    with open(log_file, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+
+actions = data.get("actions")
+if not isinstance(actions, list):
+    actions = []
+
+try:
+    parsed = json.loads(raw) if raw else {}
+except Exception:
+    parsed = {"_raw": raw, "_parse_error": "invalid_json"}
+
+actions.append({"type": action_type, "timestamp": timestamp, "data": parsed})
+data["actions"] = actions
+
+tmp_path = log_file + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, ensure_ascii=True)
+    handle.write("\n")
+os.replace(tmp_path, log_file)
+PY
     rm -f "$data_tmp"
     echo "[SESSION] Recorded action: $action_type" >&2
     return 0
@@ -270,10 +370,28 @@ end_principal_session() {
   local ended_at
   ended_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   
-  _jq --arg ended "$ended_at" \
-     --arg reason "$exit_reason" \
-     '. + {"ended_at": $ended, "exit_reason": $reason}' \
-     "$log_file" > "${log_file}.tmp" && mv "${log_file}.tmp" "$log_file"
+  _py - "$log_file" "$ended_at" "$exit_reason" <<'PY'
+import json
+import os
+import sys
+
+path, ended_at, reason = sys.argv[1:4]
+
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+
+data["ended_at"] = ended_at
+data["exit_reason"] = reason
+
+tmp_path = path + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, ensure_ascii=True)
+    handle.write("\n")
+os.replace(tmp_path, path)
+PY
   
   echo "[SESSION] Ended session $session_id with reason: $exit_reason" >&2
 }
@@ -295,10 +413,28 @@ update_result_with_principal_session() {
     return 1
   fi
   
-  # Update principal_session_id in session section
-  _jq --arg psid "$principal_session_id" \
-     '.session.principal_session_id = $psid' \
-     "$result_file" > "${result_file}.tmp" && mv "${result_file}.tmp" "$result_file"
+  _py - "$result_file" "$principal_session_id" <<'PY'
+import json
+import os
+import sys
+
+path, psid = sys.argv[1:3]
+
+with open(path, "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+session = data.get("session")
+if not isinstance(session, dict):
+    session = {}
+session["principal_session_id"] = psid
+data["session"] = session
+
+tmp_path = path + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, ensure_ascii=True)
+    handle.write("\n")
+os.replace(tmp_path, path)
+PY
   
   echo "[SESSION] Updated result.json with principal_session_id: $principal_session_id" >&2
 }
@@ -333,22 +469,32 @@ update_result_with_review_audit() {
     timeout_bool="true"
   fi
   
-  # Update review_audit section
-  _jq --arg rsid "$reviewer_session_id" \
-     --arg ts "$review_timestamp" \
-     --arg dec "$decision" \
-     --arg ci "$ci_status" \
-     --argjson timeout "$timeout_bool" \
-     --arg merge "$merge_timestamp" \
-     '.review_audit = {
-       "reviewer_session_id": $rsid,
-       "review_timestamp": $ts,
-       "ci_status": $ci,
-       "ci_timeout": $timeout,
-       "decision": $dec,
-       "merge_timestamp": $merge
-     }' \
-     "$result_file" > "${result_file}.tmp" && mv "${result_file}.tmp" "$result_file"
+  _py - "$result_file" "$reviewer_session_id" "$review_timestamp" "$decision" "$ci_status" "$timeout_bool" "$merge_timestamp" <<'PY'
+import json
+import os
+import sys
+
+path, rsid, ts, decision, ci_status, timeout_str, merge_ts = sys.argv[1:8]
+ci_timeout = (timeout_str == "true")
+
+with open(path, "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+data["review_audit"] = {
+    "reviewer_session_id": rsid,
+    "review_timestamp": ts,
+    "ci_status": ci_status,
+    "ci_timeout": ci_timeout,
+    "decision": decision,
+    "merge_timestamp": merge_ts,
+}
+
+tmp_path = path + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, ensure_ascii=True)
+    handle.write("\n")
+os.replace(tmp_path, path)
+PY
   
   echo "[SESSION] Updated result.json with review_audit" >&2
 }

@@ -271,6 +271,38 @@ func TestUpgradeWithScaffold(t *testing.T) {
 	}
 }
 
+func TestUpgradeForceConfigOverwritesWorkflowYAML(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-upgrade-force-config-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Minimal .ai directory so cmdUpgrade considers it installed.
+	configDir := filepath.Join(tmpDir, ".ai", "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create .ai/config dir: %v", err)
+	}
+
+	original := "project:\n  name: original\n"
+	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(original), 0o644); err != nil {
+		t.Fatalf("failed to write existing workflow.yaml: %v", err)
+	}
+
+	exitCode := cmdUpgrade([]string{tmpDir, "--no-commit", "--no-generate", "--force-config", "--preset", "generic"})
+	if exitCode != 0 {
+		t.Fatalf("cmdUpgrade() exit code = %d, want 0", exitCode)
+	}
+
+	updated, err := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read workflow.yaml: %v", err)
+	}
+	if string(updated) == original {
+		t.Fatal("workflow.yaml was not overwritten with upgrade --force-config")
+	}
+}
+
 func TestUpgradeScaffoldRequiresPreset(t *testing.T) {
 	// Test that upgrade --scaffold without --preset returns error (P6)
 	// This is tested at the CLI level - the install package doesn't enforce this

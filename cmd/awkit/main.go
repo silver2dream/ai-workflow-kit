@@ -140,7 +140,7 @@ Usage:
 
 Commands:
   init          Initialize AWK in a project (or current directory)
-  upgrade       Upgrade AWK kit files (preserves workflow.yaml)
+  upgrade       Upgrade AWK kit files (preserves workflow.yaml by default)
   uninstall     Remove AWK from a project
   kickoff       Start the AI workflow with PTY and progress monitoring
   validate      Validate workflow configuration
@@ -258,7 +258,7 @@ func usageUpgrade() {
 	fmt.Fprint(os.Stderr, `Upgrade AWK kit files in a project
 
 This command updates scripts, templates, commands, rules, and docs
-while preserving your workflow.yaml configuration.
+while preserving your workflow.yaml configuration by default.
 
 CI workflow is automatically migrated (removes deprecated awk job).
 
@@ -271,6 +271,7 @@ Arguments:
 Options:
   --scaffold      Supplement scaffold files for a preset (requires --preset)
   --preset        Preset to use for scaffold (required with --scaffold)
+  --force-config  Overwrite .ai/config/workflow.yaml using the preset (requires --preset)
   --force         Overwrite scaffold files (only affects scaffold, not kit files)
   --dry-run       Show what would be updated without making changes
   --no-generate   Skip running generate.sh after upgrade
@@ -593,6 +594,7 @@ func cmdUpgrade(args []string) int {
 
 	scaffold := fs.Bool("scaffold", false, "")
 	preset := fs.String("preset", "", "")
+	forceConfig := fs.Bool("force-config", false, "")
 	force := fs.Bool("force", false, "")
 	dryRun := fs.Bool("dry-run", false, "")
 	noGenerate := fs.Bool("no-generate", false, "")
@@ -634,6 +636,16 @@ func cmdUpgrade(args []string) int {
 		errorf("--preset required for upgrade --scaffold\n")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Usage: awkit upgrade --scaffold --preset <name>")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Run 'awkit list-presets' to see available presets.")
+		return 2
+	}
+
+	// Validate: --force-config requires --preset
+	if *forceConfig && *preset == "" {
+		errorf("--preset required for upgrade --force-config\n")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Usage: awkit upgrade --force-config --preset <name>")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Run 'awkit list-presets' to see available presets.")
 		return 2
@@ -702,8 +714,13 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("  .ai/tests/")
 		fmt.Println("  .github/workflows/ci.yml (migrate deprecated awk job)")
 		fmt.Println("")
-		fmt.Println("Would preserve:")
-		fmt.Println("  .ai/config/workflow.yaml")
+		if *forceConfig {
+			fmt.Println("Would overwrite:")
+			fmt.Printf("  .ai/config/workflow.yaml (preset: %s)\n", *preset)
+		} else {
+			fmt.Println("Would preserve:")
+			fmt.Println("  .ai/config/workflow.yaml")
+		}
 		fmt.Println("  .ai/specs/")
 		fmt.Println("  .ai/rules/ (user rules)")
 
@@ -739,10 +756,12 @@ func cmdUpgrade(args []string) int {
 		return 0
 	}
 
-	// Upgrade: force overwrite kit files, but skip workflow.yaml
+	// Upgrade: force overwrite kit files. By default we skip workflow.yaml unless --force-config is provided.
 	result, err := install.Install(awkit.KitFS, targetDir, install.Options{
+		Preset:     *preset,
 		Force:      true, // Overwrite kit files
-		SkipConfig: true, // Preserve workflow.yaml
+		ForceConfig: *forceConfig,
+		SkipConfig:  !*forceConfig, // Preserve workflow.yaml by default
 		NoGenerate: *noGenerate,
 		WithCI:     true,  // Always migrate CI
 		ForceCI:    false, // Never force-replace CI on upgrade (only migrate)
@@ -759,6 +778,9 @@ func cmdUpgrade(args []string) int {
 	if result != nil && result.ConfigSkipped {
 		fmt.Println("")
 		info("  Config preserved: .ai/config/workflow.yaml\n")
+	} else if *forceConfig {
+		fmt.Println("")
+		info("  Config overwritten: .ai/config/workflow.yaml\n")
 	}
 
 	// Auto-commit upgrade changes (unless --no-commit)
@@ -1030,7 +1052,7 @@ _awkit() {
             return 0
             ;;
         upgrade)
-            local opts="--scaffold --preset --force --dry-run --no-generate --no-commit --help"
+            local opts="--scaffold --preset --force-config --force --dry-run --no-generate --no-commit --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
             return 0
             ;;
@@ -1063,7 +1085,7 @@ _awkit() {
     commands=(
         'init:Initialize AWK in a project'
         'install:Alias for init'
-        'upgrade:Upgrade AWK kit files (preserves config)'
+        'upgrade:Upgrade AWK kit files (preserves config by default)'
         'uninstall:Remove AWK from a project'
         'kickoff:Start the AI workflow'
         'validate:Validate workflow configuration'
@@ -1104,6 +1126,7 @@ _awkit() {
                     _arguments \
                         '--scaffold[Supplement scaffold files]' \
                         '--preset[Preset for scaffold]:preset:(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)' \
+                        '--force-config[Overwrite only workflow.yaml]' \
                         '--force[Overwrite scaffold files]' \
                         '--dry-run[Show what would be done]' \
                         '--no-generate[Skip generate.sh]' \
@@ -1136,7 +1159,7 @@ complete -c awkit -e
 # Commands
 complete -c awkit -n __fish_use_subcommand -a init -d 'Initialize AWK in a project'
 complete -c awkit -n __fish_use_subcommand -a install -d 'Alias for init'
-complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files (preserves config)'
+complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files (preserves config by default)'
 complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a project'
 complete -c awkit -n __fish_use_subcommand -a kickoff -d 'Start the AI workflow'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
@@ -1160,6 +1183,7 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name 
 # upgrade options
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l scaffold -d 'Supplement scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset for scaffold' -xa 'generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force -d 'Overwrite scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-generate -d 'Skip generate.sh'

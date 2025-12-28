@@ -13,6 +13,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/timeout.sh"
 
 # ============================================================
+# Ensure we operate from the main worktree root (even if called inside a git worktree)
+# ============================================================
+resolve_main_root() {
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local common_dir=""
+    common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [[ -z "$common_dir" ]]; then
+      common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+      if [[ -n "$common_dir" ]]; then
+        common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P || true)"
+      fi
+    fi
+    if [[ -n "$common_dir" ]]; then
+      echo "$(dirname "$common_dir")"
+      return 0
+    fi
+    git rev-parse --show-toplevel 2>/dev/null || pwd -P 2>/dev/null || pwd
+    return 0
+  fi
+  pwd -P 2>/dev/null || pwd
+}
+
+MAIN_ROOT="$(resolve_main_root)"
+cd "$MAIN_ROOT" 2>/dev/null || true
+
+# ============================================================
 # 初始化
 # ============================================================
 log() {
@@ -161,6 +187,9 @@ else
   if [[ -n "$PR_URL" ]]; then
     log "PR URL: $PR_URL"
   fi
+
+  # Record principal session into result.json for offline audit (best-effort).
+  bash .ai/scripts/session_manager.sh update_result_with_principal_session "$ISSUE_NUMBER" "$PRINCIPAL_SESSION_ID" 2>/dev/null || true
 fi
 
 # ============================================================

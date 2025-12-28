@@ -516,6 +516,10 @@ func applyPresetRules(kit fs.FS, targetDir string, preset string) error {
 			continue
 		}
 		dstPath := filepath.Join(targetDir, filepath.FromSlash(r.dst))
+		if _, err := os.Stat(dstPath); err == nil {
+			// Never overwrite user rules (these are intended as starting points).
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 			return err
 		}
@@ -1582,6 +1586,17 @@ func scaffoldNode(targetDir, projectName string, force, dryRun bool) (*ScaffoldR
 `),
 		},
 		{
+			path: filepath.Join(targetDir, "src", "index.test.ts"),
+			content: []byte(`import { describe, expect, it } from "vitest";
+
+describe("smoke", () => {
+  it("runs", () => {
+    expect(true).toBe(true);
+  });
+});
+`),
+		},
+		{
 			path:    filepath.Join(targetDir, "README.md"),
 			content: []byte(fmt.Sprintf("# %s\n\nA Node.js/TypeScript project.\n", projectName)),
 		},
@@ -1739,6 +1754,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 }
 
 export default App
+`),
+		},
+		{
+			path: filepath.Join(targetDir, "src", "smoke.test.ts"),
+			content: []byte(`import { describe, expect, it } from 'vitest'
+
+describe('smoke', () => {
+  it('runs', () => {
+    expect(1 + 1).toBe(2)
+  })
+})
 `),
 		},
 		{
