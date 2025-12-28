@@ -48,6 +48,14 @@ func NewSignalHandler(executor *PTYExecutor, state *StateManager, lock *LockMana
 	}
 }
 
+// SetExecutor updates the currently running Principal executor.
+// This enables multi-session kickoff loops to reuse a single SignalHandler instance.
+func (s *SignalHandler) SetExecutor(executor *PTYExecutor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.executor = executor
+}
+
 // AddMonitor adds an IssueMonitor to be cleaned up on shutdown
 func (s *SignalHandler) AddMonitor(m *IssueMonitor) {
 	s.mu.Lock()

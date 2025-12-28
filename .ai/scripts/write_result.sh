@@ -32,6 +32,13 @@ SUBMODULE_SHA="${AI_SUBMODULE_SHA:-}"
 CONSISTENCY_STATUS="${AI_CONSISTENCY_STATUS:-consistent}"
 FAILURE_STAGE="${AI_FAILURE_STAGE:-}"
 
+# Task mapping fields (best-effort; used to auto-mark tasks.md on merge)
+SPEC_NAME="${AI_SPEC_NAME:-${SPEC_NAME:-}}"
+TASK_LINE="${AI_TASK_LINE:-${TASK_LINE:-}}"
+if [[ ! "${TASK_LINE:-}" =~ ^[0-9]+$ ]]; then
+  TASK_LINE=""
+fi
+
 OUT_DIR="$RESULTS_ROOT/.ai/results"
 mkdir -p "$OUT_DIR"
 
@@ -178,6 +185,8 @@ json_escape() {
   echo "  \"recovery_command\": $(printf '%s' "$RECOVERY_COMMAND" | json_escape),"
   echo "  \"timestamp_utc\": $(printf '%s' "$TS" | json_escape),"
   echo "  \"pr_url\": $(printf '%s' "$PR_URL" | json_escape),"
+  echo "  \"spec_name\": $(printf '%s' "$SPEC_NAME" | json_escape),"
+  echo "  \"task_line\": $(printf '%s' "$TASK_LINE" | json_escape),"
   echo "  \"summary_file\": $(printf '%s' "$SUMMARY_FILE" | json_escape),"
   echo "  \"submodule_status\": $(printf '%s' "$SUBMODULE_STATUS" | json_escape),"
   echo "  \"session\": {"

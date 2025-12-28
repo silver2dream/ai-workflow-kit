@@ -74,6 +74,9 @@ log "提交審查 PR #$PR_NUMBER (Score: $SCORE/10)"
 # 獲取基本資訊
 # ============================================================
 PRINCIPAL_SESSION_ID=$(bash .ai/scripts/session_manager.sh get_current_session_id 2>/dev/null || echo "unknown")
+if [[ -z "$PRINCIPAL_SESSION_ID" ]]; then
+  PRINCIPAL_SESSION_ID="unknown"
+fi
 REVIEW_DIR="$MAIN_ROOT/.ai/state/reviews/pr-$PR_NUMBER"
 mkdir -p "$REVIEW_DIR" 2>/dev/null || true
 DIFF_PATH="$REVIEW_DIR/diff.patch"
@@ -208,7 +211,10 @@ if [[ "$SCORE" -ge 7 ]]; then
         TASK_LINE=$(python3 -c "import json; print(json.load(open('$RESULT_FILE')).get('task_line',''))" 2>/dev/null || echo "")
         
         if [[ -n "$SPEC_NAME" && -n "$TASK_LINE" ]]; then
-          TASKS_FILE=".ai/specs/$SPEC_NAME/tasks.md"
+          CONFIG_FILE=".ai/config/workflow.yaml"
+          SPEC_BASE_PATH=$(python3 -c "import yaml; c=yaml.safe_load(open('$CONFIG_FILE')) or {}; print(c.get('specs',{}).get('base_path', '.ai/specs'))" 2>/dev/null || echo ".ai/specs")
+          SPEC_NAME_CLEAN=$(echo "$SPEC_NAME" | tr -d ' ')
+          TASKS_FILE="$SPEC_BASE_PATH/$SPEC_NAME_CLEAN/tasks.md"
           if [[ -f "$TASKS_FILE" ]]; then
             if python3 - "$TASKS_FILE" "$TASK_LINE" <<'PY' 2>/dev/null; then
 import sys
