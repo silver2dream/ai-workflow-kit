@@ -7,9 +7,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 )
 
 type Options struct {
@@ -604,19 +605,11 @@ func migrateCIWorkflow(content []byte) (bool, []byte) {
 }
 
 func tryGenerate(targetDir string) error {
-	bash, err := exec.LookPath("bash")
-	if err != nil {
-		return nil
-	}
-
-	cmd := exec.Command(bash, ".ai/scripts/generate.sh")
-	cmd.Dir = targetDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	return nil
+	_, err := generate.Generate(generate.Options{
+		StateRoot:  targetDir,
+		GenerateCI: false,
+	})
+	return err
 }
 
 var presetReactGo = func(projectName string) []byte {

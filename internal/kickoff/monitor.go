@@ -23,18 +23,19 @@ const (
 
 // IssueMonitor monitors GitHub Issue comments for Worker progress
 type IssueMonitor struct {
-	issueID       int
-	lastCommentID string
-	lastActivity  time.Time
-	startTime     time.Time
-	spinner       *Spinner
-	stopChan      chan struct{}
-	doneChan      chan struct{}
-	stopReason    string
-	timedOut      bool
-	mu            sync.Mutex
-	backoff       time.Duration
-	onComment     func(commentType string, prURL string)
+	issueID          int
+	processedCount   int               // Track number of processed comments (G4 fix)
+	seenCommentIDs   map[string]bool   // Track seen comment IDs to handle reordering
+	lastActivity     time.Time
+	startTime        time.Time
+	spinner          *Spinner
+	stopChan         chan struct{}
+	doneChan         chan struct{}
+	stopReason       string
+	timedOut         bool
+	mu               sync.Mutex
+	backoff          time.Duration
+	onComment        func(commentType string, prURL string)
 }
 
 // Comment represents a GitHub issue comment
@@ -53,13 +54,14 @@ type IssueResponse struct {
 // NewIssueMonitor creates a new IssueMonitor for the given issue
 func NewIssueMonitor(issueID int, spinner *Spinner) *IssueMonitor {
 	return &IssueMonitor{
-		issueID:      issueID,
-		startTime:    time.Now(),
-		lastActivity: time.Now(),
-		spinner:      spinner,
-		stopChan:     make(chan struct{}),
-		doneChan:     make(chan struct{}),
-		backoff:      PollInterval,
+		issueID:        issueID,
+		seenCommentIDs: make(map[string]bool),
+		startTime:      time.Now(),
+		lastActivity:   time.Now(),
+		spinner:        spinner,
+		stopChan:       make(chan struct{}),
+		doneChan:       make(chan struct{}),
+		backoff:        PollInterval,
 	}
 }
 
@@ -135,13 +137,16 @@ func (m *IssueMonitor) poll() error {
 		return nil
 	}
 
-	// Process new comments
+	// Process new comments (G4 fix: use map instead of string comparison)
 	for _, comment := range resp.Comments {
-		if comment.ID <= m.lastCommentID {
+		// Skip already-processed comments
+		if m.seenCommentIDs[comment.ID] {
 			continue
 		}
 
-		m.lastCommentID = comment.ID
+		// Mark as seen
+		m.seenCommentIDs[comment.ID] = true
+		m.processedCount++
 
 		// Check for AWK marker
 		if strings.Contains(comment.Body, AWKCommentPrefix) {

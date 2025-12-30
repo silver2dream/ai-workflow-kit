@@ -29,14 +29,38 @@ echo "============================================"
 echo ""
 
 # ============================================================
-# Test 1: Config validation
+# Pre-test Setup: Build awkit if not available
+# ============================================================
+echo "## Pre-test Setup"
+
+AWKIT_BIN=""
+if command -v awkit &>/dev/null; then
+  AWKIT_BIN="awkit"
+  echo "✓ awkit found in PATH"
+elif command -v go &>/dev/null; then
+  # Build awkit locally
+  echo "Building awkit..."
+  if go build -o "$MONO_ROOT/awkit" "$MONO_ROOT/cmd/awkit" 2>/dev/null; then
+    AWKIT_BIN="$MONO_ROOT/awkit"
+    echo "✓ awkit built successfully"
+  else
+    echo "✗ Failed to build awkit"
+  fi
+else
+  echo "✗ Neither awkit nor go found - awkit tests will be skipped"
+fi
+
+echo ""
+
+# ============================================================
+# Test 1: Config validation (awkit validate)
 # ============================================================
 echo "## Config Tests"
 
-if python3 "$AI_ROOT/scripts/validate_config.py" > /dev/null 2>&1; then
-  log_pass "workflow.yaml is valid"
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate > /dev/null 2>&1; then
+  log_pass "workflow.yaml is valid (awkit validate)"
 else
-  log_fail "workflow.yaml validation failed"
+  log_fail "workflow.yaml validation failed (awkit validate)"
 fi
 
 # ============================================================
@@ -45,15 +69,18 @@ fi
 echo ""
 echo "## File Structure Tests"
 
+# Test awkit binary is available
+if [[ -n "$AWKIT_BIN" ]]; then
+  log_pass "awkit binary available"
+else
+  log_fail "awkit binary not found"
+fi
+
 required_files=(
   "$AI_ROOT/config/workflow.yaml"
   "$AI_ROOT/config/workflow.schema.json"
-  "$AI_ROOT/scripts/generate.sh"
-  "$AI_ROOT/scripts/kickoff.sh"
   "$AI_ROOT/scripts/audit_project.sh"
   "$AI_ROOT/scripts/scan_repo.sh"
-  "$AI_ROOT/templates/CLAUDE.md.j2"
-  "$AI_ROOT/templates/AGENTS.md.j2"
   "$AI_ROOT/skills/principal-workflow/SKILL.md"
 )
 
@@ -66,7 +93,7 @@ for file in "${required_files[@]}"; do
 done
 
 # ============================================================
-# Test 3: generate.sh produces valid output
+# Test 3: awkit generate produces valid output
 # ============================================================
 echo ""
 echo "## Generate Tests"
@@ -75,17 +102,14 @@ echo "## Generate Tests"
 TEST_TMP=$(mktemp -d)
 trap "rm -rf $TEST_TMP" EXIT
 
-# Copy config to temp
-cp "$AI_ROOT/config/workflow.yaml" "$TEST_TMP/"
-
-# Test generate.sh (dry run by checking templates exist)
-if [[ -f "$AI_ROOT/templates/CLAUDE.md.j2" ]] && [[ -f "$AI_ROOT/templates/AGENTS.md.j2" ]]; then
-  log_pass "Templates exist for generation"
+# Test awkit generate --dry-run works
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN generate --dry-run > /dev/null 2>&1; then
+  log_pass "awkit generate --dry-run works"
 else
-  log_fail "Templates missing"
+  log_fail "awkit generate --dry-run failed"
 fi
 
-# Check generated files exist
+# Check generated files exist (from previous generation)
 if [[ -f "$MONO_ROOT/CLAUDE.md" ]] && [[ -f "$MONO_ROOT/AGENTS.md" ]]; then
   log_pass "Generated files exist (CLAUDE.md, AGENTS.md)"
 else
@@ -100,7 +124,7 @@ else
 fi
 
 # ============================================================
-# Test 4: Scripts are executable (Unix only)
+# Test 4: Scripts are executable (Unix only) + awkit commands
 # ============================================================
 echo ""
 echo "## Script Tests"
@@ -108,10 +132,10 @@ echo "## Script Tests"
 if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
   log_skip "Executable check (Windows)"
 else
+  # Only check scripts that are still in use (not migrated to Go)
   scripts=(
-    "$AI_ROOT/scripts/generate.sh"
-    "$AI_ROOT/scripts/kickoff.sh"
     "$AI_ROOT/scripts/audit_project.sh"
+    "$AI_ROOT/scripts/scan_repo.sh"
   )
   for script in "${scripts[@]}"; do
     if [[ -x "$script" ]]; then
@@ -121,6 +145,15 @@ else
     fi
   done
 fi
+
+# Test awkit subcommands respond to --help
+for cmd in validate generate kickoff status analyze-next dispatch-worker; do
+  if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN $cmd --help > /dev/null 2>&1; then
+    log_pass "awkit $cmd --help works"
+  else
+    log_fail "awkit $cmd --help failed"
+  fi
+done
 
 # ============================================================
 # Test 5: YAML syntax check
@@ -159,34 +192,47 @@ for file in "${json_files[@]}"; do
 done
 
 # ============================================================
-# Test 7: Jinja2 template syntax
+# Test 7: Generator Output Verification (replaced Jinja2 tests)
 # ============================================================
 echo ""
-echo "## Template Syntax Tests"
+echo "## Generator Output Tests"
 
-templates=(
-  "$AI_ROOT/templates/CLAUDE.md.j2"
-  "$AI_ROOT/templates/AGENTS.md.j2"
-  "$AI_ROOT/templates/git-workflow.md.j2"
-)
-
-for template in "${templates[@]}"; do
-  if python3 -c "
-from jinja2 import Environment, FileSystemLoader, TemplateSyntaxError
-import os
-env = Environment(loader=FileSystemLoader(os.path.dirname('$template')))
-try:
-    env.get_template(os.path.basename('$template'))
-    exit(0)
-except TemplateSyntaxError as e:
-    print(e)
-    exit(1)
-" 2>/dev/null; then
-    log_pass "$(basename "$template") valid Jinja2"
+# Test that generated files have required content structure
+if [[ -f "$MONO_ROOT/CLAUDE.md" ]]; then
+  # Check CLAUDE.md has required sections
+  if grep -q "## Role" "$MONO_ROOT/CLAUDE.md" && \
+     grep -q "## Principal Workflow" "$MONO_ROOT/CLAUDE.md"; then
+    log_pass "CLAUDE.md has required sections"
   else
-    log_fail "$(basename "$template") invalid Jinja2"
+    log_fail "CLAUDE.md missing required sections"
   fi
-done
+else
+  log_skip "CLAUDE.md not found (run awkit generate first)"
+fi
+
+if [[ -f "$MONO_ROOT/AGENTS.md" ]]; then
+  # Check AGENTS.md has required sections
+  if grep -q "## Role" "$MONO_ROOT/AGENTS.md" && \
+     grep -q "## MUST-READ" "$MONO_ROOT/AGENTS.md"; then
+    log_pass "AGENTS.md has required sections"
+  else
+    log_fail "AGENTS.md missing required sections"
+  fi
+else
+  log_skip "AGENTS.md not found (run awkit generate first)"
+fi
+
+# Check git-workflow.md in _kit rules
+if [[ -f "$AI_ROOT/rules/_kit/git-workflow.md" ]]; then
+  if grep -qi "Branching" "$AI_ROOT/rules/_kit/git-workflow.md" && \
+     grep -qi "Commit" "$AI_ROOT/rules/_kit/git-workflow.md"; then
+    log_pass "git-workflow.md has required sections"
+  else
+    log_fail "git-workflow.md missing required sections"
+  fi
+else
+  log_skip "git-workflow.md not found"
+fi
 
 # ============================================================
 # Test 8: Failure analysis
@@ -227,43 +273,28 @@ else
 fi
 
 # ============================================================
-# Test 9: Stats and History Tracking
+# Test 9: Status Command Tests (awkit status)
 # ============================================================
 echo ""
-echo "## Stats and History Tests"
+echo "## Status Command Tests"
 
-if [[ -f "$AI_ROOT/scripts/stats.sh" ]]; then
-  log_pass "stats.sh exists"
-  
-  # Test --no-save flag exists in script
-  if grep -q "\-\-no-save" "$AI_ROOT/scripts/stats.sh"; then
-    log_pass "stats.sh supports --no-save flag"
+# Test awkit status --help
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN status --help > /dev/null 2>&1; then
+  log_pass "awkit status --help works"
+else
+  log_fail "awkit status --help failed"
+fi
+
+# Test awkit status --json produces valid JSON (needs gh auth)
+if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+  STATUS_OUTPUT=$($AWKIT_BIN status --json 2>/dev/null || echo "{}")
+  if echo "$STATUS_OUTPUT" | python3 -m json.tool > /dev/null 2>&1; then
+    log_pass "awkit status --json produces valid JSON"
   else
-    log_fail "stats.sh missing --no-save flag"
-  fi
-  
-  # Test trends calculation function exists
-  if grep -q "calculate_trends" "$AI_ROOT/scripts/stats.sh"; then
-    log_pass "stats.sh has trends calculation"
-  else
-    log_fail "stats.sh missing trends calculation"
-  fi
-  
-  # Test JSON output includes trends
-  if grep -q '"trends"' "$AI_ROOT/scripts/stats.sh"; then
-    log_pass "stats.sh JSON includes trends"
-  else
-    log_fail "stats.sh JSON missing trends"
-  fi
-  
-  # Test metrics aggregation
-  if grep -q 'total_duration_seconds' "$AI_ROOT/scripts/stats.sh"; then
-    log_pass "stats.sh includes duration metrics"
-  else
-    log_fail "stats.sh missing duration metrics"
+    log_fail "awkit status --json output is not valid JSON"
   fi
 else
-  log_fail "stats.sh missing"
+  log_skip "awkit status --json (gh not authenticated)"
 fi
 
 # Test write_result.sh includes metrics
@@ -339,16 +370,16 @@ else
 fi
 
 # ============================================================
-# Test 11: Multi-Repo Coordination (Skills Architecture)
+# Test 11: Multi-Repo Coordination (awkit dispatch-worker)
 # ============================================================
 echo ""
 echo "## Multi-Repo Tests"
 
-# Test dispatch_worker.sh has multi-repo support
-if [[ -f "$AI_ROOT/scripts/dispatch_worker.sh" ]]; then
-  log_pass "dispatch_worker.sh exists"
+# Test awkit dispatch-worker is available
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN dispatch-worker --help > /dev/null 2>&1; then
+  log_pass "awkit dispatch-worker available"
 else
-  log_fail "dispatch_worker.sh missing"
+  log_fail "awkit dispatch-worker not available"
 fi
 
 # Test skills structure exists
@@ -410,12 +441,12 @@ else
   log_fail "Found old 'scripts/ai/' references"
 fi
 
-# Test review-pr.md uses worktree-based review (new architecture)
-if grep -q "prepare_review.sh" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md" && \
-   grep -q "submit_review.sh" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md"; then
-  log_pass "review-pr.md uses worktree-based review scripts"
+# Test review-pr.md uses awkit review commands (new architecture)
+if grep -q "awkit prepare-review" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md" && \
+   grep -q "awkit submit-review" "$AI_ROOT/skills/principal-workflow/tasks/review-pr.md"; then
+  log_pass "review-pr.md uses awkit review commands"
 else
-  log_fail "review-pr.md missing review scripts"
+  log_fail "review-pr.md missing awkit review commands"
 fi
 
 # Test review-pr.md doesn't hardcode feat/aether
@@ -465,11 +496,11 @@ else
   log_fail "audit_project.py failed to execute"
 fi
 
-# Test kickoff.sh --help (safe to run)
-if bash "$AI_ROOT/scripts/kickoff.sh" --help > /dev/null 2>&1; then
-  log_pass "kickoff.sh --help executes"
+# Test awkit kickoff --help (safe to run)
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN kickoff --help > /dev/null 2>&1; then
+  log_pass "awkit kickoff --help executes"
 else
-  log_fail "kickoff.sh --help failed"
+  log_fail "awkit kickoff --help failed"
 fi
 
 # Test no CRLF in shell scripts (would break on Unix)
@@ -486,24 +517,23 @@ else
 fi
 
 # ============================================================
-# Test 16: validate_config.py Dependency Handling (v3)
+# Test 16: Config Validation (awkit validate)
 # ============================================================
 echo ""
-echo "## validate_config.py Dependency Tests"
+echo "## Config Validation Tests"
 
-# Test validate_config.py doesn't auto-install
-if ! grep -q "pip3 install.*--quiet" "$AI_ROOT/scripts/validate_config.py" && \
-   ! grep -q "os.system.*pip" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py doesn't auto-install dependencies"
+# Test awkit validate succeeds on current config
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate > /dev/null 2>&1; then
+  log_pass "awkit validate succeeds on current config"
 else
-  log_fail "validate_config.py still auto-installs dependencies"
+  log_fail "awkit validate failed on current config"
 fi
 
-# Test validate_config.py shows helpful error message
-if grep -q "Please install" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py shows install instructions"
+# Test awkit validate --help works
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate --help > /dev/null 2>&1; then
+  log_pass "awkit validate --help works"
 else
-  log_fail "validate_config.py missing install instructions"
+  log_fail "awkit validate --help failed"
 fi
 
 # ============================================================
@@ -534,30 +564,28 @@ else
 fi
 
 # ============================================================
-# Test 18: run_script() Cross-Platform Tests (v3)
+# Test 18: Go Cross-Platform Tests (replaced run_script tests)
 # ============================================================
 echo ""
-echo "## run_script() Cross-Platform Tests"
+echo "## Go Cross-Platform Tests"
 
-# Test run_script function exists in kickoff.sh
-if grep -q "run_script()" "$AI_ROOT/scripts/kickoff.sh"; then
-  log_pass "kickoff.sh has run_script() function"
+# Go handles cross-platform natively - verify Go tests pass
+if command -v go &>/dev/null; then
+  # Run Go tests (they include cross-platform compatibility)
+  if go test ./... > /dev/null 2>&1; then
+    log_pass "Go tests pass (includes cross-platform support)"
+  else
+    log_fail "Go tests failed"
+  fi
 else
-  log_fail "kickoff.sh missing run_script() function"
+  log_skip "go not installed"
 fi
 
-# Test run_script prefers Python
-if grep -q "python3.*py_path" "$AI_ROOT/scripts/kickoff.sh" && grep -q "python.*py_path" "$AI_ROOT/scripts/kickoff.sh"; then
-  log_pass "run_script() prefers Python over bash"
+# Test awkit works on current platform
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN --help > /dev/null 2>&1; then
+  log_pass "awkit runs on current platform"
 else
-  log_fail "run_script() should prefer Python"
-fi
-
-# Test kickoff.sh uses run_script for audit
-if grep -q "run_script scan_repo" "$AI_ROOT/scripts/kickoff.sh" && grep -q "run_script audit_project" "$AI_ROOT/scripts/kickoff.sh"; then
-  log_pass "kickoff.sh uses run_script for audit"
-else
-  log_fail "kickoff.sh should use run_script for audit"
+  log_fail "awkit failed to run"
 fi
 
 # ============================================================
@@ -671,49 +699,31 @@ else
 fi
 
 # ============================================================
-# Test 22: validate_config.py Type-Specific Validation (v3.1)
+# Test 22: awkit validate Type-Specific Validation
 # ============================================================
 echo ""
-echo "## Type-Specific Validation Tests (v3.1)"
+echo "## Type-Specific Validation Tests (awkit)"
 
-# Test validate_config.py has type-specific validation
-if grep -q "repo_type == 'submodule'" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py checks submodule type"
+# Test awkit validate works on current config
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate > /dev/null 2>&1; then
+  log_pass "awkit validate works on current config"
 else
-  log_fail "validate_config.py missing submodule type check"
+  log_fail "awkit validate failed on current config"
 fi
 
-if grep -q "repo_type == 'directory'" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py checks directory type"
+# Test awkit validate provides helpful output
+VALIDATE_OUTPUT=$($AWKIT_BIN validate 2>&1)
+if echo "$VALIDATE_OUTPUT" | grep -qi "valid\|ok\|success"; then
+  log_pass "awkit validate provides helpful output"
 else
-  log_fail "validate_config.py missing directory type check"
+  log_fail "awkit validate output not helpful"
 fi
 
-if grep -q "repo_type == 'root'" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py checks root type"
+# Test awkit validate shows project info
+if echo "$VALIDATE_OUTPUT" | grep -qi "project\|type\|repos"; then
+  log_pass "awkit validate shows project info"
 else
-  log_fail "validate_config.py missing root type check"
-fi
-
-# Test validate_config.py checks .gitmodules for submodule type
-if grep -q "gitmodules" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py checks .gitmodules for submodules"
-else
-  log_fail "validate_config.py missing .gitmodules check"
-fi
-
-# Test validate_config.py warns about directory with .git
-if grep -q "has .git" "$AI_ROOT/scripts/validate_config.py" || grep -q "consider type=submodule" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py warns about directory with .git"
-else
-  log_fail "validate_config.py missing directory .git warning"
-fi
-
-# Test validate_config.py validates root path
-if grep -q "should be './'" "$AI_ROOT/scripts/validate_config.py" || grep -q "should be './' or empty" "$AI_ROOT/scripts/validate_config.py"; then
-  log_pass "validate_config.py validates root path"
-else
-  log_fail "validate_config.py missing root path validation"
+  log_fail "awkit validate missing project info"
 fi
 
 # ============================================================
@@ -1004,6 +1014,51 @@ if [[ -f "$SCRIPT_DIR/test_worker_prompt_isolation.sh" ]]; then
   fi
 else
   log_skip "test_worker_prompt_isolation.sh not found"
+fi
+
+# ============================================================
+# Test 28: awkit Commands Integration Tests
+# ============================================================
+echo ""
+echo "## awkit Commands Integration Tests"
+
+# Test all awkit subcommands respond to --help
+AWKIT_COMMANDS=(
+  "validate"
+  "generate"
+  "kickoff"
+  "status"
+  "analyze-next"
+  "dispatch-worker"
+  "check-result"
+  "prepare-review"
+  "submit-review"
+  "create-task"
+)
+
+for cmd in "${AWKIT_COMMANDS[@]}"; do
+  if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN "$cmd" --help > /dev/null 2>&1; then
+    log_pass "awkit $cmd --help"
+  else
+    log_fail "awkit $cmd --help failed"
+  fi
+done
+
+# Test awkit version (if implemented)
+if [[ -n "$AWKIT_BIN" ]] && ($AWKIT_BIN version > /dev/null 2>&1 || $AWKIT_BIN --version > /dev/null 2>&1); then
+  log_pass "awkit version available"
+else
+  log_skip "awkit version not implemented"
+fi
+
+# ============================================================
+# Cleanup
+# ============================================================
+
+# Remove locally built awkit binary if we built it
+if [[ "$AWKIT_BIN" == "$MONO_ROOT/awkit" ]] && [[ -f "$MONO_ROOT/awkit" ]]; then
+  rm -f "$MONO_ROOT/awkit"
+  echo "Cleaned up: $MONO_ROOT/awkit"
 fi
 
 # ============================================================

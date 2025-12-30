@@ -1,6 +1,6 @@
 # Create Task
 
-當 `analyze_next.sh` 回傳 `NEXT_ACTION=create_task` 時，代表某個 Spec 的 `tasks.md` 內有一條尚未建立對應 GitHub Issue 的任務（通常是 `- [ ] ...` 且尚未附上 `<!-- Issue #N -->`）。
+當 `awkit analyze-next` 回傳 `NEXT_ACTION=create_task` 時，代表某個 Spec 的 `tasks.md` 內有一條尚未建立對應 GitHub Issue 的任務（通常是 `- [ ] ...` 且尚未附上 `<!-- Issue #N -->`）。
 
 本步驟採用「兩段式」流程：
 1. Principal 先把 ticket 內容寫完整（包含可驗收的條件與測試要求）
@@ -60,7 +60,7 @@
 
 執行（建議優先不帶 `--title`，讓腳本從 task line 自動生成，或自行指定）：
 ```bash
-python3 .ai/scripts/create_task.py \
+awkit create-task \
   --spec "$SPEC_NAME" \
   --task-line "$TASK_LINE" \
   --body-file .ai/temp/create-task-body.md
@@ -74,10 +74,10 @@ python3 .ai/scripts/create_task.py \
 ### 4) 驗證並回到 Main Loop
 
 - `tasks.md` 第 `$TASK_LINE` 行應該被追加 `<!-- Issue #N -->`
-- 回到 `phases/main-loop.md` 的 Step 1，重新 `eval "$(bash .ai/scripts/analyze_next.sh)"`
+- 回到 `phases/main-loop.md` 的 Step 1，重新 `eval "$(awkit analyze-next)"`
 
 ## Notes / Guardrails
 
 - 這個 step 只負責「建立 Issue + 回寫 tasks.md」，不要在這裡 dispatch worker 或 review PR。
 - Ticket body 不可空白/模板化；Acceptance Criteria 要可測、可驗收。
-- 若 `tasks.md` 該行已存在 `<!-- Issue #N -->`，`create_task.py` 會直接 no-op（避免重複開 Issue）。
+- 若 `tasks.md` 該行已存在 `<!-- Issue #N -->`，`awkit create-task` 會直接 no-op（避免重複開 Issue）。

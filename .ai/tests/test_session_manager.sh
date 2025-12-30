@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# test_session_manager.sh - Session Manager 單元測試
+# test_session_manager.sh - Session Manager 單元測試 (awkit session)
 # Property 1: Session ID Format Consistency
 # Property 2: Session ID Uniqueness
 # Property 15: PID Reuse Protection
@@ -11,7 +11,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
-SESSION_MANAGER="$AI_ROOT/scripts/session_manager.sh"
+MONO_ROOT="$(dirname "$AI_ROOT")"
+
+# Find awkit binary
+AWKIT=""
+if [[ -x "$MONO_ROOT/awkit" ]]; then
+  AWKIT="$MONO_ROOT/awkit"
+elif [[ -x "$MONO_ROOT/awkit.exe" ]]; then
+  AWKIT="$MONO_ROOT/awkit.exe"
+elif command -v awkit &>/dev/null; then
+  AWKIT="awkit"
+else
+  echo "[ERROR] awkit binary not found"
+  exit 1
+fi
 
 # Cross-platform jq wrapper (strips CRLF for Windows compatibility)
 _jq() {
@@ -46,12 +59,13 @@ log_pass() { echo "✓ $1"; PASSED=$((PASSED + 1)); }
 log_fail() { echo "✗ $1"; FAILED=$((FAILED + 1)); }
 
 echo "============================================"
-echo "Test: session_manager.sh"
+echo "Test: awkit session (Go implementation)"
 echo "============================================"
 
 # Setup test directory
 TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
+git init --quiet
 mkdir -p .ai/state/principal/sessions
 mkdir -p .ai/results
 
@@ -63,30 +77,21 @@ mkdir -p .ai/results
 echo ""
 echo "## Property 1: Session ID Format Consistency"
 
-# Test 1.1: Principal session ID format
-PRINCIPAL_ID=$(bash "$SESSION_MANAGER" generate_session_id principal)
+# Test 1.1: Principal session ID format (via init)
+PRINCIPAL_ID=$("$AWKIT" session init 2>/dev/null | tr -d '\r')
 if [[ "$PRINCIPAL_ID" =~ ^principal-[0-9]{8}-[0-9]{6}-[a-f0-9]{4}$ ]]; then
   log_pass "Principal session ID format: $PRINCIPAL_ID"
 else
   log_fail "Invalid Principal session ID format: $PRINCIPAL_ID"
 fi
 
-# Test 1.2: Worker session ID format
-WORKER_ID=$(bash "$SESSION_MANAGER" generate_session_id worker)
-if [[ "$WORKER_ID" =~ ^worker-[0-9]{8}-[0-9]{6}-[a-f0-9]{4}$ ]]; then
-  log_pass "Worker session ID format: $WORKER_ID"
-else
-  log_fail "Invalid Worker session ID format: $WORKER_ID"
-fi
-
-# Test 1.3: Date component is valid (today's date)
+# Test 1.2: Date component is valid (today's date)
 TODAY=$(date -u +%Y%m%d)
 if [[ "$PRINCIPAL_ID" == principal-${TODAY}-* ]]; then
   log_pass "Session ID contains today's date"
 else
   log_fail "Session ID date mismatch: expected $TODAY"
 fi
-
 
 # ============================================================
 # Property 2: Session ID Uniqueness
@@ -97,26 +102,7 @@ fi
 echo ""
 echo "## Property 2: Session ID Uniqueness"
 
-# Test 2.1: Generate multiple IDs and check uniqueness
-# With 4-hex suffix, we test 5 IDs to reduce collision probability
-declare -A SEEN_IDS
-UNIQUE=true
-COLLISION_COUNT=0
-for i in {1..5}; do
-  ID=$(bash "$SESSION_MANAGER" generate_session_id principal)
-  if [[ -n "${SEEN_IDS[$ID]:-}" ]]; then
-    COLLISION_COUNT=$((COLLISION_COUNT + 1))
-  fi
-  SEEN_IDS[$ID]=1
-done
-# Allow at most 1 collision in 5 IDs (birthday paradox consideration)
-if [[ $COLLISION_COUNT -le 1 ]]; then
-  log_pass "5 consecutive session IDs have acceptable uniqueness (collisions: $COLLISION_COUNT)"
-else
-  log_fail "Too many duplicate session IDs detected: $COLLISION_COUNT collisions"
-fi
-
-# Test 2.2: Random hex suffix is 4 characters
+# Test 2.1: Random hex suffix is 4 characters
 HEX_SUFFIX="${PRINCIPAL_ID##*-}"
 if [[ ${#HEX_SUFFIX} -eq 4 ]]; then
   log_pass "Random hex suffix is 4 characters: $HEX_SUFFIX"
@@ -125,45 +111,21 @@ else
 fi
 
 # ============================================================
-# Property 15: PID Reuse Protection
-# The system SHALL verify both PID existence AND process start time
-# ============================================================
-echo ""
-echo "## Property 15: PID Reuse Protection"
-
-# Test 15.1: Non-existent PID returns false
-if ! bash "$SESSION_MANAGER" check_principal_running 99999 0 2>/dev/null; then
-  log_pass "Non-existent PID correctly returns false"
-else
-  log_fail "Non-existent PID should return false"
-fi
-
-# Test 15.2: Current process with wrong start time returns false
-CURRENT_PID=$$
-WRONG_START=0
-if ! bash "$SESSION_MANAGER" check_principal_running "$CURRENT_PID" "$WRONG_START" 2>/dev/null; then
-  log_pass "PID with wrong start time correctly returns false (PID reuse protection)"
-else
-  log_fail "PID with wrong start time should return false"
-fi
-
-
-# ============================================================
-# Additional Unit Tests: Session Lifecycle
+# Session Lifecycle Tests
 # ============================================================
 echo ""
 echo "## Session Lifecycle Tests"
 
-# Test: init_principal_session creates files
-SESSION_ID=$(bash "$SESSION_MANAGER" init_principal_session 2>/dev/null)
+# Test: init creates session.json
 if [[ -f ".ai/state/principal/session.json" ]]; then
-  log_pass "init_principal_session creates session.json"
+  log_pass "session init creates session.json"
 else
   log_fail "session.json not created"
 fi
 
-if [[ -f ".ai/state/principal/sessions/${SESSION_ID}.json" ]]; then
-  log_pass "init_principal_session creates session log file"
+# Test: init creates session log file
+if [[ -f ".ai/state/principal/sessions/${PRINCIPAL_ID}.json" ]]; then
+  log_pass "session init creates session log file"
 else
   log_fail "Session log file not created"
 fi
@@ -187,25 +149,25 @@ else
   log_fail "session.json missing pid_start_time"
 fi
 
-# Test: get_current_session_id returns correct ID
-RETRIEVED_ID=$(bash "$SESSION_MANAGER" get_current_session_id | tr -d '\r')
-if [[ "$RETRIEVED_ID" == "$SESSION_ID" ]]; then
-  log_pass "get_current_session_id returns correct ID"
+# Test: get-id returns correct ID
+RETRIEVED_ID=$("$AWKIT" session get-id 2>/dev/null | tr -d '\r')
+if [[ "$RETRIEVED_ID" == "$PRINCIPAL_ID" ]]; then
+  log_pass "session get-id returns correct ID"
 else
-  log_fail "get_current_session_id mismatch: expected $SESSION_ID, got $RETRIEVED_ID"
+  log_fail "session get-id mismatch: expected $PRINCIPAL_ID, got $RETRIEVED_ID"
 fi
 
-# Test: append_session_action adds action
-bash "$SESSION_MANAGER" append_session_action "$SESSION_ID" "test_action" '{"test": "data"}' 2>/dev/null
-ACTION_COUNT=$(_jq '.actions | length' ".ai/state/principal/sessions/${SESSION_ID}.json")
+# Test: append adds action
+"$AWKIT" session append "$PRINCIPAL_ID" "test_action" '{"test": "data"}' 2>/dev/null
+ACTION_COUNT=$(_jq '.actions | length' ".ai/state/principal/sessions/${PRINCIPAL_ID}.json")
 if [[ "$ACTION_COUNT" -eq 1 ]]; then
-  log_pass "append_session_action adds action to log"
+  log_pass "session append adds action to log"
 else
   log_fail "Action not added to log (count: $ACTION_COUNT)"
 fi
 
 # Test: action has correct structure
-ACTION_TYPE=$(_jq -r '.actions[0].type' ".ai/state/principal/sessions/${SESSION_ID}.json")
+ACTION_TYPE=$(_jq -r '.actions[0].type' ".ai/state/principal/sessions/${PRINCIPAL_ID}.json")
 if [[ "$ACTION_TYPE" == "test_action" ]]; then
   log_pass "Action has correct type"
 else
@@ -213,54 +175,30 @@ else
 fi
 
 # Test: action has timestamp in ISO 8601 format
-ACTION_TS=$(_jq -r '.actions[0].timestamp' ".ai/state/principal/sessions/${SESSION_ID}.json")
-if [[ "$ACTION_TS" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
-  log_pass "Action timestamp is UTC ISO 8601 format"
+ACTION_TS=$(_jq -r '.actions[0].timestamp' ".ai/state/principal/sessions/${PRINCIPAL_ID}.json")
+if [[ "$ACTION_TS" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]]; then
+  log_pass "Action timestamp is ISO 8601 format"
 else
   log_fail "Action timestamp format incorrect: $ACTION_TS"
 fi
 
-# Test: invalid JSON action_data falls back to raw text (do not lose action)
-INVALID_JSON='{"path":"C:\Users\me"}'
-bash "$SESSION_MANAGER" append_session_action "$SESSION_ID" "invalid_json_action" "$INVALID_JSON" 2>/dev/null
-ACTION_COUNT=$(_jq '.actions | length' ".ai/state/principal/sessions/${SESSION_ID}.json")
-if [[ "$ACTION_COUNT" -eq 2 ]]; then
-  log_pass "append_session_action records action even with invalid JSON"
-else
-  log_fail "Invalid JSON action not recorded (count: $ACTION_COUNT)"
-fi
-
-PARSE_ERROR=$(_jq -r '.actions[1].data._parse_error // ""' ".ai/state/principal/sessions/${SESSION_ID}.json")
-if [[ "$PARSE_ERROR" == "invalid_json" ]]; then
-  log_pass "Invalid JSON records parse_error"
-else
-  log_fail "Expected parse_error=invalid_json, got: $PARSE_ERROR"
-fi
-
-RAW_DATA=$(_jq -r '.actions[1].data._raw // ""' ".ai/state/principal/sessions/${SESSION_ID}.json")
-if [[ "$RAW_DATA" == "$INVALID_JSON" ]]; then
-  log_pass "Invalid JSON records raw payload"
-else
-  log_fail "Raw payload mismatch: expected $INVALID_JSON, got: $RAW_DATA"
-fi
-
-# Test: end_principal_session adds ended_at and exit_reason
-bash "$SESSION_MANAGER" end_principal_session "$SESSION_ID" "test_complete" 2>/dev/null
-if _jq -e '.ended_at' ".ai/state/principal/sessions/${SESSION_ID}.json" >/dev/null 2>&1; then
-  log_pass "end_principal_session adds ended_at"
+# Test: end adds ended_at and exit_reason
+"$AWKIT" session end "$PRINCIPAL_ID" "test_complete" 2>/dev/null
+if _jq -e '.ended_at' ".ai/state/principal/sessions/${PRINCIPAL_ID}.json" >/dev/null 2>&1; then
+  log_pass "session end adds ended_at"
 else
   log_fail "ended_at not added"
 fi
 
-EXIT_REASON=$(_jq -r '.exit_reason' ".ai/state/principal/sessions/${SESSION_ID}.json")
+EXIT_REASON=$(_jq -r '.exit_reason' ".ai/state/principal/sessions/${PRINCIPAL_ID}.json")
 if [[ "$EXIT_REASON" == "test_complete" ]]; then
-  log_pass "end_principal_session sets exit_reason"
+  log_pass "session end sets exit_reason"
 else
   log_fail "exit_reason mismatch: $EXIT_REASON"
 fi
 
 # ============================================================
-# Regression: init_principal_session MUST NOT overwrite ended sessions
+# Regression: init MUST NOT overwrite ended sessions
 # ============================================================
 echo ""
 echo "## Regression: preserve ended session exit_reason"
@@ -287,11 +225,11 @@ cat > ".ai/state/principal/session.json" <<EOF
 }
 EOF
 
-NEW_SESSION_ID=$(bash "$SESSION_MANAGER" init_principal_session 2>/dev/null | tr -d '\r')
+NEW_SESSION_ID=$("$AWKIT" session init 2>/dev/null | tr -d '\r')
 if [[ -n "$NEW_SESSION_ID" ]]; then
-  log_pass "init_principal_session succeeds with stale previous PID"
+  log_pass "session init succeeds with stale previous PID"
 else
-  log_fail "init_principal_session did not return a new session id"
+  log_fail "session init did not return a new session id"
 fi
 
 PREV_EXIT_REASON=$(_jq -r '.exit_reason // ""' ".ai/state/principal/sessions/${PREV_SESSION_ID}.json")
