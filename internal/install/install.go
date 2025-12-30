@@ -703,7 +703,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22.x"
+          go-version: "1.25.x"
 
       - name: Go test
         working-directory: backend
