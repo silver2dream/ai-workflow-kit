@@ -1393,7 +1393,7 @@ func scaffoldGo(targetDir, projectName string, force, dryRun bool) (*ScaffoldRes
 			path: filepath.Join(targetDir, "go.mod"),
 			content: []byte(fmt.Sprintf(`module %s
 
-go 1.22
+go 1.25
 `, projectName)),
 		},
 		{
