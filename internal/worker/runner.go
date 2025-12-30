@@ -412,7 +412,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	appendGitStatusDiff(ctx, wtDir, summaryFile)
 
 	if codex.ExitCode != 0 {
-		runErr = fmt.Errorf(codex.FailureReason)
+		runErr = fmt.Errorf("%s", codex.FailureReason)
 		result.ExitCode = codex.ExitCode
 		result.Error = codex.FailureReason
 		result.Status = "failed"
