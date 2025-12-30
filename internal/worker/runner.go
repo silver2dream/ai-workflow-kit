@@ -1088,7 +1088,7 @@ func createOrFindPR(ctx context.Context, branch, base, title string, issueID int
 		return "", fmt.Errorf("gh pr create failed: %w", err)
 	}
 
-	re := regexp.MustCompile(`https://github.com/[^\s]+/pull/\d+`)
+	re := regexp.MustCompile(`https://github\.com/[^\s]+/pull/\d+`)
 	match := re.FindString(string(output))
 	if match == "" {
 		return "", fmt.Errorf("PR not created or URL not found")

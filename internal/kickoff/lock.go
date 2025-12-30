@@ -71,7 +71,10 @@ func (l *LockManager) Acquire() error {
 
 	// Write lock info to the opened file
 	if err := l.writeLockInfoTo(f); err != nil {
-		f.Close()
+		if cerr := f.Close(); cerr != nil {
+			os.Remove(l.lockFile)
+			return fmt.Errorf("failed to close lock file after write error: %w (original: %v)", cerr, err)
+		}
 		os.Remove(l.lockFile)
 		return err
 	}

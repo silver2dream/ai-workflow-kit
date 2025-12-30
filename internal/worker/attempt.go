@@ -93,7 +93,7 @@ func (g *AttemptGuard) Check() (*AttemptResult, error) {
 }
 
 // RecordFailure records a failure to the history
-func (g *AttemptGuard) RecordFailure(errorType string, retryable bool) error {
+func (g *AttemptGuard) RecordFailure(errorType string, retryable bool) (err error) {
 	stateDir := filepath.Join(g.StateRoot, ".ai", "state")
 	historyFile := filepath.Join(stateDir, "failure_history.jsonl")
 
@@ -119,7 +119,11 @@ func (g *AttemptGuard) RecordFailure(errorType string, retryable bool) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	_, err = f.WriteString(string(data) + "\n")
 	return err

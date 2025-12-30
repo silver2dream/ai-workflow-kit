@@ -152,14 +152,22 @@ func runCodexAttempt(ctx context.Context, cmdArgs []string, opts CodexOptions, l
 		writeSummary(opts.SummaryFile, fmt.Sprintf("ERROR: failed to open codex log: %v\n", err))
 		return 127
 	}
-	defer logHandle.Close()
+	defer func() {
+		if err := logHandle.Close(); err != nil {
+			writeSummary(opts.SummaryFile, fmt.Sprintf("ERROR: failed to close codex log: %v\n", err))
+		}
+	}()
 
 	summaryHandle, err := os.OpenFile(opts.SummaryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		writeSummary(opts.SummaryFile, fmt.Sprintf("ERROR: failed to open summary: %v\n", err))
 		return 127
 	}
-	defer summaryHandle.Close()
+	defer func() {
+		if err := summaryHandle.Close(); err != nil {
+			writeSummary(opts.SummaryFile, fmt.Sprintf("ERROR: failed to close summary: %v\n", err))
+		}
+	}()
 
 	multiWriter := io.MultiWriter(summaryHandle, logHandle)
 
