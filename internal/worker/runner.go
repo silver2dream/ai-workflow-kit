@@ -1037,7 +1037,9 @@ func appendGitStatusDiff(ctx context.Context, wtDir, summaryFile string) {
 	if err != nil {
 		return
 	}
-	defer handle.Close()
+	defer func() {
+		_ = handle.Close() // best-effort close, error intentionally ignored
+	}()
 
 	status, _ := gitOutput(ctx, wtDir, "status", "--porcelain")
 	diff, _ := gitOutput(ctx, wtDir, "diff")
@@ -1390,7 +1392,9 @@ func logEarlyFailure(path, repoName, repoType, repoPath, branch, baseBranch, sta
 	if err != nil {
 		return
 	}
-	defer handle.Close()
+	defer func() {
+		_ = handle.Close() // best-effort close, error intentionally ignored
+	}()
 
 	fmt.Fprintln(handle, "============================================================")
 	fmt.Fprintf(handle, "EARLY FAILURE LOG - issue-%s\n", filepath.Base(path))

@@ -230,6 +230,10 @@ func writeSummary(path, message string) {
 	if err != nil {
 		return
 	}
-	defer handle.Close()
-	_, _ = handle.WriteString(message)
+	defer func() {
+		_ = handle.Close() // best-effort close, error intentionally ignored
+	}()
+	if _, err := handle.WriteString(message); err != nil {
+		return // best-effort write, error intentionally ignored
+	}
 }
