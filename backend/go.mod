@@ -1,4 +1,4 @@
 module example.com/awk/backend
 
-go 1.22
+go 1.25
 
