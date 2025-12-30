@@ -19,7 +19,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22.x"
+          go-version: "1.25.x"
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -49,7 +49,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22.x"
+          go-version: "1.25.x"
 
       - name: Go test (awkit)
         run: go test ./...
@@ -63,7 +63,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22.x"
+          go-version: "1.25.x"
 
       - name: Go test
         working-directory: backend
