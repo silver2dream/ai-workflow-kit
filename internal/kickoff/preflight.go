@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -316,18 +317,59 @@ func (p *PreflightChecker) CheckConfig() CheckResult {
 	}
 }
 
-// CheckPTY checks if PTY can be initialized
+// CheckPTY checks if PTY can be initialized (G12 fix: actual detection)
 func (p *PreflightChecker) CheckPTY() CheckResult {
-	// PTY availability is platform-dependent
-	// On Unix, PTY should always be available
-	// On Windows, ConPTY requires Windows 11
+	switch runtime.GOOS {
+	case "windows":
+		// ConPTY requires Windows 10 version 1809+ or Windows 11
+		// Check if conhost.exe exists (basic sanity check)
+		conhost := filepath.Join(os.Getenv("SystemRoot"), "System32", "conhost.exe")
+		if _, err := os.Stat(conhost); err != nil {
+			return CheckResult{
+				Name:    "PTY",
+				Passed:  true,
+				Warning: true,
+				Message: "ConPTY may not be available (conhost.exe not found)",
+			}
+		}
+		return CheckResult{
+			Name:    "PTY",
+			Passed:  true,
+			Message: "PTY available (Windows ConPTY)",
+		}
 
-	// For now, just return success
-	// Actual PTY initialization happens when starting the executor
-	return CheckResult{
-		Name:    "PTY",
-		Passed:  true,
-		Message: "PTY available",
+	case "linux", "darwin", "freebsd", "openbsd", "netbsd":
+		// Unix systems have PTY support via /dev/ptmx or openpty()
+		if _, err := os.Stat("/dev/ptmx"); err == nil {
+			return CheckResult{
+				Name:    "PTY",
+				Passed:  true,
+				Message: "PTY available (Unix /dev/ptmx)",
+			}
+		}
+		// Fallback check for /dev/pty*
+		matches, _ := filepath.Glob("/dev/pty*")
+		if len(matches) > 0 {
+			return CheckResult{
+				Name:    "PTY",
+				Passed:  true,
+				Message: "PTY available (Unix /dev/pty*)",
+			}
+		}
+		return CheckResult{
+			Name:    "PTY",
+			Passed:  true,
+			Warning: true,
+			Message: "PTY device not found, using fallback execution",
+		}
+
+	default:
+		return CheckResult{
+			Name:    "PTY",
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("PTY support unknown for %s, using fallback", runtime.GOOS),
+		}
 	}
 }
 

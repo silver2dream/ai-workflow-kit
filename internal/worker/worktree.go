@@ -1,0 +1,168 @@
+package worker
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// WorktreeOptions controls worktree creation.
+type WorktreeOptions struct {
+	StateRoot         string
+	IssueID           int
+	Branch            string
+	RepoType          string
+	RepoPath          string
+	IntegrationBranch string
+	GitTimeout        time.Duration
+	Logf              func(string, ...interface{})
+}
+
+// WorktreeInfo contains resolved worktree paths.
+type WorktreeInfo struct {
+	WorktreeDir string
+	WorkDir     string
+}
+
+// SetupWorktree creates or reuses a worktree for the issue.
+func SetupWorktree(ctx context.Context, opts WorktreeOptions) (*WorktreeInfo, error) {
+	wtDir := filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueID))
+	if _, err := os.Stat(wtDir); err == nil {
+		return &WorktreeInfo{
+			WorktreeDir: wtDir,
+			WorkDir:     resolveWorkDir(wtDir, opts.RepoType, opts.RepoPath),
+		}, nil
+	}
+
+	if err := ensureWorktreeDirs(opts.StateRoot); err != nil {
+		return nil, err
+	}
+
+	baseBranch := strings.TrimSpace(os.Getenv("AI_BASE_BRANCH"))
+	if baseBranch == "" {
+		baseBranch = opts.IntegrationBranch
+	}
+	if baseBranch == "" {
+		baseBranch = "develop"
+	}
+
+	remoteBase := strings.TrimSpace(os.Getenv("AI_REMOTE_BASE"))
+	if remoteBase == "" {
+		remoteBase = "origin/" + opts.IntegrationBranch
+	}
+
+	if err := runGit(ctx, opts.StateRoot, opts.GitTimeout, "fetch", "origin", "--prune"); err != nil {
+		return nil, err
+	}
+
+	if err := runGit(ctx, opts.StateRoot, opts.GitTimeout, "show-ref", "--verify", "--quiet", "refs/heads/"+baseBranch); err != nil {
+		if err := runGit(ctx, opts.StateRoot, opts.GitTimeout, "checkout", "-q", "-b", baseBranch, remoteBase); err != nil {
+			return nil, err
+		}
+	}
+
+	_ = runGit(ctx, opts.StateRoot, opts.GitTimeout, "checkout", "-q", baseBranch)
+	_ = runGit(ctx, opts.StateRoot, opts.GitTimeout, "pull", "--ff-only", "origin", baseBranch)
+
+	if err := ensureWorktreeBranch(ctx, opts.StateRoot, opts.Branch, baseBranch, opts.GitTimeout); err != nil {
+		return nil, err
+	}
+
+	if err := runGit(ctx, opts.StateRoot, opts.GitTimeout, "worktree", "add", wtDir, opts.Branch); err != nil {
+		return nil, err
+	}
+
+	if err := finalizeWorktree(ctx, wtDir, opts); err != nil {
+		return nil, err
+	}
+
+	return &WorktreeInfo{
+		WorktreeDir: wtDir,
+		WorkDir:     resolveWorkDir(wtDir, opts.RepoType, opts.RepoPath),
+	}, nil
+}
+
+func ensureWorktreeDirs(stateRoot string) error {
+	dirs := []string{
+		filepath.Join(stateRoot, ".worktrees"),
+		filepath.Join(stateRoot, ".ai", "runs"),
+		filepath.Join(stateRoot, ".ai", "results"),
+		filepath.Join(stateRoot, ".ai", "exe-logs"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveWorkDir(wtDir, repoType, repoPath string) string {
+	if repoType == "root" {
+		return wtDir
+	}
+	repoPath = strings.TrimSuffix(repoPath, "/")
+	repoPath = strings.TrimSuffix(repoPath, "\\")
+	if repoPath == "" || repoPath == "." {
+		return wtDir
+	}
+	return filepath.Join(wtDir, repoPath)
+}
+
+func finalizeWorktree(ctx context.Context, wtDir string, opts WorktreeOptions) error {
+	switch opts.RepoType {
+	case "root":
+		_ = runGit(ctx, wtDir, opts.GitTimeout, "submodule", "sync", "--recursive")
+		_ = runGit(ctx, wtDir, opts.GitTimeout, "submodule", "update", "--init", "--recursive")
+	case "directory":
+		workDir := resolveWorkDir(wtDir, opts.RepoType, opts.RepoPath)
+		if _, err := os.Stat(workDir); err != nil {
+			_ = removeWorktree(ctx, opts.StateRoot, wtDir, opts.GitTimeout)
+			return fmt.Errorf("directory path not found: %s", workDir)
+		}
+	case "submodule":
+		_ = runGit(ctx, wtDir, opts.GitTimeout, "submodule", "sync", opts.RepoPath)
+		if err := runGit(ctx, wtDir, opts.GitTimeout, "submodule", "update", "--init", "--recursive", opts.RepoPath); err != nil {
+			_ = removeWorktree(ctx, opts.StateRoot, wtDir, opts.GitTimeout)
+			return err
+		}
+		submoduleDir := resolveWorkDir(wtDir, opts.RepoType, opts.RepoPath)
+		if _, err := os.Stat(submoduleDir); err != nil {
+			_ = removeWorktree(ctx, opts.StateRoot, wtDir, opts.GitTimeout)
+			return fmt.Errorf("submodule directory missing: %s", submoduleDir)
+		}
+		if _, err := os.Stat(filepath.Join(submoduleDir, ".git")); err != nil {
+			_ = removeWorktree(ctx, opts.StateRoot, wtDir, opts.GitTimeout)
+			return fmt.Errorf("submodule missing .git: %s", submoduleDir)
+		}
+	default:
+		_ = removeWorktree(ctx, opts.StateRoot, wtDir, opts.GitTimeout)
+		return fmt.Errorf("unknown repo type: %s", opts.RepoType)
+	}
+
+	return nil
+}
+
+func removeWorktree(ctx context.Context, root, wtDir string, timeout time.Duration) error {
+	ctx, cancel := withOptionalTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", root, "worktree", "remove", "--force", wtDir)
+	return cmd.Run()
+}
+
+func ensureWorktreeBranch(ctx context.Context, root, branch, baseBranch string, timeout time.Duration) error {
+	if branch == "" {
+		return fmt.Errorf("branch name is empty")
+	}
+	if err := runGit(ctx, root, timeout, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return nil
+	}
+	if err := runGit(ctx, root, timeout, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
+		return runGit(ctx, root, timeout, "branch", branch, "origin/"+branch)
+	}
+	return runGit(ctx, root, timeout, "branch", branch, baseBranch)
+}

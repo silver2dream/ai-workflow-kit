@@ -36,39 +36,79 @@ func NewLockManager(lockFile string) *LockManager {
 	}
 }
 
-// Acquire attempts to acquire the lock file
+// Acquire attempts to acquire the lock file using atomic O_EXCL to prevent TOCTOU race
 func (l *LockManager) Acquire() error {
-	// Check for stale lock first
-	if l.IsStale() {
-		if err := os.Remove(l.lockFile); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove stale lock: %w", err)
-		}
-	}
-
-	// Check if lock file exists
-	if _, err := os.Stat(l.lockFile); err == nil {
-		info, err := l.readLockInfo()
-		if err != nil {
-			// Can't read lock info, try to remove it
-			os.Remove(l.lockFile)
-		} else if processAlive(info.PID) {
-			return fmt.Errorf("another instance is running (PID: %d, started: %s)",
-				info.PID, info.StartTime.Format(time.RFC3339))
-		} else {
-			// Process is dead, remove stale lock
-			os.Remove(l.lockFile)
-		}
-	}
-
 	// Ensure directory exists
 	dir := filepath.Dir(l.lockFile)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create lock directory: %w", err)
 	}
 
-	// Write lock info
-	if err := l.writeLockInfo(); err != nil {
+	// Try to create lock file atomically with O_EXCL
+	f, err := os.OpenFile(l.lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			// Lock file exists - check if stale
+			info, readErr := l.readLockInfo()
+			if readErr != nil {
+				// Can't read lock info, try to remove and retry once
+				os.Remove(l.lockFile)
+				return l.acquireOnce()
+			}
+
+			if !processAlive(info.PID) {
+				// Process is dead, remove stale lock and retry once
+				os.Remove(l.lockFile)
+				return l.acquireOnce()
+			}
+
+			// Another instance is running
+			return fmt.Errorf("another instance is running (PID: %d, started: %s)",
+				info.PID, info.StartTime.Format(time.RFC3339))
+		}
+		return fmt.Errorf("failed to create lock file: %w", err)
+	}
+
+	// Write lock info to the opened file
+	if err := l.writeLockInfoTo(f); err != nil {
+		f.Close()
+		os.Remove(l.lockFile)
 		return err
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(l.lockFile)
+		return fmt.Errorf("failed to close lock file: %w", err)
+	}
+
+	l.acquired = true
+	return nil
+}
+
+// acquireOnce attempts to acquire the lock without retry (to prevent infinite recursion)
+func (l *LockManager) acquireOnce() error {
+	f, err := os.OpenFile(l.lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			info, _ := l.readLockInfo()
+			if info != nil && processAlive(info.PID) {
+				return fmt.Errorf("another instance is running (PID: %d, started: %s)",
+					info.PID, info.StartTime.Format(time.RFC3339))
+			}
+			return fmt.Errorf("lock file exists and could not be acquired")
+		}
+		return fmt.Errorf("failed to create lock file: %w", err)
+	}
+
+	if err := l.writeLockInfoTo(f); err != nil {
+		f.Close()
+		os.Remove(l.lockFile)
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(l.lockFile)
+		return fmt.Errorf("failed to close lock file: %w", err)
 	}
 
 	l.acquired = true
@@ -124,6 +164,27 @@ func (l *LockManager) readLockInfo() (*LockInfo, error) {
 	}
 
 	return &info, nil
+}
+
+// writeLockInfoTo writes the current process info to an already-opened file handle
+func (l *LockManager) writeLockInfoTo(f *os.File) error {
+	hostname, _ := os.Hostname()
+	info := LockInfo{
+		PID:       os.Getpid(),
+		StartTime: time.Now(),
+		Hostname:  hostname,
+	}
+
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal lock info: %w", err)
+	}
+
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("failed to write lock info: %w", err)
+	}
+
+	return nil
 }
 
 // writeLockInfo writes the current process info to the lock file
