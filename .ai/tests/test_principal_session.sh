@@ -2,14 +2,27 @@
 set -euo pipefail
 
 # ============================================================================
-# test_principal_session.sh - Principal Session 整合測試
+# test_principal_session.sh - Principal Session 整合測試 (awkit session)
 # Property 7: Strict Sequential Execution
 # Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 5.7
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
-SESSION_MANAGER="$AI_ROOT/scripts/session_manager.sh"
+MONO_ROOT="$(dirname "$AI_ROOT")"
+
+# Find awkit binary
+AWKIT=""
+if [[ -x "$MONO_ROOT/awkit" ]]; then
+  AWKIT="$MONO_ROOT/awkit"
+elif [[ -x "$MONO_ROOT/awkit.exe" ]]; then
+  AWKIT="$MONO_ROOT/awkit.exe"
+elif command -v awkit &>/dev/null; then
+  AWKIT="awkit"
+else
+  echo "[ERROR] awkit binary not found"
+  exit 1
+fi
 
 # Cross-platform jq wrapper (strips CRLF for Windows compatibility)
 _jq() {
@@ -53,7 +66,6 @@ cd "$TEST_DIR"
 git init --quiet
 mkdir -p .ai/state/principal/sessions .ai/results
 
-
 # ============================================================
 # Property 7: Strict Sequential Execution
 # Only one Principal session SHALL be active at any time
@@ -62,8 +74,7 @@ echo ""
 echo "## Property 7: Strict Sequential Execution"
 
 # Test 7.1: First Principal session initializes successfully
-export AI_STATE_ROOT="$TEST_DIR"
-SESSION_ID=$(bash "$SESSION_MANAGER" init_principal_session 2>/dev/null)
+SESSION_ID=$("$AWKIT" session init 2>/dev/null | tr -d '\r')
 
 if [[ -n "$SESSION_ID" ]] && [[ "$SESSION_ID" =~ ^principal-[0-9]{8}-[0-9]{6}-[a-f0-9]{4}$ ]]; then
   log_pass "First Principal session initialized: $SESSION_ID"
@@ -119,7 +130,7 @@ echo ""
 echo "## Action Recording Tests"
 
 # Test: Append issue_created action
-bash "$SESSION_MANAGER" append_session_action "$SESSION_ID" "issue_created" '{"issue_id":"42","title":"Test Issue"}' 2>/dev/null
+"$AWKIT" session append "$SESSION_ID" "issue_created" '{"issue_id":"42","title":"Test Issue"}' 2>/dev/null
 
 ACTIONS_COUNT=$(_jq '.actions | length' "$SESSION_LOG")
 if [[ "$ACTIONS_COUNT" -eq 1 ]]; then
@@ -129,7 +140,7 @@ else
 fi
 
 # Test: Append worker_dispatched action
-bash "$SESSION_MANAGER" append_session_action "$SESSION_ID" "worker_dispatched" '{"issue_id":"42"}' 2>/dev/null
+"$AWKIT" session append "$SESSION_ID" "worker_dispatched" '{"issue_id":"42"}' 2>/dev/null
 
 ACTIONS_COUNT=$(_jq '.actions | length' "$SESSION_LOG")
 if [[ "$ACTIONS_COUNT" -eq 2 ]]; then
@@ -138,8 +149,8 @@ else
   log_fail "worker_dispatched action not appended"
 fi
 
-# Test: update_worker_completion (Req 1.5)
-bash "$SESSION_MANAGER" update_worker_completion "$SESSION_ID" "42" "worker-20251223-100000-aaaa" "success" "https://github.com/test/pr/1" 2>/dev/null
+# Test: Append worker_completed action
+"$AWKIT" session append "$SESSION_ID" "worker_completed" '{"issue_id":"42","worker_session_id":"worker-20251223-100000-aaaa","status":"success","pr_url":"https://github.com/test/pr/1"}' 2>/dev/null
 
 ACTIONS_COUNT=$(_jq '.actions | length' "$SESSION_LOG")
 LAST_ACTION=$(_jq -r '.actions[-1].type' "$SESSION_LOG")
@@ -156,7 +167,7 @@ echo ""
 echo "## Session End Tests"
 
 # Test: End session with reason
-bash "$SESSION_MANAGER" end_principal_session "$SESSION_ID" "all_tasks_complete" 2>/dev/null
+"$AWKIT" session end "$SESSION_ID" "all_tasks_complete" 2>/dev/null
 
 ENDED_AT=$(_jq -r '.ended_at // ""' "$SESSION_LOG")
 EXIT_REASON=$(_jq -r '.exit_reason // ""' "$SESSION_LOG")
@@ -202,8 +213,8 @@ cat > "$TEST_DIR/.ai/results/issue-42.json" << 'EOF'
 }
 EOF
 
-# Test: update_result_with_principal_session
-bash "$SESSION_MANAGER" update_result_with_principal_session "42" "$SESSION_ID" 2>/dev/null
+# Test: update-result
+"$AWKIT" session update-result "42" "$SESSION_ID" 2>/dev/null
 
 RESULT_PSID=$(_jq -r '.session.principal_session_id' "$TEST_DIR/.ai/results/issue-42.json")
 if [[ "$RESULT_PSID" == "$SESSION_ID" ]]; then
@@ -212,8 +223,8 @@ else
   log_fail "Result JSON principal_session_id not updated: $RESULT_PSID"
 fi
 
-# Test: update_result_with_review_audit
-bash "$SESSION_MANAGER" update_result_with_review_audit "42" "$SESSION_ID" "approved" "passed" "false" "2025-12-23T10:00:00Z" 2>/dev/null
+# Test: update-review
+"$AWKIT" session update-review "42" "$SESSION_ID" "approved" "passed" "false" "2025-12-23T10:00:00Z" 2>/dev/null
 
 REVIEW_DEC=$(_jq -r '.review_audit.decision' "$TEST_DIR/.ai/results/issue-42.json")
 REVIEW_CI=$(_jq -r '.review_audit.ci_status' "$TEST_DIR/.ai/results/issue-42.json")

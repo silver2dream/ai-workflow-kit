@@ -25,3 +25,4 @@ Thumbs.db
 
 # Claude Code local settings (do not commit)
 .claude/settings.local.json
+awkit.exe

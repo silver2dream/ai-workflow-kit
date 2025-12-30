@@ -47,7 +47,7 @@ The Skill handles:
 - Result checking
 - PR review
 
-**DO NOT** manually implement the workflow steps. The Skill and scripts handle everything.
+**DO NOT** manually implement the workflow steps. The Skill and `awkit` commands handle everything.
 
 ---
 
@@ -57,12 +57,12 @@ The Skill handles:
 - **DO NOT** read log files to monitor Worker progress
 - **DO NOT** output verbose descriptions of what Worker is doing
 - **DO NOT** poll or check status repeatedly
-- Scripts are **synchronous** - they return when done, just wait
+- Commands are **synchronous** - they return when done, just wait
 
 ### dispatch_worker Behavior
-When executing `dispatch_worker.sh`:
-1. Run the script and **wait for it to return**
-2. The script handles all Worker coordination internally
+When executing `awkit dispatch-worker`:
+1. Run the command and **wait for it to return**
+2. The command handles all Worker coordination internally
 3. **DO NOT** read `.ai/exe-logs/` or any log files
 4. **DO NOT** describe Worker progress or status
 5. Just `eval` the output and continue to next loop iteration
@@ -98,7 +98,7 @@ awkit kickoff
 
 ### Check Status
 ```bash
-bash .ai/scripts/stats.sh
+awkit status
 ```
 
 ### Stop Work

@@ -36,7 +36,7 @@ func NewStateManager(stateFile string) *StateManager {
 	}
 }
 
-// SaveState saves the current run state to disk
+// SaveState saves the current run state to disk atomically (G5 fix)
 func (s *StateManager) SaveState(state *RunState) error {
 	state.SavedAt = time.Now()
 
@@ -51,8 +51,16 @@ func (s *StateManager) SaveState(state *RunState) error {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	if err := os.WriteFile(s.stateFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write state file: %w", err)
+	// Write to temp file first for atomic update (G5 fix)
+	tmpFile := s.stateFile + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp state file: %w", err)
+	}
+
+	// Atomically rename temp file to target
+	if err := os.Rename(tmpFile, s.stateFile); err != nil {
+		os.Remove(tmpFile) // Cleanup on failure
+		return fmt.Errorf("failed to rename state file: %w", err)
 	}
 
 	return nil
@@ -73,10 +81,19 @@ func (s *StateManager) LoadState() (*RunState, error) {
 	return &state, nil
 }
 
-// HasState returns true if a saved state exists
+// HasState returns true if a valid saved state exists (G13 fix: validates content)
 func (s *StateManager) HasState() bool {
-	_, err := os.Stat(s.stateFile)
-	return err == nil
+	// Check file exists
+	if _, err := os.Stat(s.stateFile); err != nil {
+		return false
+	}
+	// Validate content is parseable
+	state, err := s.LoadState()
+	if err != nil {
+		return false
+	}
+	// Validate required fields
+	return !state.SavedAt.IsZero()
 }
 
 // IsStale returns true if the saved state is older than 24 hours

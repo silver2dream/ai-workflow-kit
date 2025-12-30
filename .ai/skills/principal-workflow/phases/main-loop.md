@@ -2,10 +2,10 @@
 
 ## Step 1: 決定下一步
 
-呼叫決策腳本（stdout=變數, stderr=log 顯示在終端）：
+呼叫決策命令：
 
 ```bash
-eval "$(bash .ai/scripts/analyze_next.sh)"
+eval "$(awkit analyze-next)"
 ```
 
 輸出變數：
@@ -27,7 +27,7 @@ eval "$(bash .ai/scripts/analyze_next.sh)"
 
 如果必填為空，執行：
 ```bash
-bash .ai/scripts/stop_work.sh "contract_violation"
+awkit stop-workflow contract_violation
 ```
 然後結束。
 
@@ -37,15 +37,28 @@ bash .ai/scripts/stop_work.sh "contract_violation"
 |-------------|------|
 | `generate_tasks` | **Read** `tasks/generate-tasks.md`，執行任務生成 |
 | `create_task` | **Read** `tasks/create-task.md`，執行 Issue 創建 |
-| `dispatch_worker` | `bash .ai/scripts/dispatch_worker.sh "$ISSUE_NUMBER"` ⚠️ **同步等待，不要讀 log 或監控** |
-| `check_result` | `bash .ai/scripts/check_result.sh "$ISSUE_NUMBER"` |
+| `dispatch_worker` | `eval "$(awkit dispatch-worker --issue $ISSUE_NUMBER)"` ⚠️ **同步等待** |
+| `check_result` | `eval "$(awkit check-result --issue $ISSUE_NUMBER)"` |
 | `review_pr` | **Read** `tasks/review-pr.md`，執行 PR 審查 |
-| `all_complete` | `bash .ai/scripts/stop_work.sh "all_tasks_complete"` 然後結束 |
-| `none` | `bash .ai/scripts/stop_work.sh "${EXIT_REASON:-none}"` 然後結束 |
+| `all_complete` | `awkit stop-workflow all_tasks_complete` 然後結束 |
+| `none` | `awkit stop-workflow "${EXIT_REASON:-none}"` 然後結束 |
+
+### check_result 狀態說明
+
+| 狀態 | 含義 | 系統行為 |
+|------|------|----------|
+| `success` | Worker 成功完成 | 繼續 review_pr |
+| `crashed` | Worker 異常終止 | 自動移除 in-progress，可重試 |
+| `timeout` | Worker 超時 (30分鐘) | 自動移除 in-progress，可重試 |
+| `not_found` | 結果未就緒 | 已等待 30 秒，回到 Step 1 |
+| `failed_will_retry` | 失敗但未超過重試上限 | 移除 in-progress，下輪重試 |
+| `failed_max_retries` | 超過重試上限 (3次) | 標記 worker-failed，需人工介入 |
+
+Principal 收到任何狀態都直接回到 Step 1，Go 命令會自動處理恢復邏輯。
 
 ## ⚠️ CRITICAL: dispatch_worker 行為規範
 
-執行 `dispatch_worker.sh` 時：
+執行 `dispatch_worker` 時：
 1. **腳本是同步的** - 會等待 Worker 完成才返回
 2. **不要讀取 log 檔案** - 這會浪費 context
 3. **不要監控進度** - 腳本會處理一切
@@ -54,8 +67,8 @@ bash .ai/scripts/stop_work.sh "contract_violation"
 
 ## Step 4: Loop Safety
 
-Loop Safety 由 `analyze_next.sh` 自動處理：
-- 每次呼叫 analyze_next.sh 時自動 loop_count++
+Loop Safety 由 `awkit analyze-next` 自動處理：
+- 每次呼叫時自動 loop_count++
 - 達到 MAX_LOOP (1000) 時自動返回 `NEXT_ACTION=none`
 - 連續失敗達到 MAX_CONSECUTIVE_FAILURES (5) 時自動停止
 

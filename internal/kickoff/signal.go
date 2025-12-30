@@ -23,17 +23,19 @@ const (
 
 // SignalHandler handles graceful shutdown on signals
 type SignalHandler struct {
-	executor    *PTYExecutor
-	state       *StateManager
-	lock        *LockManager
-	fanIn       *FanInManager
-	monitors    []*IssueMonitor
-	output      *OutputFormatter
-	gracefulTO  time.Duration
-	forceKillTO time.Duration
-	mu          sync.Mutex
-	shutdown    bool
-	onCleanup   func()
+	executor     *PTYExecutor
+	state        *StateManager
+	lock         *LockManager
+	fanIn        *FanInManager
+	monitors     []*IssueMonitor
+	output       *OutputFormatter
+	gracefulTO   time.Duration
+	forceKillTO  time.Duration
+	mu           sync.Mutex
+	shutdown     bool
+	shutdownOnce sync.Once
+	exitCode     int
+	onCleanup    func()
 }
 
 // NewSignalHandler creates a new SignalHandler
@@ -127,27 +129,31 @@ func (s *SignalHandler) removeStopMarker() {
 // 1. Create STOP marker → Principal detects it → Principal runs /stop-work → Principal exits
 // 2. Wait for graceful timeout
 // 3. If still running, force kill
+// Uses sync.Once to ensure shutdown logic runs exactly once (G3 fix)
 func (s *SignalHandler) HandleShutdown(sig os.Signal) {
+	s.shutdownOnce.Do(func() {
+		s.doShutdown(sig)
+	})
+}
+
+// doShutdown performs the actual shutdown logic (called via sync.Once)
+func (s *SignalHandler) doShutdown(sig os.Signal) {
 	s.mu.Lock()
-	if s.shutdown {
-		s.mu.Unlock()
-		return
-	}
 	s.shutdown = true
 	monitors := make([]*IssueMonitor, len(s.monitors))
 	copy(monitors, s.monitors)
 	s.mu.Unlock()
 
 	fmt.Println("")
-	s.output.Warning(fmt.Sprintf("收到中斷信號 (%v)，開始優雅關閉...", sig))
+	s.output.Warning(fmt.Sprintf("Received signal (%v), starting graceful shutdown...", sig))
 
 	// Step 1: Create STOP marker to signal Principal
-	s.output.Info("建立 STOP marker，等待 Principal 優雅退出...")
+	s.output.Info("Creating STOP marker, waiting for Principal to exit gracefully...")
 	if err := s.createStopMarker(); err != nil {
-		s.output.Error(fmt.Sprintf("無法建立 STOP marker: %v", err))
-		s.output.Warning("將直接終止進程")
+		s.output.Error(fmt.Sprintf("Failed to create STOP marker: %v", err))
+		s.output.Warning("Will terminate process directly")
 		s.forceShutdown(monitors)
-		return
+		os.Exit(s.exitCode)
 	}
 
 	// Step 2: Wait for executor to finish gracefully
@@ -168,35 +174,36 @@ func (s *SignalHandler) HandleShutdown(sig os.Signal) {
 		for {
 			select {
 			case <-done:
-				s.output.Success("Principal 已優雅退出")
+				s.output.Success("Principal exited gracefully")
 				s.cleanup(monitors, true)
-				return
+				os.Exit(s.exitCode)
 
 			case <-ticker.C:
 				elapsed += 10
 				remaining := int(s.gracefulTO.Seconds()) - elapsed
-				s.output.Info(fmt.Sprintf("等待 Principal 退出... (剩餘 %d 秒)", remaining))
+				s.output.Info(fmt.Sprintf("Waiting for Principal to exit... (%d seconds remaining)", remaining))
 
 			case <-gracefulDeadline:
-				s.output.Warning(fmt.Sprintf("等待超過 %v，Principal 未退出", s.gracefulTO))
-				s.output.Warning(fmt.Sprintf("再等待 %v 後將強制終止...", s.forceKillTO))
+				s.output.Warning(fmt.Sprintf("Timeout after %v, Principal did not exit", s.gracefulTO))
+				s.output.Warning(fmt.Sprintf("Waiting %v more before force kill...", s.forceKillTO))
 
 				// Give a bit more time before force kill
 				forceDeadline := time.After(s.forceKillTO)
 				select {
 				case <-done:
-					s.output.Success("Principal 已退出")
+					s.output.Success("Principal exited")
 					s.cleanup(monitors, true)
-					return
+					os.Exit(s.exitCode)
 				case <-forceDeadline:
-					s.output.Error("強制終止進程")
+					s.output.Error("Force killing process")
 					s.forceShutdown(monitors)
-					return
+					os.Exit(s.exitCode)
 				}
 			}
 		}
 	} else {
 		s.cleanup(monitors, true)
+		os.Exit(s.exitCode)
 	}
 }
 
@@ -204,7 +211,7 @@ func (s *SignalHandler) HandleShutdown(sig os.Signal) {
 func (s *SignalHandler) forceShutdown(monitors []*IssueMonitor) {
 	// Kill executor
 	if s.executor != nil {
-		s.output.Warning("強制終止 Claude 進程...")
+		s.output.Warning("Force killing Claude process...")
 		s.executor.Kill()
 	}
 
@@ -230,7 +237,7 @@ func (s *SignalHandler) killWorkerProcesses() {
 			var pid int
 			if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil && pid > 0 {
 				if proc, err := os.FindProcess(pid); err == nil {
-					s.output.Warning(fmt.Sprintf("終止 Worker 進程 (PID: %d)...", pid))
+					s.output.Warning(fmt.Sprintf("Killing Worker process (PID: %d)...", pid))
 					proc.Signal(syscall.SIGTERM)
 					// Give it a moment to terminate
 					time.Sleep(500 * time.Millisecond)
@@ -243,6 +250,7 @@ func (s *SignalHandler) killWorkerProcesses() {
 }
 
 // cleanup performs final cleanup operations
+// G6 fix: Does not call os.Exit() directly - caller handles exit
 func (s *SignalHandler) cleanup(monitors []*IssueMonitor, graceful bool) {
 	// Stop all monitors
 	for _, m := range monitors {
@@ -272,10 +280,11 @@ func (s *SignalHandler) cleanup(monitors []*IssueMonitor, graceful bool) {
 	// Print summary
 	s.printSummary(graceful)
 
+	// Store exit code instead of calling os.Exit() (G6 fix)
 	if graceful {
-		os.Exit(0)
+		s.exitCode = 0
 	} else {
-		os.Exit(1)
+		s.exitCode = 1
 	}
 }
 
@@ -284,19 +293,19 @@ func (s *SignalHandler) printSummary(graceful bool) {
 	fmt.Println("")
 	fmt.Println("========================================")
 	if graceful {
-		fmt.Println("  工作流程已優雅停止")
-		fmt.Println("  報告已生成（由 Principal 執行 /stop-work）")
+		fmt.Println("  Workflow stopped gracefully")
+		fmt.Println("  Report generated (by Principal /stop-work)")
 	} else {
-		fmt.Println("  工作流程已強制停止")
-		fmt.Println("  ⚠ 報告可能未生成")
-		fmt.Println("  ⚠ 可能有孤立的 Worker 進程")
+		fmt.Println("  Workflow stopped forcefully")
+		fmt.Println("  Warning: Report may not be generated")
+		fmt.Println("  Warning: Orphan Worker processes may exist")
 	}
 	fmt.Println("========================================")
 	fmt.Println("")
-	fmt.Println("下次啟動前，請確認：")
-	fmt.Println("  1. 檢查是否有孤立進程: ps aux | grep codex")
-	fmt.Println("  2. 檢查 worktree 狀態: ls .worktrees/")
-	fmt.Println("  3. 重新啟動: awkit kickoff")
+	fmt.Println("Before next run, please verify:")
+	fmt.Println("  1. Check for orphan processes: ps aux | grep codex")
+	fmt.Println("  2. Check worktree status: ls .worktrees/")
+	fmt.Println("  3. Restart: awkit kickoff")
 	fmt.Println("")
 }
 

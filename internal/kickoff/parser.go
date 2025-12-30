@@ -17,13 +17,15 @@ type OutputParser struct {
 var step3Pattern = regexp.MustCompile(`\[PRINCIPAL\].*\|\s*STEP-3\s*\|.*issue #(\d+)`)
 var step4Pattern = regexp.MustCompile(`\[PRINCIPAL\].*\|\s*STEP-4\s*\|`)
 
-// Patterns for new Skills format
-// [PRINCIPAL] HH:MM:SS | 派工 Issue #N
-// [EXEC] bash .ai/scripts/dispatch_worker.sh "15"
-// [WORKER] worker_session_id=...
-var dispatchPattern = regexp.MustCompile(`(?:派工 Issue #|dispatch_worker\.sh.*?["']?)(\d+)`)
-var workerStartPattern = regexp.MustCompile(`\[WORKER\].*worker_session_id=`)
-var workerCompletePattern = regexp.MustCompile(`Worker 執行完成|WORKER_STATUS=`)
+// Patterns for new Skills format (G10 fix: generic patterns)
+// Supports multiple dispatch formats:
+// - [PRINCIPAL] HH:MM:SS | Dispatch Issue #N / 派工 Issue #N
+// - [EXEC] bash .ai/scripts/dispatch_worker.sh "15"
+// - [EXEC] awkit dispatch-worker --issue 15
+// - dispatch_worker: issue=15
+var dispatchPattern = regexp.MustCompile(`(?:派工\s*Issue\s*#|dispatch[-_]worker(?:\.sh)?\s+(?:--issue\s+)?["']?)(\d+)`)
+var workerStartPattern = regexp.MustCompile(`\[WORKER\].*(?:worker_session_id|session_id)=`)
+var workerCompletePattern = regexp.MustCompile(`(?:Worker\s*執行完成|WORKER_STATUS=(?:success|failed))`)
 
 // NewOutputParser creates a new OutputParser with the given callbacks
 func NewOutputParser(onStart func(int), onEnd func()) *OutputParser {

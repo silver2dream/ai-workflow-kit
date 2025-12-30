@@ -16,7 +16,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"github.com/silver2dream/ai-workflow-kit/internal/session"
 )
 
 func usageKickoff() {
@@ -130,31 +132,46 @@ func cmdKickoff(args []string) int {
 
 	principalSessionID := ""
 	var endSessionOnce sync.Once
+	sessionMgr := session.NewManager(".")
 	endPrincipalSession := func(reason string) {
 		if principalSessionID == "" {
 			return
 		}
 		endSessionOnce.Do(func() {
-			cmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "end_principal_session", principalSessionID, reason)
-			cmd.Stdout = io.Discard
-			cmd.Stderr = io.Discard
-			_ = cmd.Run()
+			// Try Go implementation first
+			if err := sessionMgr.EndPrincipal(principalSessionID, reason); err == nil {
+				return
+			}
+			// Fallback to bash script
+			if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
+				cmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "end_principal_session", principalSessionID, reason)
+				cmd.Stdout = io.Discard
+				cmd.Stderr = io.Discard
+				_ = cmd.Run()
+			}
 		})
 	}
 
 	// Initialize Principal session
-	sessionCmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "init_principal_session")
-	sessionOutput, err := sessionCmd.Output()
+	sessionID, err := sessionMgr.InitPrincipal()
 	if err != nil {
-		output.Warning(fmt.Sprintf("Failed to initialize session: %v", err))
-		// Continue without session - not fatal
-	} else {
-		sessionID := strings.TrimSpace(string(sessionOutput))
-		if sessionID != "" {
-			principalSessionID = sessionID
-			defer endPrincipalSession("aborted")
-			output.Success(fmt.Sprintf("Session: %s", sessionID))
+		// Fallback to bash script
+		if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
+			sessionCmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "init_principal_session")
+			sessionOutput, err := sessionCmd.Output()
+			if err != nil {
+				output.Warning(fmt.Sprintf("Failed to initialize session: %v", err))
+			} else {
+				sessionID = strings.TrimSpace(string(sessionOutput))
+			}
+		} else {
+			output.Warning(fmt.Sprintf("Failed to initialize session: %v", err))
 		}
+	}
+	if sessionID != "" {
+		principalSessionID = sessionID
+		defer endPrincipalSession("aborted")
+		output.Success(fmt.Sprintf("Session: %s", sessionID))
 	}
 
 	// Lock manager
@@ -190,7 +207,16 @@ func cmdKickoff(args []string) int {
 			output.Error(fmt.Sprintf("Failed to load state: %v", err))
 			return 1
 		}
-		output.Info(fmt.Sprintf("Resuming from phase: %s", savedState.Phase))
+		// G14 fix: validate state integrity
+		if savedState.Phase == "" {
+			output.Warning("Saved state has empty phase, starting fresh")
+			*resume = false
+		} else if savedState.SavedAt.IsZero() {
+			output.Warning("Saved state has invalid timestamp, starting fresh")
+			*resume = false
+		} else {
+			output.Info(fmt.Sprintf("Resuming from phase: %s", savedState.Phase))
+		}
 	}
 
 	// Logger
@@ -458,7 +484,13 @@ func cmdKickoff(args []string) int {
 	// Multi-session loop: restart Principal when pending work remains.
 	stopMarker := filepath.Join(".ai", "state", "STOP")
 	maxSessions := getEnvInt("AWKIT_MAX_SESSIONS", 50)
-	restartDelay := 3 * time.Second
+
+	// G8 fix: exponential backoff for session restarts
+	const (
+		minRestartDelay = 3 * time.Second
+		maxRestartDelay = 60 * time.Second
+	)
+	restartDelay := minRestartDelay
 
 	signalHandler := kickoff.NewSignalHandler(nil, state, lock)
 	signalHandler.SetCleanupCallback(func() {
@@ -541,6 +573,8 @@ func cmdKickoff(args []string) int {
 		default:
 			output.Info(fmt.Sprintf("Pending: %s%s (restarting in %s)", next.NextAction, formatAnalyzeNextContext(next), restartDelay))
 			time.Sleep(restartDelay)
+			// G8 fix: exponential backoff - double delay for next restart, capped at max
+			restartDelay = min(restartDelay*2, maxRestartDelay)
 		}
 	}
 
@@ -653,6 +687,24 @@ func runAnalyzeNext(ctx context.Context, args analyzeNextArgs) (analyzeNextVars,
 	ctx, cancel := context.WithTimeout(ctx, args.Timeout)
 	defer cancel()
 
+	// Try Go implementation first
+	if os.Getenv("AWKIT_USE_SCRIPT") != "1" {
+		a := analyzer.New(".", nil)
+		decision, err := a.Decide(ctx)
+		if err == nil {
+			return analyzeNextVars{
+				NextAction:  decision.NextAction,
+				IssueNumber: strconv.Itoa(decision.IssueNumber),
+				PRNumber:    strconv.Itoa(decision.PRNumber),
+				SpecName:    decision.SpecName,
+				TaskLine:    strconv.Itoa(decision.TaskLine),
+				ExitReason:  decision.ExitReason,
+			}, nil
+		}
+		// Fall through to bash script on error
+	}
+
+	// Fallback to bash script
 	cmd := exec.CommandContext(ctx, "bash", ".ai/scripts/analyze_next.sh")
 	if strings.TrimSpace(args.PrincipalSessionID) != "" {
 		cmd.Env = append(os.Environ(), "PRINCIPAL_SESSION_ID="+args.PrincipalSessionID)
