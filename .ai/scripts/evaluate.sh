@@ -125,11 +125,11 @@ except:
   fi
 fi
 
-# O5: validate_config
-if python3 "$AI_ROOT/scripts/validate_config.py" > /dev/null 2>&1; then
-  check_pass "O5" "validate_config"
+# O5: validate_config (awkit validate)
+if awkit validate > /dev/null 2>&1; then
+  check_pass "O5" "validate_config (awkit validate)"
 else
-  check_fail "O5" "validate_config failed"
+  check_fail "O5" "validate_config failed (awkit validate)"
 fi
 
 # O7: 版本同步 (P0 強制)
@@ -375,11 +375,11 @@ if [ "$MODE" = "--online" ]; then
   else
     ONLINE_PASS=true
 
-    # N1: kickoff
-    if bash "$AI_ROOT/scripts/kickoff.sh" --dry-run > /dev/null 2>&1; then
-      check_pass "N1" "kickoff --dry-run"
+    # N1: kickoff (awkit kickoff)
+    if awkit kickoff --dry-run > /dev/null 2>&1; then
+      check_pass "N1" "kickoff --dry-run (awkit)"
     else
-      echo "[FAIL] N1: kickoff --dry-run"
+      echo "[FAIL] N1: kickoff --dry-run (awkit)"
       ONLINE_PASS=false
     fi
 
@@ -392,11 +392,11 @@ if [ "$MODE" = "--online" ]; then
       ONLINE_PASS=false
     fi
 
-    # N3: stats
-    if bash "$AI_ROOT/scripts/stats.sh" --json 2>/dev/null | python3 -m json.tool > /dev/null 2>&1; then
-      check_pass "N3" "stats --json"
+    # N3: status (awkit status)
+    if awkit status --json 2>/dev/null | python3 -m json.tool > /dev/null 2>&1; then
+      check_pass "N3" "status --json (awkit)"
     else
-      echo "[FAIL] N3: stats --json"
+      echo "[FAIL] N3: status --json (awkit)"
       ONLINE_PASS=false
     fi
 
