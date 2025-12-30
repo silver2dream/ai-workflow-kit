@@ -159,3 +159,37 @@ func ExtractPRNumber(body string) int {
 
 	return 0
 }
+
+// IsPRMerged checks if a PR has been merged
+func (c *GitHubClient) IsPRMerged(ctx context.Context, prNumber int) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view",
+		strconv.Itoa(prNumber),
+		"--json", "state,mergedAt")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+
+	var pr struct {
+		State    string `json:"state"`
+		MergedAt string `json:"mergedAt"`
+	}
+	if err := json.Unmarshal(output, &pr); err != nil {
+		return false, err
+	}
+
+	return pr.State == "MERGED" || pr.MergedAt != "", nil
+}
+
+// CloseIssue closes an issue
+func (c *GitHubClient) CloseIssue(ctx context.Context, issueNumber int) error {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "issue", "close", strconv.Itoa(issueNumber))
+	return cmd.Run()
+}

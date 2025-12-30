@@ -121,10 +121,23 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	// Step 3: Check pending issues
 	pendingIssues, err := a.GHClient.ListPendingIssues(ctx, labels)
 	if err == nil && len(pendingIssues) > 0 {
-		return &Decision{
-			NextAction:  ActionDispatchWorker,
-			IssueNumber: pendingIssues[0].Number,
-		}, nil
+		// Check each pending issue for merged PR (cleanup orphaned issues)
+		for _, issue := range pendingIssues {
+			prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+			if prNumber > 0 {
+				// Check if PR is merged
+				if merged, err := a.GHClient.IsPRMerged(ctx, prNumber); err == nil && merged {
+					// PR is merged but issue is still open - close it
+					_ = a.GHClient.CloseIssue(ctx, issue.Number)
+					continue // Check next issue
+				}
+			}
+			// This issue is truly pending (no merged PR)
+			return &Decision{
+				NextAction:  ActionDispatchWorker,
+				IssueNumber: issue.Number,
+			}, nil
+		}
 	}
 
 	// Step 4: Check tasks.md for uncompleted tasks
