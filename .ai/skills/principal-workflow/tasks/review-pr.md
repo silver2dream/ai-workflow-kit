@@ -5,16 +5,16 @@
 ## 輸入
 
 - `PR_NUMBER`: PR 編號（必填）
-- `ISSUE_NUMBER`: 關聯 Issue（由 analyze_next.sh 提供）
+- `ISSUE_NUMBER`: 關聯 Issue（由 `awkit analyze-next` 提供）
 
 ## 步驟
 
 ### 1. 獲取審查資訊
 
-執行一次腳本獲取所有需要的資訊：
+執行一次命令獲取所有需要的資訊：
 
 ```bash
-bash .ai/scripts/prepare_review.sh "$PR_NUMBER" "$ISSUE_NUMBER"
+awkit prepare-review --pr "$PR_NUMBER" --issue "$ISSUE_NUMBER"
 ```
 
 輸出包含：
@@ -62,14 +62,14 @@ cd .worktrees/issue-$ISSUE_NUMBER
 - `EVIDENCE: <file> | <needle>`（推薦，會限定在該檔案的 diff 區段內驗證）
 - `EVIDENCE: <needle>`
 
-若缺少或無法驗證，`submit_review.sh` 會中止審查、移除 `pr-ready`、加上 `needs-human-review`，避免主迴圈無限重試。
+若缺少或無法驗證，`awkit submit-review` 會中止審查、移除 `pr-ready`、加上 `needs-human-review`，避免主迴圈無限重試。
 
 ### 4. 提交審查結果
 
 準備審查內容（markdown 格式），然後執行：
 
 ```bash
-bash .ai/scripts/submit_review.sh "$PR_NUMBER" "$ISSUE_NUMBER" "$SCORE" "$CI_STATUS" "$REVIEW_BODY"
+awkit submit-review --pr "$PR_NUMBER" --issue "$ISSUE_NUMBER" --score "$SCORE" --ci-status "$CI_STATUS" --body "$REVIEW_BODY"
 ```
 
 其中 `$REVIEW_BODY` 是你的審查內容，格式：

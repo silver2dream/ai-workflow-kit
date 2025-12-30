@@ -16,9 +16,9 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		".ai/config/execution_trace.schema.json",
 		".ai/config/failure_patterns.json",
 
-		// Core scripts (shell)
-		".ai/scripts/generate.sh",
-		".ai/scripts/kickoff.sh",
+		// Core scripts (shell) - some migrated to Go (awkit commands)
+		// Migrated: generate.sh, kickoff.sh, stats.sh, analyze_next.sh,
+		//           dispatch_worker.sh, check_result.sh, stop_work.sh
 		".ai/scripts/audit_project.sh",
 		".ai/scripts/scan_repo.sh",
 		".ai/scripts/evaluate.sh",
@@ -26,15 +26,13 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		".ai/scripts/rollback.sh",
 		".ai/scripts/analyze_failure.sh",
 		".ai/scripts/write_result.sh",
-		".ai/scripts/stats.sh",
 
-		// Core scripts (Python)
-		".ai/scripts/validate_config.py",
+		// Core scripts (Python) - some migrated to Go (awkit commands)
+		// Migrated: validate_config.py, create_task.py
 		".ai/scripts/audit_project.py",
 		".ai/scripts/scan_repo.py",
 		".ai/scripts/parse_tasks.py",
 		".ai/scripts/query_traces.py",
-		".ai/scripts/create_task.py",
 
 		// Python lib module (critical - was missing before)
 		".ai/scripts/lib/__init__.py",
@@ -47,19 +45,8 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		// Other script files
 		".ai/scripts/principal_boot.txt",
 
-		// Templates
-		".ai/templates/CLAUDE.md.j2",
-		".ai/templates/AGENTS.md.j2",
-		".ai/templates/git-workflow.md.j2",
-
-		// Commands (deprecated - all moved to scripts and skills)
-		// preflight.md also deprecated - preflight now handled by Go code
-
-		// New scripts (from skills refactor)
-		".ai/scripts/analyze_next.sh",
-		".ai/scripts/dispatch_worker.sh",
-		".ai/scripts/check_result.sh",
-		".ai/scripts/stop_work.sh",
+		// Templates - migrated to Go (internal/generate/generator.go)
+		// .j2 files moved to .ai/templates/_deprecated/
 
 		// Rules
 		".ai/rules/_kit/git-workflow.md",

@@ -101,6 +101,7 @@ func (f *FanInManager) CurrentIssueID() int {
 }
 
 // SendClaudeLine sends a line from Claude stream to the channel
+// Uses non-blocking send to prevent deadlock when channel buffer is full
 func (f *FanInManager) SendClaudeLine(text string) {
 	f.mu.Lock()
 	stopped := f.stopped
@@ -110,10 +111,15 @@ func (f *FanInManager) SendClaudeLine(text string) {
 		return
 	}
 
-	f.channel <- LogLine{
+	// Non-blocking send to prevent deadlock when buffer is full during shutdown
+	select {
+	case f.channel <- LogLine{
 		Source:  "claude",
 		IssueID: 0,
 		Text:    text,
+	}:
+	default:
+		// Drop message if channel is full - prevents blocking during shutdown
 	}
 }
 

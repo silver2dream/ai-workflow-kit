@@ -115,6 +115,26 @@ func run() int {
 		return cmdStatus(os.Args[2:])
 	case "next":
 		return cmdNext(os.Args[2:])
+	case "check-result":
+		return cmdCheckResult(os.Args[2:])
+	case "dispatch-worker":
+		return cmdDispatchWorker(os.Args[2:])
+	case "run-issue":
+		return cmdRunIssue(os.Args[2:])
+	case "session":
+		return cmdSession(os.Args[2:])
+	case "analyze-next":
+		return cmdAnalyzeNext(os.Args[2:])
+	case "stop-workflow":
+		return cmdStopWorkflow(os.Args[2:])
+	case "prepare-review":
+		return cmdPrepareReview(os.Args[2:])
+	case "submit-review":
+		return cmdSubmitReview(os.Args[2:])
+	case "create-task":
+		return cmdCreateTask(os.Args[2:])
+	case "generate":
+		return cmdGenerate(os.Args[2:])
 	case "list-presets":
 		return cmdListPresets()
 	case "completion":
@@ -146,7 +166,17 @@ Commands:
   validate      Validate workflow configuration
   status        Show offline workflow status
   next          Show suggested next actions (offline)
-  list-presets  Show available project presets
+  check-result    Check worker execution result for an issue
+  dispatch-worker Dispatch an issue to a worker
+  run-issue       Run a worker for a single issue
+  session         Manage Principal/Worker sessions
+  analyze-next    Analyze and determine next workflow action
+  stop-workflow   Stop the workflow and generate a report
+  prepare-review  Prepare PR review context
+  submit-review   Submit PR review and handle result
+  create-task     Create GitHub Issue from tasks.md entry
+  generate        Generate helper docs and scaffolding
+  list-presets    Show available project presets
   check-update  Check for CLI updates
   completion    Generate shell completion script
   version       Show version
@@ -208,6 +238,26 @@ func cmdHelp(command string) int {
 		usageStatus()
 	case "next":
 		usageNext()
+	case "check-result":
+		usageCheckResult()
+	case "dispatch-worker":
+		usageDispatchWorker()
+	case "run-issue":
+		usageRunIssue()
+	case "session":
+		usageSession()
+	case "analyze-next":
+		usageAnalyzeNext()
+	case "stop-workflow":
+		usageStopWorkflow()
+	case "prepare-review":
+		usagePrepareReview()
+	case "submit-review":
+		usageSubmitReview()
+	case "create-task":
+		usageCreateTask()
+	case "generate":
+		usageGenerate()
 	case "list-presets":
 		fmt.Println("Show available project presets with descriptions.")
 		fmt.Println("\nUsage: awkit list-presets")
@@ -758,13 +808,13 @@ func cmdUpgrade(args []string) int {
 
 	// Upgrade: force overwrite kit files. By default we skip workflow.yaml unless --force-config is provided.
 	result, err := install.Install(awkit.KitFS, targetDir, install.Options{
-		Preset:     *preset,
-		Force:      true, // Overwrite kit files
+		Preset:      *preset,
+		Force:       true, // Overwrite kit files
 		ForceConfig: *forceConfig,
 		SkipConfig:  !*forceConfig, // Preserve workflow.yaml by default
-		NoGenerate: *noGenerate,
-		WithCI:     true,  // Always migrate CI
-		ForceCI:    false, // Never force-replace CI on upgrade (only migrate)
+		NoGenerate:  *noGenerate,
+		WithCI:      true,  // Always migrate CI
+		ForceCI:     false, // Never force-replace CI on upgrade (only migrate)
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "")
@@ -1039,7 +1089,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next list-presets check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue list-presets check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1091,6 +1141,9 @@ _awkit() {
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
         'next:Show suggested next actions (offline)'
+        'check-result:Check worker execution result for an issue'
+        'dispatch-worker:Dispatch an issue to a worker'
+        'run-issue:Run a worker for a single issue'
         'list-presets:Show available presets'
         'check-update:Check for CLI updates'
         'completion:Generate shell completion'
@@ -1165,6 +1218,9 @@ complete -c awkit -n __fish_use_subcommand -a kickoff -d 'Start the AI workflow'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'
 complete -c awkit -n __fish_use_subcommand -a next -d 'Show suggested next actions (offline)'
+complete -c awkit -n __fish_use_subcommand -a check-result -d 'Check worker execution result for an issue'
+complete -c awkit -n __fish_use_subcommand -a dispatch-worker -d 'Dispatch an issue to a worker'
+complete -c awkit -n __fish_use_subcommand -a run-issue -d 'Run a worker for a single issue'
 complete -c awkit -n __fish_use_subcommand -a list-presets -d 'Show available presets'
 complete -c awkit -n __fish_use_subcommand -a check-update -d 'Check for CLI updates'
 complete -c awkit -n __fish_use_subcommand -a completion -d 'Generate shell completion'
