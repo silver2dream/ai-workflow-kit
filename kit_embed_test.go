@@ -16,37 +16,16 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		".ai/config/execution_trace.schema.json",
 		".ai/config/failure_patterns.json",
 
-		// Core scripts (shell) - some migrated to Go (awkit commands)
-		// Migrated: generate.sh, kickoff.sh, stats.sh, analyze_next.sh,
-		//           dispatch_worker.sh, check_result.sh, stop_work.sh
-		".ai/scripts/audit_project.sh",
-		".ai/scripts/scan_repo.sh",
-		".ai/scripts/evaluate.sh",
-		".ai/scripts/cleanup.sh",
-		".ai/scripts/rollback.sh",
-		".ai/scripts/analyze_failure.sh",
-		".ai/scripts/write_result.sh",
-
-		// Core scripts (Python) - some migrated to Go (awkit commands)
-		// Migrated: validate_config.py, create_task.py
-		".ai/scripts/audit_project.py",
-		".ai/scripts/scan_repo.py",
-		".ai/scripts/parse_tasks.py",
-		".ai/scripts/query_traces.py",
-
-		// Python lib module (critical - was missing before)
-		".ai/scripts/lib/__init__.py",
-		".ai/scripts/lib/errors.py",
-		".ai/scripts/lib/logger.py",
-		".ai/scripts/lib/run_with_timeout.py",
-		".ai/scripts/lib/timeout.sh",
-		".ai/scripts/lib/hash.sh",
-
-		// Other script files
-		".ai/scripts/principal_boot.txt",
-
-		// Templates - migrated to Go (internal/generate/generator.go)
-		// .j2 files moved to .ai/templates/_deprecated/
+		// Core scripts - migrated to Go (awkit commands)
+		// Shell scripts: generate.sh, kickoff.sh, stats.sh, analyze_next.sh,
+		//                dispatch_worker.sh, check_result.sh, stop_work.sh,
+		//                audit_project.sh, scan_repo.sh, evaluate.sh, cleanup.sh,
+		//                rollback.sh, analyze_failure.sh, write_result.sh
+		// Python scripts: validate_config.py, create_task.py, audit_project.py,
+		//                 scan_repo.py, parse_tasks.py, query_traces.py
+		// Python lib: __init__.py, errors.py, logger.py, run_with_timeout.py
+		// Shell lib: timeout.sh, hash.sh
+		// All above scripts moved to .ai/scripts/_deprecated/
 
 		// Rules
 		".ai/rules/_kit/git-workflow.md",
@@ -72,8 +51,6 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 func TestKitFSContainsRequiredDirectories(t *testing.T) {
 	requiredDirs := []string{
 		".ai/config",
-		".ai/scripts",
-		".ai/scripts/lib",
 		".ai/templates",
 		".ai/rules/_kit",
 		".ai/rules/_examples",
@@ -100,22 +77,4 @@ func TestKitFSContainsRequiredDirectories(t *testing.T) {
 	}
 }
 
-// TestKitFSPythonLibModuleComplete ensures the lib module has all necessary files.
-func TestKitFSPythonLibModuleComplete(t *testing.T) {
-	libFiles := []string{
-		".ai/scripts/lib/__init__.py",
-		".ai/scripts/lib/errors.py",
-		".ai/scripts/lib/logger.py",
-	}
-
-	for _, path := range libFiles {
-		content, err := fs.ReadFile(KitFS, path)
-		if err != nil {
-			t.Errorf("lib module file not embedded: %s", path)
-			continue
-		}
-		if len(content) == 0 {
-			t.Errorf("lib module file is empty: %s", path)
-		}
-	}
-}
+// TestKitFSPythonLibModuleComplete was removed - Python lib module migrated to Go implementations.
