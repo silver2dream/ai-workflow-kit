@@ -29,11 +29,35 @@ echo "============================================"
 echo ""
 
 # ============================================================
+# Pre-test Setup: Build awkit if not available
+# ============================================================
+echo "## Pre-test Setup"
+
+AWKIT_BIN=""
+if command -v awkit &>/dev/null; then
+  AWKIT_BIN="awkit"
+  echo "✓ awkit found in PATH"
+elif command -v go &>/dev/null; then
+  # Build awkit locally
+  echo "Building awkit..."
+  if go build -o "$MONO_ROOT/awkit" "$MONO_ROOT/cmd/awkit" 2>/dev/null; then
+    AWKIT_BIN="$MONO_ROOT/awkit"
+    echo "✓ awkit built successfully"
+  else
+    echo "✗ Failed to build awkit"
+  fi
+else
+  echo "✗ Neither awkit nor go found - awkit tests will be skipped"
+fi
+
+echo ""
+
+# ============================================================
 # Test 1: Config validation (awkit validate)
 # ============================================================
 echo "## Config Tests"
 
-if awkit validate > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate > /dev/null 2>&1; then
   log_pass "workflow.yaml is valid (awkit validate)"
 else
   log_fail "workflow.yaml validation failed (awkit validate)"
@@ -46,10 +70,10 @@ echo ""
 echo "## File Structure Tests"
 
 # Test awkit binary is available
-if command -v awkit &>/dev/null; then
+if [[ -n "$AWKIT_BIN" ]]; then
   log_pass "awkit binary available"
 else
-  log_fail "awkit binary not found in PATH"
+  log_fail "awkit binary not found"
 fi
 
 required_files=(
@@ -79,7 +103,7 @@ TEST_TMP=$(mktemp -d)
 trap "rm -rf $TEST_TMP" EXIT
 
 # Test awkit generate --dry-run works
-if awkit generate --dry-run > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN generate --dry-run > /dev/null 2>&1; then
   log_pass "awkit generate --dry-run works"
 else
   log_fail "awkit generate --dry-run failed"
@@ -124,7 +148,7 @@ fi
 
 # Test awkit subcommands respond to --help
 for cmd in validate generate kickoff status analyze-next dispatch-worker; do
-  if awkit $cmd --help > /dev/null 2>&1; then
+  if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN $cmd --help > /dev/null 2>&1; then
     log_pass "awkit $cmd --help works"
   else
     log_fail "awkit $cmd --help failed"
@@ -255,7 +279,7 @@ echo ""
 echo "## Status Command Tests"
 
 # Test awkit status --help
-if awkit status --help > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN status --help > /dev/null 2>&1; then
   log_pass "awkit status --help works"
 else
   log_fail "awkit status --help failed"
@@ -263,7 +287,7 @@ fi
 
 # Test awkit status --json produces valid JSON (needs gh auth)
 if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
-  STATUS_OUTPUT=$(awkit status --json 2>/dev/null || echo "{}")
+  STATUS_OUTPUT=$($AWKIT_BIN status --json 2>/dev/null || echo "{}")
   if echo "$STATUS_OUTPUT" | python3 -m json.tool > /dev/null 2>&1; then
     log_pass "awkit status --json produces valid JSON"
   else
@@ -352,7 +376,7 @@ echo ""
 echo "## Multi-Repo Tests"
 
 # Test awkit dispatch-worker is available
-if awkit dispatch-worker --help > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN dispatch-worker --help > /dev/null 2>&1; then
   log_pass "awkit dispatch-worker available"
 else
   log_fail "awkit dispatch-worker not available"
@@ -473,7 +497,7 @@ else
 fi
 
 # Test awkit kickoff --help (safe to run)
-if awkit kickoff --help > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN kickoff --help > /dev/null 2>&1; then
   log_pass "awkit kickoff --help executes"
 else
   log_fail "awkit kickoff --help failed"
@@ -499,14 +523,14 @@ echo ""
 echo "## Config Validation Tests"
 
 # Test awkit validate succeeds on current config
-if awkit validate > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate > /dev/null 2>&1; then
   log_pass "awkit validate succeeds on current config"
 else
   log_fail "awkit validate failed on current config"
 fi
 
 # Test awkit validate --help works
-if awkit validate --help > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate --help > /dev/null 2>&1; then
   log_pass "awkit validate --help works"
 else
   log_fail "awkit validate --help failed"
@@ -558,7 +582,7 @@ else
 fi
 
 # Test awkit works on current platform
-if awkit --help > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN --help > /dev/null 2>&1; then
   log_pass "awkit runs on current platform"
 else
   log_fail "awkit failed to run"
@@ -681,14 +705,14 @@ echo ""
 echo "## Type-Specific Validation Tests (awkit)"
 
 # Test awkit validate works on current config
-if awkit validate > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN validate > /dev/null 2>&1; then
   log_pass "awkit validate works on current config"
 else
   log_fail "awkit validate failed on current config"
 fi
 
 # Test awkit validate provides helpful output
-VALIDATE_OUTPUT=$(awkit validate 2>&1)
+VALIDATE_OUTPUT=$($AWKIT_BIN validate 2>&1)
 if echo "$VALIDATE_OUTPUT" | grep -qi "valid\|ok\|success"; then
   log_pass "awkit validate provides helpful output"
 else
@@ -1013,7 +1037,7 @@ AWKIT_COMMANDS=(
 )
 
 for cmd in "${AWKIT_COMMANDS[@]}"; do
-  if awkit "$cmd" --help > /dev/null 2>&1; then
+  if [[ -n "$AWKIT_BIN" ]] && $AWKIT_BIN "$cmd" --help > /dev/null 2>&1; then
     log_pass "awkit $cmd --help"
   else
     log_fail "awkit $cmd --help failed"
@@ -1021,10 +1045,20 @@ for cmd in "${AWKIT_COMMANDS[@]}"; do
 done
 
 # Test awkit version (if implemented)
-if awkit version > /dev/null 2>&1 || awkit --version > /dev/null 2>&1; then
+if [[ -n "$AWKIT_BIN" ]] && ($AWKIT_BIN version > /dev/null 2>&1 || $AWKIT_BIN --version > /dev/null 2>&1); then
   log_pass "awkit version available"
 else
   log_skip "awkit version not implemented"
+fi
+
+# ============================================================
+# Cleanup
+# ============================================================
+
+# Remove locally built awkit binary if we built it
+if [[ "$AWKIT_BIN" == "$MONO_ROOT/awkit" ]] && [[ -f "$MONO_ROOT/awkit" ]]; then
+  rm -f "$MONO_ROOT/awkit"
+  echo "Cleaned up: $MONO_ROOT/awkit"
 fi
 
 # ============================================================

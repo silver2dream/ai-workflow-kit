@@ -17,6 +17,7 @@ const bt = "`"
 type Options struct {
 	StateRoot   string
 	GenerateCI  bool
+	DryRun      bool // show what would be generated without writing
 	InstallDeps bool // ignored in Go implementation
 }
 
@@ -177,32 +178,41 @@ func Generate(opts Options) (*Result, error) {
 
 	result := &Result{}
 
-	// Generate CLAUDE.md
+	// Collect files to generate
 	claudePath := filepath.Join(opts.StateRoot, "CLAUDE.md")
+	agentsPath := filepath.Join(opts.StateRoot, "AGENTS.md")
+	kitRulesDir := filepath.Join(opts.StateRoot, ".ai", "rules", "_kit")
+	gitWorkflowPath := filepath.Join(kitRulesDir, "git-workflow.md")
+	claudeDir := filepath.Join(opts.StateRoot, ".claude")
+	settingsPath := filepath.Join(claudeDir, "settings.local.json")
+
+	// Add files to result
+	result.GeneratedFiles = append(result.GeneratedFiles, claudePath, agentsPath, gitWorkflowPath, settingsPath)
+
+	// If dry-run, just return the list
+	if opts.DryRun {
+		return result, nil
+	}
+
+	// Generate CLAUDE.md
 	if err := generateClaudeMd(claudePath, ctx); err != nil {
 		return nil, fmt.Errorf("failed to generate CLAUDE.md: %w", err)
 	}
-	result.GeneratedFiles = append(result.GeneratedFiles, claudePath)
 	fmt.Printf("[generate] Created: %s\n", claudePath)
 
 	// Generate AGENTS.md
-	agentsPath := filepath.Join(opts.StateRoot, "AGENTS.md")
 	if err := generateAgentsMd(agentsPath, ctx); err != nil {
 		return nil, fmt.Errorf("failed to generate AGENTS.md: %w", err)
 	}
-	result.GeneratedFiles = append(result.GeneratedFiles, agentsPath)
 	fmt.Printf("[generate] Created: %s\n", agentsPath)
 
 	// Generate git-workflow.md
-	kitRulesDir := filepath.Join(opts.StateRoot, ".ai", "rules", "_kit")
 	if err := os.MkdirAll(kitRulesDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create kit rules dir: %w", err)
 	}
-	gitWorkflowPath := filepath.Join(kitRulesDir, "git-workflow.md")
 	if err := generateGitWorkflowMd(gitWorkflowPath, ctx); err != nil {
 		return nil, fmt.Errorf("failed to generate git-workflow.md: %w", err)
 	}
-	result.GeneratedFiles = append(result.GeneratedFiles, gitWorkflowPath)
 	fmt.Printf("[generate] Created: %s\n", gitWorkflowPath)
 
 	// Generate CI workflows if requested
@@ -216,17 +226,14 @@ func Generate(opts Options) (*Result, error) {
 	}
 
 	// Setup .claude directory
-	claudeDir := filepath.Join(opts.StateRoot, ".claude")
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create .claude dir: %w", err)
 	}
 
 	// Generate settings.local.json
-	settingsPath := filepath.Join(claudeDir, "settings.local.json")
 	if err := generateClaudeSettings(settingsPath); err != nil {
 		return nil, fmt.Errorf("failed to generate claude settings: %w", err)
 	}
-	result.GeneratedFiles = append(result.GeneratedFiles, settingsPath)
 	fmt.Printf("[generate] Created: %s\n", settingsPath)
 
 	// Create symlinks for rules and skills
@@ -712,7 +719,7 @@ func generateCIWorkflows(stateRoot string, ctx *TemplateContext) ([]string, erro
 		// .NET
 		"dotnet": "dotnet", "csharp": "dotnet", "aspnet": "dotnet", "blazor": "dotnet",
 		// Game engines
-		"unity": "unity",
+		"unity":  "unity",
 		"unreal": "unreal", "ue4": "unreal", "ue5": "unreal",
 		"godot": "godot",
 	}

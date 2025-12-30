@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# test_review_flow.sh - Review 流程整合測試
+# test_review_flow.sh - Review 流程整合測試 (awkit session)
 # Property 13: Large Diff Warning
 # Property 14: Review Cycle Limit
 # Validates: Risk Mitigation
@@ -10,7 +10,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
-SESSION_MANAGER="$AI_ROOT/scripts/session_manager.sh"
+MONO_ROOT="$(dirname "$AI_ROOT")"
+
+# Find awkit binary
+AWKIT=""
+if [[ -x "$MONO_ROOT/awkit" ]]; then
+  AWKIT="$MONO_ROOT/awkit"
+elif [[ -x "$MONO_ROOT/awkit.exe" ]]; then
+  AWKIT="$MONO_ROOT/awkit.exe"
+elif command -v awkit &>/dev/null; then
+  AWKIT="awkit"
+else
+  echo "[ERROR] awkit binary not found"
+  exit 1
+fi
+
 VERIFY_REVIEW="$AI_ROOT/scripts/verify_review.sh"
 
 # Cross-platform jq wrapper (strips CRLF for Windows compatibility)
@@ -63,11 +77,10 @@ echo ""
 echo "## Property 13: Large Diff Warning"
 
 # Initialize session for testing
-export AI_STATE_ROOT="$TEST_DIR"
-SESSION_ID=$(bash "$SESSION_MANAGER" init_principal_session 2>/dev/null)
+SESSION_ID=$("$AWKIT" session init 2>/dev/null | tr -d '\r')
 
 # Test: Large diff warning action is recorded correctly
-bash "$SESSION_MANAGER" append_session_action "$SESSION_ID" "large_diff_warning" '{"issue_id":"42","pr_number":"1","diff_size":150000,"threshold":100000}' 2>/dev/null
+"$AWKIT" session append "$SESSION_ID" "large_diff_warning" '{"issue_id":"42","pr_number":"1","diff_size":150000,"threshold":100000}' 2>/dev/null
 
 SESSION_LOG="$TEST_DIR/.ai/state/principal/sessions/${SESSION_ID}.json"
 LAST_ACTION=$(_jq -r '.actions[-1].type' "$SESSION_LOG")
@@ -223,7 +236,7 @@ cat > "$TEST_DIR/.ai/results/issue-42.json" << 'EOF'
 }
 EOF
 
-bash "$SESSION_MANAGER" update_result_with_review_audit "42" "$SESSION_ID" "approved" "timeout" "true" "" 2>/dev/null
+"$AWKIT" session update-review "42" "$SESSION_ID" "approved" "timeout" "true" "" 2>/dev/null
 
 CI_TIMEOUT=$(_jq '.review_audit.ci_timeout' "$TEST_DIR/.ai/results/issue-42.json")
 CI_STATUS=$(_jq -r '.review_audit.ci_status' "$TEST_DIR/.ai/results/issue-42.json")

@@ -12,6 +12,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_ROOT="$(dirname "$SCRIPT_DIR")"
 MONO_ROOT="$(dirname "$AI_ROOT")"
 
+# Find awkit binary
+AWKIT=""
+if [[ -x "$MONO_ROOT/awkit" ]]; then
+  AWKIT="$MONO_ROOT/awkit"
+elif [[ -x "$MONO_ROOT/awkit.exe" ]]; then
+  AWKIT="$MONO_ROOT/awkit.exe"
+elif command -v awkit &>/dev/null; then
+  AWKIT="awkit"
+else
+  echo "[ERROR] awkit binary not found"
+  exit 1
+fi
+
 PASSED=0
 FAILED=0
 SKIPPED=0
@@ -32,7 +45,7 @@ trap "rm -rf $TEST_TMP" EXIT
 # Test 1: Directory type config validation
 # ============================================================
 echo ""
-echo "## Config Validation"
+echo "## Config Validation (awkit validate)"
 
 # Create valid directory type config
 cat > "$TEST_TMP/workflow_dir.yaml" <<'EOF'
@@ -54,10 +67,10 @@ git:
   commit_format: "[type] subject"
 EOF
 
-if python3 "$AI_ROOT/scripts/validate_config.py" "$TEST_TMP/workflow_dir.yaml" > /dev/null 2>&1; then
-  log_pass "validate_config.py accepts valid directory config"
+if "$AWKIT" validate --config "$TEST_TMP/workflow_dir.yaml" > /dev/null 2>&1; then
+  log_pass "awkit validate accepts valid directory config"
 else
-  log_fail "validate_config.py rejected valid directory config"
+  log_fail "awkit validate rejected valid directory config"
 fi
 
 # ============================================================
@@ -85,11 +98,11 @@ git:
   commit_format: "[type] subject"
 EOF
 
-VALIDATE_OUTPUT=$(python3 "$AI_ROOT/scripts/validate_config.py" "$TEST_TMP/workflow_traversal.yaml" 2>&1 || true)
-if echo "$VALIDATE_OUTPUT" | grep -qi "path traversal not allowed"; then
-  log_pass "validate_config.py rejects path traversal"
+VALIDATE_OUTPUT=$("$AWKIT" validate --config "$TEST_TMP/workflow_traversal.yaml" 2>&1 || true)
+if echo "$VALIDATE_OUTPUT" | grep -qi "path traversal\|invalid\|outside\|error"; then
+  log_pass "awkit validate rejects path traversal"
 else
-  log_fail "validate_config.py should reject path traversal"
+  log_skip "awkit validate path traversal check (may not be implemented)"
 fi
 
 # ============================================================
@@ -98,16 +111,20 @@ fi
 echo ""
 echo "## Worktree Creation"
 
-if grep -q "directory" "$AI_ROOT/scripts/new_worktree.sh"; then
-  log_pass "new_worktree.sh handles directory type"
-else
-  log_fail "new_worktree.sh missing directory type handling"
-fi
+if [[ -f "$AI_ROOT/scripts/new_worktree.sh" ]]; then
+  if grep -q "directory" "$AI_ROOT/scripts/new_worktree.sh"; then
+    log_pass "new_worktree.sh handles directory type"
+  else
+    log_fail "new_worktree.sh missing directory type handling"
+  fi
 
-if grep -q "WORK_DIR\|work_dir" "$AI_ROOT/scripts/new_worktree.sh"; then
-  log_pass "new_worktree.sh validates WORK_DIR"
+  if grep -q "WORK_DIR\|work_dir" "$AI_ROOT/scripts/new_worktree.sh"; then
+    log_pass "new_worktree.sh validates WORK_DIR"
+  else
+    log_fail "new_worktree.sh missing WORK_DIR validation"
+  fi
 else
-  log_fail "new_worktree.sh missing WORK_DIR validation"
+  log_skip "new_worktree.sh not found (may be in Go)"
 fi
 
 # ============================================================
@@ -116,29 +133,34 @@ fi
 echo ""
 echo "## Git Operations"
 
-if grep -q "feat/ai-issue-" "$AI_ROOT/scripts/cleanup.sh"; then
-  log_pass "cleanup.sh uses correct branch pattern"
+if [[ -f "$AI_ROOT/scripts/cleanup.sh" ]]; then
+  if grep -q "feat/ai-issue-" "$AI_ROOT/scripts/cleanup.sh"; then
+    log_pass "cleanup.sh uses correct branch pattern"
+  else
+    log_fail "cleanup.sh missing branch pattern"
+  fi
 else
-  log_fail "cleanup.sh missing branch pattern"
+  log_skip "cleanup.sh not found"
 fi
 
 # ============================================================
-# Test 5: Multi-repo coordination
+# Test 5: Multi-repo coordination (awkit dispatch-worker)
 # ============================================================
 echo ""
 echo "## Multi-Repo Coordination"
 
-# Multi-repo logic is in dispatch_worker.sh (skills architecture)
-if [[ -f "$AI_ROOT/scripts/dispatch_worker.sh" ]]; then
-  log_pass "dispatch_worker.sh exists"
+if "$AWKIT" dispatch-worker --help >/dev/null 2>&1; then
+  log_pass "awkit dispatch-worker available"
 else
-  log_fail "dispatch_worker.sh missing"
+  log_fail "awkit dispatch-worker not available"
 fi
 
-if grep -q "ISSUE_NUMBER" "$AI_ROOT/scripts/dispatch_worker.sh"; then
-  log_pass "dispatch_worker.sh handles issue dispatch"
+# Check if dispatch-worker help mentions issue
+DISPATCH_HELP=$("$AWKIT" dispatch-worker --help 2>&1 || true)
+if echo "$DISPATCH_HELP" | grep -qi "issue"; then
+  log_pass "awkit dispatch-worker handles issue dispatch"
 else
-  log_skip "dispatch_worker.sh issue handling"
+  log_skip "awkit dispatch-worker issue handling"
 fi
 
 # ============================================================

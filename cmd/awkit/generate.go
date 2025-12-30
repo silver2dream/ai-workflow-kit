@@ -22,12 +22,14 @@ Generates:
   - .claude/{rules,skills} (symlink or copy)
 
 Options:
+  --dry-run        Show what would be generated without writing files
   --generate-ci    Generate GitHub Actions workflow(s) from config
   --state-root     Override state root (default: git root)
   --help           Show this help
 
 Examples:
   awkit generate
+  awkit generate --dry-run
   awkit generate --generate-ci
 `)
 }
@@ -37,6 +39,7 @@ func cmdGenerate(args []string) int {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = usageGenerate
 
+	dryRun := fs.Bool("dry-run", false, "")
 	generateCI := fs.Bool("generate-ci", false, "")
 	stateRoot := fs.String("state-root", "", "")
 	showHelp := fs.Bool("help", false, "")
@@ -65,6 +68,7 @@ func cmdGenerate(args []string) int {
 	result, err := generate.Generate(generate.Options{
 		StateRoot:  *stateRoot,
 		GenerateCI: *generateCI,
+		DryRun:     *dryRun,
 	})
 
 	if err != nil {
@@ -73,7 +77,14 @@ func cmdGenerate(args []string) int {
 	}
 
 	// Report success
-	fmt.Fprintf(os.Stderr, "\nGenerated %d files\n", len(result.GeneratedFiles))
+	if *dryRun {
+		fmt.Fprintf(os.Stderr, "\n[dry-run] Would generate %d files:\n", len(result.GeneratedFiles))
+		for _, f := range result.GeneratedFiles {
+			fmt.Fprintf(os.Stderr, "  - %s\n", f)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "\nGenerated %d files\n", len(result.GeneratedFiles))
+	}
 
 	return 0
 }

@@ -56,6 +56,22 @@ fi
 echo "[OK] Prerequisites satisfied"
 echo ""
 
+# === Build awkit if not available ===
+AWKIT_BIN=""
+if command -v awkit > /dev/null 2>&1; then
+  AWKIT_BIN="awkit"
+elif command -v go > /dev/null 2>&1; then
+  echo "Building awkit..."
+  if go build -o "$MONO_ROOT/awkit" "$MONO_ROOT/cmd/awkit" 2>/dev/null; then
+    AWKIT_BIN="$MONO_ROOT/awkit"
+    echo "[OK] awkit built successfully"
+  else
+    echo "[WARN] Failed to build awkit - some tests may fail"
+  fi
+else
+  echo "[WARN] awkit not found and go not available - some tests may fail"
+fi
+
 # === 記錄初始 git status ===
 GIT_STATUS_BEFORE=$(git status --porcelain 2>/dev/null || echo "")
 
@@ -126,7 +142,7 @@ except:
 fi
 
 # O5: validate_config (awkit validate)
-if awkit validate > /dev/null 2>&1; then
+if [ -n "$AWKIT_BIN" ] && $AWKIT_BIN validate > /dev/null 2>&1; then
   check_pass "O5" "validate_config (awkit validate)"
 else
   check_fail "O5" "validate_config failed (awkit validate)"
@@ -376,7 +392,7 @@ if [ "$MODE" = "--online" ]; then
     ONLINE_PASS=true
 
     # N1: kickoff (awkit kickoff)
-    if awkit kickoff --dry-run > /dev/null 2>&1; then
+    if [ -n "$AWKIT_BIN" ] && $AWKIT_BIN kickoff --dry-run > /dev/null 2>&1; then
       check_pass "N1" "kickoff --dry-run (awkit)"
     else
       echo "[FAIL] N1: kickoff --dry-run (awkit)"
@@ -393,7 +409,7 @@ if [ "$MODE" = "--online" ]; then
     fi
 
     # N3: status (awkit status)
-    if awkit status --json 2>/dev/null | python3 -m json.tool > /dev/null 2>&1; then
+    if [ -n "$AWKIT_BIN" ] && $AWKIT_BIN status --json 2>/dev/null | python3 -m json.tool > /dev/null 2>&1; then
       check_pass "N3" "status --json (awkit)"
     else
       echo "[FAIL] N3: status --json (awkit)"
