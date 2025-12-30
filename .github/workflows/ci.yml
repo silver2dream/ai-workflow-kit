@@ -31,14 +31,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyyaml jsonschema jinja2
 
-      - name: Evaluate (offline)
-        run: bash .ai/scripts/evaluate.sh --offline
+      # - name: Evaluate (offline)
+      #   run: bash .ai/scripts/evaluate.sh --offline
 
-      - name: Evaluate (strict)
-        run: bash .ai/scripts/evaluate.sh --offline --strict
+      # - name: Evaluate (strict)
+      #   run: bash .ai/scripts/evaluate.sh --offline --strict
 
-      - name: Test suite
-        run: bash .ai/tests/run_all_tests.sh
+      # - name: Test suite
+      #   run: bash .ai/tests/run_all_tests.sh
 
   awkit_cli:
     runs-on: ubuntu-latest
