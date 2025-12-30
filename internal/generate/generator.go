@@ -873,7 +873,7 @@ func generateCIContent(repo RepoConfig, git GitConfig, templateType string) stri
 	case "go":
 		sb.WriteString("      - uses: actions/setup-go@v5\n")
 		sb.WriteString("        with:\n")
-		sb.WriteString("          go-version: '1.22'\n")
+		sb.WriteString("          go-version: '1.25.5'\n")
 	case "node":
 		sb.WriteString("      - uses: actions/setup-node@v4\n")
 		sb.WriteString("        with:\n")
