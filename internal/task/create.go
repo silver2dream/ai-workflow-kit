@@ -163,6 +163,12 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 		return nil, fmt.Errorf("failed to update tasks.md: %w", err)
 	}
 
+	// 15. Commit tasks.md update (best-effort, don't fail on error)
+	if err := CommitTasksUpdate(tasksPath, issueNumber, "linked"); err != nil {
+		// Log warning but continue - the issue was created successfully
+		fmt.Fprintf(os.Stderr, "warning: failed to commit tasks.md update: %v\n", err)
+	}
+
 	return &CreateTaskResult{
 		IssueNumber: issueNumber,
 		IssueURL:    issueURL,
