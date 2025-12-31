@@ -5,12 +5,12 @@ import "fmt"
 
 // Decision represents the next action to take
 type Decision struct {
-	NextAction  string // generate_tasks | create_task | dispatch_worker | check_result | review_pr | all_complete | none
-	IssueNumber int
-	PRNumber    int
-	SpecName    string
-	TaskLine    int
-	ExitReason  string // worker_failed | needs_human_review | max_loop_reached | max_consecutive_failures | no_actionable_tasks | config_not_found
+	NextAction  string `json:"next_action"`  // generate_tasks | create_task | dispatch_worker | check_result | review_pr | all_complete | none
+	IssueNumber int    `json:"issue_number"`
+	PRNumber    int    `json:"pr_number"`
+	SpecName    string `json:"spec_name"`
+	TaskLine    int    `json:"task_line"`
+	ExitReason  string `json:"exit_reason"` // worker_failed | needs_human_review | max_loop_reached | max_consecutive_failures | no_actionable_tasks | config_not_found
 }
 
 // Action constants

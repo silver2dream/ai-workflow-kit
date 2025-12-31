@@ -1,42 +1,42 @@
-# 變數契約
+# 輸出契約
 
 ## awkit analyze-next 輸出規格
 
-### stdout（只能是可 eval 的變數賦值）
+### JSON 格式（使用 `--json`）
 
-```bash
-NEXT_ACTION=<action>
-ISSUE_NUMBER=<number or empty>
-PR_NUMBER=<number or empty>
-SPEC_NAME=<name or empty>
-TASK_LINE=<number or empty>
-EXIT_REASON=<reason or empty>
+```json
+{
+  "next_action": "<action>",
+  "issue_number": <number>,
+  "pr_number": <number>,
+  "spec_name": "<name>",
+  "task_line": <number>,
+  "exit_reason": "<reason>"
+}
 ```
 
-### stderr
+### 欄位說明
 
-所有 log 輸出到 stderr。
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| `next_action` | string | generate_tasks, create_task, dispatch_worker, check_result, review_pr, all_complete, none |
+| `issue_number` | int | Issue 編號（0 表示無） |
+| `pr_number` | int | PR 編號（0 表示無） |
+| `spec_name` | string | Spec 名稱（空字串表示無） |
+| `task_line` | int | tasks.md 行號（0 表示無） |
+| `exit_reason` | string | 停止原因（僅當 next_action=none 時有值） |
 
-## 變數契約表
+## 必填欄位表
 
-| NEXT_ACTION | 必填 | 可選 |
+| next_action | 必填 | 可選 |
 |-------------|------|------|
-| `generate_tasks` | - | `SPEC_NAME` |
-| `create_task` | `SPEC_NAME`, `TASK_LINE` | - |
-| `dispatch_worker` | `ISSUE_NUMBER` | - |
-| `check_result` | `ISSUE_NUMBER` | - |
-| `review_pr` | `PR_NUMBER` | `ISSUE_NUMBER` |
+| `generate_tasks` | - | `spec_name` |
+| `create_task` | `spec_name`, `task_line` | - |
+| `dispatch_worker` | `issue_number` | - |
+| `check_result` | `issue_number` | - |
+| `review_pr` | `pr_number` | `issue_number` |
 | `all_complete` | - | - |
-| `none` | - | `EXIT_REASON` |
-
-## 契約違反
-
-如果必填欄位為空，awkit analyze-next 應輸出：
-
-```bash
-NEXT_ACTION=none
-EXIT_REASON=contract_violation
-```
+| `none` | - | `exit_reason` |
 
 ## 命令列表
 

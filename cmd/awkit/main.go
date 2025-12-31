@@ -631,7 +631,7 @@ func cmdInit(args []string) int {
 	fmt.Println(bold("Next steps:"))
 	fmt.Printf("  1. %s\n", cyan("cd "+displayTarget))
 	fmt.Printf("  2. %s\n", cyan("Edit .ai/config/workflow.yaml"))
-	fmt.Printf("  3. %s\n", cyan("bash .ai/scripts/generate.sh"))
+	fmt.Printf("  3. %s\n", cyan("awkit generate"))
 	fmt.Println("")
 
 	warnUpdateAvailable()
@@ -892,7 +892,7 @@ func cmdUpgrade(args []string) int {
 
 	fmt.Println("")
 	fmt.Println(bold("Next steps:"))
-	fmt.Printf("  %s\n", cyan("bash .ai/scripts/generate.sh"))
+	fmt.Printf("  %s\n", cyan("awkit kickoff"))
 	fmt.Println("")
 
 	warnUpdateAvailable()
