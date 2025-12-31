@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -247,7 +246,7 @@ func cmdKickoff(args []string) int {
 		"--print",
 		"--output-format", "stream-json",
 		"--verbose",
-		"-p", "Use the principal-workflow Skill. Start the main loop immediately.",
+		"-p", "Run the AWK principal workflow.",
 	}
 
 	fmt.Println("")
@@ -687,46 +686,20 @@ func runAnalyzeNext(ctx context.Context, args analyzeNextArgs) (analyzeNextVars,
 	ctx, cancel := context.WithTimeout(ctx, args.Timeout)
 	defer cancel()
 
-	// Try Go implementation first
-	if os.Getenv("AWKIT_USE_SCRIPT") != "1" {
-		a := analyzer.New(".", nil)
-		decision, err := a.Decide(ctx)
-		if err == nil {
-			return analyzeNextVars{
-				NextAction:  decision.NextAction,
-				IssueNumber: strconv.Itoa(decision.IssueNumber),
-				PRNumber:    strconv.Itoa(decision.PRNumber),
-				SpecName:    decision.SpecName,
-				TaskLine:    strconv.Itoa(decision.TaskLine),
-				ExitReason:  decision.ExitReason,
-			}, nil
-		}
-		// Fall through to bash script on error
+	a := analyzer.New(".", nil)
+	decision, err := a.Decide(ctx)
+	if err != nil {
+		return analyzeNextVars{}, fmt.Errorf("analyze-next failed: %w", err)
 	}
 
-	// Fallback to bash script
-	cmd := exec.CommandContext(ctx, "bash", ".ai/scripts/analyze_next.sh")
-	if strings.TrimSpace(args.PrincipalSessionID) != "" {
-		cmd.Env = append(os.Environ(), "PRINCIPAL_SESSION_ID="+args.PrincipalSessionID)
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = strings.TrimSpace(stdout.String())
-		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return analyzeNextVars{}, fmt.Errorf("analyze_next.sh failed: %s", msg)
-	}
-
-	return parseAnalyzeNextOutput(stdout.String()), nil
+	return analyzeNextVars{
+		NextAction:  decision.NextAction,
+		IssueNumber: strconv.Itoa(decision.IssueNumber),
+		PRNumber:    strconv.Itoa(decision.PRNumber),
+		SpecName:    decision.SpecName,
+		TaskLine:    strconv.Itoa(decision.TaskLine),
+		ExitReason:  decision.ExitReason,
+	}, nil
 }
 
 func parseAnalyzeNextOutput(out string) analyzeNextVars {

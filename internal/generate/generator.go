@@ -395,7 +395,6 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("| What | Where |\n")
 	sb.WriteString("|------|-------|\n")
 	sb.WriteString("| Config | " + bt + ".ai/config/workflow.yaml" + bt + " |\n")
-	sb.WriteString("| Scripts | " + bt + ".ai/scripts/" + bt + " |\n")
 	sb.WriteString("| Skills | " + bt + ".ai/skills/" + bt + " |\n")
 	sb.WriteString("| Rules | " + bt + ".ai/rules/" + bt + " |\n")
 	sb.WriteString(fmt.Sprintf("| Specs | %s%s/%s |\n", bt, ctx.Specs.BasePath, bt))
@@ -599,9 +598,10 @@ func generateClaudeSettings(path string) error {
 	content := `{
   "permissions": {
     "allow": [
+      "Skill(principal-workflow)",
       "Bash(gh:*)",
       "Bash(git:*)",
-      "Bash(bash .ai/scripts/*)",
+      "Bash(awkit:*)",
       "Bash(bash:*)",
       "Bash(codex:*)",
       "Bash(go:*)",

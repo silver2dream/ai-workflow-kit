@@ -90,7 +90,7 @@ func formatExitReasonDetails(reason string) string {
 	case "max_consecutive_failures":
 		return "⚠ **Workflow stopped: too many consecutive failures.**\n\nPlease review failed issues and fix underlying problems.\n"
 	case "contract_violation":
-		return "✗ **Workflow stopped: variable contract violation.**\n\nA required variable was missing. Check analyze_next.sh output.\n"
+		return "✗ **Workflow stopped: variable contract violation.**\n\nA required variable was missing. Check `awkit analyze-next` output.\n"
 	case "error_exit":
 		return "✗ **Workflow stopped due to an error.**\n\nPlease check logs for details.\n"
 	case "max_failures":
