@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/task"
 )
 
 // SubmitReviewOptions configures the submit review operation
@@ -342,7 +343,15 @@ func updateTasksMd(ctx context.Context, stateRoot string, issueNumber int) {
 	lines := strings.Split(string(content), "\n")
 	if result.TaskLine <= len(lines) {
 		lines[result.TaskLine-1] = strings.Replace(lines[result.TaskLine-1], "[ ]", "[x]", 1)
-		_ = os.WriteFile(tasksFile, []byte(strings.Join(lines, "\n")), 0644)
+		if err := os.WriteFile(tasksFile, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+			return
+		}
+
+		// Commit tasks.md update (best-effort)
+		if err := task.CommitTasksUpdate(tasksFile, issueNumber, "complete"); err != nil {
+			// Log warning but continue
+			fmt.Fprintf(os.Stderr, "warning: failed to commit tasks.md update: %v\n", err)
+		}
 	}
 }
 
