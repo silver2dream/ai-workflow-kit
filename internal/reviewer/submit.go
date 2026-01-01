@@ -156,7 +156,7 @@ PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout)
 }
 
 func handleEvidenceFailure(ctx context.Context, opts SubmitReviewOptions, sessionID, diffHash string, err *EvidenceError) (*SubmitReviewResult, error) {
-	editIssueLabels(ctx, opts.IssueNumber, []string{"needs-human-review"}, []string{"pr-ready"}, opts.GHTimeout)
+	editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout)
 
 	var missingDetails string
 	if err.Missing != nil {
@@ -167,16 +167,17 @@ func handleEvidenceFailure(ctx context.Context, opts SubmitReviewOptions, sessio
 		missingDetails += "```\n"
 	}
 
-	postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked: evidence verification failed
+	postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
 
-審查內容缺少可核對的 `+"`EVIDENCE:`"+` 行，或 evidence 與 PR diff 不一致。
+審查 evidence 驗證失敗。
 
 PR: #%d
 Diff Hash: `+"`%s`"+`
 
 錯誤: %s
 %s
-Next step: 重新產生審查內容，並加入 `+"`EVIDENCE:`"+` 行（必須是 diff 中可直接搜尋到的字串）。`, opts.PRNumber, diffHash, err.Message, missingDetails), opts.GHTimeout)
+已標記 review-failed。下一個 session 的 subagent 將重新審查。
+**當前 session 不應重試。**`, opts.PRNumber, diffHash, err.Message, missingDetails), opts.GHTimeout)
 
 	return &SubmitReviewResult{Result: "review_blocked", Reason: err.Message}, nil
 }

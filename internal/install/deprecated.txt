@@ -1,0 +1,9 @@
+# Deprecated Kit Files
+# Lines starting with # are comments
+# Each line is a path relative to project root that should be removed on upgrade
+
+# v0.x.x - PR review migrated to subagent
+.ai/skills/principal-workflow/tasks/review-pr.md
+
+# v0.x.x - docs and tests no longer distributed to user projects
+.ai/docs/evaluate.md

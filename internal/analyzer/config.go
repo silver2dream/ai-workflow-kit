@@ -31,6 +31,7 @@ type LabelsConfig struct {
 	PRReady          string `yaml:"pr_ready"`
 	WorkerFailed     string `yaml:"worker_failed"`
 	NeedsHumanReview string `yaml:"needs_human_review"`
+	ReviewFailed     string `yaml:"review_failed"`
 }
 
 // DefaultLabels returns default label names
@@ -41,6 +42,7 @@ func DefaultLabels() LabelsConfig {
 		PRReady:          "pr-ready",
 		WorkerFailed:     "worker-failed",
 		NeedsHumanReview: "needs-human-review",
+		ReviewFailed:     "review-failed",
 	}
 }
 
@@ -74,6 +76,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.GitHub.Labels.NeedsHumanReview == "" {
 		cfg.GitHub.Labels.NeedsHumanReview = "needs-human-review"
+	}
+	if cfg.GitHub.Labels.ReviewFailed == "" {
+		cfg.GitHub.Labels.ReviewFailed = "review-failed"
 	}
 
 	return &cfg, nil

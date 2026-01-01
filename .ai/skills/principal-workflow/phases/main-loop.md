@@ -24,7 +24,7 @@ awkit analyze-next --json
 | `create_task` | **Read** `tasks/create-task.md`，使用 `spec_name` 和 `task_line` 執行 Issue 創建 |
 | `dispatch_worker` | 執行 `awkit dispatch-worker --issue <issue_number>` ⚠️ **同步等待** |
 | `check_result` | 執行 `awkit check-result --issue <issue_number>` |
-| `review_pr` | **Read** `tasks/review-pr.md`，使用 `pr_number` 執行 PR 審查 |
+| `review_pr` | 使用 **Task tool** 調用 `pr-reviewer` subagent，傳入 `pr_number` 和 `issue_number` |
 | `all_complete` | 執行 `awkit stop-workflow all_tasks_complete` 然後結束 |
 | `none` | 執行 `awkit stop-workflow <exit_reason>` 然後結束 |
 

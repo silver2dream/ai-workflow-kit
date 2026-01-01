@@ -1,7 +1,9 @@
 package install
 
 import (
+	"bufio"
 	"bytes"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +14,9 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 )
+
+//go:embed deprecated.txt
+var deprecatedFiles string
 
 type Options struct {
 	Preset      string
@@ -111,6 +116,20 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	deprecatedClaudeCommands := filepath.Join(targetDir, ".claude", "commands")
 	if _, err := os.Stat(deprecatedClaudeCommands); err == nil {
 		_ = os.RemoveAll(deprecatedClaudeCommands)
+	}
+
+	// Clean up deprecated kit files (removed in newer versions)
+	cleanupDeprecatedFiles(targetDir)
+
+	// Copy .claude/agents/ directory if it exists in the kit
+	if _, err := fs.Stat(kit, ".claude/agents"); err == nil {
+		agentsDir := filepath.Join(targetDir, ".claude", "agents")
+		if err := os.MkdirAll(filepath.Dir(agentsDir), 0o755); err != nil {
+			return nil, err
+		}
+		if err := copyDir(kit, ".claude/agents", agentsDir, opts.Force); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := ensureRuntimeDirs(targetDir); err != nil {
@@ -1906,4 +1925,20 @@ func scaffoldFiles(files []struct {
 		return result, ErrScaffoldFailed
 	}
 	return result, nil
+}
+
+// cleanupDeprecatedFiles removes files listed in deprecated.txt
+func cleanupDeprecatedFiles(targetDir string) {
+	scanner := bufio.NewScanner(strings.NewReader(deprecatedFiles))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		path := filepath.Join(targetDir, filepath.FromSlash(line))
+		if _, err := os.Stat(path); err == nil {
+			_ = os.Remove(path)
+		}
+	}
 }

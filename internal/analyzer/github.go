@@ -95,7 +95,8 @@ func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfi
 		if !issue.HasLabel(labels.InProgress) &&
 			!issue.HasLabel(labels.PRReady) &&
 			!issue.HasLabel(labels.WorkerFailed) &&
-			!issue.HasLabel(labels.NeedsHumanReview) {
+			!issue.HasLabel(labels.NeedsHumanReview) &&
+			!issue.HasLabel(labels.ReviewFailed) {
 			pendingIssues = append(pendingIssues, issue)
 		}
 	}
@@ -135,6 +136,18 @@ func (c *GitHubClient) RemoveLabel(ctx context.Context, issueNumber int, label s
 	cmd := exec.CommandContext(ctx, "gh", "issue", "edit",
 		strconv.Itoa(issueNumber),
 		"--remove-label", label)
+
+	return cmd.Run()
+}
+
+// AddLabel adds a label to an issue
+func (c *GitHubClient) AddLabel(ctx context.Context, issueNumber int, label string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "issue", "edit",
+		strconv.Itoa(issueNumber),
+		"--add-label", label)
 
 	return cmd.Run()
 }
