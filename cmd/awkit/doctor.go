@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/silver2dream/ai-workflow-kit/internal/clean"
 	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
+	"github.com/silver2dream/ai-workflow-kit/internal/reset"
 )
 
 func cmdDoctor(args []string) int {
@@ -29,7 +29,7 @@ func cmdDoctor(args []string) int {
 	results := doc.RunAll(ctx)
 
 	var warnings, errors int
-	var cleanable []string
+	var resettable bool
 
 	for _, r := range results {
 		var status string
@@ -46,8 +46,8 @@ func cmdDoctor(args []string) int {
 
 		fmt.Printf("[%s] %s: %s\n", status, r.Name, r.Message)
 
-		if r.CanClean && r.CleanKey != "" {
-			cleanable = append(cleanable, r.CleanKey)
+		if r.CanClean {
+			resettable = true
 		}
 	}
 
@@ -63,10 +63,10 @@ func cmdDoctor(args []string) int {
 		fmt.Printf("%sAll checks passed!%s\n", colorGreen, colorReset)
 	}
 
-	if len(cleanable) > 0 {
+	if resettable {
 		fmt.Println()
-		fmt.Println("To clean up, run:")
-		fmt.Printf("  awkit clean\n")
+		fmt.Println("To reset state, run:")
+		fmt.Printf("  awkit reset\n")
 	}
 
 	if errors > 0 {
@@ -75,62 +75,62 @@ func cmdDoctor(args []string) int {
 	return 0
 }
 
-func cmdClean(args []string) int {
-	fs := flag.NewFlagSet("clean", flag.ExitOnError)
-	dryRun := fs.Bool("dry-run", false, "Show what would be cleaned without making changes")
-	all := fs.Bool("all", false, "Clean all state including results")
-	state := fs.Bool("state", false, "Clean state files (loop_count, consecutive_failures)")
-	attempts := fs.Bool("attempts", false, "Clean attempt tracking files")
+func cmdReset(args []string) int {
+	fs := flag.NewFlagSet("reset", flag.ExitOnError)
+	dryRun := fs.Bool("dry-run", false, "Show what would be reset without making changes")
+	all := fs.Bool("all", false, "Reset all state including results")
+	state := fs.Bool("state", false, "Reset state files (loop_count, consecutive_failures)")
+	attempts := fs.Bool("attempts", false, "Reset attempt tracking files")
 	stop := fs.Bool("stop", false, "Remove STOP marker")
 	lock := fs.Bool("lock", false, "Remove lock file")
 	deprecated := fs.Bool("deprecated", false, "Remove deprecated files")
-	results := fs.Bool("results", false, "Clean result files")
-	resetLabels := fs.Bool("reset-labels", false, "Reset review-failed labels to pr-ready")
-	fs.Usage = usageClean
+	results := fs.Bool("results", false, "Reset result files")
+	labels := fs.Bool("labels", false, "Reset review-failed labels to pr-ready on GitHub")
+	fs.Usage = usageReset
 
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	// If no specific flags, default to common cleanup
-	noFlags := !*state && !*attempts && !*stop && !*lock && !*deprecated && !*results && !*resetLabels && !*all
+	// If no specific flags, default to common reset
+	noFlags := !*state && !*attempts && !*stop && !*lock && !*deprecated && !*results && !*labels && !*all
 
 	cwd, _ := os.Getwd()
-	cleaner := clean.New(cwd)
-	cleaner.SetDryRun(*dryRun)
+	resetter := reset.New(cwd)
+	resetter.SetDryRun(*dryRun)
 
 	if *dryRun {
 		fmt.Println("Dry run mode - no changes will be made")
 		fmt.Println()
 	}
 
-	fmt.Println("AWK Clean")
+	fmt.Println("AWK Reset")
 	fmt.Println("=========")
 	fmt.Println()
 
 	ctx := context.Background()
-	var allResults []clean.CleanResult
+	var allResults []reset.Result
 
 	if *all || *state || noFlags {
-		allResults = append(allResults, cleaner.CleanState()...)
+		allResults = append(allResults, resetter.ResetState()...)
 	}
 	if *all || *attempts || noFlags {
-		allResults = append(allResults, cleaner.CleanAttempts()...)
+		allResults = append(allResults, resetter.ResetAttempts()...)
 	}
 	if *all || *stop || noFlags {
-		allResults = append(allResults, cleaner.CleanStop())
+		allResults = append(allResults, resetter.ResetStop())
 	}
 	if *all || *lock {
-		allResults = append(allResults, cleaner.CleanLock())
+		allResults = append(allResults, resetter.ResetLock())
 	}
 	if *all || *deprecated || noFlags {
-		allResults = append(allResults, cleaner.CleanDeprecated()...)
+		allResults = append(allResults, resetter.ResetDeprecated()...)
 	}
 	if *all || *results {
-		allResults = append(allResults, cleaner.CleanResults()...)
+		allResults = append(allResults, resetter.Results()...)
 	}
-	if *resetLabels {
-		allResults = append(allResults, cleaner.ResetGitHubLabel(ctx, "review-failed", "pr-ready")...)
+	if *labels {
+		allResults = append(allResults, resetter.ResetGitHubLabel(ctx, "review-failed", "pr-ready")...)
 	}
 
 	var success, failed int
@@ -147,13 +147,13 @@ func cmdClean(args []string) int {
 	}
 
 	if len(allResults) == 0 {
-		fmt.Println("Nothing to clean.")
+		fmt.Println("Nothing to reset.")
 	} else {
 		fmt.Println()
 		if failed > 0 {
 			fmt.Printf("%s%d failed%s, ", colorRed, failed, colorReset)
 		}
-		fmt.Printf("%s%d cleaned%s\n", colorGreen, success, colorReset)
+		fmt.Printf("%s%d reset%s\n", colorGreen, success, colorReset)
 	}
 
 	if failed > 0 {
@@ -178,31 +178,31 @@ Examples:
 `)
 }
 
-func usageClean() {
-	fmt.Fprint(os.Stderr, `Clean up AWK project state
+func usageReset() {
+	fmt.Fprint(os.Stderr, `Reset AWK project state for a fresh start
 
-This command cleans up state files to allow a fresh start.
-Without flags, it cleans common state (loop_count, consecutive_failures,
+This command resets state files to allow a fresh start.
+Without flags, it resets common state (loop_count, consecutive_failures,
 attempts, STOP marker, deprecated files).
 
 Usage:
-  awkit clean [options]
+  awkit reset [options]
 
 Options:
-  --dry-run       Show what would be cleaned without making changes
-  --all           Clean all state including results and lock
-  --state         Clean state files (loop_count, consecutive_failures)
-  --attempts      Clean attempt tracking files
-  --stop          Remove STOP marker
-  --lock          Remove lock file (use with caution)
-  --deprecated    Remove deprecated files
-  --results       Clean result files
-  --reset-labels  Reset review-failed labels to pr-ready on GitHub
+  --dry-run     Show what would be reset without making changes
+  --all         Reset all state including results and lock
+  --state       Reset state files (loop_count, consecutive_failures)
+  --attempts    Reset attempt tracking files
+  --stop        Remove STOP marker
+  --lock        Remove lock file (use with caution)
+  --deprecated  Remove deprecated files
+  --results     Reset result files
+  --labels      Reset review-failed labels to pr-ready on GitHub
 
 Examples:
-  awkit clean                  # Clean common state
-  awkit clean --dry-run        # Preview what would be cleaned
-  awkit clean --all            # Clean everything
-  awkit clean --reset-labels   # Reset stuck review labels
+  awkit reset              # Reset common state
+  awkit reset --dry-run    # Preview what would be reset
+  awkit reset --all        # Reset everything
+  awkit reset --labels     # Reset stuck review labels on GitHub
 `)
 }

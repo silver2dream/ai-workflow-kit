@@ -135,8 +135,8 @@ func run() int {
 		return cmdCreateTask(os.Args[2:])
 	case "doctor":
 		return cmdDoctor(os.Args[2:])
-	case "clean":
-		return cmdClean(os.Args[2:])
+	case "reset":
+		return cmdReset(os.Args[2:])
 	case "generate":
 		return cmdGenerate(os.Args[2:])
 	case "list-presets":
@@ -180,7 +180,7 @@ Commands:
   submit-review   Submit PR review and handle result
   create-task     Create GitHub Issue from tasks.md entry
   doctor          Check project health and identify issues
-  clean           Clean up project state for fresh start
+  reset           Reset project state for fresh start
   generate        Generate helper docs and scaffolding
   list-presets    Show available project presets
   check-update  Check for CLI updates
@@ -264,8 +264,8 @@ func cmdHelp(command string) int {
 		usageCreateTask()
 	case "doctor":
 		usageDoctor()
-	case "clean":
-		usageClean()
+	case "reset":
+		usageReset()
 	case "generate":
 		usageGenerate()
 	case "list-presets":

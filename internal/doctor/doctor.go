@@ -185,14 +185,16 @@ func (d *Doctor) CheckGitHubLabels(ctx context.Context) []CheckResult {
 	var results []CheckResult
 
 	labels := []struct {
-		name    string
-		desc    string
-		cleanTo string
+		name       string
+		desc       string
+		canReset   bool
+		resetTo    string
+		humanAction string
 	}{
-		{"needs-human-review", "Issues requiring human intervention", ""},
-		{"review-failed", "Issues with failed review (can retry)", "pr-ready"},
-		{"worker-failed", "Issues with failed worker", ""},
-		{"in-progress", "Issues currently in progress", ""},
+		{"needs-human-review", "Issues requiring human intervention", false, "", "manually review and close/merge"},
+		{"review-failed", "Issues with failed review", true, "pr-ready", ""},
+		{"worker-failed", "Issues with failed worker", false, "", "investigate and retry or close"},
+		{"in-progress", "Issues currently in progress", false, "", "wait for completion or manually reset"},
 	}
 
 	for _, label := range labels {
@@ -204,19 +206,18 @@ func (d *Doctor) CheckGitHubLabels(ctx context.Context) []CheckResult {
 				message += fmt.Sprintf(": #%s", strings.Join(issues, ", #"))
 			}
 
-			canClean := label.cleanTo != ""
-			cleanKey := ""
-			if canClean {
-				cleanKey = "label:" + label.name
-				message += fmt.Sprintf(" (can reset to '%s')", label.cleanTo)
+			if label.canReset {
+				message += fmt.Sprintf(" [can reset: awkit reset --labels]")
+			} else if label.humanAction != "" {
+				message += fmt.Sprintf(" [action: %s]", label.humanAction)
 			}
 
 			results = append(results, CheckResult{
 				Name:     "GitHub: " + label.desc,
 				Status:   status,
 				Message:  message,
-				CanClean: canClean,
-				CleanKey: cleanKey,
+				CanClean: label.canReset,
+				CleanKey: "label:" + label.name,
 			})
 		}
 	}

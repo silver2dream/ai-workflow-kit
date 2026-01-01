@@ -1,4 +1,4 @@
-package clean
+package reset
 
 import (
 	"context"
@@ -10,50 +10,50 @@ import (
 	"time"
 )
 
-// CleanResult represents the result of a clean operation
-type CleanResult struct {
+// Result represents the result of a reset operation
+type Result struct {
 	Name    string
 	Success bool
 	Message string
 }
 
-// Cleaner performs cleanup operations on the AWK project
-type Cleaner struct {
+// Resetter performs reset operations on the AWK project
+type Resetter struct {
 	StateRoot string
 	Timeout   time.Duration
 	DryRun    bool
 }
 
-// New creates a new Cleaner
-func New(stateRoot string) *Cleaner {
+// New creates a new Resetter
+func New(stateRoot string) *Resetter {
 	if stateRoot == "" {
 		stateRoot = "."
 	}
-	return &Cleaner{
+	return &Resetter{
 		StateRoot: stateRoot,
 		Timeout:   30 * time.Second,
 	}
 }
 
 // SetDryRun enables dry-run mode
-func (c *Cleaner) SetDryRun(dryRun bool) {
+func (c *Resetter) SetDryRun(dryRun bool) {
 	c.DryRun = dryRun
 }
 
-// CleanAll cleans all state
-func (c *Cleaner) CleanAll(ctx context.Context) []CleanResult {
-	var results []CleanResult
-	results = append(results, c.CleanState()...)
-	results = append(results, c.CleanAttempts()...)
-	results = append(results, c.CleanStop())
-	results = append(results, c.CleanLock())
-	results = append(results, c.CleanDeprecated()...)
+// ResetAll cleans all state
+func (c *Resetter) ResetAll(ctx context.Context) []Result {
+	var results []Result
+	results = append(results, c.ResetState()...)
+	results = append(results, c.ResetAttempts()...)
+	results = append(results, c.ResetStop())
+	results = append(results, c.ResetLock())
+	results = append(results, c.ResetDeprecated()...)
 	return results
 }
 
-// CleanState cleans loop_count and consecutive_failures
-func (c *Cleaner) CleanState() []CleanResult {
-	var results []CleanResult
+// ResetState cleans loop_count and consecutive_failures
+func (c *Resetter) ResetState() []Result {
+	var results []Result
 
 	files := []string{
 		filepath.Join(c.StateRoot, ".ai", "state", "loop_count"),
@@ -67,7 +67,7 @@ func (c *Cleaner) CleanState() []CleanResult {
 
 		name := filepath.Base(f)
 		if c.DryRun {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    name,
 				Success: true,
 				Message: fmt.Sprintf("Would delete %s", f),
@@ -76,13 +76,13 @@ func (c *Cleaner) CleanState() []CleanResult {
 		}
 
 		if err := os.Remove(f); err != nil {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    name,
 				Success: false,
 				Message: fmt.Sprintf("Failed to delete: %v", err),
 			})
 		} else {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    name,
 				Success: true,
 				Message: "Deleted",
@@ -93,8 +93,8 @@ func (c *Cleaner) CleanState() []CleanResult {
 	return results
 }
 
-// CleanAttempts cleans attempt tracking files
-func (c *Cleaner) CleanAttempts() []CleanResult {
+// ResetAttempts cleans attempt tracking files
+func (c *Resetter) ResetAttempts() []Result {
 	attemptsDir := filepath.Join(c.StateRoot, ".ai", "state", "attempts")
 
 	if _, err := os.Stat(attemptsDir); os.IsNotExist(err) {
@@ -102,7 +102,7 @@ func (c *Cleaner) CleanAttempts() []CleanResult {
 	}
 
 	if c.DryRun {
-		return []CleanResult{{
+		return []Result{{
 			Name:    "attempts",
 			Success: true,
 			Message: fmt.Sprintf("Would delete %s/*", attemptsDir),
@@ -110,26 +110,26 @@ func (c *Cleaner) CleanAttempts() []CleanResult {
 	}
 
 	if err := os.RemoveAll(attemptsDir); err != nil {
-		return []CleanResult{{
+		return []Result{{
 			Name:    "attempts",
 			Success: false,
 			Message: fmt.Sprintf("Failed to delete: %v", err),
 		}}
 	}
 
-	return []CleanResult{{
+	return []Result{{
 		Name:    "attempts",
 		Success: true,
 		Message: "Deleted attempts directory",
 	}}
 }
 
-// CleanStop removes the STOP marker
-func (c *Cleaner) CleanStop() CleanResult {
+// ResetStop removes the STOP marker
+func (c *Resetter) ResetStop() Result {
 	stopMarker := filepath.Join(c.StateRoot, ".ai", "state", "STOP")
 
 	if _, err := os.Stat(stopMarker); os.IsNotExist(err) {
-		return CleanResult{
+		return Result{
 			Name:    "STOP marker",
 			Success: true,
 			Message: "Not present",
@@ -137,7 +137,7 @@ func (c *Cleaner) CleanStop() CleanResult {
 	}
 
 	if c.DryRun {
-		return CleanResult{
+		return Result{
 			Name:    "STOP marker",
 			Success: true,
 			Message: fmt.Sprintf("Would delete %s", stopMarker),
@@ -145,26 +145,26 @@ func (c *Cleaner) CleanStop() CleanResult {
 	}
 
 	if err := os.Remove(stopMarker); err != nil {
-		return CleanResult{
+		return Result{
 			Name:    "STOP marker",
 			Success: false,
 			Message: fmt.Sprintf("Failed to delete: %v", err),
 		}
 	}
 
-	return CleanResult{
+	return Result{
 		Name:    "STOP marker",
 		Success: true,
 		Message: "Deleted",
 	}
 }
 
-// CleanLock removes the lock file
-func (c *Cleaner) CleanLock() CleanResult {
+// ResetLock removes the lock file
+func (c *Resetter) ResetLock() Result {
 	lockFile := filepath.Join(c.StateRoot, ".ai", "state", "principal.lock")
 
 	if _, err := os.Stat(lockFile); os.IsNotExist(err) {
-		return CleanResult{
+		return Result{
 			Name:    "Lock file",
 			Success: true,
 			Message: "Not present",
@@ -172,7 +172,7 @@ func (c *Cleaner) CleanLock() CleanResult {
 	}
 
 	if c.DryRun {
-		return CleanResult{
+		return Result{
 			Name:    "Lock file",
 			Success: true,
 			Message: fmt.Sprintf("Would delete %s", lockFile),
@@ -180,28 +180,28 @@ func (c *Cleaner) CleanLock() CleanResult {
 	}
 
 	if err := os.Remove(lockFile); err != nil {
-		return CleanResult{
+		return Result{
 			Name:    "Lock file",
 			Success: false,
 			Message: fmt.Sprintf("Failed to delete: %v", err),
 		}
 	}
 
-	return CleanResult{
+	return Result{
 		Name:    "Lock file",
 		Success: true,
 		Message: "Deleted",
 	}
 }
 
-// CleanDeprecated removes deprecated files
-func (c *Cleaner) CleanDeprecated() []CleanResult {
+// ResetDeprecated removes deprecated files
+func (c *Resetter) ResetDeprecated() []Result {
 	deprecatedFiles := []string{
 		".ai/skills/principal-workflow/tasks/review-pr.md",
 		".ai/docs/evaluate.md",
 	}
 
-	var results []CleanResult
+	var results []Result
 	for _, f := range deprecatedFiles {
 		path := filepath.Join(c.StateRoot, f)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -209,7 +209,7 @@ func (c *Cleaner) CleanDeprecated() []CleanResult {
 		}
 
 		if c.DryRun {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    f,
 				Success: true,
 				Message: fmt.Sprintf("Would delete %s", path),
@@ -218,13 +218,13 @@ func (c *Cleaner) CleanDeprecated() []CleanResult {
 		}
 
 		if err := os.Remove(path); err != nil {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    f,
 				Success: false,
 				Message: fmt.Sprintf("Failed to delete: %v", err),
 			})
 		} else {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    f,
 				Success: true,
 				Message: "Deleted deprecated file",
@@ -235,8 +235,8 @@ func (c *Cleaner) CleanDeprecated() []CleanResult {
 	return results
 }
 
-// CleanResults removes result files
-func (c *Cleaner) CleanResults() []CleanResult {
+// Results removes result files
+func (c *Resetter) Results() []Result {
 	resultsDir := filepath.Join(c.StateRoot, ".ai", "results")
 
 	entries, err := os.ReadDir(resultsDir)
@@ -244,7 +244,7 @@ func (c *Cleaner) CleanResults() []CleanResult {
 		return nil
 	}
 
-	var results []CleanResult
+	var results []Result
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -252,7 +252,7 @@ func (c *Cleaner) CleanResults() []CleanResult {
 		path := filepath.Join(resultsDir, entry.Name())
 
 		if c.DryRun {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    entry.Name(),
 				Success: true,
 				Message: fmt.Sprintf("Would delete %s", path),
@@ -261,13 +261,13 @@ func (c *Cleaner) CleanResults() []CleanResult {
 		}
 
 		if err := os.Remove(path); err != nil {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    entry.Name(),
 				Success: false,
 				Message: fmt.Sprintf("Failed to delete: %v", err),
 			})
 		} else {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    entry.Name(),
 				Success: true,
 				Message: "Deleted",
@@ -279,7 +279,7 @@ func (c *Cleaner) CleanResults() []CleanResult {
 }
 
 // ResetGitHubLabel resets a label on issues
-func (c *Cleaner) ResetGitHubLabel(ctx context.Context, fromLabel, toLabel string) []CleanResult {
+func (c *Resetter) ResetGitHubLabel(ctx context.Context, fromLabel, toLabel string) []Result {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
@@ -292,7 +292,7 @@ func (c *Cleaner) ResetGitHubLabel(ctx context.Context, fromLabel, toLabel strin
 
 	output, err := cmd.Output()
 	if err != nil {
-		return []CleanResult{{
+		return []Result{{
 			Name:    "GitHub labels",
 			Success: false,
 			Message: fmt.Sprintf("Failed to list issues: %v", err),
@@ -303,7 +303,7 @@ func (c *Cleaner) ResetGitHubLabel(ctx context.Context, fromLabel, toLabel strin
 		Number int `json:"number"`
 	}
 	if err := json.Unmarshal(output, &issues); err != nil {
-		return []CleanResult{{
+		return []Result{{
 			Name:    "GitHub labels",
 			Success: false,
 			Message: fmt.Sprintf("Failed to parse issues: %v", err),
@@ -311,17 +311,17 @@ func (c *Cleaner) ResetGitHubLabel(ctx context.Context, fromLabel, toLabel strin
 	}
 
 	if len(issues) == 0 {
-		return []CleanResult{{
+		return []Result{{
 			Name:    "GitHub labels",
 			Success: true,
 			Message: fmt.Sprintf("No issues with '%s' label", fromLabel),
 		}}
 	}
 
-	var results []CleanResult
+	var results []Result
 	for _, issue := range issues {
 		if c.DryRun {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    fmt.Sprintf("Issue #%d", issue.Number),
 				Success: true,
 				Message: fmt.Sprintf("Would change label from '%s' to '%s'", fromLabel, toLabel),
@@ -336,13 +336,13 @@ func (c *Cleaner) ResetGitHubLabel(ctx context.Context, fromLabel, toLabel strin
 			"--add-label", toLabel)
 
 		if err := editCmd.Run(); err != nil {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    fmt.Sprintf("Issue #%d", issue.Number),
 				Success: false,
 				Message: fmt.Sprintf("Failed to update labels: %v", err),
 			})
 		} else {
-			results = append(results, CleanResult{
+			results = append(results, Result{
 				Name:    fmt.Sprintf("Issue #%d", issue.Number),
 				Success: true,
 				Message: fmt.Sprintf("Changed label from '%s' to '%s'", fromLabel, toLabel),
