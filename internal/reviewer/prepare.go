@@ -2,8 +2,6 @@ package reviewer
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"gopkg.in/yaml.v3"
 )
 
 // PrepareReviewOptions configures the prepare review operation
@@ -29,11 +28,10 @@ type ReviewContext struct {
 	IssueNumber        int    `json:"issue_number"`
 	PrincipalSessionID string `json:"principal_session_id"`
 	CIStatus           string `json:"ci_status"` // "passed" | "failed"
-	DiffHash           string `json:"diff_hash"`
-	DiffBytes          int64  `json:"diff_bytes"`
 	ReviewDir          string `json:"review_dir"`
 	WorktreePath       string `json:"worktree_path"`
-	Diff               string `json:"diff,omitempty"`
+	TestCommand        string `json:"test_command"`
+	Ticket             string `json:"ticket,omitempty"`    // Issue body with acceptance criteria
 	IssueJSON          string `json:"issue_json,omitempty"`
 	TaskContent        string `json:"task_content,omitempty"`
 	CommitsJSON        string `json:"commits_json,omitempty"`
@@ -75,28 +73,7 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 		return nil, fmt.Errorf("failed to create review directory: %w", err)
 	}
 
-	// 4. Fetch and save diff
-	diffPath := filepath.Join(rc.ReviewDir, "diff.patch")
-	diff, err := fetchPRDiff(ctx, opts.PRNumber, opts.GHTimeout)
-	if err != nil {
-		rc.DiffHash = "unavailable"
-		rc.DiffBytes = 0
-	} else {
-		// Write diff atomically
-		tmpPath := diffPath + ".tmp"
-		if err := os.WriteFile(tmpPath, []byte(diff), 0644); err == nil {
-			_ = os.Rename(tmpPath, diffPath)
-		}
-		rc.Diff = diff
-		rc.DiffBytes = int64(len(diff))
-		if len(diff) == 0 {
-			rc.DiffHash = "empty"
-		} else {
-			rc.DiffHash = sha256_16(diff)
-		}
-	}
-
-	// 5. Check worktree path
+	// 4. Check worktree path
 	wtPath := filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueNumber))
 	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
 		rc.WorktreePath = wtPath
@@ -104,17 +81,21 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 		rc.WorktreePath = "NOT_FOUND"
 	}
 
-	// 6. Fetch issue details
+	// 5. Fetch issue details (ticket with acceptance criteria)
 	rc.IssueJSON = fetchIssueJSON(ctx, opts.IssueNumber, opts.GHTimeout)
+	rc.Ticket = extractIssueBody(rc.IssueJSON)
 
-	// 7. Read task file
+	// 6. Read task file
 	taskPath := filepath.Join(opts.StateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", opts.IssueNumber), "prompt.txt")
 	if content, err := os.ReadFile(taskPath); err == nil {
 		rc.TaskContent = string(content)
 	}
 
-	// 8. Fetch commits
+	// 7. Fetch commits
 	rc.CommitsJSON = fetchPRCommits(ctx, opts.PRNumber, opts.GHTimeout)
+
+	// 8. Get test command from workflow.yaml
+	rc.TestCommand = getTestCommandFromConfig(opts.StateRoot, rc.WorktreePath)
 
 	return rc, nil
 }
@@ -147,17 +128,69 @@ func getCIStatus(ctx context.Context, prNumber int, timeout time.Duration) strin
 	return "passed"
 }
 
-// fetchPRDiff fetches the PR diff
-func fetchPRDiff(ctx context.Context, prNumber int, timeout time.Duration) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gh", "pr", "diff", fmt.Sprintf("%d", prNumber))
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch diff: %w", err)
+// extractIssueBody extracts the body from issue JSON
+func extractIssueBody(issueJSON string) string {
+	if issueJSON == "" || strings.HasPrefix(issueJSON, "ERROR:") {
+		return ""
 	}
-	return string(output), nil
+
+	var issue struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(issueJSON), &issue); err != nil {
+		return ""
+	}
+	return issue.Body
+}
+
+// workflowConfig represents the workflow.yaml structure for test command extraction
+type workflowConfig struct {
+	Repos []repoConfig `yaml:"repos"`
+}
+
+type repoConfig struct {
+	Name   string       `yaml:"name"`
+	Path   string       `yaml:"path"`
+	Verify verifyConfig `yaml:"verify"`
+}
+
+type verifyConfig struct {
+	Test string `yaml:"test"`
+}
+
+// getTestCommandFromConfig extracts test command from workflow.yaml
+func getTestCommandFromConfig(stateRoot, worktreePath string) string {
+	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return "go test -v ./..."
+	}
+
+	var cfg workflowConfig
+	if err := yaml.Unmarshal(content, &cfg); err != nil {
+		return "go test -v ./..."
+	}
+
+	// Try to match repo based on worktree path or return first repo's test command
+	for _, repo := range cfg.Repos {
+		if repo.Verify.Test != "" {
+			// If worktree contains repo path, use this repo's test command
+			if worktreePath != "" && worktreePath != "NOT_FOUND" {
+				if strings.Contains(worktreePath, repo.Path) || strings.Contains(worktreePath, repo.Name) {
+					return repo.Verify.Test
+				}
+			}
+		}
+	}
+
+	// Return first repo's test command if available
+	for _, repo := range cfg.Repos {
+		if repo.Verify.Test != "" {
+			return repo.Verify.Test
+		}
+	}
+
+	return "go test -v ./..."
 }
 
 // fetchIssueJSON fetches issue details as JSON
@@ -188,11 +221,6 @@ func fetchPRCommits(ctx context.Context, prNumber int, timeout time.Duration) st
 	return string(output)
 }
 
-// sha256_16 returns the first 16 characters of the SHA256 hash
-func sha256_16(data string) string {
-	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])[:16]
-}
 
 // FormatOutput generates the standardized output format
 func (rc *ReviewContext) FormatOutput() string {
@@ -206,15 +234,17 @@ func (rc *ReviewContext) FormatOutput() string {
 	sb.WriteString(fmt.Sprintf("ISSUE_NUMBER: %d\n", rc.IssueNumber))
 	sb.WriteString(fmt.Sprintf("PRINCIPAL_SESSION_ID: %s\n", rc.PrincipalSessionID))
 	sb.WriteString(fmt.Sprintf("CI_STATUS: %s\n", rc.CIStatus))
-	sb.WriteString(fmt.Sprintf("DIFF_HASH: %s\n", rc.DiffHash))
-	sb.WriteString(fmt.Sprintf("DIFF_BYTES: %d\n", rc.DiffBytes))
-	sb.WriteString(fmt.Sprintf("REVIEW_DIR: %s\n", rc.ReviewDir))
 	sb.WriteString(fmt.Sprintf("WORKTREE_PATH: %s\n", rc.WorktreePath))
+	sb.WriteString(fmt.Sprintf("TEST_COMMAND: %s\n", rc.TestCommand))
 	sb.WriteString("============================================================\n\n")
 
-	// Issue content
-	sb.WriteString(fmt.Sprintf("## TICKET REQUIREMENTS (Issue #%d)\n\n", rc.IssueNumber))
-	sb.WriteString(rc.IssueJSON)
+	// Ticket with acceptance criteria
+	sb.WriteString(fmt.Sprintf("## TICKET (Issue #%d)\n\n", rc.IssueNumber))
+	if rc.Ticket != "" {
+		sb.WriteString(rc.Ticket)
+	} else {
+		sb.WriteString(rc.IssueJSON)
+	}
 	sb.WriteString("\n\n")
 
 	// Task file
@@ -223,17 +253,6 @@ func (rc *ReviewContext) FormatOutput() string {
 		sb.WriteString(rc.TaskContent)
 		sb.WriteString("\n\n")
 	}
-
-	// PR Diff
-	sb.WriteString("============================================================\n")
-	sb.WriteString("## PR DIFF\n")
-	sb.WriteString("============================================================\n\n")
-	if rc.Diff != "" {
-		sb.WriteString(rc.Diff)
-	} else {
-		sb.WriteString("ERROR: Diff not available\n")
-	}
-	sb.WriteString("\n")
 
 	// PR Commits
 	sb.WriteString("============================================================\n")

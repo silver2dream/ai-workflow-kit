@@ -24,9 +24,32 @@ awkit analyze-next --json
 | `create_task` | **Read** `tasks/create-task.md`，使用 `spec_name` 和 `task_line` 執行 Issue 創建 |
 | `dispatch_worker` | 執行 `awkit dispatch-worker --issue <issue_number>` ⚠️ **同步等待** |
 | `check_result` | 執行 `awkit check-result --issue <issue_number>` |
-| `review_pr` | 使用 **Task tool** 調用 `pr-reviewer` subagent，傳入 `pr_number` 和 `issue_number` |
+| `review_pr` | 調用 `pr-reviewer` subagent（見下方詳細說明） |
 | `all_complete` | 執行 `awkit stop-workflow all_tasks_complete` 然後結束 |
 | `none` | 執行 `awkit stop-workflow <exit_reason>` 然後結束 |
+
+### ⚠️ CRITICAL: review_pr 必須使用 Subagent
+
+當 `next_action` 為 `review_pr` 時，**必須使用 Task tool 調用 pr-reviewer subagent**。
+
+**禁止**直接執行 `awkit prepare-review` 或 `awkit submit-review`。
+**禁止**自己執行 PR 審查流程。
+
+使用 Task tool 調用 subagent：
+
+```
+使用 Task tool：
+- subagent_type: "pr-reviewer"
+- prompt: "審查 PR #<pr_number>，Issue #<issue_number>"
+```
+
+Subagent 會獨立執行審查流程並返回結果：
+- `merged`: PR 已合併
+- `changes_requested`: 審查不通過
+- `review_blocked`: Evidence 驗證失敗
+- `merge_failed`: 合併失敗（如 conflict）
+
+**收到結果後，直接回到 Step 1**，不要嘗試修正或重試。
 
 ### check_result 狀態說明
 

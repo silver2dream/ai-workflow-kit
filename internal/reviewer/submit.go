@@ -17,13 +17,17 @@ import (
 
 // SubmitReviewOptions configures the submit review operation
 type SubmitReviewOptions struct {
-	PRNumber    int
-	IssueNumber int
-	Score       int    // 1-10
-	CIStatus    string // "passed" | "failed"
-	ReviewBody  string
-	StateRoot   string
-	GHTimeout   time.Duration
+	PRNumber     int
+	IssueNumber  int
+	Score        int    // 1-10
+	CIStatus     string // "passed" | "failed"
+	ReviewBody   string
+	StateRoot    string
+	WorktreePath string        // Path to worktree for test execution
+	TestCommand  string        // Command to run tests
+	Ticket       string        // Issue body with acceptance criteria
+	GHTimeout    time.Duration
+	TestTimeout  time.Duration
 }
 
 // SubmitReviewResult holds the result of submitting a review
@@ -40,6 +44,9 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewR
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 60 * time.Second
 	}
+	if opts.TestTimeout == 0 {
+		opts.TestTimeout = 5 * time.Minute
+	}
 
 	// Get session ID
 	sessionMgr := session.NewManager(opts.StateRoot)
@@ -54,34 +61,57 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewR
 		return nil, fmt.Errorf("failed to create review directory: %w", err)
 	}
 
-	// Fetch diff
-	diffPath := filepath.Join(reviewDir, "diff.patch")
-	diff, err := fetchPRDiff(ctx, opts.PRNumber, opts.GHTimeout)
-	if err != nil {
-		diff = ""
-	} else {
-		_ = os.WriteFile(diffPath, []byte(diff), 0644)
-	}
-
-	diffHash := "unavailable"
-	diffBytes := "0"
-	if diff != "" {
-		diffHash = sha256_16(diff)
-		diffBytes = strconv.Itoa(len(diff))
-	}
-
 	// Save review body
 	reviewMDPath := filepath.Join(reviewDir, "review.md")
 	_ = os.WriteFile(reviewMDPath, []byte(opts.ReviewBody), 0644)
 
-	// Verify evidence
-	evidence := ParseEvidence(opts.ReviewBody)
-	evidenceCount := len(evidence)
-	minEvidence := GetMinEvidence()
-
-	if err := VerifyEvidence(diff, evidence, minEvidence); err != nil {
-		return handleEvidenceFailure(ctx, opts, sessionID, diffHash, err)
+	// Fetch ticket if not provided
+	if opts.Ticket == "" {
+		ticket, err := fetchIssueBody(ctx, opts.IssueNumber, opts.GHTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch ticket: %w", err)
+		}
+		opts.Ticket = ticket
 	}
+
+	// Get worktree path if not provided
+	if opts.WorktreePath == "" {
+		opts.WorktreePath = filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueNumber))
+	}
+
+	// Get test command if not provided
+	if opts.TestCommand == "" {
+		opts.TestCommand = getTestCommand(opts.StateRoot, opts.IssueNumber)
+	}
+
+	// Verify evidence using new test-based verification
+	fmt.Printf("[REVIEW] Starting verification...\n")
+	fmt.Printf("[REVIEW] Worktree: %s\n", opts.WorktreePath)
+	fmt.Printf("[REVIEW] Test Command: %s\n", opts.TestCommand)
+
+	verifyErr := VerifyTestEvidence(ctx, VerifyOptions{
+		Ticket:       opts.Ticket,
+		ReviewBody:   opts.ReviewBody,
+		WorktreePath: opts.WorktreePath,
+		TestCommand:  opts.TestCommand,
+		TestTimeout:  opts.TestTimeout,
+	})
+
+	if verifyErr != nil {
+		fmt.Printf("[REVIEW] ❌ Verification failed: %s\n", verifyErr.Message)
+		if verifyErr.Details != nil {
+			for _, d := range verifyErr.Details {
+				fmt.Printf("[REVIEW]   - %s\n", d)
+			}
+		}
+		return handleVerificationFailure(ctx, opts, sessionID, verifyErr)
+	}
+
+	fmt.Printf("[REVIEW] ✅ All verifications passed\n")
+
+	// Count criteria for reporting
+	criteria := ParseAcceptanceCriteria(opts.Ticket)
+	criteriaCount := len(criteria)
 
 	// Post AWK Review Comment
 	timestamp := time.Now().UTC().Format(time.RFC3339)
@@ -93,12 +123,12 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewR
 | Reviewer Session | `+"`%s`"+` |
 | Review Timestamp | %s |
 | CI Status | %s |
-| Diff Hash | `+"`%s`"+` |
-| Diff Bytes | `+"`%s`"+` |
-| Evidence Lines | `+"`%d`"+` |
+| Criteria Verified | %d |
+| Tests Executed | ✅ Passed |
+| Assertions Verified | ✅ Found |
 | Score | %d/10 |
 
-%s`, sessionID, sessionID, timestamp, opts.CIStatus, diffHash, diffBytes, evidenceCount, opts.Score, opts.ReviewBody)
+%s`, sessionID, sessionID, timestamp, opts.CIStatus, criteriaCount, opts.Score, opts.ReviewBody)
 
 	postPRComment(ctx, opts.PRNumber, commentBody, opts.GHTimeout)
 
@@ -155,29 +185,38 @@ PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout)
 	return &SubmitReviewResult{Result: "changes_requested"}, nil
 }
 
-func handleEvidenceFailure(ctx context.Context, opts SubmitReviewOptions, sessionID, diffHash string, err *EvidenceError) (*SubmitReviewResult, error) {
+func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, sessionID string, err *EvidenceError) (*SubmitReviewResult, error) {
 	editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout)
 
-	var missingDetails string
-	if err.Missing != nil {
-		missingDetails = "\n```\n"
-		for _, m := range err.Missing {
-			missingDetails += "- " + m + "\n"
+	var details string
+	if err.Details != nil {
+		details = "\n```\n"
+		for _, d := range err.Details {
+			details += "- " + d + "\n"
 		}
-		missingDetails += "```\n"
+		details += "```\n"
+	}
+
+	failureType := "verification"
+	switch err.Code {
+	case 1:
+		failureType = "criteria/mapping"
+	case 2:
+		failureType = "test execution"
+	case 3:
+		failureType = "assertion"
 	}
 
 	postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
 
-審查 evidence 驗證失敗。
+審查驗證失敗（%s）。
 
 PR: #%d
-Diff Hash: `+"`%s`"+`
 
 錯誤: %s
 %s
 已標記 review-failed。下一個 session 的 subagent 將重新審查。
-**當前 session 不應重試。**`, opts.PRNumber, diffHash, err.Message, missingDetails), opts.GHTimeout)
+**當前 session 不應重試。**`, failureType, opts.PRNumber, err.Message, details), opts.GHTimeout)
 
 	return &SubmitReviewResult{Result: "review_blocked", Reason: err.Message}, nil
 }
@@ -206,6 +245,59 @@ mergeStateStatus: `+"`%s`"+`
 下一步建議：%s`, opts.PRNumber, mergeState, nextStep), opts.GHTimeout)
 
 	return &SubmitReviewResult{Result: "merge_failed", Reason: mergeState}, nil
+}
+
+// fetchIssueBody fetches the issue body from GitHub
+func fetchIssueBody(ctx context.Context, issueNumber int, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "issue", "view", strconv.Itoa(issueNumber), "--json", "body", "--jq", ".body")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// getTestCommand determines the test command based on config and repo
+func getTestCommand(stateRoot string, issueNumber int) string {
+	// Try to get from result file (has repo info)
+	resultFile := filepath.Join(stateRoot, ".ai", "results", fmt.Sprintf("issue-%d.json", issueNumber))
+	if data, err := os.ReadFile(resultFile); err == nil {
+		var result struct {
+			Repo string `json:"repo"`
+		}
+		if json.Unmarshal(data, &result) == nil && result.Repo != "" {
+			// Try to get test command from workflow.yaml
+			configFile := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
+			if configData, err := os.ReadFile(configFile); err == nil {
+				// Simple parsing - look for test_command under the repo
+				lines := strings.Split(string(configData), "\n")
+				inRepo := false
+				for _, line := range lines {
+					if strings.Contains(line, "name:") && strings.Contains(line, result.Repo) {
+						inRepo = true
+					} else if inRepo && strings.Contains(line, "test_command:") {
+						parts := strings.SplitN(line, ":", 2)
+						if len(parts) == 2 {
+							cmd := strings.TrimSpace(parts[1])
+							cmd = strings.Trim(cmd, `"'`)
+							if cmd != "" {
+								return cmd
+							}
+						}
+					} else if inRepo && strings.HasPrefix(strings.TrimSpace(line), "- name:") {
+						// Moved to next repo
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Default to Go test command
+	return "go test -v ./..."
 }
 
 // GitHub helper functions

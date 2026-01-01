@@ -5,38 +5,17 @@ import (
 	"testing"
 )
 
-func TestSha256_16(t *testing.T) {
-	result := sha256_16("test data")
-
-	if len(result) != 16 {
-		t.Errorf("sha256_16() length = %d, want 16", len(result))
-	}
-
-	// Same input should produce same output
-	result2 := sha256_16("test data")
-	if result != result2 {
-		t.Error("sha256_16() should be deterministic")
-	}
-
-	// Different input should produce different output
-	result3 := sha256_16("different data")
-	if result == result3 {
-		t.Error("sha256_16() should produce different hashes for different inputs")
-	}
-}
-
 func TestReviewContextFormatOutput(t *testing.T) {
 	rc := &ReviewContext{
 		PRNumber:           123,
 		IssueNumber:        456,
 		PrincipalSessionID: "principal-test-123",
 		CIStatus:           "passed",
-		DiffHash:           "abc123",
-		DiffBytes:          1000,
 		ReviewDir:          "/path/to/review",
 		WorktreePath:       "/path/to/worktree",
-		Diff:               "diff content here",
-		IssueJSON:          `{"title": "Test Issue"}`,
+		TestCommand:        "go test -v ./...",
+		Ticket:             "## Acceptance Criteria\n- [ ] Feature works",
+		IssueJSON:          `{"title": "Test Issue", "body": "ticket body"}`,
 		CommitsJSON:        "- abc1234 Test commit",
 	}
 
@@ -67,9 +46,19 @@ func TestReviewContextFormatOutput(t *testing.T) {
 		t.Error("output should contain CI status")
 	}
 
-	// Check diff
-	if !strings.Contains(output, "diff content here") {
-		t.Error("output should contain diff")
+	// Check worktree path
+	if !strings.Contains(output, "WORKTREE_PATH: /path/to/worktree") {
+		t.Error("output should contain worktree path")
+	}
+
+	// Check test command
+	if !strings.Contains(output, "TEST_COMMAND: go test -v ./...") {
+		t.Error("output should contain test command")
+	}
+
+	// Check ticket is included
+	if !strings.Contains(output, "Feature works") {
+		t.Error("output should contain ticket content")
 	}
 }
 
@@ -78,6 +67,7 @@ func TestReviewContextToJSON(t *testing.T) {
 		PRNumber:    123,
 		IssueNumber: 456,
 		CIStatus:    "passed",
+		TestCommand: "go test ./...",
 	}
 
 	jsonStr, err := rc.ToJSON()
@@ -92,18 +82,83 @@ func TestReviewContextToJSON(t *testing.T) {
 	if !strings.Contains(jsonStr, `"ci_status": "passed"`) {
 		t.Error("JSON should contain ci_status")
 	}
+
+	if !strings.Contains(jsonStr, `"test_command": "go test ./..."`) {
+		t.Error("JSON should contain test_command")
+	}
 }
 
-func TestReviewContextFormatOutputWithMissingDiff(t *testing.T) {
+func TestReviewContextFormatOutputWithTicket(t *testing.T) {
 	rc := &ReviewContext{
 		PRNumber:    123,
 		IssueNumber: 456,
-		Diff:        "",
+		Ticket:      "This is the ticket body with acceptance criteria",
+		IssueJSON:   `{"title": "Test", "body": "fallback"}`,
 	}
 
 	output := rc.FormatOutput()
 
-	if !strings.Contains(output, "ERROR: Diff not available") {
-		t.Error("output should indicate diff not available when empty")
+	// When Ticket is set, it should be used instead of IssueJSON
+	if !strings.Contains(output, "This is the ticket body") {
+		t.Error("output should contain ticket body when set")
+	}
+}
+
+func TestReviewContextFormatOutputFallbackToIssueJSON(t *testing.T) {
+	rc := &ReviewContext{
+		PRNumber:    123,
+		IssueNumber: 456,
+		Ticket:      "",
+		IssueJSON:   `{"title": "Test", "body": "fallback body"}`,
+	}
+
+	output := rc.FormatOutput()
+
+	// When Ticket is empty, it should fall back to IssueJSON
+	if !strings.Contains(output, "fallback body") {
+		t.Error("output should contain IssueJSON when Ticket is empty")
+	}
+}
+
+func TestExtractIssueBody(t *testing.T) {
+	tests := []struct {
+		name      string
+		issueJSON string
+		want      string
+	}{
+		{
+			name:      "valid JSON",
+			issueJSON: `{"title": "Test", "body": "The issue body content"}`,
+			want:      "The issue body content",
+		},
+		{
+			name:      "empty body",
+			issueJSON: `{"title": "Test", "body": ""}`,
+			want:      "",
+		},
+		{
+			name:      "invalid JSON",
+			issueJSON: "not json",
+			want:      "",
+		},
+		{
+			name:      "error message",
+			issueJSON: "ERROR: Cannot fetch issue",
+			want:      "",
+		},
+		{
+			name:      "empty string",
+			issueJSON: "",
+			want:      "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractIssueBody(tt.issueJSON)
+			if got != tt.want {
+				t.Errorf("extractIssueBody() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
