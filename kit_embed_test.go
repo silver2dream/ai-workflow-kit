@@ -16,27 +16,15 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 		".ai/config/execution_trace.schema.json",
 		".ai/config/failure_patterns.json",
 
-		// Core scripts - migrated to Go (awkit commands)
-		// Shell scripts: generate.sh, kickoff.sh, stats.sh, analyze_next.sh,
-		//                dispatch_worker.sh, check_result.sh, stop_work.sh,
-		//                audit_project.sh, scan_repo.sh, evaluate.sh, cleanup.sh,
-		//                rollback.sh, analyze_failure.sh, write_result.sh
-		// Python scripts: validate_config.py, create_task.py, audit_project.py,
-		//                 scan_repo.py, parse_tasks.py, query_traces.py
-		// Python lib: __init__.py, errors.py, logger.py, run_with_timeout.py
-		// Shell lib: timeout.sh, hash.sh
-		// All above scripts moved to .ai/scripts/_deprecated/
-
 		// Rules
 		".ai/rules/_kit/git-workflow.md",
 
-		// Docs
-		".ai/docs/evaluate.md",
+		// Skills
+		".ai/skills/principal-workflow/SKILL.md",
+		".ai/skills/principal-workflow/phases/main-loop.md",
 
-		// Tests
-		".ai/tests/run_all_tests.sh",
-		".ai/tests/conftest.py",
-		".ai/tests/pytest.ini",
+		// Subagents
+		".claude/agents/pr-reviewer.md",
 	}
 
 	for _, path := range requiredFiles {
@@ -54,15 +42,13 @@ func TestKitFSContainsRequiredDirectories(t *testing.T) {
 		".ai/templates",
 		".ai/rules/_kit",
 		".ai/rules/_examples",
-		".ai/docs",
-		".ai/tests",
-		".ai/tests/fixtures",
-		".ai/tests/unit",
-		// Skills (source of truth in .ai/skills/, symlinked to .claude/skills/)
+		// Skills
 		".ai/skills/principal-workflow",
 		".ai/skills/principal-workflow/phases",
 		".ai/skills/principal-workflow/tasks",
 		".ai/skills/principal-workflow/references",
+		// Subagents
+		".claude/agents",
 	}
 
 	for _, dir := range requiredDirs {

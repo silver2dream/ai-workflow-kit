@@ -28,6 +28,7 @@ const (
 const (
 	ReasonWorkerFailed             = "worker_failed"
 	ReasonNeedsHumanReview         = "needs_human_review"
+	ReasonReviewMaxRetries         = "review_max_retries"
 	ReasonMaxLoopReached           = "max_loop_reached"
 	ReasonMaxConsecutiveFailures   = "max_consecutive_failures"
 	ReasonNoActionableTasks        = "no_actionable_tasks"

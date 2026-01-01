@@ -15,6 +15,7 @@ import (
 const (
 	MaxLoop                = 1000
 	MaxConsecutiveFailures = 5
+	MaxReviewAttempts      = 2
 )
 
 // Analyzer implements workflow decision logic
@@ -97,6 +98,37 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}
 		// Can't extract PR number, remove pr-ready label
 		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.PRReady)
+	}
+
+	// Step 2.3: Check review-failed issues (retry with new subagent)
+	reviewFailedIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.ReviewFailed)
+	if err == nil && len(reviewFailedIssues) > 0 {
+		issue := reviewFailedIssues[0]
+		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+
+		if prNumber > 0 {
+			attempts := a.getReviewAttempts(prNumber)
+			if attempts < MaxReviewAttempts {
+				// Allow new subagent to retry
+				_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
+				_ = a.GHClient.AddLabel(ctx, issue.Number, labels.PRReady)
+				a.incrementReviewAttempts(prNumber)
+				return &Decision{
+					NextAction:  ActionReviewPR,
+					IssueNumber: issue.Number,
+					PRNumber:    prNumber,
+				}, nil
+			}
+			// Max retries exceeded, escalate to human
+			_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
+			_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+			return &Decision{
+				NextAction:  ActionNone,
+				IssueNumber: issue.Number,
+				PRNumber:    prNumber,
+				ExitReason:  ReasonReviewMaxRetries,
+			}, nil
+		}
 	}
 
 	// Step 2.5: Check for blocking labels
@@ -271,4 +303,25 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 	}
 
 	return nil
+}
+
+// getReviewAttempts returns the number of review attempts for a PR
+func (a *Analyzer) getReviewAttempts(prNumber int) int {
+	attemptFile := filepath.Join(a.StateRoot, ".ai", "state", "attempts", "review-pr-"+strconv.Itoa(prNumber))
+	data, err := os.ReadFile(attemptFile)
+	if err != nil {
+		return 0
+	}
+	count, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	return count
+}
+
+// incrementReviewAttempts increments the review attempt count for a PR
+func (a *Analyzer) incrementReviewAttempts(prNumber int) {
+	attemptDir := filepath.Join(a.StateRoot, ".ai", "state", "attempts")
+	_ = os.MkdirAll(attemptDir, 0755)
+	attemptFile := filepath.Join(attemptDir, "review-pr-"+strconv.Itoa(prNumber))
+
+	count := a.getReviewAttempts(prNumber) + 1
+	_ = os.WriteFile(attemptFile, []byte(strconv.Itoa(count)), 0644)
 }
