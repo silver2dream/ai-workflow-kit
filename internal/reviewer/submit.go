@@ -225,26 +225,44 @@ func handleMergeFailure(ctx context.Context, opts SubmitReviewOptions, sessionID
 	// Get merge state status
 	mergeState := getMergeStateStatus(ctx, opts.PRNumber, opts.GHTimeout)
 
-	nextStep := "請到 PR 頁面查看 merge 錯誤原因。"
+	var label, result, message string
+
 	switch mergeState {
 	case "DIRTY":
-		nextStep = "PR 有 merge conflict，請解決衝突後 push 重新嘗試合併。"
+		label = "merge-conflict"
+		result = "conflict_needs_fix"
+		message = fmt.Sprintf(`## AWK Review: Merge Conflict
+
+PR: #%d
+mergeStateStatus: `+"`DIRTY`"+`
+
+PR 有 merge conflict。Worker 將自動解決衝突後重新提交。`, opts.PRNumber)
+
 	case "BEHIND":
-		nextStep = "PR 分支落後 base branch，請 rebase/merge base branch 後 push 重新嘗試合併。"
-	case "BLOCKED":
-		nextStep = "PR 被保護規則擋住（checks/reviews），請確認 required checks/reviews 後再合併。"
-	}
+		label = "needs-rebase"
+		result = "behind_needs_rebase"
+		message = fmt.Sprintf(`## AWK Review: Branch Behind
 
-	editIssueLabels(ctx, opts.IssueNumber, []string{"needs-human-review"}, []string{"pr-ready"}, opts.GHTimeout)
+PR: #%d
+mergeStateStatus: `+"`BEHIND`"+`
 
-	postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review: 合併失敗（需要人工介入）
+PR 分支落後 base branch。Worker 將自動 rebase 後重新提交。`, opts.PRNumber)
+
+	default: // BLOCKED or other
+		label = "needs-human-review"
+		result = "merge_blocked"
+		message = fmt.Sprintf(`## AWK Review: 合併失敗（需要人工介入）
 
 PR: #%d
 mergeStateStatus: `+"`%s`"+`
 
-下一步建議：%s`, opts.PRNumber, mergeState, nextStep), opts.GHTimeout)
+PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumber, mergeState)
+	}
 
-	return &SubmitReviewResult{Result: "merge_failed", Reason: mergeState}, nil
+	editIssueLabels(ctx, opts.IssueNumber, []string{label}, []string{"pr-ready"}, opts.GHTimeout)
+	postIssueComment(ctx, opts.IssueNumber, message, opts.GHTimeout)
+
+	return &SubmitReviewResult{Result: result, Reason: mergeState}, nil
 }
 
 // fetchIssueBody fetches the issue body from GitHub

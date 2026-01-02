@@ -20,6 +20,7 @@ type DispatchOptions struct {
 	GHTimeout          time.Duration // GitHub API timeout (default: 30s)
 	WorkerTimeout      time.Duration // Worker execution timeout (default: 60m)
 	MaxRetries         int           // Max retry count (default: 3)
+	MergeIssue         string        // "conflict" or "rebase" - indicates Worker needs to fix merge issues
 }
 
 // DispatchOutput is the output for bash eval compatibility
@@ -112,7 +113,49 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 
 	// Step 3: Prepare ticket file
 	logger.Log("準備 ticket 文件...")
-	ticketPath, err := SaveTicketFile(opts.StateRoot, opts.IssueNumber, issue.Body)
+	ticketBody := issue.Body
+
+	// Append merge issue instructions if needed
+	if opts.MergeIssue != "" {
+		var instruction string
+		switch opts.MergeIssue {
+		case "conflict":
+			instruction = `
+
+---
+
+## ⚠️ MERGE CONFLICT - 請先解決
+
+PR 有 merge conflict，請執行以下步驟：
+
+1. 在 worktree 中執行 ` + "`git fetch origin && git rebase origin/<base-branch>`" + `
+2. 解決衝突後 ` + "`git add . && git rebase --continue`" + `
+3. 推送更新 ` + "`git push --force-with-lease`" + `
+4. 確認 CI 通過
+
+**這是最優先的任務，必須先完成才能繼續其他工作。**`
+		case "rebase":
+			instruction = `
+
+---
+
+## ⚠️ BRANCH BEHIND - 請先 Rebase
+
+PR 分支落後 base branch，請執行以下步驟：
+
+1. 在 worktree 中執行 ` + "`git fetch origin && git rebase origin/<base-branch>`" + `
+2. 推送更新 ` + "`git push --force-with-lease`" + `
+3. 確認 CI 通過
+
+**這是最優先的任務，必須先完成才能繼續其他工作。**`
+		}
+		if instruction != "" {
+			ticketBody += instruction
+			logger.Log("附加 merge issue 指示: %s", opts.MergeIssue)
+		}
+	}
+
+	ticketPath, err := SaveTicketFile(opts.StateRoot, opts.IssueNumber, ticketBody)
 	if err != nil {
 		logger.Log("✗ 無法保存 ticket 文件: %v", err)
 		return &DispatchOutput{
