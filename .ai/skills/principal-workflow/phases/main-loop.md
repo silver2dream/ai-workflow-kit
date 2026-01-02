@@ -23,11 +23,29 @@ awkit analyze-next --json
 |-------------|------|
 | `generate_tasks` | **Read** `tasks/generate-tasks.md`，執行任務生成 |
 | `create_task` | **Read** `tasks/create-task.md`，使用 `spec_name` 和 `task_line` 執行 Issue 創建 |
-| `dispatch_worker` | 執行 `awkit dispatch-worker --issue <issue_number> [--merge-issue <merge_issue>]` ⚠️ **同步等待** |
+| `dispatch_worker` | 執行 dispatch（見下方詳細說明）⚠️ **同步等待** |
 | `check_result` | 執行 `awkit check-result --issue <issue_number>` |
 | `review_pr` | 調用 `pr-reviewer` subagent（見下方詳細說明） |
 | `all_complete` | 執行 `awkit stop-workflow all_tasks_complete` 然後結束 |
 | `none` | 執行 `awkit stop-workflow <exit_reason>` 然後結束 |
+
+### ⚠️ CRITICAL: dispatch_worker 命令格式
+
+當 `next_action` 為 `dispatch_worker` 時，檢查 JSON 中的 `merge_issue` 欄位：
+
+**如果 `merge_issue` 有值（`conflict` 或 `rebase`）**：
+```bash
+awkit dispatch-worker --issue <issue_number> --merge-issue <merge_issue>
+```
+
+**如果 `merge_issue` 為空或不存在**：
+```bash
+awkit dispatch-worker --issue <issue_number>
+```
+
+範例：
+- JSON: `{"next_action": "dispatch_worker", "issue_number": 27, "merge_issue": "conflict"}`
+- 命令: `awkit dispatch-worker --issue 27 --merge-issue conflict`
 
 ### ⚠️ CRITICAL: review_pr 必須使用 Subagent
 
