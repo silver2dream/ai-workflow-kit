@@ -28,6 +28,7 @@ Output Variables (bash):
   SPEC_NAME       Spec name (if applicable)
   TASK_LINE       Task line number (if applicable)
   EXIT_REASON     Reason for none action
+  MERGE_ISSUE     conflict | rebase (when dispatch_worker needs to fix merge issues)
 
 Examples:
   awkit analyze-next
