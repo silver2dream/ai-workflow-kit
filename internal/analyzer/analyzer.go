@@ -131,7 +131,37 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}
 	}
 
-	// Step 2.5: Check for blocking labels
+	// Step 2.5: Check merge-conflict label (Worker needs to fix conflict)
+	conflictIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.MergeConflict)
+	if err == nil && len(conflictIssues) > 0 {
+		issue := conflictIssues[0]
+		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+		// Remove merge-conflict label, dispatch Worker to fix
+		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.MergeConflict)
+		return &Decision{
+			NextAction:  ActionDispatchWorker,
+			IssueNumber: issue.Number,
+			PRNumber:    prNumber,
+			MergeIssue:  MergeIssueConflict,
+		}, nil
+	}
+
+	// Step 2.6: Check needs-rebase label (Worker needs to rebase)
+	rebaseIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.NeedsRebase)
+	if err == nil && len(rebaseIssues) > 0 {
+		issue := rebaseIssues[0]
+		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+		// Remove needs-rebase label, dispatch Worker to rebase
+		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.NeedsRebase)
+		return &Decision{
+			NextAction:  ActionDispatchWorker,
+			IssueNumber: issue.Number,
+			PRNumber:    prNumber,
+			MergeIssue:  MergeIssueRebase,
+		}, nil
+	}
+
+	// Step 2.7: Check for blocking labels
 	workerFailedIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.WorkerFailed)
 	if err == nil && len(workerFailedIssues) > 0 {
 		return &Decision{

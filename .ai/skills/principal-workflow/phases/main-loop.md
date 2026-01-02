@@ -11,6 +11,7 @@ awkit analyze-next --json
 輸出 JSON 包含：
 - `next_action`: generate_tasks | create_task | dispatch_worker | check_result | review_pr | all_complete | none
 - `issue_number`, `pr_number`, `spec_name`, `task_line`, `exit_reason`
+- `merge_issue`: conflict | rebase（當 Worker 需要處理 merge 問題時）
 
 **重要**：解析 JSON 輸出，記住這些值用於後續步驟。
 
@@ -22,7 +23,7 @@ awkit analyze-next --json
 |-------------|------|
 | `generate_tasks` | **Read** `tasks/generate-tasks.md`，執行任務生成 |
 | `create_task` | **Read** `tasks/create-task.md`，使用 `spec_name` 和 `task_line` 執行 Issue 創建 |
-| `dispatch_worker` | 執行 `awkit dispatch-worker --issue <issue_number>` ⚠️ **同步等待** |
+| `dispatch_worker` | 執行 `awkit dispatch-worker --issue <issue_number> [--merge-issue <merge_issue>]` ⚠️ **同步等待** |
 | `check_result` | 執行 `awkit check-result --issue <issue_number>` |
 | `review_pr` | 調用 `pr-reviewer` subagent（見下方詳細說明） |
 | `all_complete` | 執行 `awkit stop-workflow all_tasks_complete` 然後結束 |

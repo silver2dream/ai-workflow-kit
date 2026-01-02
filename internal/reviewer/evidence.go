@@ -314,9 +314,10 @@ func parseTestReviewTable(body string) []testMapping {
 
 func extractSection(body, sectionName string) string {
 	// Find section by header
+	// Use \n###\s or \n### followed by space to avoid matching #### (4 hashes)
 	patterns := []string{
-		fmt.Sprintf(`(?s)###\s*%s\s*\n(.+?)(?:\n###|\n---|\z)`, regexp.QuoteMeta(sectionName)),
-		fmt.Sprintf(`(?s)##\s*%s\s*\n(.+?)(?:\n##|\n---|\z)`, regexp.QuoteMeta(sectionName)),
+		fmt.Sprintf(`(?s)###\s*%s\s*\n(.+?)(?:\n###\s|\n---|\z)`, regexp.QuoteMeta(sectionName)),
+		fmt.Sprintf(`(?s)##\s*%s\s*\n(.+?)(?:\n##\s|\n---|\z)`, regexp.QuoteMeta(sectionName)),
 	}
 
 	for _, pattern := range patterns {

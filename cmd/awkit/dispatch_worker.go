@@ -23,6 +23,7 @@ Options:
   --gh-timeout       Optional: GitHub API timeout (default: 30s)
   --worker-timeout   Optional: Worker execution timeout (default: 60m)
   --max-retries      Optional: Max retry count (default: 3)
+  --merge-issue      Optional: Merge issue type (conflict | rebase)
   --json             Optional: Output as JSON instead of bash vars
   --help             Show this help
 
@@ -36,12 +37,14 @@ Status values:
 
 Examples:
   awkit dispatch-worker --issue 25
+  awkit dispatch-worker --issue 25 --merge-issue conflict
   awkit dispatch-worker --issue 25 --json
   eval "$(awkit dispatch-worker --issue 25)"
 
 Notes:
   - This command runs the worker synchronously and waits for completion
   - Use --worker-timeout to limit execution time
+  - Use --merge-issue to indicate Worker needs to fix merge issues
   - Cleanup is performed automatically on signal (SIGINT, SIGTERM)
 `)
 }
@@ -57,6 +60,7 @@ func cmdDispatchWorker(args []string) int {
 	ghTimeout := fs.Duration("gh-timeout", 30*time.Second, "")
 	workerTimeout := fs.Duration("worker-timeout", 60*time.Minute, "")
 	maxRetries := fs.Int("max-retries", 3, "")
+	mergeIssue := fs.String("merge-issue", "", "")
 	jsonOutput := fs.Bool("json", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
@@ -106,6 +110,7 @@ func cmdDispatchWorker(args []string) int {
 		GHTimeout:          *ghTimeout,
 		WorkerTimeout:      *workerTimeout,
 		MaxRetries:         *maxRetries,
+		MergeIssue:         *mergeIssue,
 	}
 
 	result, err := worker.DispatchWorker(ctx, opts)

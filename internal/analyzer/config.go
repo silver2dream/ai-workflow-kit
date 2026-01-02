@@ -32,6 +32,8 @@ type LabelsConfig struct {
 	WorkerFailed     string `yaml:"worker_failed"`
 	NeedsHumanReview string `yaml:"needs_human_review"`
 	ReviewFailed     string `yaml:"review_failed"`
+	MergeConflict    string `yaml:"merge_conflict"`
+	NeedsRebase      string `yaml:"needs_rebase"`
 }
 
 // DefaultLabels returns default label names
@@ -43,6 +45,8 @@ func DefaultLabels() LabelsConfig {
 		WorkerFailed:     "worker-failed",
 		NeedsHumanReview: "needs-human-review",
 		ReviewFailed:     "review-failed",
+		MergeConflict:    "merge-conflict",
+		NeedsRebase:      "needs-rebase",
 	}
 }
 
@@ -79,6 +83,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.GitHub.Labels.ReviewFailed == "" {
 		cfg.GitHub.Labels.ReviewFailed = "review-failed"
+	}
+	if cfg.GitHub.Labels.MergeConflict == "" {
+		cfg.GitHub.Labels.MergeConflict = "merge-conflict"
+	}
+	if cfg.GitHub.Labels.NeedsRebase == "" {
+		cfg.GitHub.Labels.NeedsRebase = "needs-rebase"
 	}
 
 	return &cfg, nil

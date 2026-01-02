@@ -10,7 +10,8 @@ type Decision struct {
 	PRNumber    int    `json:"pr_number"`
 	SpecName    string `json:"spec_name"`
 	TaskLine    int    `json:"task_line"`
-	ExitReason  string `json:"exit_reason"` // worker_failed | needs_human_review | max_loop_reached | max_consecutive_failures | no_actionable_tasks | config_not_found
+	ExitReason  string `json:"exit_reason"`  // worker_failed | needs_human_review | max_loop_reached | max_consecutive_failures | no_actionable_tasks | config_not_found
+	MergeIssue  string `json:"merge_issue"`  // conflict | rebase - indicates Worker needs to fix merge issues
 }
 
 // Action constants
@@ -35,6 +36,12 @@ const (
 	ReasonConfigNotFound           = "config_not_found"
 )
 
+// Merge issue constants
+const (
+	MergeIssueConflict = "conflict"
+	MergeIssueRebase   = "rebase"
+)
+
 // FormatBashOutput formats the decision for bash eval
 func (d *Decision) FormatBashOutput() string {
 	return fmt.Sprintf(`NEXT_ACTION=%s
@@ -43,5 +50,6 @@ PR_NUMBER=%d
 SPEC_NAME=%s
 TASK_LINE=%d
 EXIT_REASON=%s
-`, d.NextAction, d.IssueNumber, d.PRNumber, d.SpecName, d.TaskLine, d.ExitReason)
+MERGE_ISSUE=%s
+`, d.NextAction, d.IssueNumber, d.PRNumber, d.SpecName, d.TaskLine, d.ExitReason, d.MergeIssue)
 }
