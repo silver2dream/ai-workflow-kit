@@ -181,6 +181,16 @@ func ReadFailCount(stateRoot string, issueNumber int) int {
 	return count
 }
 
+// ResetFailCount resets the fail count for an issue
+func ResetFailCount(stateRoot string, issueNumber int) error {
+	failCountPath := filepath.Join(stateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", issueNumber), "fail_count.txt")
+	// Remove the file to reset count to 0
+	if err := os.Remove(failCountPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // ReadConsecutiveFailures reads the consecutive failures counter
 func ReadConsecutiveFailures(stateRoot string) int {
 	path := filepath.Join(stateRoot, ".ai", "state", "consecutive_failures")
