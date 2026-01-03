@@ -118,6 +118,13 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 
 	// Append merge issue instructions if needed
 	if opts.MergeIssue != "" {
+		// Reset fail count - merge issue dispatch is a fresh start, not a retry
+		if err := ResetFailCount(opts.StateRoot, opts.IssueNumber); err != nil {
+			logger.Log("⚠ 無法重置失敗計數: %v", err)
+		} else {
+			logger.Log("✓ 已重置失敗計數 (merge issue dispatch)")
+		}
+
 		// Get the base branch from PR
 		baseBranch := "main" // default fallback
 		if opts.PRNumber > 0 {
