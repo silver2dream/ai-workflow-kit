@@ -175,6 +175,27 @@ func (c *GitHubClient) GetPRByBranch(ctx context.Context, branch string) (*PRInf
 	return &prs[0], nil
 }
 
+// GetPRBaseBranch gets the base branch of a PR
+func (c *GitHubClient) GetPRBaseBranch(ctx context.Context, prNumber int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "baseRefName", "-q", ".baseRefName")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("timeout getting PR #%d base branch", prNumber)
+		}
+		return "", fmt.Errorf("gh pr view failed: %s", stderr.String())
+	}
+
+	baseBranch := strings.TrimSpace(stdout.String())
+	return baseBranch, nil
+}
+
 // ExtractPRNumber extracts PR number from a GitHub PR URL
 func ExtractPRNumber(prURL string) string {
 	if prURL == "" {

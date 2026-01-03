@@ -692,6 +692,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -830,6 +839,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -889,6 +907,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -948,6 +975,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -1007,6 +1043,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -1066,6 +1111,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -1136,6 +1190,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -1206,6 +1269,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -1276,6 +1348,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:
@@ -1346,6 +1427,15 @@ audit:
 
 github:
   repo: ""
+  labels:
+    task: "ai-task"
+    in_progress: "in-progress"
+    pr_ready: "pr-ready"
+    worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    review_failed: "review-failed"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
 
 rules:
   kit:

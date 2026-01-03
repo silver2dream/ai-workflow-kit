@@ -15,6 +15,7 @@ import (
 // DispatchOptions contains options for DispatchWorker
 type DispatchOptions struct {
 	IssueNumber        int
+	PRNumber           int           // PR number (used when MergeIssue is set to get base branch)
 	PrincipalSessionID string
 	StateRoot          string        // defaults to git root
 	GHTimeout          time.Duration // GitHub API timeout (default: 30s)
@@ -117,10 +118,19 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 
 	// Append merge issue instructions if needed
 	if opts.MergeIssue != "" {
+		// Get the base branch from PR
+		baseBranch := "main" // default fallback
+		if opts.PRNumber > 0 {
+			if prBaseBranch, err := ghClient.GetPRBaseBranch(ctx, opts.PRNumber); err == nil && prBaseBranch != "" {
+				baseBranch = prBaseBranch
+				logger.Log("PR #%d base branch: %s", opts.PRNumber, baseBranch)
+			}
+		}
+
 		var instruction string
 		switch opts.MergeIssue {
 		case "conflict":
-			instruction = `
+			instruction = fmt.Sprintf(`
 
 ---
 
@@ -128,14 +138,14 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 
 PR 有 merge conflict，請執行以下步驟：
 
-1. 在 worktree 中執行 ` + "`git fetch origin && git rebase origin/<base-branch>`" + `
-2. 解決衝突後 ` + "`git add . && git rebase --continue`" + `
-3. 推送更新 ` + "`git push --force-with-lease`" + `
+1. 在 worktree 中執行 `+"`git fetch origin && git rebase origin/%s`"+`
+2. 解決衝突後 `+"`git add . && git rebase --continue`"+`
+3. 推送更新 `+"`git push --force-with-lease`"+`
 4. 確認 CI 通過
 
-**這是最優先的任務，必須先完成才能繼續其他工作。**`
+**這是最優先的任務，必須先完成才能繼續其他工作。**`, baseBranch)
 		case "rebase":
-			instruction = `
+			instruction = fmt.Sprintf(`
 
 ---
 
@@ -143,11 +153,11 @@ PR 有 merge conflict，請執行以下步驟：
 
 PR 分支落後 base branch，請執行以下步驟：
 
-1. 在 worktree 中執行 ` + "`git fetch origin && git rebase origin/<base-branch>`" + `
-2. 推送更新 ` + "`git push --force-with-lease`" + `
+1. 在 worktree 中執行 `+"`git fetch origin && git rebase origin/%s`"+`
+2. 推送更新 `+"`git push --force-with-lease`"+`
 3. 確認 CI 通過
 
-**這是最優先的任務，必須先完成才能繼續其他工作。**`
+**這是最優先的任務，必須先完成才能繼續其他工作。**`, baseBranch)
 		}
 		if instruction != "" {
 			ticketBody += instruction

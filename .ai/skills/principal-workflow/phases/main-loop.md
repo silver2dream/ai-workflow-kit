@@ -35,7 +35,7 @@ awkit analyze-next --json
 
 **如果 `merge_issue` 有值（`conflict` 或 `rebase`）**：
 ```bash
-awkit dispatch-worker --issue <issue_number> --merge-issue <merge_issue>
+awkit dispatch-worker --issue <issue_number> --merge-issue <merge_issue> --pr <pr_number>
 ```
 
 **如果 `merge_issue` 為空或不存在**：
@@ -44,8 +44,8 @@ awkit dispatch-worker --issue <issue_number>
 ```
 
 範例：
-- JSON: `{"next_action": "dispatch_worker", "issue_number": 27, "merge_issue": "conflict"}`
-- 命令: `awkit dispatch-worker --issue 27 --merge-issue conflict`
+- JSON: `{"next_action": "dispatch_worker", "issue_number": 27, "pr_number": 29, "merge_issue": "conflict"}`
+- 命令: `awkit dispatch-worker --issue 27 --merge-issue conflict --pr 29`
 
 ### ⚠️ CRITICAL: review_pr 必須使用 Subagent
 
