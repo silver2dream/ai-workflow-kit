@@ -196,6 +196,27 @@ func (c *GitHubClient) GetPRBaseBranch(ctx context.Context, prNumber int) (strin
 	return baseBranch, nil
 }
 
+// GetPRMergeState gets the merge state status of a PR (DIRTY, BEHIND, BLOCKED, CLEAN, etc.)
+func (c *GitHubClient) GetPRMergeState(ctx context.Context, prNumber int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "mergeStateStatus", "-q", ".mergeStateStatus")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("timeout getting PR #%d merge state", prNumber)
+		}
+		return "", fmt.Errorf("gh pr view failed: %s", stderr.String())
+	}
+
+	mergeState := strings.TrimSpace(stdout.String())
+	return mergeState, nil
+}
+
 // ExtractPRNumber extracts PR number from a GitHub PR URL
 func ExtractPRNumber(prURL string) string {
 	if prURL == "" {
