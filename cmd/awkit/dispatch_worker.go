@@ -18,6 +18,7 @@ Usage:
 
 Options:
   --issue            Required: Issue number to dispatch
+  --pr               Optional: PR number (used with --merge-issue to get base branch)
   --session          Optional: Principal session ID
   --state-root       Optional: Override state root (default: git root)
   --gh-timeout       Optional: GitHub API timeout (default: 30s)
@@ -37,14 +38,14 @@ Status values:
 
 Examples:
   awkit dispatch-worker --issue 25
-  awkit dispatch-worker --issue 25 --merge-issue conflict
+  awkit dispatch-worker --issue 25 --merge-issue conflict --pr 29
   awkit dispatch-worker --issue 25 --json
   eval "$(awkit dispatch-worker --issue 25)"
 
 Notes:
   - This command runs the worker synchronously and waits for completion
   - Use --worker-timeout to limit execution time
-  - Use --merge-issue to indicate Worker needs to fix merge issues
+  - Use --merge-issue with --pr to indicate Worker needs to fix merge issues
   - Cleanup is performed automatically on signal (SIGINT, SIGTERM)
 `)
 }
@@ -55,6 +56,7 @@ func cmdDispatchWorker(args []string) int {
 	fs.Usage = usageDispatchWorker
 
 	issueNumber := fs.Int("issue", 0, "")
+	prNumber := fs.Int("pr", 0, "")
 	sessionID := fs.String("session", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	ghTimeout := fs.Duration("gh-timeout", 30*time.Second, "")
@@ -105,6 +107,7 @@ func cmdDispatchWorker(args []string) int {
 	ctx := cleanupMgr.Context()
 	opts := worker.DispatchOptions{
 		IssueNumber:        *issueNumber,
+		PRNumber:           *prNumber,
 		PrincipalSessionID: *sessionID,
 		StateRoot:          *stateRoot,
 		GHTimeout:          *ghTimeout,
