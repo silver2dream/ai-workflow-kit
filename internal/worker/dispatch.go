@@ -112,6 +112,27 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 
 	logger.Log("✓ Issue 驗證通過")
 
+	// Step 2.5: Auto-detect merge issue if not provided
+	// This handles the case where Principal doesn't pass --merge-issue
+	if opts.MergeIssue == "" {
+		// Check if there's an existing PR for this issue
+		branch := fmt.Sprintf("feat/ai-issue-%d", opts.IssueNumber)
+		if prInfo, err := ghClient.GetPRByBranch(ctx, branch); err == nil && prInfo != nil {
+			opts.PRNumber = prInfo.Number
+			// Check PR merge state
+			if mergeState, err := ghClient.GetPRMergeState(ctx, prInfo.Number); err == nil {
+				switch mergeState {
+				case "DIRTY":
+					opts.MergeIssue = "conflict"
+					logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prInfo.Number)
+				case "BEHIND":
+					opts.MergeIssue = "rebase"
+					logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prInfo.Number)
+				}
+			}
+		}
+	}
+
 	// Step 3: Prepare ticket file
 	logger.Log("準備 ticket 文件...")
 	ticketBody := issue.Body
