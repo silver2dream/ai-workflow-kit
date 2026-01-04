@@ -110,6 +110,7 @@ PR_NUMBER=
 SPEC_NAME=snake-arena
 TASK_LINE=7
 EXIT_REASON=
+MERGE_ISSUE=
 `
 
 	got := parseAnalyzeNextOutput(out)
@@ -127,6 +128,32 @@ EXIT_REASON=
 	}
 }
 
+func TestParseAnalyzeNextOutputWithMergeIssue(t *testing.T) {
+	out := `
+NEXT_ACTION=dispatch_worker
+ISSUE_NUMBER=27
+PR_NUMBER=30
+SPEC_NAME=
+TASK_LINE=0
+EXIT_REASON=
+MERGE_ISSUE=conflict
+`
+
+	got := parseAnalyzeNextOutput(out)
+	if got.NextAction != "dispatch_worker" {
+		t.Fatalf("NextAction = %q, want %q", got.NextAction, "dispatch_worker")
+	}
+	if got.IssueNumber != "27" {
+		t.Fatalf("IssueNumber = %q, want %q", got.IssueNumber, "27")
+	}
+	if got.PRNumber != "30" {
+		t.Fatalf("PRNumber = %q, want %q", got.PRNumber, "30")
+	}
+	if got.MergeIssue != "conflict" {
+		t.Fatalf("MergeIssue = %q, want %q", got.MergeIssue, "conflict")
+	}
+}
+
 func TestFormatAnalyzeNextContext(t *testing.T) {
 	ctx := formatAnalyzeNextContext(analyzeNextVars{
 		NextAction:  "create_task",
@@ -135,8 +162,21 @@ func TestFormatAnalyzeNextContext(t *testing.T) {
 		IssueNumber: "",
 		PRNumber:    "",
 		ExitReason:  "",
+		MergeIssue:  "",
 	})
 	if ctx != " (spec=snake-arena line=7)" {
 		t.Fatalf("formatAnalyzeNextContext() = %q, want %q", ctx, " (spec=snake-arena line=7)")
+	}
+}
+
+func TestFormatAnalyzeNextContextWithMergeIssue(t *testing.T) {
+	ctx := formatAnalyzeNextContext(analyzeNextVars{
+		NextAction:  "dispatch_worker",
+		IssueNumber: "27",
+		PRNumber:    "30",
+		MergeIssue:  "conflict",
+	})
+	if ctx != " (issue=27 pr=30 merge=conflict)" {
+		t.Fatalf("formatAnalyzeNextContext() = %q, want %q", ctx, " (issue=27 pr=30 merge=conflict)")
 	}
 }
