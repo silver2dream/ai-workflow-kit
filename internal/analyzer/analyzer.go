@@ -132,12 +132,12 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}
 
 	// Step 2.5: Check merge-conflict label (Worker needs to fix conflict)
+	// Note: Don't remove the label here - dispatch-worker will handle it
+	// This ensures the label persists if dispatch fails or MergeIssue isn't passed correctly
 	conflictIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.MergeConflict)
 	if err == nil && len(conflictIssues) > 0 {
 		issue := conflictIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
-		// Remove merge-conflict label, dispatch Worker to fix
-		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.MergeConflict)
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,
@@ -147,12 +147,11 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}
 
 	// Step 2.6: Check needs-rebase label (Worker needs to rebase)
+	// Note: Don't remove the label here - dispatch-worker will handle it
 	rebaseIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.NeedsRebase)
 	if err == nil && len(rebaseIssues) > 0 {
 		issue := rebaseIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
-		// Remove needs-rebase label, dispatch Worker to rebase
-		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.NeedsRebase)
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,

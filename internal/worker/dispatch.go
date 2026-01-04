@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,19 +116,41 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 	// Step 2.5: Auto-detect merge issue if not provided
 	// This handles the case where Principal doesn't pass --merge-issue
 	if opts.MergeIssue == "" {
-		// Check if there's an existing PR for this issue
-		branch := fmt.Sprintf("feat/ai-issue-%d", opts.IssueNumber)
-		if prInfo, err := ghClient.GetPRByBranch(ctx, branch); err == nil && prInfo != nil {
-			opts.PRNumber = prInfo.Number
-			// Check PR merge state
-			if mergeState, err := ghClient.GetPRMergeState(ctx, prInfo.Number); err == nil {
-				switch mergeState {
-				case "DIRTY":
-					opts.MergeIssue = "conflict"
-					logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prInfo.Number)
-				case "BEHIND":
-					opts.MergeIssue = "rebase"
-					logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prInfo.Number)
+		// First, check the result file for the previous PRURL
+		if prevResult, err := LoadResult(opts.StateRoot, opts.IssueNumber); err == nil && prevResult.PRURL != "" {
+			if prNumStr := ExtractPRNumber(prevResult.PRURL); prNumStr != "" {
+				if prNum, err := strconv.Atoi(prNumStr); err == nil && prNum > 0 {
+					opts.PRNumber = prNum
+					// Check PR merge state
+					if mergeState, err := ghClient.GetPRMergeState(ctx, prNum); err == nil {
+						switch mergeState {
+						case "DIRTY":
+							opts.MergeIssue = "conflict"
+							logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prNum)
+						case "BEHIND":
+							opts.MergeIssue = "rebase"
+							logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prNum)
+						}
+					}
+				}
+			}
+		}
+
+		// Fallback: try to find PR by branch name
+		if opts.MergeIssue == "" {
+			branch := fmt.Sprintf("feat/ai-issue-%d", opts.IssueNumber)
+			if prInfo, err := ghClient.GetPRByBranch(ctx, branch); err == nil && prInfo != nil {
+				opts.PRNumber = prInfo.Number
+				// Check PR merge state
+				if mergeState, err := ghClient.GetPRMergeState(ctx, prInfo.Number); err == nil {
+					switch mergeState {
+					case "DIRTY":
+						opts.MergeIssue = "conflict"
+						logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prInfo.Number)
+					case "BEHIND":
+						opts.MergeIssue = "rebase"
+						logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prInfo.Number)
+					}
 				}
 			}
 		}
@@ -212,12 +235,19 @@ PR 分支落後 base branch，請執行以下步驟：
 		os.Setenv("AI_TASK_LINE", fmt.Sprintf("%d", meta.TaskLine))
 	}
 
-	// Step 4: Add in-progress label
+	// Step 4: Add in-progress label and remove merge labels
 	logger.Log("標記 Issue 為 in-progress...")
 	if err := ghClient.AddLabel(ctx, opts.IssueNumber, "in-progress"); err != nil {
 		logger.Log("⚠ 無法添加 in-progress 標籤: %v", err)
 	} else {
 		logger.Log("✓ Issue 已標記為 in-progress")
+	}
+
+	// Remove merge-related labels now that we're processing
+	// This is done after adding in-progress to ensure the issue is marked as being worked on
+	if opts.MergeIssue != "" {
+		_ = ghClient.RemoveLabel(ctx, opts.IssueNumber, "merge-conflict")
+		_ = ghClient.RemoveLabel(ctx, opts.IssueNumber, "needs-rebase")
 	}
 
 	// Step 5: Record worker_dispatched
@@ -282,6 +312,11 @@ func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *Disp
 	} else {
 		logger.Log("✓ Issue 標籤已更新 (in-progress → pr-ready)")
 	}
+
+	// Safety: also remove merge-related labels in case they weren't removed earlier
+	// This prevents a loop where merge-conflict persists after Worker success
+	_ = ghClient.RemoveLabel(ctx, opts.IssueNumber, "merge-conflict")
+	_ = ghClient.RemoveLabel(ctx, opts.IssueNumber, "needs-rebase")
 
 	// Record worker_completed
 	recordSessionAction(opts.StateRoot, opts.PrincipalSessionID, "worker_completed",

@@ -675,6 +675,7 @@ type analyzeNextVars struct {
 	SpecName    string
 	TaskLine    string
 	ExitReason  string
+	MergeIssue  string // conflict | rebase - indicates Worker needs to fix merge issues
 }
 
 type analyzeNextArgs struct {
@@ -699,6 +700,7 @@ func runAnalyzeNext(ctx context.Context, args analyzeNextArgs) (analyzeNextVars,
 		SpecName:    decision.SpecName,
 		TaskLine:    strconv.Itoa(decision.TaskLine),
 		ExitReason:  decision.ExitReason,
+		MergeIssue:  decision.MergeIssue,
 	}, nil
 }
 
@@ -726,13 +728,15 @@ func parseAnalyzeNextOutput(out string) analyzeNextVars {
 			v.TaskLine = strings.TrimSpace(value)
 		case "EXIT_REASON":
 			v.ExitReason = strings.TrimSpace(value)
+		case "MERGE_ISSUE":
+			v.MergeIssue = strings.TrimSpace(value)
 		}
 	}
 	return v
 }
 
 func formatAnalyzeNextContext(v analyzeNextVars) string {
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 5)
 	if strings.TrimSpace(v.SpecName) != "" {
 		parts = append(parts, "spec="+v.SpecName)
 	}
@@ -744,6 +748,9 @@ func formatAnalyzeNextContext(v analyzeNextVars) string {
 	}
 	if strings.TrimSpace(v.PRNumber) != "" {
 		parts = append(parts, "pr="+v.PRNumber)
+	}
+	if strings.TrimSpace(v.MergeIssue) != "" {
+		parts = append(parts, "merge="+v.MergeIssue)
 	}
 	if len(parts) == 0 {
 		return ""
