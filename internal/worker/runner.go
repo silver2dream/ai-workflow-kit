@@ -26,6 +26,8 @@ type RunIssueOptions struct {
 	GHTimeout    time.Duration
 	GitTimeout   time.Duration
 	CodexTimeout time.Duration
+	MergeIssue   string // "conflict" or "rebase" - indicates merge issue to resolve
+	PRNumber     int    // PR number for merge issue resolution
 }
 
 // RunIssueResult reports worker execution status.
@@ -373,6 +375,109 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		logger.Log("reset branch to %s", baseRef)
 		_ = runGit(ctx, wtDir, opts.GitTimeout, "fetch", "origin", "--prune")
 		_ = runGit(ctx, wtDir, opts.GitTimeout, "reset", "--hard", baseRef)
+	}
+
+	// Handle merge issue if present (conflict resolution)
+	if opts.MergeIssue != "" && opts.PRNumber > 0 {
+		logger.Log("嘗試解決 merge issue: %s (PR #%d)", opts.MergeIssue, opts.PRNumber)
+
+		// Create ghClient for GetPRBaseBranch
+		ghClient := NewGitHubClient(opts.GHTimeout)
+
+		// Get base branch from PR
+		baseBranch, err := ghClient.GetPRBaseBranch(ctx, opts.PRNumber)
+		if err != nil || baseBranch == "" {
+			baseBranch = integrationBranch // fallback
+			logger.Log("⚠ 無法獲取 PR base branch，使用 fallback: %s", baseBranch)
+		} else {
+			logger.Log("PR base branch: %s", baseBranch)
+		}
+
+		// Get repo name for PR URL
+		repoFullName := getRepoName(ctx)
+
+		// Check for in-progress rebase and abort if needed
+		rebaseDir := filepath.Join(wtDir, ".git", "rebase-merge")
+		if _, err := os.Stat(rebaseDir); err == nil {
+			logger.Log("⚠ 檢測到進行中的 rebase，先 abort")
+			_ = runGit(ctx, wtDir, opts.GitTimeout, "rebase", "--abort")
+		}
+
+		// Clean worktree before rebase
+		_ = runGit(ctx, wtDir, opts.GitTimeout, "reset", "--hard", "HEAD")
+		_ = runGit(ctx, wtDir, opts.GitTimeout, "clean", "-fd")
+
+		// Attempt rebase
+		rebaseErr := RebaseOntoBase(ctx, wtDir, baseBranch, opts.GitTimeout)
+
+		if rebaseErr == nil {
+			// Rebase succeeded, push and return
+			if pushErr := ForcePushBranch(ctx, wtDir, branch, opts.GitTimeout); pushErr != nil {
+				logger.Log("✗ Push 失敗: %v", pushErr)
+				_ = writeIssueResult(ctx, stateRoot, issueResultContext{
+					IssueID:         opts.IssueID,
+					Status:          "failed",
+					RepoName:        repoName,
+					RepoType:        repoType,
+					RepoPath:        repoPath,
+					WorktreeDir:     wtDir,
+					WorkDir:         workDir,
+					Branch:          branch,
+					BaseBranch:      prBase,
+					ErrorMessage:    pushErr.Error(),
+					FailureStage:    "git_push",
+					WorkerSessionID: workerSessionID,
+				})
+				result.Status = "failed"
+				result.Error = pushErr.Error()
+				return result, pushErr
+			}
+
+			// Success! Write result and return
+			prURL := fmt.Sprintf("https://github.com/%s/pull/%d", repoFullName, opts.PRNumber)
+			logger.Log("✓ Rebase + push 成功，跳過 Worker 執行")
+			_ = writeIssueResult(ctx, stateRoot, issueResultContext{
+				IssueID:         opts.IssueID,
+				Status:          "success",
+				PRURL:           prURL,
+				RepoName:        repoName,
+				RepoType:        repoType,
+				RepoPath:        repoPath,
+				WorktreeDir:     wtDir,
+				WorkDir:         workDir,
+				Branch:          branch,
+				BaseBranch:      prBase,
+				WorkerSessionID: workerSessionID,
+			})
+			result.Status = "success"
+			result.PRURL = prURL
+			result.ExitCode = 0
+			return result, nil
+		}
+
+		if errors.Is(rebaseErr, ErrRebaseConflict) {
+			// Has actual conflicts, need AI intervention
+			logger.Log("✗ 有 merge conflict，需要 conflict-resolver")
+			_ = writeIssueResult(ctx, stateRoot, issueResultContext{
+				IssueID:         opts.IssueID,
+				Status:          "needs_conflict_resolution",
+				RepoName:        repoName,
+				RepoType:        repoType,
+				RepoPath:        repoPath,
+				WorktreeDir:     wtDir,
+				WorkDir:         workDir,
+				Branch:          branch,
+				BaseBranch:      prBase,
+				ErrorMessage:    "rebase 有衝突需要 AI 解決",
+				WorkerSessionID: workerSessionID,
+			})
+			result.Status = "needs_conflict_resolution"
+			return result, nil
+		}
+
+		// Other rebase error, abort and continue with Worker
+		logger.Log("⚠ Rebase 失敗 (%v)，繼續執行 Worker", rebaseErr)
+		_ = runGit(ctx, wtDir, opts.GitTimeout, "rebase", "--abort")
 	}
 
 	titleLine := extractTitleLine(string(ticketBody))
@@ -1260,6 +1365,7 @@ func writeIssueResult(ctx context.Context, stateRoot string, info issueResultCon
 		Repo:              info.RepoName,
 		RepoType:          info.RepoType,
 		WorkDir:           workDir,
+		WorktreePath:      worktreeDir, // For conflict resolution
 		Branch:            info.Branch,
 		BaseBranch:        info.BaseBranch,
 		HeadSHA:           headSHA,

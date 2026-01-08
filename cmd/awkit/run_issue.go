@@ -27,12 +27,15 @@ Options:
   --gh-timeout    Optional: GitHub CLI timeout (default: 60s)
   --git-timeout   Optional: Git timeout (default: 120s)
   --codex-timeout Optional: Codex timeout (default: 30m)
+  --merge-issue   Optional: Merge issue type (conflict/rebase)
+  --pr-number     Optional: PR number for merge issue resolution
   --json          Optional: Output result as JSON
   --help          Show this help
 
 Examples:
   awkit run-issue --issue 25 --ticket .ai/temp/ticket-25.md
   awkit run-issue 25 .ai/temp/ticket-25.md backend
+  awkit run-issue --issue 25 --ticket .ai/temp/ticket-25.md --merge-issue conflict --pr-number 30
 `)
 }
 
@@ -48,6 +51,8 @@ func cmdRunIssue(args []string) int {
 	ghTimeout := fs.Duration("gh-timeout", 60*time.Second, "")
 	gitTimeout := fs.Duration("git-timeout", 120*time.Second, "")
 	codexTimeout := fs.Duration("codex-timeout", 30*time.Minute, "")
+	mergeIssue := fs.String("merge-issue", "", "")
+	prNumber := fs.Int("pr-number", 0, "")
 	jsonOutput := fs.Bool("json", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
@@ -99,6 +104,8 @@ func cmdRunIssue(args []string) int {
 		GHTimeout:    *ghTimeout,
 		GitTimeout:   *gitTimeout,
 		CodexTimeout: *codexTimeout,
+		MergeIssue:   *mergeIssue,
+		PRNumber:     *prNumber,
 	})
 	if err != nil && result == nil {
 		errorf("run-issue failed: %v\n", err)
