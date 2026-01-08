@@ -27,9 +27,12 @@ type DispatchOptions struct {
 
 // DispatchOutput is the output for bash eval compatibility
 type DispatchOutput struct {
-	Status   string // success, failed, in_progress
-	PRURL    string
-	Error    string
+	Status       string // success, failed, in_progress, needs_conflict_resolution
+	PRURL        string
+	Error        string
+	WorktreePath string // For conflict resolution
+	IssueNumber  int    // For subagent
+	PRNumber     int    // For subagent
 }
 
 // DispatchWorker dispatches an issue to a worker for execution
@@ -261,7 +264,7 @@ PR 分支落後 base branch，請執行以下步驟：
 	workerCtx, workerCancel := context.WithTimeout(ctx, opts.WorkerTimeout)
 	defer workerCancel()
 
-	workerExitCode := runWorkerScript(workerCtx, opts.StateRoot, opts.IssueNumber, ticketPath, meta.Repo)
+	workerExitCode := runWorkerScript(workerCtx, opts.StateRoot, opts.IssueNumber, ticketPath, meta.Repo, opts.MergeIssue, opts.PRNumber)
 	logger.Log("Worker 執行完成 (exit code: %d)", workerExitCode)
 
 	// Check for timeout
@@ -295,6 +298,20 @@ PR 分支落後 base branch，請執行以下步驟：
 	updateResultWithSession(opts.StateRoot, opts.IssueNumber, opts.PrincipalSessionID)
 
 	// Step 8: Handle result
+
+	// Check for needs_conflict_resolution first (before success/failure checks)
+	if result.Status == "needs_conflict_resolution" {
+		logger.Log("需要 conflict-resolver 處理 merge conflict")
+		// Return special status for Principal to call subagent
+		// Keep in-progress label - Principal will handle label changes based on subagent result
+		return &DispatchOutput{
+			Status:       "needs_conflict_resolution",
+			WorktreePath: result.WorktreePath,
+			IssueNumber:  opts.IssueNumber,
+			PRNumber:     opts.PRNumber,
+		}, nil
+	}
+
 	if result.Status == "success" && result.PRURL != "" {
 		return handleWorkerSuccess(ctx, opts, logger, ghClient, result)
 	}
@@ -305,6 +322,51 @@ PR 分支落後 base branch，請執行以下步驟：
 // handleWorkerSuccess handles successful worker execution
 func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *DispatchLogger, ghClient *GitHubClient, result *IssueResult) (*DispatchOutput, error) {
 	logger.Log("✓ Worker 成功")
+
+	// If this was a merge-issue dispatch, verify the PR is actually mergeable now
+	// Try to get PR number from result.PRURL if not provided
+	prNumber := opts.PRNumber
+	if prNumber == 0 && result.PRURL != "" {
+		if prNumStr := ExtractPRNumber(result.PRURL); prNumStr != "" {
+			prNumber, _ = strconv.Atoi(prNumStr)
+		}
+	}
+	if opts.MergeIssue != "" && prNumber > 0 {
+		mergeState, err := ghClient.GetPRMergeState(ctx, prNumber)
+		if err != nil {
+			logger.Log("⚠ 無法檢查 PR merge 狀態: %v", err)
+		} else if mergeState == "DIRTY" {
+			// Worker claimed success but conflict still exists
+			logger.Log("✗ Worker 回報成功但 PR #%d 仍有 merge conflict", prNumber)
+			logger.Log("Worker 沒有正確執行 rebase 指示")
+
+			// Don't mark as pr-ready, keep merge-conflict label
+			_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"merge-conflict"}, []string{"in-progress"})
+			_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber,
+				fmt.Sprintf("⚠️ Worker 回報成功，但 PR #%d 仍有 merge conflict。\n\n請確認 Worker 有執行 rebase 指示。", prNumber))
+
+			return &DispatchOutput{
+				Status: "failed",
+				PRURL:  result.PRURL,
+				Error:  "Worker 沒有解決 merge conflict",
+			}, nil
+		} else if mergeState == "BEHIND" {
+			// Worker claimed success but branch is still behind
+			logger.Log("✗ Worker 回報成功但 PR #%d 仍落後 base branch", prNumber)
+
+			_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"needs-rebase"}, []string{"in-progress"})
+			_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber,
+				fmt.Sprintf("⚠️ Worker 回報成功，但 PR #%d 仍落後 base branch。\n\n請確認 Worker 有執行 rebase 指示。", prNumber))
+
+			return &DispatchOutput{
+				Status: "failed",
+				PRURL:  result.PRURL,
+				Error:  "Worker 沒有完成 rebase",
+			}, nil
+		} else {
+			logger.Log("✓ PR #%d merge 狀態: %s", prNumber, mergeState)
+		}
+	}
 
 	// Update labels: remove in-progress, add pr-ready
 	if err := ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"pr-ready"}, []string{"in-progress"}); err != nil {
@@ -387,13 +449,13 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 // Uses awkit run-issue by default, falls back to bash script if:
 // - AWKIT_USE_SCRIPT=1 is set, or
 // - awkit binary is not found in PATH
-func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo string) int {
+func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo, mergeIssue string, prNumber int) int {
 	// Check if we should use the bash script fallback
 	useScript := os.Getenv("AWKIT_USE_SCRIPT") == "1"
 
 	if !useScript {
 		// Try to use awkit run-issue (Go implementation)
-		if exitCode, ok := runWorkerCommand(ctx, stateRoot, issueNumber, ticketPath, repo); ok {
+		if exitCode, ok := runWorkerCommand(ctx, stateRoot, issueNumber, ticketPath, repo, mergeIssue, prNumber); ok {
 			return exitCode
 		}
 		// Fall through to bash script if awkit not available
@@ -405,7 +467,7 @@ func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, tic
 
 // runWorkerCommand runs the worker using awkit run-issue command
 // Returns (exitCode, true) if successful, (0, false) if awkit not available
-func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo string) (int, bool) {
+func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo, mergeIssue string, prNumber int) (int, bool) {
 	// Check if awkit binary exists
 	awkitPath, err := exec.LookPath("awkit")
 	if err != nil {
@@ -419,6 +481,13 @@ func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ti
 	}
 	if repo != "" {
 		args = append(args, "--repo", strings.TrimSpace(repo))
+	}
+	// Pass merge issue parameters
+	if mergeIssue != "" {
+		args = append(args, "--merge-issue", mergeIssue)
+		if prNumber > 0 {
+			args = append(args, "--pr-number", fmt.Sprintf("%d", prNumber))
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, awkitPath, args...)
@@ -522,7 +591,21 @@ func updateResultWithSession(stateRoot string, issueNumber int, sessionID string
 
 // FormatBashOutput formats the dispatch output for bash eval
 func (o *DispatchOutput) FormatBashOutput() string {
-	return fmt.Sprintf("WORKER_STATUS=%s\n", o.Status)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("WORKER_STATUS=%s\n", o.Status))
+	if o.PRURL != "" {
+		sb.WriteString(fmt.Sprintf("PR_URL=%s\n", o.PRURL))
+	}
+	if o.Error != "" {
+		sb.WriteString(fmt.Sprintf("WORKER_ERROR=%s\n", o.Error))
+	}
+	// needs_conflict_resolution specific fields
+	if o.Status == "needs_conflict_resolution" {
+		sb.WriteString(fmt.Sprintf("WORKTREE_PATH=%s\n", o.WorktreePath))
+		sb.WriteString(fmt.Sprintf("ISSUE_NUMBER=%d\n", o.IssueNumber))
+		sb.WriteString(fmt.Sprintf("PR_NUMBER=%d\n", o.PRNumber))
+	}
+	return sb.String()
 }
 
 // DispatchLogger logs dispatch operations

@@ -95,7 +95,58 @@ Principal 收到任何狀態都直接回到 Step 1，Go 命令會自動處理恢
 2. **不要讀取 log 檔案** - 這會浪費 context
 3. **不要監控進度** - 命令會處理一切
 4. **不要輸出 Worker 狀態描述** - 等命令完成即可
-5. **執行完成後，回到 Step 1**
+5. **執行完成後，檢查 WORKER_STATUS 並處理（見下方）**
+
+### dispatch_worker 結果處理
+
+執行 `awkit dispatch-worker` 後，解析輸出的 `WORKER_STATUS`：
+
+| WORKER_STATUS | 動作 |
+|---------------|------|
+| `success` | 回到 Step 1 |
+| `failed` | 回到 Step 1（下輪會重試或標記 worker-failed） |
+| `needs_conflict_resolution` | 調用 conflict-resolver subagent（見下方） |
+
+### ⚠️ 處理 needs_conflict_resolution
+
+當 `WORKER_STATUS=needs_conflict_resolution` 時，表示自動 rebase 發現實際衝突需要 AI 解決。
+
+**Step 1**: 從輸出中讀取以下變數：
+- `WORKTREE_PATH`: worktree 路徑
+- `ISSUE_NUMBER`: Issue 編號
+- `PR_NUMBER`: PR 編號
+
+**Step 2**: 使用 Task tool 調用 conflict-resolver subagent：
+
+```
+使用 Task tool：
+- subagent_type: "conflict-resolver"
+- prompt: "解決 merge conflict。WORKTREE_PATH=<path> ISSUE_NUMBER=<n> PR_NUMBER=<n>"
+```
+
+**Step 3**: 根據 subagent 返回結果執行對應動作：
+
+| 結果 | 動作 |
+|------|------|
+| `RESOLVED` | 1. 移除 `in-progress` 標籤<br>2. 添加 `pr-ready` 標籤<br>3. 回到 Step 1 |
+| `TOO_COMPLEX` | 1. 移除 `in-progress` 標籤<br>2. 添加 `needs-human-review` 和 `merge-conflict` 標籤<br>3. 在 Issue 添加評論說明需要人工介入<br>4. 執行 `awkit stop-workflow needs_human_review` |
+| `FAILED` 或其他 | 1. 移除 `in-progress` 標籤<br>2. 添加 `merge-conflict` 標籤<br>3. 回到 Step 1（下輪會重試） |
+
+**標籤操作範例**：
+```bash
+# RESOLVED 後
+gh issue edit <issue_number> --remove-label in-progress
+gh issue edit <issue_number> --add-label pr-ready
+
+# TOO_COMPLEX 後
+gh issue edit <issue_number> --remove-label in-progress
+gh issue edit <issue_number> --add-label needs-human-review,merge-conflict
+gh issue comment <issue_number> --body "Merge conflict 過於複雜，需要人工介入解決"
+
+# FAILED 後
+gh issue edit <issue_number> --remove-label in-progress
+gh issue edit <issue_number> --add-label merge-conflict
+```
 
 ## Step 3: Loop Safety
 

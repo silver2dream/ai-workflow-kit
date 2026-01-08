@@ -12,8 +12,9 @@ import (
 // IssueResult represents the result JSON file structure (.ai/results/issue-{N}.json)
 type IssueResult struct {
 	IssueID           string        `json:"issue_id"`
-	Status            string        `json:"status"` // success, failed, crashed, timeout
+	Status            string        `json:"status"` // success, failed, crashed, timeout, needs_conflict_resolution
 	Repo              string        `json:"repo"`
+	WorktreePath      string        `json:"worktree_path,omitempty"` // For conflict resolution
 	RepoType          string        `json:"repo_type"`
 	WorkDir           string        `json:"work_dir"`
 	Branch            string        `json:"branch"`
