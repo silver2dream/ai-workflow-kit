@@ -128,14 +128,14 @@ Principal 收到任何狀態都直接回到 Step 1，Go 命令會自動處理恢
 
 | 結果 | 動作 |
 |------|------|
-| `RESOLVED` | 1. 移除 `in-progress` 標籤<br>2. 添加 `pr-ready` 標籤<br>3. 回到 Step 1 |
+| `RESOLVED` | 1. 移除 `in-progress` 和 `merge-conflict` 標籤<br>2. 添加 `pr-ready` 標籤<br>3. 回到 Step 1 |
 | `TOO_COMPLEX` | 1. 移除 `in-progress` 標籤<br>2. 添加 `needs-human-review` 和 `merge-conflict` 標籤<br>3. 在 Issue 添加評論說明需要人工介入<br>4. 執行 `awkit stop-workflow needs_human_review` |
 | `FAILED` 或其他 | 1. 移除 `in-progress` 標籤<br>2. 添加 `merge-conflict` 標籤<br>3. 回到 Step 1（下輪會重試） |
 
 **標籤操作範例**：
 ```bash
 # RESOLVED 後
-gh issue edit <issue_number> --remove-label in-progress
+gh issue edit <issue_number> --remove-label in-progress,merge-conflict
 gh issue edit <issue_number> --add-label pr-ready
 
 # TOO_COMPLEX 後
