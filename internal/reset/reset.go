@@ -95,33 +95,57 @@ func (c *Resetter) ResetState() []Result {
 
 // ResetAttempts cleans attempt tracking files
 func (c *Resetter) ResetAttempts() []Result {
+	var results []Result
+
+	// Clean legacy attempts directory
 	attemptsDir := filepath.Join(c.StateRoot, ".ai", "state", "attempts")
-
-	if _, err := os.Stat(attemptsDir); os.IsNotExist(err) {
-		return nil
+	if _, err := os.Stat(attemptsDir); err == nil {
+		if c.DryRun {
+			results = append(results, Result{
+				Name:    "attempts",
+				Success: true,
+				Message: fmt.Sprintf("Would delete %s/*", attemptsDir),
+			})
+		} else if err := os.RemoveAll(attemptsDir); err != nil {
+			results = append(results, Result{
+				Name:    "attempts",
+				Success: false,
+				Message: fmt.Sprintf("Failed to delete: %v", err),
+			})
+		} else {
+			results = append(results, Result{
+				Name:    "attempts",
+				Success: true,
+				Message: "Deleted attempts directory",
+			})
+		}
 	}
 
-	if c.DryRun {
-		return []Result{{
-			Name:    "attempts",
-			Success: true,
-			Message: fmt.Sprintf("Would delete %s/*", attemptsDir),
-		}}
+	// Clean runs directory (contains fail_count.txt per issue)
+	runsDir := filepath.Join(c.StateRoot, ".ai", "runs")
+	if _, err := os.Stat(runsDir); err == nil {
+		if c.DryRun {
+			results = append(results, Result{
+				Name:    "runs",
+				Success: true,
+				Message: fmt.Sprintf("Would delete %s/*", runsDir),
+			})
+		} else if err := os.RemoveAll(runsDir); err != nil {
+			results = append(results, Result{
+				Name:    "runs",
+				Success: false,
+				Message: fmt.Sprintf("Failed to delete: %v", err),
+			})
+		} else {
+			results = append(results, Result{
+				Name:    "runs",
+				Success: true,
+				Message: "Deleted runs directory",
+			})
+		}
 	}
 
-	if err := os.RemoveAll(attemptsDir); err != nil {
-		return []Result{{
-			Name:    "attempts",
-			Success: false,
-			Message: fmt.Sprintf("Failed to delete: %v", err),
-		}}
-	}
-
-	return []Result{{
-		Name:    "attempts",
-		Success: true,
-		Message: "Deleted attempts directory",
-	}}
+	return results
 }
 
 // ResetStop removes the STOP marker
