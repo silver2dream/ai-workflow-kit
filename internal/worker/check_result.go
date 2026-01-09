@@ -155,7 +155,19 @@ func processResult(ctx context.Context, opts CheckResultOptions, result *IssueRe
 
 	switch result.Status {
 	case "success":
-		// Success - reset consecutive failures, update labels
+		// Validate PRURL before marking as pr-ready
+		if result.PRURL == "" {
+			// Success reported but no PR URL - this is an anomaly
+			_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"worker-failed"}, []string{"in-progress"})
+			_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber,
+				"Worker reported success but no PR was created. Manual intervention required.")
+			return &CheckResultOutput{
+				Status: "failed",
+				Error:  "success reported but no PR URL found",
+			}, nil
+		}
+
+		// Success with valid PR - reset consecutive failures, update labels
 		_ = ResetConsecutiveFailures(opts.StateRoot)
 		_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"pr-ready"}, []string{"in-progress"})
 

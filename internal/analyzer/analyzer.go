@@ -96,8 +96,14 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 				PRNumber:    prNumber,
 			}, nil
 		}
-		// Can't extract PR number, remove pr-ready label
+		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
 		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.PRReady)
+		_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+		return &Decision{
+			NextAction:  ActionNone,
+			IssueNumber: issue.Number,
+			ExitReason:  ReasonNeedsHumanReview,
+		}, nil
 	}
 
 	// Step 2.3: Check review-failed issues (retry with new subagent)
@@ -129,6 +135,14 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 				ExitReason:  ReasonReviewMaxRetries,
 			}, nil
 		}
+		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
+		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
+		_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+		return &Decision{
+			NextAction:  ActionNone,
+			IssueNumber: issue.Number,
+			ExitReason:  ReasonNeedsHumanReview,
+		}, nil
 	}
 
 	// Step 2.5: Check merge-conflict label (Worker needs to fix conflict)
@@ -138,6 +152,16 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	if err == nil && len(conflictIssues) > 0 {
 		issue := conflictIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+		if prNumber == 0 {
+			// Can't resolve conflict without PR number - mark as needs-human-review
+			_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.MergeConflict)
+			_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+			return &Decision{
+				NextAction:  ActionNone,
+				IssueNumber: issue.Number,
+				ExitReason:  ReasonNeedsHumanReview,
+			}, nil
+		}
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,
@@ -152,6 +176,16 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	if err == nil && len(rebaseIssues) > 0 {
 		issue := rebaseIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+		if prNumber == 0 {
+			// Can't rebase without PR number - mark as needs-human-review
+			_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.NeedsRebase)
+			_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+			return &Decision{
+				NextAction:  ActionNone,
+				IssueNumber: issue.Number,
+				ExitReason:  ReasonNeedsHumanReview,
+			}, nil
+		}
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,
