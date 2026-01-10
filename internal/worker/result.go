@@ -140,6 +140,27 @@ func LoadTrace(stateRoot string, issueNumber int) (*ExecutionTrace, error) {
 	return &trace, nil
 }
 
+// WriteFileAtomic writes data to a file atomically using tmp+rename pattern
+// This prevents file corruption if the process crashes during write
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, perm); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath) // cleanup on failure
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
+}
+
 // WriteResultAtomic writes an issue result atomically using tmp+rename pattern
 func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) error {
 	resultDir := filepath.Join(stateRoot, ".ai", "results")
