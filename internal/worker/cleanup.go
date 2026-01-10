@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -144,9 +145,13 @@ func (dc *DispatchCleanup) Run() {
 
 	// Remove in-progress label on failure/crash/signal
 	if dc.GHClient != nil {
-		_ = dc.GHClient.RemoveLabel(ctx, dc.IssueNumber, "in-progress")
+		if err := dc.GHClient.RemoveLabel(ctx, dc.IssueNumber, "in-progress"); err != nil {
+			fmt.Fprintf(os.Stderr, "[CLEANUP] warning: failed to remove in-progress label for issue #%d: %v\n", dc.IssueNumber, err)
+		}
 	}
 
 	// Cleanup PID file
-	_ = CleanupPIDFile(dc.StateRoot, dc.IssueNumber)
+	if err := CleanupPIDFile(dc.StateRoot, dc.IssueNumber); err != nil {
+		fmt.Fprintf(os.Stderr, "[CLEANUP] warning: failed to cleanup PID file for issue #%d: %v\n", dc.IssueNumber, err)
+	}
 }

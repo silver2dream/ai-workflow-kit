@@ -255,6 +255,26 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}, nil
 }
 
+// writeFileAtomic writes data to a file atomically using tmp+rename pattern
+// This prevents file corruption if the process crashes during write
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	tmpFile := path + ".tmp"
+	if err := os.WriteFile(tmpFile, data, perm); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpFile, path); err != nil {
+		os.Remove(tmpFile) // cleanup on failure
+		return err
+	}
+	return nil
+}
+
 // updateLoopCount increments and returns the loop count
 func (a *Analyzer) updateLoopCount() (int, error) {
 	loopFile := filepath.Join(a.StateRoot, ".ai", "state", "loop_count")
@@ -269,11 +289,8 @@ func (a *Analyzer) updateLoopCount() (int, error) {
 	// Increment
 	count++
 
-	// Write back
-	if err := os.MkdirAll(filepath.Dir(loopFile), 0755); err != nil {
-		return count, err
-	}
-	if err := os.WriteFile(loopFile, []byte(strconv.Itoa(count)), 0644); err != nil {
+	// Write back atomically
+	if err := writeFileAtomic(loopFile, []byte(strconv.Itoa(count)), 0644); err != nil {
 		return count, err
 	}
 
@@ -381,10 +398,9 @@ func (a *Analyzer) getReviewAttempts(prNumber int) int {
 
 // incrementReviewAttempts increments the review attempt count for a PR
 func (a *Analyzer) incrementReviewAttempts(prNumber int) {
-	attemptDir := filepath.Join(a.StateRoot, ".ai", "state", "attempts")
-	_ = os.MkdirAll(attemptDir, 0755)
-	attemptFile := filepath.Join(attemptDir, "review-pr-"+strconv.Itoa(prNumber))
+	attemptFile := filepath.Join(a.StateRoot, ".ai", "state", "attempts", "review-pr-"+strconv.Itoa(prNumber))
 
 	count := a.getReviewAttempts(prNumber) + 1
-	_ = os.WriteFile(attemptFile, []byte(strconv.Itoa(count)), 0644)
+	// Use atomic write to prevent corruption
+	_ = writeFileAtomic(attemptFile, []byte(strconv.Itoa(count)), 0644)
 }
