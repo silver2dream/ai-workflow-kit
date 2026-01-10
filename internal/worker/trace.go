@@ -132,6 +132,10 @@ func (r *TraceRecorder) writeLocked() error {
 		return fmt.Errorf("failed to write trace temp file: %w", err)
 	}
 
+	// Remove target file first for Windows compatibility
+	// On Windows, os.Rename fails if destination exists
+	_ = os.Remove(r.path)
+
 	if err := os.Rename(tmpPath, r.path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to rename trace temp file: %w", err)

@@ -257,6 +257,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 
 // writeFileAtomic writes data to a file atomically using tmp+rename pattern
 // This prevents file corruption if the process crashes during write
+// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -267,6 +268,10 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err := os.WriteFile(tmpFile, data, perm); err != nil {
 		return err
 	}
+
+	// Remove target file first for Windows compatibility
+	// On Windows, os.Rename fails if destination exists
+	_ = os.Remove(path)
 
 	if err := os.Rename(tmpFile, path); err != nil {
 		os.Remove(tmpFile) // cleanup on failure

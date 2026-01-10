@@ -126,26 +126,34 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 			logger.Log("從 result file 找到 PR URL: %s", prevResult.PRURL)
 			if prNumStr := ExtractPRNumber(prevResult.PRURL); prNumStr != "" {
 				if prNum, err := strconv.Atoi(prNumStr); err == nil && prNum > 0 {
-					opts.PRNumber = prNum
-					// Check PR merge state
-					if mergeState, err := ghClient.GetPRMergeState(ctx, prNum); err == nil {
-						logger.Log("PR #%d merge state: %s", prNum, mergeState)
-						switch mergeState {
-						case "DIRTY":
-							opts.MergeIssue = "conflict"
-							logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prNum)
-						case "BEHIND":
-							opts.MergeIssue = "rebase"
-							logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prNum)
+					// First check if PR is still open (not closed or merged)
+					if isOpen, err := ghClient.IsPROpen(ctx, prNum); err == nil && isOpen {
+						opts.PRNumber = prNum
+						// Check PR merge state (only meaningful for OPEN PRs)
+						if mergeState, err := ghClient.GetPRMergeState(ctx, prNum); err == nil {
+							logger.Log("PR #%d merge state: %s", prNum, mergeState)
+							switch mergeState {
+							case "DIRTY":
+								opts.MergeIssue = "conflict"
+								logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prNum)
+							case "BEHIND":
+								opts.MergeIssue = "rebase"
+								logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prNum)
+							}
+						} else {
+							logger.Log("⚠ 無法獲取 PR #%d merge state: %v", prNum, err)
 						}
+					} else if err != nil {
+						logger.Log("⚠ 無法獲取 PR #%d 狀態: %v", prNum, err)
 					} else {
-						logger.Log("⚠ 無法獲取 PR #%d merge state: %v", prNum, err)
+						logger.Log("PR #%d 已關閉或已合併，略過 merge 狀態檢查", prNum)
 					}
 				}
 			}
 		}
 
 		// Fallback: try to find PR by branch name
+		// Note: GetPRByBranch only returns OPEN PRs (gh pr list default behavior)
 		if opts.MergeIssue == "" && opts.PRNumber == 0 {
 			branch := fmt.Sprintf("feat/ai-issue-%d", opts.IssueNumber)
 			logger.Log("嘗試通過 branch name 查找 PR: %s", branch)

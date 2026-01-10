@@ -134,6 +134,7 @@ func (m *Manager) loadCurrentSessionInfo() (*CurrentSessionInfo, error) {
 }
 
 // writeCurrentSessionInfo writes the current session info atomically
+// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
 func (m *Manager) writeCurrentSessionInfo(info *CurrentSessionInfo) error {
 	data, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
@@ -145,6 +146,8 @@ func (m *Manager) writeCurrentSessionInfo(info *CurrentSessionInfo) error {
 		return err
 	}
 
+	// Remove target file first for Windows compatibility
+	_ = os.Remove(m.SessionFile())
 	return os.Rename(tmpFile, m.SessionFile())
 }
 
@@ -165,6 +168,7 @@ func (m *Manager) loadSessionLog(sessionID string) (*PrincipalSession, error) {
 }
 
 // writeSessionLog writes a session log file atomically
+// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
 func (m *Manager) writeSessionLog(sessionID string, session *PrincipalSession) error {
 	logFile := filepath.Join(m.SessionsDir(), sessionID+".json")
 
@@ -178,5 +182,7 @@ func (m *Manager) writeSessionLog(sessionID string, session *PrincipalSession) e
 		return err
 	}
 
+	// Remove target file first for Windows compatibility
+	_ = os.Remove(logFile)
 	return os.Rename(tmpFile, logFile)
 }

@@ -142,6 +142,7 @@ func LoadTrace(stateRoot string, issueNumber int) (*ExecutionTrace, error) {
 
 // WriteFileAtomic writes data to a file atomically using tmp+rename pattern
 // This prevents file corruption if the process crashes during write
+// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -153,6 +154,10 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
+	// Remove target file first for Windows compatibility
+	// On Windows, os.Rename fails if destination exists
+	_ = os.Remove(path)
+
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath) // cleanup on failure
 		return fmt.Errorf("failed to rename temp file: %w", err)
@@ -162,6 +167,7 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 }
 
 // WriteResultAtomic writes an issue result atomically using tmp+rename pattern
+// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
 func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) error {
 	resultDir := filepath.Join(stateRoot, ".ai", "results")
 	if err := os.MkdirAll(resultDir, 0755); err != nil {
@@ -179,6 +185,10 @@ func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) e
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
+
+	// Remove target file first for Windows compatibility
+	// On Windows, os.Rename fails if destination exists
+	_ = os.Remove(resultPath)
 
 	if err := os.Rename(tmpPath, resultPath); err != nil {
 		os.Remove(tmpPath) // cleanup on failure

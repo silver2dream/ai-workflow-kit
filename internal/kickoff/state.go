@@ -37,6 +37,7 @@ func NewStateManager(stateFile string) *StateManager {
 }
 
 // SaveState saves the current run state to disk atomically (G5 fix)
+// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
 func (s *StateManager) SaveState(state *RunState) error {
 	state.SavedAt = time.Now()
 
@@ -56,6 +57,10 @@ func (s *StateManager) SaveState(state *RunState) error {
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp state file: %w", err)
 	}
+
+	// Remove target file first for Windows compatibility
+	// On Windows, os.Rename fails if destination exists
+	_ = os.Remove(s.stateFile)
 
 	// Atomically rename temp file to target
 	if err := os.Rename(tmpFile, s.stateFile); err != nil {

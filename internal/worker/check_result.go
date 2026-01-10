@@ -177,8 +177,8 @@ func processResult(ctx context.Context, opts CheckResultOptions, result *IssueRe
 		}, nil
 
 	case "failed", "crashed", "timeout":
-		// Check retry count
-		failCount := ReadFailCount(opts.StateRoot, opts.IssueNumber) + 1
+		// Check retry count (AttemptGuard already incremented before worker started)
+		failCount := ReadFailCount(opts.StateRoot, opts.IssueNumber)
 
 		if failCount >= opts.MaxRetries {
 			// Max retries exceeded

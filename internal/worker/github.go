@@ -196,7 +196,38 @@ func (c *GitHubClient) GetPRBaseBranch(ctx context.Context, prNumber int) (strin
 	return baseBranch, nil
 }
 
+// GetPRState gets the state of a PR (OPEN, CLOSED, MERGED)
+func (c *GitHubClient) GetPRState(ctx context.Context, prNumber int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "state", "-q", ".state")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("timeout getting PR #%d state", prNumber)
+		}
+		return "", fmt.Errorf("gh pr view failed: %s", stderr.String())
+	}
+
+	state := strings.TrimSpace(stdout.String())
+	return state, nil
+}
+
+// IsPROpen checks if a PR is still open (not closed or merged)
+func (c *GitHubClient) IsPROpen(ctx context.Context, prNumber int) (bool, error) {
+	state, err := c.GetPRState(ctx, prNumber)
+	if err != nil {
+		return false, err
+	}
+	return state == "OPEN", nil
+}
+
 // GetPRMergeState gets the merge state status of a PR (DIRTY, BEHIND, BLOCKED, CLEAN, etc.)
+// Note: Only meaningful for OPEN PRs. For CLOSED/MERGED PRs, the result may be unexpected.
 func (c *GitHubClient) GetPRMergeState(ctx context.Context, prNumber int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()

@@ -69,7 +69,8 @@ func (c *GitHubClient) ListIssuesByLabel(ctx context.Context, label string) ([]I
 	return issues, nil
 }
 
-// ListPendingIssues lists issues with task label but without in-progress, pr-ready, worker-failed, or needs-review labels
+// ListPendingIssues lists issues with task label but without blocking labels
+// (in-progress, pr-ready, worker-failed, needs-human-review, review-failed, merge-conflict, needs-rebase)
 func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfig) ([]Issue, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
@@ -96,7 +97,9 @@ func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfi
 			!issue.HasLabel(labels.PRReady) &&
 			!issue.HasLabel(labels.WorkerFailed) &&
 			!issue.HasLabel(labels.NeedsHumanReview) &&
-			!issue.HasLabel(labels.ReviewFailed) {
+			!issue.HasLabel(labels.ReviewFailed) &&
+			!issue.HasLabel(labels.MergeConflict) &&
+			!issue.HasLabel(labels.NeedsRebase) {
 			pendingIssues = append(pendingIssues, issue)
 		}
 	}
@@ -153,17 +156,29 @@ func (c *GitHubClient) AddLabel(ctx context.Context, issueNumber int, label stri
 }
 
 // ExtractPRNumber extracts PR number from issue body or result file
+// Only matches explicit PR URL patterns to avoid false positives from Issue references (#123)
 func ExtractPRNumber(body string) int {
-	// Try to extract from pull URL pattern
-	prURLPattern := regexp.MustCompile(`/pull/(\d+)`)
-	if matches := prURLPattern.FindStringSubmatch(body); len(matches) > 1 {
+	// Try to extract from full GitHub PR URL pattern
+	// Matches: https://github.com/owner/repo/pull/123
+	fullURLPattern := regexp.MustCompile(`github\.com/[^/]+/[^/]+/pull/(\d+)`)
+	if matches := fullURLPattern.FindStringSubmatch(body); len(matches) > 1 {
 		if num, err := strconv.Atoi(matches[1]); err == nil {
 			return num
 		}
 	}
 
-	// Try to extract from #number pattern
-	prRefPattern := regexp.MustCompile(`#(\d+)`)
+	// Try to extract from relative pull URL pattern
+	// Matches: /pull/123 (but not /pulls/123 which is a list endpoint)
+	relativeURLPattern := regexp.MustCompile(`/pull/(\d+)(?:[^\d]|$)`)
+	if matches := relativeURLPattern.FindStringSubmatch(body); len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
+	}
+
+	// Try to extract from PR reference pattern (explicitly marked as PR)
+	// Matches: PR #123, PR#123, pull request #123
+	prRefPattern := regexp.MustCompile(`(?i)(?:PR\s*#|pull\s+request\s*#)(\d+)`)
 	if matches := prRefPattern.FindStringSubmatch(body); len(matches) > 1 {
 		if num, err := strconv.Atoi(matches[1]); err == nil {
 			return num
