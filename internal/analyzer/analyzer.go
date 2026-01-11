@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -104,8 +105,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 			}, nil
 		}
 		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
-		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.PRReady)
-		_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+		a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.PRReady})
 		return &Decision{
 			NextAction:  ActionNone,
 			IssueNumber: issue.Number,
@@ -123,8 +123,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 			attempts := a.getReviewAttempts(prNumber)
 			if attempts < MaxReviewAttempts {
 				// Allow new subagent to retry
-				_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
-				_ = a.GHClient.AddLabel(ctx, issue.Number, labels.PRReady)
+				a.updateIssueLabels(ctx, issue.Number, []string{labels.PRReady}, []string{labels.ReviewFailed})
 				a.incrementReviewAttempts(prNumber)
 				return &Decision{
 					NextAction:  ActionReviewPR,
@@ -133,8 +132,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 				}, nil
 			}
 			// Max retries exceeded, escalate to human
-			_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
-			_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+			a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.ReviewFailed})
 			return &Decision{
 				NextAction:  ActionNone,
 				IssueNumber: issue.Number,
@@ -143,8 +141,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 			}, nil
 		}
 		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
-		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
-		_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+		a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.ReviewFailed})
 		return &Decision{
 			NextAction:  ActionNone,
 			IssueNumber: issue.Number,
@@ -161,8 +158,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
 		if prNumber == 0 {
 			// Can't resolve conflict without PR number - mark as needs-human-review
-			_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.MergeConflict)
-			_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+			a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.MergeConflict})
 			return &Decision{
 				NextAction:  ActionNone,
 				IssueNumber: issue.Number,
@@ -185,8 +181,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
 		if prNumber == 0 {
 			// Can't rebase without PR number - mark as needs-human-review
-			_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.NeedsRebase)
-			_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+			a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.NeedsRebase})
 			return &Decision{
 				NextAction:  ActionNone,
 				IssueNumber: issue.Number,
@@ -391,6 +386,11 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 				}
 			}
 		}
+		// Check for scanner errors (e.g., I/O errors during reading)
+		if err := scanner.Err(); err != nil {
+			file.Close()
+			continue // Skip this spec file on read error
+		}
 		file.Close()
 	}
 
@@ -415,4 +415,19 @@ func (a *Analyzer) incrementReviewAttempts(prNumber int) {
 	count := a.getReviewAttempts(prNumber) + 1
 	// Use atomic write to prevent corruption
 	_ = writeFileAtomic(attemptFile, []byte(strconv.Itoa(count)), 0644)
+}
+
+// updateIssueLabels is a helper that logs warnings if label operations fail.
+// Label operations are non-critical - we log warnings but don't fail the workflow.
+func (a *Analyzer) updateIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabels []string) {
+	for _, label := range removeLabels {
+		if err := a.GHClient.RemoveLabel(ctx, issueNumber, label); err != nil {
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to remove label %q from issue #%d: %v\n", label, issueNumber, err)
+		}
+	}
+	for _, label := range addLabels {
+		if err := a.GHClient.AddLabel(ctx, issueNumber, label); err != nil {
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to add label %q to issue #%d: %v\n", label, issueNumber, err)
+		}
+	}
 }

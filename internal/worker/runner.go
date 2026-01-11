@@ -901,7 +901,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if trace != nil {
 		trace.StepStart("worker_complete_comment")
 	}
-	postIssueComment(ctx, opts.IssueID, workerSessionID, "worker_complete", "",
+	postIssueComment(ctx, opts.IssueID, workerSessionID, "worker_complete", prURL,
 		buildWorkerCompleteExtra(prURL, time.Since(startTime), "", 0), opts.GHTimeout)
 	if trace != nil {
 		_ = trace.StepEnd("success", "", nil)
@@ -1329,7 +1329,7 @@ func createOrFindPR(ctx context.Context, branch, base, title string, issueID int
 	return match, nil
 }
 
-func postIssueComment(ctx context.Context, issueID int, sessionID, commentType, source, extraData string, timeout time.Duration) {
+func postIssueComment(ctx context.Context, issueID int, sessionID, commentType, prURL, extraData string, timeout time.Duration) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return
 	}
@@ -1338,8 +1338,16 @@ func postIssueComment(ctx context.Context, issueID int, sessionID, commentType, 
 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	body := strings.Builder{}
+	// AWK marker format: <!-- AWK:session:SESSION_ID:COMMENT_TYPE[:PRURL] -->
+	// This allows IssueMonitor.parseAWKComment to extract comment type and PR URL
 	body.WriteString("<!-- AWK:session:")
 	body.WriteString(sessionID)
+	body.WriteString(":")
+	body.WriteString(commentType)
+	if prURL != "" {
+		body.WriteString(":")
+		body.WriteString(prURL)
+	}
 	body.WriteString(" -->\n")
 	body.WriteString("**AWK Tracking**\n\n")
 	body.WriteString("| Field | Value |\n")
@@ -1347,9 +1355,8 @@ func postIssueComment(ctx context.Context, issueID int, sessionID, commentType, 
 	body.WriteString(fmt.Sprintf("| Session | `%s` |\n", sessionID))
 	body.WriteString(fmt.Sprintf("| Timestamp | %s |\n", timestamp))
 	body.WriteString(fmt.Sprintf("| Type | %s |\n", commentType))
-	if source != "" {
-		body.WriteString(fmt.Sprintf("| Source | %s |\n", source))
-	}
+	// Note: prURL is included in AWK marker for IssueMonitor parsing
+	// and in extraData table via buildWorkerCompleteExtra, so we don't duplicate it here
 	if extraData != "" {
 		body.WriteString(extraData)
 		if !strings.HasSuffix(extraData, "\n") {
@@ -1529,18 +1536,19 @@ func writeIssueResult(ctx context.Context, stateRoot string, info issueResultCon
 const maxPreviousSessionIDs = 10
 
 func loadAttemptInfo(stateRoot string, issueID int) attemptInfo {
+	// Use fail_count.txt as the authoritative source for attempt number
+	// This ensures consistency with AttemptGuard.Check
+	failCount := ReadFailCount(stateRoot, issueID)
+	attempt := failCount + 1 // fail_count is 0-based, attempt is 1-based
+
+	// Load previous session info from result file
 	result, err := LoadResult(stateRoot, issueID)
 	if err != nil || result == nil {
-		return attemptInfo{AttemptNumber: 1}
+		return attemptInfo{AttemptNumber: attempt}
 	}
 
 	if result.Session.WorkerSessionID == "" {
-		return attemptInfo{AttemptNumber: 1}
-	}
-
-	attempt := result.Session.AttemptNumber
-	if attempt < 0 {
-		attempt = 0
+		return attemptInfo{AttemptNumber: attempt}
 	}
 
 	previous := append([]string{}, result.Session.PreviousSessionIDs...)
@@ -1552,7 +1560,7 @@ func loadAttemptInfo(stateRoot string, issueID int) attemptInfo {
 	}
 
 	return attemptInfo{
-		AttemptNumber:         attempt + 1,
+		AttemptNumber:         attempt,
 		PreviousSessionIDs:    previous,
 		PreviousFailureReason: result.Session.PreviousFailureReason,
 	}

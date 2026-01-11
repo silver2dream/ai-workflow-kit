@@ -112,6 +112,14 @@ func RunCodex(ctx context.Context, opts CodexOptions) CodexResult {
 	return result
 }
 
+// codexFlagsDetected tracks whether auto-detection succeeded for logging purposes
+type codexFlagsInfo struct {
+	FullAuto bool
+	Yolo     bool
+	JSON     bool
+	Detected bool // true if help command succeeded
+}
+
 func buildCodexCommand(ctx context.Context) ([]string, error) {
 	if _, err := exec.LookPath("codex"); err != nil {
 		return nil, fmt.Errorf("codex CLI not found in PATH")
@@ -125,21 +133,33 @@ func buildCodexCommand(ctx context.Context) ([]string, error) {
 
 	args := []string{"exec"}
 
-	// If help command fails, use basic args without auto-detection
+	// If help command fails, log warning and use basic args
 	if err != nil {
-		// Return basic exec command without optional flags
-		// The caller can still proceed, codex will use its defaults
+		// Log warning to stderr so operators can see it
+		fmt.Fprintf(os.Stderr, "[codex] warning: failed to detect codex flags (codex exec --help failed): %v\n", err)
+		fmt.Fprintf(os.Stderr, "[codex] warning: using basic 'codex exec' without --full-auto or other optional flags\n")
 		return args, nil
 	}
 
 	helpText := string(output)
+	var flags codexFlagsInfo
+	flags.Detected = true
+
 	if strings.Contains(helpText, "--full-auto") {
 		args = append(args, "--full-auto")
+		flags.FullAuto = true
 	} else if strings.Contains(helpText, "--yolo") {
 		args = append(args, "--yolo")
+		flags.Yolo = true
 	}
 	if strings.Contains(helpText, "--json") {
 		args = append(args, "--json")
+		flags.JSON = true
+	}
+
+	// Log detected flags for debugging
+	if !flags.FullAuto && !flags.Yolo {
+		fmt.Fprintf(os.Stderr, "[codex] info: no --full-auto or --yolo flag detected, codex will run in interactive mode\n")
 	}
 
 	return args, nil

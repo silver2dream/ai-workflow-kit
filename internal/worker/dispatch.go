@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -126,30 +125,28 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 		// First, check the result file for the previous PRURL
 		if prevResult, err := LoadResult(opts.StateRoot, opts.IssueNumber); err == nil && prevResult.PRURL != "" {
 			logger.Log("從 result file 找到 PR URL: %s", prevResult.PRURL)
-			if prNumStr := ExtractPRNumber(prevResult.PRURL); prNumStr != "" {
-				if prNum, err := strconv.Atoi(prNumStr); err == nil && prNum > 0 {
-					// First check if PR is still open (not closed or merged)
-					if isOpen, err := ghClient.IsPROpen(ctx, prNum); err == nil && isOpen {
-						opts.PRNumber = prNum
-						// Check PR merge state (only meaningful for OPEN PRs)
-						if mergeState, err := ghClient.GetPRMergeState(ctx, prNum); err == nil {
-							logger.Log("PR #%d merge state: %s", prNum, mergeState)
-							switch mergeState {
-							case "DIRTY":
-								opts.MergeIssue = "conflict"
-								logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prNum)
-							case "BEHIND":
-								opts.MergeIssue = "rebase"
-								logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prNum)
-							}
-						} else {
-							logger.Log("⚠ 無法獲取 PR #%d merge state: %v", prNum, err)
+			if prNum := ExtractPRNumber(prevResult.PRURL); prNum > 0 {
+				// First check if PR is still open (not closed or merged)
+				if isOpen, err := ghClient.IsPROpen(ctx, prNum); err == nil && isOpen {
+					opts.PRNumber = prNum
+					// Check PR merge state (only meaningful for OPEN PRs)
+					if mergeState, err := ghClient.GetPRMergeState(ctx, prNum); err == nil {
+						logger.Log("PR #%d merge state: %s", prNum, mergeState)
+						switch mergeState {
+						case "DIRTY":
+							opts.MergeIssue = "conflict"
+							logger.Log("⚠ 自動檢測到 PR #%d 有 merge conflict", prNum)
+						case "BEHIND":
+							opts.MergeIssue = "rebase"
+							logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prNum)
 						}
-					} else if err != nil {
-						logger.Log("⚠ 無法獲取 PR #%d 狀態: %v", prNum, err)
 					} else {
-						logger.Log("PR #%d 已關閉或已合併，略過 merge 狀態檢查", prNum)
+						logger.Log("⚠ 無法獲取 PR #%d merge state: %v", prNum, err)
 					}
+				} else if err != nil {
+					logger.Log("⚠ 無法獲取 PR #%d 狀態: %v", prNum, err)
+				} else {
+					logger.Log("PR #%d 已關閉或已合併，略過 merge 狀態檢查", prNum)
 				}
 			}
 		}
@@ -357,9 +354,7 @@ func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *Disp
 	// Try to get PR number from result.PRURL if not provided
 	prNumber := opts.PRNumber
 	if prNumber == 0 && result.PRURL != "" {
-		if prNumStr := ExtractPRNumber(result.PRURL); prNumStr != "" {
-			prNumber, _ = strconv.Atoi(prNumStr)
-		}
+		prNumber = ExtractPRNumber(result.PRURL)
 	}
 	if opts.MergeIssue != "" && prNumber > 0 {
 		mergeState, err := ghClient.GetPRMergeState(ctx, prNumber)

@@ -145,11 +145,10 @@ func LoadTrace(stateRoot string, issueNumber int) (*ExecutionTrace, error) {
 //
 // Platform notes:
 // - On Unix: os.Rename is atomic and overwrites existing files
-// - On Windows: os.Rename fails if destination exists, so we remove first
+// - On Windows: os.Rename fails if destination exists, so we use backup+remove+rename
 //
-// The remove+rename sequence on Windows is not truly atomic, but is the best
-// we can do without using Windows-specific APIs. The window of vulnerability
-// is minimized by performing both operations in quick succession.
+// On Windows, this function creates a backup before removing the original file.
+// If the rename fails, the backup is restored to minimize data loss risk.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -157,34 +156,58 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 
 	tmpPath := path + ".tmp"
+	bakPath := path + ".bak"
+
 	if err := os.WriteFile(tmpPath, data, perm); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
 	// Sync the temp file to ensure data is flushed to disk before rename
+	// This is critical for data integrity - if sync fails, the data may not be durable
 	if f, err := os.OpenFile(tmpPath, os.O_RDWR, 0); err == nil {
-		_ = f.Sync()
-		_ = f.Close()
+		syncErr := f.Sync()
+		closeErr := f.Close()
+		if syncErr != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("failed to sync temp file: %w", syncErr)
+		}
+		if closeErr != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("failed to close temp file: %w", closeErr)
+		}
 	}
 
-	// Remove target file first for Windows compatibility
-	// On Windows, os.Rename fails if destination exists
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		// If we can't remove the existing file (e.g., it's locked), cleanup and fail
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to remove existing file: %w", err)
+	// Check if original file exists
+	originalExists := false
+	if _, err := os.Stat(path); err == nil {
+		originalExists = true
+		// Create backup of original file before removing
+		if err := os.Rename(path, bakPath); err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("failed to backup existing file: %w", err)
+		}
 	}
 
+	// Rename temp file to target
 	if err := os.Rename(tmpPath, path); err != nil {
+		// Restore backup if rename failed
+		if originalExists {
+			_ = os.Rename(bakPath, path)
+		}
 		os.Remove(tmpPath) // cleanup on failure
 		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	// Success - remove backup
+	if originalExists {
+		_ = os.Remove(bakPath)
 	}
 
 	return nil
 }
 
-// WriteResultAtomic writes an issue result atomically using tmp+rename pattern
-// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
+// WriteResultAtomic writes an issue result atomically.
+// It uses WriteFileAtomic internally to ensure safe writes on all platforms.
 func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) error {
 	resultDir := filepath.Join(stateRoot, ".ai", "results")
 	if err := os.MkdirAll(resultDir, 0755); err != nil {
@@ -192,33 +215,13 @@ func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) e
 	}
 
 	resultPath := filepath.Join(resultDir, fmt.Sprintf("issue-%d.json", issueNumber))
-	tmpPath := resultPath + ".tmp"
 
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal result: %w", err)
 	}
 
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// Sync the temp file to ensure data is flushed to disk before rename
-	if f, err := os.OpenFile(tmpPath, os.O_RDWR, 0); err == nil {
-		_ = f.Sync()
-		_ = f.Close()
-	}
-
-	// Remove target file first for Windows compatibility
-	// On Windows, os.Rename fails if destination exists
-	_ = os.Remove(resultPath)
-
-	if err := os.Rename(tmpPath, resultPath); err != nil {
-		os.Remove(tmpPath) // cleanup on failure
-		return fmt.Errorf("failed to rename temp file: %w", err)
-	}
-
-	return nil
+	return WriteFileAtomic(resultPath, data, 0644)
 }
 
 // ReadFailCount reads the fail count for an issue from the runs directory

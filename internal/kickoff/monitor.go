@@ -75,7 +75,8 @@ func (m *IssueMonitor) Start() {
 	go m.pollLoop()
 }
 
-// Stop stops the monitor with the given reason
+// Stop stops the monitor with the given reason.
+// It waits up to 10 seconds for the poll loop to exit gracefully.
 func (m *IssueMonitor) Stop(reason string) {
 	m.mu.Lock()
 	if m.stopReason != "" {
@@ -86,7 +87,14 @@ func (m *IssueMonitor) Stop(reason string) {
 	m.mu.Unlock()
 
 	close(m.stopChan)
-	<-m.doneChan
+	// Wait for poll loop to exit with timeout to prevent indefinite blocking
+	select {
+	case <-m.doneChan:
+		// Poll loop exited gracefully
+	case <-time.After(10 * time.Second):
+		// Timeout waiting for poll loop - it may be stuck in a GitHub API call
+		// The poll loop will eventually exit when its current operation completes
+	}
 }
 
 // StopReason returns the reason the monitor stopped

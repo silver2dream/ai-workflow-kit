@@ -81,20 +81,24 @@ func TestLoadTrace(t *testing.T) {
 func TestExtractPRNumber(t *testing.T) {
 	tests := []struct {
 		url      string
-		expected string
+		expected int
 	}{
-		{"https://github.com/owner/repo/pull/123", "123"},
-		{"https://github.com/owner/repo/pulls/456", ""},  // "pulls" is list endpoint, not a valid PR URL
-		{"https://github.com/owner/repo/pull/1", "1"},
-		{"", ""},
-		{"https://github.com/owner/repo", ""},
-		{"https://github.com/owner/repo/issues/789", ""},
+		{"https://github.com/owner/repo/pull/123", 123},
+		{"https://github.com/owner/repo/pulls/456", 0},  // "pulls" is list endpoint, not a valid PR URL
+		{"https://github.com/owner/repo/pull/1", 1},
+		{"", 0},
+		{"https://github.com/owner/repo", 0},
+		{"https://github.com/owner/repo/issues/789", 0},
+		// Additional test cases for the new patterns
+		{"/pull/42", 42},
+		{"PR #999", 999},
+		{"pull request #500", 500},
 	}
 
 	for _, tt := range tests {
 		result := ExtractPRNumber(tt.url)
 		if result != tt.expected {
-			t.Errorf("ExtractPRNumber(%q) = %q, want %q", tt.url, result, tt.expected)
+			t.Errorf("ExtractPRNumber(%q) = %d, want %d", tt.url, result, tt.expected)
 		}
 	}
 }

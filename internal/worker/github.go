@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -248,23 +249,45 @@ func (c *GitHubClient) GetPRMergeState(ctx context.Context, prNumber int) (strin
 	return mergeState, nil
 }
 
-// ExtractPRNumber extracts PR number from a GitHub PR URL.
-// It validates that the URL is from github.com to prevent URL spoofing.
-func ExtractPRNumber(prURL string) string {
-	if prURL == "" {
-		return ""
+// ExtractPRNumber extracts PR number from a GitHub PR URL or text containing PR references.
+// It supports multiple formats:
+// - Full URL: https://github.com/owner/repo/pull/123
+// - Relative URL: /pull/123
+// - PR reference: PR #123, PR#123, pull request #123
+// Returns 0 if no PR number is found.
+func ExtractPRNumber(body string) int {
+	if body == "" {
+		return 0
 	}
 
-	// Match pattern: https://github.com/owner/repo/pull/123
-	// GitHub PR URLs always use "pull" (singular), not "pulls"
-	// Validate the full URL structure to prevent spoofing from other domains
-	re := regexp.MustCompile(`^https://github\.com/[^/]+/[^/]+/pull/(\d+)(?:\?|#|$)`)
-	matches := re.FindStringSubmatch(prURL)
-	if len(matches) >= 2 {
-		return matches[1]
+	// Try to extract from full GitHub PR URL pattern
+	// Matches: https://github.com/owner/repo/pull/123
+	fullURLPattern := regexp.MustCompile(`github\.com/[^/]+/[^/]+/pull/(\d+)`)
+	if matches := fullURLPattern.FindStringSubmatch(body); len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
 	}
 
-	return ""
+	// Try to extract from relative pull URL pattern
+	// Matches: /pull/123 (but not /pulls/123 which is a list endpoint)
+	relativeURLPattern := regexp.MustCompile(`/pull/(\d+)(?:[^\d]|$)`)
+	if matches := relativeURLPattern.FindStringSubmatch(body); len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
+	}
+
+	// Try to extract from PR reference pattern (explicitly marked as PR)
+	// Matches: PR #123, PR#123, pull request #123
+	prRefPattern := regexp.MustCompile(`(?i)(?:PR\s*#|pull\s+request\s*#)(\d+)`)
+	if matches := prRefPattern.FindStringSubmatch(body); len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
+	}
+
+	return 0
 }
 
 // HasLabel checks if an issue has a specific label

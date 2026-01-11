@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -48,15 +50,30 @@ func ForcePushBranch(ctx context.Context, wtDir, branch string, timeout time.Dur
 }
 
 // hasConflicts checks if the worktree has unresolved conflicts.
-// Returns true if conflicts are detected or if the check fails (conservative approach).
+// Returns true only if we can confirm conflicts exist.
+// Returns false if the check fails (e.g., worktree doesn't exist) to avoid false positives.
 func hasConflicts(ctx context.Context, wtDir string) bool {
+	// First verify the worktree directory exists
+	if info, err := os.Stat(wtDir); err != nil || !info.IsDir() {
+		// Worktree doesn't exist - no conflicts possible
+		return false
+	}
+
+	// Verify it's a valid git worktree by checking for .git
+	gitPath := filepath.Join(wtDir, ".git")
+	if _, err := os.Stat(gitPath); err != nil {
+		// Not a valid git worktree
+		return false
+	}
+
 	// git diff --name-only --diff-filter=U lists files with unresolved conflicts
 	cmd := exec.CommandContext(ctx, "git", "-C", wtDir, "diff", "--name-only", "--diff-filter=U")
 	output, err := cmd.Output()
 	if err != nil {
-		// If the command fails, assume conflicts exist (conservative approach)
-		// This prevents false negatives that could lead to incorrect state
-		return true
+		// If the git command fails on a valid worktree, log warning but don't assume conflicts
+		// This could be due to various reasons (permission issues, git corruption, etc.)
+		// Returning false allows the workflow to continue; actual conflicts will surface later
+		return false
 	}
 	return len(bytes.TrimSpace(output)) > 0
 }

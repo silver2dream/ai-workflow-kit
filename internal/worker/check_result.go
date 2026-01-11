@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -171,9 +172,14 @@ func processResult(ctx context.Context, opts CheckResultOptions, result *IssueRe
 		_ = ResetConsecutiveFailures(opts.StateRoot)
 		_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"pr-ready"}, []string{"in-progress"})
 
+		prNum := ExtractPRNumber(result.PRURL)
+		prNumStr := ""
+		if prNum > 0 {
+			prNumStr = strconv.Itoa(prNum)
+		}
 		return &CheckResultOutput{
 			Status:   "success",
-			PRNumber: ExtractPRNumber(result.PRURL),
+			PRNumber: prNumStr,
 		}, nil
 
 	case "failed", "crashed", "timeout":
