@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
 // PreflightChecker performs pre-flight checks before starting the workflow
@@ -120,6 +122,11 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 	ptyResult := p.CheckPTY()
 	results = append(results, ptyResult)
 	// PTY check is non-fatal (will fallback to standard execution)
+
+	// 10. Check permissions (warning only, non-fatal)
+	permResult := p.CheckPermissions()
+	results = append(results, permResult)
+	// Permissions check is non-fatal but important warning
 
 	return results, nil
 }
@@ -370,6 +377,28 @@ func (p *PreflightChecker) CheckPTY() CheckResult {
 			Warning: true,
 			Message: fmt.Sprintf("PTY support unknown for %s, using fallback", runtime.GOOS),
 		}
+	}
+}
+
+// CheckPermissions checks if settings.local.json has required Task tool permissions
+func (p *PreflightChecker) CheckPermissions() CheckResult {
+	// Get state root from config path
+	stateRoot := filepath.Dir(filepath.Dir(p.configPath)) // .ai/config -> .ai -> root
+
+	missing := upgrade.CheckPermissions(stateRoot)
+	if len(missing) == 0 {
+		return CheckResult{
+			Name:    "Permissions",
+			Passed:  true,
+			Message: "All required permissions present",
+		}
+	}
+
+	return CheckResult{
+		Name:    "Permissions",
+		Passed:  true, // Non-fatal, workflow can continue
+		Warning: true,
+		Message: fmt.Sprintf("Missing: %v. Run 'awkit upgrade' to fix.", missing),
 	}
 }
 

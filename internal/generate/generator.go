@@ -599,6 +599,8 @@ func generateClaudeSettings(path string) error {
   "permissions": {
     "allow": [
       "Skill(principal-workflow)",
+      "Task(pr-reviewer)",
+      "Task(conflict-resolver)",
       "Bash(gh:*)",
       "Bash(git:*)",
       "Bash(awkit:*)",
