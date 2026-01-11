@@ -265,7 +265,8 @@ func ReadConsecutiveFailures(stateRoot string) int {
 }
 
 // ResetConsecutiveFailures resets the consecutive failures counter
+// Uses atomic write to prevent file corruption on crash
 func ResetConsecutiveFailures(stateRoot string) error {
 	path := filepath.Join(stateRoot, ".ai", "state", "consecutive_failures")
-	return os.WriteFile(path, []byte("0"), 0644)
+	return WriteFileAtomic(path, []byte("0"), 0644)
 }

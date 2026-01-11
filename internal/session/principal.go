@@ -29,7 +29,12 @@ type CurrentSessionInfo struct {
 
 // InitPrincipal initializes a new Principal session
 // Returns the session ID or an error if another Principal is running
+// This method is safe for concurrent use.
 func (m *Manager) InitPrincipal() (string, error) {
+	// Lock to prevent concurrent session initialization race conditions
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Ensure directories exist
 	if err := os.MkdirAll(m.SessionsDir(), 0755); err != nil {
 		return "", fmt.Errorf("failed to create sessions dir: %w", err)
@@ -53,7 +58,7 @@ func (m *Manager) InitPrincipal() (string, error) {
 				if _, err := os.Stat(sessionFile); err == nil {
 					session, err := m.loadSessionLog(info.SessionID)
 					if err == nil && session.EndedAt == nil {
-						_ = m.EndPrincipal(info.SessionID, "interrupted")
+						_ = m.endPrincipalLocked(info.SessionID, "interrupted")
 					}
 				}
 			}
@@ -91,7 +96,11 @@ func (m *Manager) InitPrincipal() (string, error) {
 }
 
 // GetCurrentSessionID returns the current Principal session ID
+// This method is safe for concurrent use.
 func (m *Manager) GetCurrentSessionID() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	info, err := m.loadCurrentSessionInfo()
 	if err != nil {
 		return ""
@@ -100,7 +109,17 @@ func (m *Manager) GetCurrentSessionID() string {
 }
 
 // EndPrincipal ends a Principal session with a reason
+// This method is safe for concurrent use.
 func (m *Manager) EndPrincipal(sessionID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.endPrincipalLocked(sessionID, reason)
+}
+
+// endPrincipalLocked is the internal version that assumes the lock is already held.
+// This prevents deadlock when called from InitPrincipal which already holds the lock.
+func (m *Manager) endPrincipalLocked(sessionID, reason string) error {
 	session, err := m.loadSessionLog(sessionID)
 	if err != nil {
 		return fmt.Errorf("session log not found: %w", err)
@@ -141,14 +160,26 @@ func (m *Manager) writeCurrentSessionInfo(info *CurrentSessionInfo) error {
 		return err
 	}
 
-	tmpFile := m.SessionFile() + ".tmp"
+	targetFile := m.SessionFile()
+	tmpFile := targetFile + ".tmp"
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return err
 	}
 
 	// Remove target file first for Windows compatibility
-	_ = os.Remove(m.SessionFile())
-	return os.Rename(tmpFile, m.SessionFile())
+	// Check error to handle file-in-use scenarios on Windows
+	if err := os.Remove(targetFile); err != nil && !os.IsNotExist(err) {
+		// File exists but cannot be removed (possibly in use)
+		// Clean up temp file and return error
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to remove existing session file: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, targetFile); err != nil {
+		os.Remove(tmpFile) // cleanup on failure
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+	return nil
 }
 
 // loadSessionLog loads a session log file
@@ -183,6 +214,17 @@ func (m *Manager) writeSessionLog(sessionID string, session *PrincipalSession) e
 	}
 
 	// Remove target file first for Windows compatibility
-	_ = os.Remove(logFile)
-	return os.Rename(tmpFile, logFile)
+	// Check error to handle file-in-use scenarios on Windows
+	if err := os.Remove(logFile); err != nil && !os.IsNotExist(err) {
+		// File exists but cannot be removed (possibly in use)
+		// Clean up temp file and return error
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to remove existing session log: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, logFile); err != nil {
+		os.Remove(tmpFile) // cleanup on failure
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+	return nil
 }

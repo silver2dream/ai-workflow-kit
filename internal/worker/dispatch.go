@@ -359,8 +359,26 @@ func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *Disp
 	if opts.MergeIssue != "" && prNumber > 0 {
 		mergeState, err := ghClient.GetPRMergeState(ctx, prNumber)
 		if err != nil {
-			logger.Log("⚠ 無法檢查 PR merge 狀態: %v", err)
-		} else if mergeState == "DIRTY" {
+			// Cannot verify merge state - fail conservatively to allow retry
+			// This prevents marking as pr-ready when merge conflict may still exist
+			logger.Log("✗ 無法檢查 PR merge 狀態: %v", err)
+			logger.Log("無法確認 merge issue 是否已解決，保守處理為失敗")
+
+			// Keep the original merge label so next dispatch can retry
+			if opts.MergeIssue == "conflict" {
+				_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"merge-conflict"}, []string{"in-progress"})
+			} else if opts.MergeIssue == "rebase" {
+				_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"needs-rebase"}, []string{"in-progress"})
+			}
+
+			return &DispatchOutput{
+				Status: "failed",
+				PRURL:  result.PRURL,
+				Error:  fmt.Sprintf("無法驗證 merge 狀態: %v", err),
+			}, nil
+		}
+
+		if mergeState == "DIRTY" {
 			// Worker claimed success but conflict still exists
 			logger.Log("✗ Worker 回報成功但 PR #%d 仍有 merge conflict", prNumber)
 			logger.Log("Worker 沒有正確執行 rebase 指示")
@@ -429,7 +447,10 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 	// Update consecutive failures atomically to prevent corruption
 	consecutiveFailures := ReadConsecutiveFailures(opts.StateRoot) + 1
 	failuresFile := filepath.Join(opts.StateRoot, ".ai", "state", "consecutive_failures")
-	_ = WriteFileAtomic(failuresFile, []byte(fmt.Sprintf("%d", consecutiveFailures)), 0644)
+	if err := WriteFileAtomic(failuresFile, []byte(fmt.Sprintf("%d", consecutiveFailures)), 0644); err != nil {
+		logger.Log("⚠ 無法更新連續失敗計數器: %v", err)
+		// Continue execution - this is a tracking metric, not critical for workflow
+	}
 
 	if failCount >= opts.MaxRetries {
 		logger.Log("✗ 達到最大重試次數 (%d)", opts.MaxRetries)

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type Analyzer struct {
 	Config    *Config
 	GHClient  *GitHubClient
 	GHTimeout time.Duration
+	mu        sync.Mutex // protects loop counter updates
 }
 
 // New creates a new Analyzer
@@ -283,7 +285,12 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 }
 
 // updateLoopCount increments and returns the loop count
+// This method is safe for concurrent use.
 func (a *Analyzer) updateLoopCount() (int, error) {
+	// Lock to prevent concurrent read-modify-write race conditions
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	loopFile := filepath.Join(a.StateRoot, ".ai", "state", "loop_count")
 
 	// Read current count
