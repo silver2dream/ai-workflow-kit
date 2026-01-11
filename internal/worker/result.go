@@ -208,6 +208,9 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 
 // WriteResultAtomic writes an issue result atomically.
 // It uses WriteFileAtomic internally to ensure safe writes on all platforms.
+// IMPORTANT: If the new result doesn't have a pr_url but an existing result does,
+// the existing pr_url is preserved. This prevents losing PR information when
+// Worker retries fail.
 func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) error {
 	resultDir := filepath.Join(stateRoot, ".ai", "results")
 	if err := os.MkdirAll(resultDir, 0755); err != nil {
@@ -215,6 +218,13 @@ func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) e
 	}
 
 	resultPath := filepath.Join(resultDir, fmt.Sprintf("issue-%d.json", issueNumber))
+
+	// Preserve existing pr_url if new result doesn't have one
+	if result.PRURL == "" {
+		if existing, err := LoadResult(stateRoot, issueNumber); err == nil && existing.PRURL != "" {
+			result.PRURL = existing.PRURL
+		}
+	}
 
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

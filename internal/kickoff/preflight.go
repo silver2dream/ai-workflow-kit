@@ -382,8 +382,8 @@ func (p *PreflightChecker) CheckPTY() CheckResult {
 
 // CheckPermissions checks if settings.local.json has required Task tool permissions
 func (p *PreflightChecker) CheckPermissions() CheckResult {
-	// Get state root from config path
-	stateRoot := filepath.Dir(filepath.Dir(p.configPath)) // .ai/config -> .ai -> root
+	// Get state root from config path: .ai/config/workflow.yaml -> .ai/config -> .ai -> root
+	stateRoot := filepath.Dir(filepath.Dir(filepath.Dir(p.configPath)))
 
 	missing := upgrade.CheckPermissions(stateRoot)
 	if len(missing) == 0 {
