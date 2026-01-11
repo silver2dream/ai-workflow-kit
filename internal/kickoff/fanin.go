@@ -66,8 +66,9 @@ func (f *FanInManager) StartWorkerTailer(logDir string, issueID int) {
 	}
 
 	// Stop previous worker tailer if exists (Req 4.4)
+	// Use StopAndWait to ensure goroutine fully exits before starting new one
 	if f.workerTailer != nil {
-		f.workerTailer.Stop()
+		f.workerTailer.StopAndWait()
 		f.workerTailer = nil
 	}
 
@@ -87,7 +88,7 @@ func (f *FanInManager) StopWorkerTailer() {
 	defer f.mu.Unlock()
 
 	if f.workerTailer != nil {
-		f.workerTailer.Stop()
+		f.workerTailer.StopAndWait()
 		f.workerTailer = nil
 	}
 	f.currentIssueID = 0
@@ -133,11 +134,12 @@ func (f *FanInManager) Stop() {
 	f.stopped = true
 
 	// Stop all tailers (Req 4.5)
+	// Use StopAndWait to ensure goroutines fully exit before closing channel
 	if f.principalTailer != nil {
-		f.principalTailer.Stop()
+		f.principalTailer.StopAndWait()
 	}
 	if f.workerTailer != nil {
-		f.workerTailer.Stop()
+		f.workerTailer.StopAndWait()
 	}
 	f.mu.Unlock()
 

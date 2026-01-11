@@ -112,6 +112,12 @@ func RunCodex(ctx context.Context, opts CodexOptions) CodexResult {
 	return result
 }
 
+// codexFlagsInfo tracks detected flags for logging purposes
+type codexFlagsInfo struct {
+	FullAuto bool
+	Yolo     bool
+}
+
 func buildCodexCommand(ctx context.Context) ([]string, error) {
 	if _, err := exec.LookPath("codex"); err != nil {
 		return nil, fmt.Errorf("codex CLI not found in PATH")
@@ -121,17 +127,35 @@ func buildCodexCommand(ctx context.Context) ([]string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(helpCtx, "codex", "exec", "--help")
-	output, _ := cmd.CombinedOutput()
-	helpText := string(output)
+	output, err := cmd.CombinedOutput()
 
 	args := []string{"exec"}
+
+	// If help command fails, log warning and use basic args
+	if err != nil {
+		// Log warning to stderr so operators can see it
+		fmt.Fprintf(os.Stderr, "[codex] warning: failed to detect codex flags (codex exec --help failed): %v\n", err)
+		fmt.Fprintf(os.Stderr, "[codex] warning: using basic 'codex exec' without --full-auto or other optional flags\n")
+		return args, nil
+	}
+
+	helpText := string(output)
+	var flags codexFlagsInfo
+
 	if strings.Contains(helpText, "--full-auto") {
 		args = append(args, "--full-auto")
+		flags.FullAuto = true
 	} else if strings.Contains(helpText, "--yolo") {
 		args = append(args, "--yolo")
+		flags.Yolo = true
 	}
 	if strings.Contains(helpText, "--json") {
 		args = append(args, "--json")
+	}
+
+	// Log detected flags for debugging
+	if !flags.FullAuto && !flags.Yolo {
+		fmt.Fprintf(os.Stderr, "[codex] info: no --full-auto or --yolo flag detected, codex will run in interactive mode\n")
 	}
 
 	return args, nil
@@ -145,7 +169,11 @@ func runCodexAttempt(ctx context.Context, cmdArgs []string, opts CodexOptions, l
 		writeSummary(opts.SummaryFile, fmt.Sprintf("ERROR: failed to open prompt file: %v\n", err))
 		return 127
 	}
-	defer prompt.Close()
+	defer func() {
+		if err := prompt.Close(); err != nil {
+			writeSummary(opts.SummaryFile, fmt.Sprintf("WARNING: failed to close prompt file: %v\n", err))
+		}
+	}()
 
 	logHandle, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {

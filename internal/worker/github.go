@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -196,7 +197,38 @@ func (c *GitHubClient) GetPRBaseBranch(ctx context.Context, prNumber int) (strin
 	return baseBranch, nil
 }
 
+// GetPRState gets the state of a PR (OPEN, CLOSED, MERGED)
+func (c *GitHubClient) GetPRState(ctx context.Context, prNumber int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "state", "-q", ".state")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("timeout getting PR #%d state", prNumber)
+		}
+		return "", fmt.Errorf("gh pr view failed: %s", stderr.String())
+	}
+
+	state := strings.TrimSpace(stdout.String())
+	return state, nil
+}
+
+// IsPROpen checks if a PR is still open (not closed or merged)
+func (c *GitHubClient) IsPROpen(ctx context.Context, prNumber int) (bool, error) {
+	state, err := c.GetPRState(ctx, prNumber)
+	if err != nil {
+		return false, err
+	}
+	return state == "OPEN", nil
+}
+
 // GetPRMergeState gets the merge state status of a PR (DIRTY, BEHIND, BLOCKED, CLEAN, etc.)
+// Note: Only meaningful for OPEN PRs. For CLOSED/MERGED PRs, the result may be unexpected.
 func (c *GitHubClient) GetPRMergeState(ctx context.Context, prNumber int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
@@ -217,22 +249,45 @@ func (c *GitHubClient) GetPRMergeState(ctx context.Context, prNumber int) (strin
 	return mergeState, nil
 }
 
-// ExtractPRNumber extracts PR number from a GitHub PR URL
-func ExtractPRNumber(prURL string) string {
-	if prURL == "" {
-		return ""
+// ExtractPRNumber extracts PR number from a GitHub PR URL or text containing PR references.
+// It supports multiple formats:
+// - Full URL: https://github.com/owner/repo/pull/123
+// - Relative URL: /pull/123
+// - PR reference: PR #123, PR#123, pull request #123
+// Returns 0 if no PR number is found.
+func ExtractPRNumber(body string) int {
+	if body == "" {
+		return 0
 	}
 
-	// Match patterns like:
-	// https://github.com/owner/repo/pull/123
-	// https://github.com/owner/repo/pulls/123
-	re := regexp.MustCompile(`/pulls?/(\d+)`)
-	matches := re.FindStringSubmatch(prURL)
-	if len(matches) >= 2 {
-		return matches[1]
+	// Try to extract from full GitHub PR URL pattern
+	// Matches: https://github.com/owner/repo/pull/123
+	fullURLPattern := regexp.MustCompile(`github\.com/[^/]+/[^/]+/pull/(\d+)`)
+	if matches := fullURLPattern.FindStringSubmatch(body); len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
 	}
 
-	return ""
+	// Try to extract from relative pull URL pattern
+	// Matches: /pull/123 (but not /pulls/123 which is a list endpoint)
+	relativeURLPattern := regexp.MustCompile(`/pull/(\d+)(?:[^\d]|$)`)
+	if matches := relativeURLPattern.FindStringSubmatch(body); len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
+	}
+
+	// Try to extract from PR reference pattern (explicitly marked as PR)
+	// Matches: PR #123, PR#123, pull request #123
+	prRefPattern := regexp.MustCompile(`(?i)(?:PR\s*#|pull\s+request\s*#)(\d+)`)
+	if matches := prRefPattern.FindStringSubmatch(body); len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
+	}
+
+	return 0
 }
 
 // HasLabel checks if an issue has a specific label

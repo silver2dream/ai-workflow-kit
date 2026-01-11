@@ -34,6 +34,7 @@ const (
 	ReasonMaxConsecutiveFailures   = "max_consecutive_failures"
 	ReasonNoActionableTasks        = "no_actionable_tasks"
 	ReasonConfigNotFound           = "config_not_found"
+	ReasonLoopCountError           = "loop_count_error"
 )
 
 // Merge issue constants

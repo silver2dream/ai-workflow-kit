@@ -64,6 +64,8 @@ func (m *Manager) UpdateResultWithPrincipalSession(issueID, principalSessionID s
 		return err
 	}
 
+	// Remove target file first for Windows compatibility
+	_ = os.Remove(resultFile)
 	return os.Rename(tmpFile, resultFile)
 }
 
@@ -112,5 +114,7 @@ func (m *Manager) UpdateResultWithReviewAudit(issueID string, audit *ReviewAudit
 		return err
 	}
 
+	// Remove target file first for Windows compatibility
+	_ = os.Remove(resultFile)
 	return os.Rename(tmpFile, resultFile)
 }

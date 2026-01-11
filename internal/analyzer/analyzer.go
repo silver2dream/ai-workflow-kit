@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +26,7 @@ type Analyzer struct {
 	Config    *Config
 	GHClient  *GitHubClient
 	GHTimeout time.Duration
+	mu        sync.Mutex // protects loop counter updates
 }
 
 // New creates a new Analyzer
@@ -59,7 +62,14 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 
 	// Step 0: Loop safety check
 	loopCount, err := a.updateLoopCount()
-	if err == nil && loopCount >= MaxLoop {
+	if err != nil {
+		// If we can't update/read loop count, stop to prevent infinite loop
+		return &Decision{
+			NextAction: ActionNone,
+			ExitReason: ReasonLoopCountError,
+		}, nil
+	}
+	if loopCount >= MaxLoop {
 		return &Decision{
 			NextAction: ActionNone,
 			ExitReason: ReasonMaxLoopReached,
@@ -96,8 +106,13 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 				PRNumber:    prNumber,
 			}, nil
 		}
-		// Can't extract PR number, remove pr-ready label
-		_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.PRReady)
+		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
+		a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.PRReady})
+		return &Decision{
+			NextAction:  ActionNone,
+			IssueNumber: issue.Number,
+			ExitReason:  ReasonNeedsHumanReview,
+		}, nil
 	}
 
 	// Step 2.3: Check review-failed issues (retry with new subagent)
@@ -110,8 +125,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 			attempts := a.getReviewAttempts(prNumber)
 			if attempts < MaxReviewAttempts {
 				// Allow new subagent to retry
-				_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
-				_ = a.GHClient.AddLabel(ctx, issue.Number, labels.PRReady)
+				a.updateIssueLabels(ctx, issue.Number, []string{labels.PRReady}, []string{labels.ReviewFailed})
 				a.incrementReviewAttempts(prNumber)
 				return &Decision{
 					NextAction:  ActionReviewPR,
@@ -120,8 +134,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 				}, nil
 			}
 			// Max retries exceeded, escalate to human
-			_ = a.GHClient.RemoveLabel(ctx, issue.Number, labels.ReviewFailed)
-			_ = a.GHClient.AddLabel(ctx, issue.Number, labels.NeedsHumanReview)
+			a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.ReviewFailed})
 			return &Decision{
 				NextAction:  ActionNone,
 				IssueNumber: issue.Number,
@@ -129,6 +142,13 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 				ExitReason:  ReasonReviewMaxRetries,
 			}, nil
 		}
+		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
+		a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.ReviewFailed})
+		return &Decision{
+			NextAction:  ActionNone,
+			IssueNumber: issue.Number,
+			ExitReason:  ReasonNeedsHumanReview,
+		}, nil
 	}
 
 	// Step 2.5: Check merge-conflict label (Worker needs to fix conflict)
@@ -138,6 +158,15 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	if err == nil && len(conflictIssues) > 0 {
 		issue := conflictIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+		if prNumber == 0 {
+			// Can't resolve conflict without PR number - mark as needs-human-review
+			a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.MergeConflict})
+			return &Decision{
+				NextAction:  ActionNone,
+				IssueNumber: issue.Number,
+				ExitReason:  ReasonNeedsHumanReview,
+			}, nil
+		}
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,
@@ -152,6 +181,15 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	if err == nil && len(rebaseIssues) > 0 {
 		issue := rebaseIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
+		if prNumber == 0 {
+			// Can't rebase without PR number - mark as needs-human-review
+			a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.NeedsRebase})
+			return &Decision{
+				NextAction:  ActionNone,
+				IssueNumber: issue.Number,
+				ExitReason:  ReasonNeedsHumanReview,
+			}, nil
+		}
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,
@@ -221,8 +259,38 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}, nil
 }
 
+// writeFileAtomic writes data to a file atomically using tmp+rename pattern
+// This prevents file corruption if the process crashes during write
+// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	tmpFile := path + ".tmp"
+	if err := os.WriteFile(tmpFile, data, perm); err != nil {
+		return err
+	}
+
+	// Remove target file first for Windows compatibility
+	// On Windows, os.Rename fails if destination exists
+	_ = os.Remove(path)
+
+	if err := os.Rename(tmpFile, path); err != nil {
+		os.Remove(tmpFile) // cleanup on failure
+		return err
+	}
+	return nil
+}
+
 // updateLoopCount increments and returns the loop count
+// This method is safe for concurrent use.
 func (a *Analyzer) updateLoopCount() (int, error) {
+	// Lock to prevent concurrent read-modify-write race conditions
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	loopFile := filepath.Join(a.StateRoot, ".ai", "state", "loop_count")
 
 	// Read current count
@@ -235,11 +303,8 @@ func (a *Analyzer) updateLoopCount() (int, error) {
 	// Increment
 	count++
 
-	// Write back
-	if err := os.MkdirAll(filepath.Dir(loopFile), 0755); err != nil {
-		return count, err
-	}
-	if err := os.WriteFile(loopFile, []byte(strconv.Itoa(count)), 0644); err != nil {
+	// Write back atomically
+	if err := writeFileAtomic(loopFile, []byte(strconv.Itoa(count)), 0644); err != nil {
 		return count, err
 	}
 
@@ -328,6 +393,11 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 				}
 			}
 		}
+		// Check for scanner errors (e.g., I/O errors during reading)
+		if err := scanner.Err(); err != nil {
+			file.Close()
+			continue // Skip this spec file on read error
+		}
 		file.Close()
 	}
 
@@ -347,10 +417,24 @@ func (a *Analyzer) getReviewAttempts(prNumber int) int {
 
 // incrementReviewAttempts increments the review attempt count for a PR
 func (a *Analyzer) incrementReviewAttempts(prNumber int) {
-	attemptDir := filepath.Join(a.StateRoot, ".ai", "state", "attempts")
-	_ = os.MkdirAll(attemptDir, 0755)
-	attemptFile := filepath.Join(attemptDir, "review-pr-"+strconv.Itoa(prNumber))
+	attemptFile := filepath.Join(a.StateRoot, ".ai", "state", "attempts", "review-pr-"+strconv.Itoa(prNumber))
 
 	count := a.getReviewAttempts(prNumber) + 1
-	_ = os.WriteFile(attemptFile, []byte(strconv.Itoa(count)), 0644)
+	// Use atomic write to prevent corruption
+	_ = writeFileAtomic(attemptFile, []byte(strconv.Itoa(count)), 0644)
+}
+
+// updateIssueLabels is a helper that logs warnings if label operations fail.
+// Label operations are non-critical - we log warnings but don't fail the workflow.
+func (a *Analyzer) updateIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabels []string) {
+	for _, label := range removeLabels {
+		if err := a.GHClient.RemoveLabel(ctx, issueNumber, label); err != nil {
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to remove label %q from issue #%d: %v\n", label, issueNumber, err)
+		}
+	}
+	for _, label := range addLabels {
+		if err := a.GHClient.AddLabel(ctx, issueNumber, label); err != nil {
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to add label %q to issue #%d: %v\n", label, issueNumber, err)
+		}
+	}
 }

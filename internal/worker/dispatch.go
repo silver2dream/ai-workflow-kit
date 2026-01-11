@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -51,7 +50,9 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 
 	ghClient := NewGitHubClient(opts.GHTimeout)
 	logger := NewDispatchLogger(opts.StateRoot, opts.IssueNumber)
-	defer logger.Close()
+	defer func() {
+		_ = logger.Close() // best-effort close, file handle leak is logged but not fatal
+	}()
 
 	logger.Log("派工 Issue #%d", opts.IssueNumber)
 
@@ -119,13 +120,18 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 	// Step 2.5: Auto-detect merge issue if not provided
 	// This handles the case where Principal doesn't pass --merge-issue
 	if opts.MergeIssue == "" {
+		logger.Log("正在嘗試自動偵測 merge issue...")
+
 		// First, check the result file for the previous PRURL
 		if prevResult, err := LoadResult(opts.StateRoot, opts.IssueNumber); err == nil && prevResult.PRURL != "" {
-			if prNumStr := ExtractPRNumber(prevResult.PRURL); prNumStr != "" {
-				if prNum, err := strconv.Atoi(prNumStr); err == nil && prNum > 0 {
+			logger.Log("從 result file 找到 PR URL: %s", prevResult.PRURL)
+			if prNum := ExtractPRNumber(prevResult.PRURL); prNum > 0 {
+				// First check if PR is still open (not closed or merged)
+				if isOpen, err := ghClient.IsPROpen(ctx, prNum); err == nil && isOpen {
 					opts.PRNumber = prNum
-					// Check PR merge state
+					// Check PR merge state (only meaningful for OPEN PRs)
 					if mergeState, err := ghClient.GetPRMergeState(ctx, prNum); err == nil {
+						logger.Log("PR #%d merge state: %s", prNum, mergeState)
 						switch mergeState {
 						case "DIRTY":
 							opts.MergeIssue = "conflict"
@@ -134,18 +140,28 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 							opts.MergeIssue = "rebase"
 							logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prNum)
 						}
+					} else {
+						logger.Log("⚠ 無法獲取 PR #%d merge state: %v", prNum, err)
 					}
+				} else if err != nil {
+					logger.Log("⚠ 無法獲取 PR #%d 狀態: %v", prNum, err)
+				} else {
+					logger.Log("PR #%d 已關閉或已合併，略過 merge 狀態檢查", prNum)
 				}
 			}
 		}
 
 		// Fallback: try to find PR by branch name
-		if opts.MergeIssue == "" {
+		// Note: GetPRByBranch only returns OPEN PRs (gh pr list default behavior)
+		if opts.MergeIssue == "" && opts.PRNumber == 0 {
 			branch := fmt.Sprintf("feat/ai-issue-%d", opts.IssueNumber)
+			logger.Log("嘗試通過 branch name 查找 PR: %s", branch)
 			if prInfo, err := ghClient.GetPRByBranch(ctx, branch); err == nil && prInfo != nil {
 				opts.PRNumber = prInfo.Number
+				logger.Log("找到 PR #%d (branch: %s)", prInfo.Number, branch)
 				// Check PR merge state
 				if mergeState, err := ghClient.GetPRMergeState(ctx, prInfo.Number); err == nil {
+					logger.Log("PR #%d merge state: %s", prInfo.Number, mergeState)
 					switch mergeState {
 					case "DIRTY":
 						opts.MergeIssue = "conflict"
@@ -154,9 +170,20 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 						opts.MergeIssue = "rebase"
 						logger.Log("⚠ 自動檢測到 PR #%d 需要 rebase", prInfo.Number)
 					}
+				} else {
+					logger.Log("⚠ 無法獲取 PR #%d merge state: %v", prInfo.Number, err)
 				}
+			} else if err != nil {
+				logger.Log("未找到 branch %s 的 PR: %v", branch, err)
 			}
 		}
+
+		// Log the result of auto-detection
+		if opts.MergeIssue == "" {
+			logger.Log("✓ 無需處理 merge issue（自動偵測完成）")
+		}
+	} else {
+		logger.Log("使用 Principal 傳遞的 merge issue: %s", opts.MergeIssue)
 	}
 
 	// Step 3: Prepare ticket file
@@ -327,15 +354,31 @@ func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *Disp
 	// Try to get PR number from result.PRURL if not provided
 	prNumber := opts.PRNumber
 	if prNumber == 0 && result.PRURL != "" {
-		if prNumStr := ExtractPRNumber(result.PRURL); prNumStr != "" {
-			prNumber, _ = strconv.Atoi(prNumStr)
-		}
+		prNumber = ExtractPRNumber(result.PRURL)
 	}
 	if opts.MergeIssue != "" && prNumber > 0 {
 		mergeState, err := ghClient.GetPRMergeState(ctx, prNumber)
 		if err != nil {
-			logger.Log("⚠ 無法檢查 PR merge 狀態: %v", err)
-		} else if mergeState == "DIRTY" {
+			// Cannot verify merge state - fail conservatively to allow retry
+			// This prevents marking as pr-ready when merge conflict may still exist
+			logger.Log("✗ 無法檢查 PR merge 狀態: %v", err)
+			logger.Log("無法確認 merge issue 是否已解決，保守處理為失敗")
+
+			// Keep the original merge label so next dispatch can retry
+			if opts.MergeIssue == "conflict" {
+				_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"merge-conflict"}, []string{"in-progress"})
+			} else if opts.MergeIssue == "rebase" {
+				_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"needs-rebase"}, []string{"in-progress"})
+			}
+
+			return &DispatchOutput{
+				Status: "failed",
+				PRURL:  result.PRURL,
+				Error:  fmt.Sprintf("無法驗證 merge 狀態: %v", err),
+			}, nil
+		}
+
+		if mergeState == "DIRTY" {
 			// Worker claimed success but conflict still exists
 			logger.Log("✗ Worker 回報成功但 PR #%d 仍有 merge conflict", prNumber)
 			logger.Log("Worker 沒有正確執行 rebase 指示")
@@ -401,10 +444,13 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 	failCount := ReadFailCount(opts.StateRoot, opts.IssueNumber)
 	logger.Log("失敗次數: %d / %d", failCount, opts.MaxRetries)
 
-	// Update consecutive failures
+	// Update consecutive failures atomically to prevent corruption
 	consecutiveFailures := ReadConsecutiveFailures(opts.StateRoot) + 1
-	_ = os.WriteFile(filepath.Join(opts.StateRoot, ".ai", "state", "consecutive_failures"),
-		[]byte(fmt.Sprintf("%d", consecutiveFailures)), 0644)
+	failuresFile := filepath.Join(opts.StateRoot, ".ai", "state", "consecutive_failures")
+	if err := WriteFileAtomic(failuresFile, []byte(fmt.Sprintf("%d", consecutiveFailures)), 0644); err != nil {
+		logger.Log("⚠ 無法更新連續失敗計數器: %v", err)
+		// Continue execution - this is a tracking metric, not critical for workflow
+	}
 
 	if failCount >= opts.MaxRetries {
 		logger.Log("✗ 達到最大重試次數 (%d)", opts.MaxRetries)
@@ -637,9 +683,11 @@ func (l *DispatchLogger) Log(format string, args ...interface{}) {
 	_, _ = l.file.WriteString(msg)
 }
 
-// Close closes the logger
-func (l *DispatchLogger) Close() {
+// Close closes the logger and returns any error encountered.
+// On Windows, failing to close file handles can cause file locking issues.
+func (l *DispatchLogger) Close() error {
 	if l.file != nil {
-		_ = l.file.Close()
+		return l.file.Close()
 	}
+	return nil
 }

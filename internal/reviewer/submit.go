@@ -130,12 +130,17 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewR
 
 %s`, sessionID, sessionID, timestamp, opts.CIStatus, criteriaCount, opts.Score, opts.ReviewBody)
 
-	postPRComment(ctx, opts.PRNumber, commentBody, opts.GHTimeout)
+	// Post PR comment (non-critical, log warning if failed)
+	if err := postPRComment(ctx, opts.PRNumber, commentBody, opts.GHTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post PR comment: %v\n", err)
+	}
 
 	// Submit GitHub Review
 	if opts.Score >= 7 {
-		// Approve
-		approvePR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout)
+		// Approve (critical operation - must succeed)
+		if err := approvePR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout); err != nil {
+			return nil, fmt.Errorf("failed to approve PR #%d: %w", opts.PRNumber, err)
+		}
 
 		if opts.CIStatus == "passed" {
 			// Try to merge
@@ -143,17 +148,23 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewR
 				return handleMergeFailure(ctx, opts, sessionID, err)
 			}
 
-			// Merge successful
-			closeIssue(ctx, opts.IssueNumber, opts.GHTimeout)
-			removeLabel(ctx, opts.IssueNumber, "pr-ready", opts.GHTimeout)
+			// Merge successful - cleanup operations (non-critical, log warnings)
+			if err := closeIssue(ctx, opts.IssueNumber, opts.GHTimeout); err != nil {
+				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to close issue #%d: %v\n", opts.IssueNumber, err)
+			}
+			if err := removeLabel(ctx, opts.IssueNumber, "pr-ready", opts.GHTimeout); err != nil {
+				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to remove pr-ready label from issue #%d: %v\n", opts.IssueNumber, err)
+			}
 			updateTasksMd(ctx, opts.StateRoot, opts.IssueNumber)
-			cleanupWorktree(opts.StateRoot, opts.IssueNumber)
+			if err := cleanupWorktree(opts.StateRoot, opts.IssueNumber); err != nil {
+				fmt.Fprintf(os.Stderr, "[REVIEW] warning: %v\n", err)
+			}
 
 			return &SubmitReviewResult{Result: "merged"}, nil
 		}
 
 		// CI failed
-		postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 失敗
+		if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 失敗
 
 審查評分: %d/10 ✅
 
@@ -163,30 +174,42 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewR
 **CI 狀態**: ❌ 失敗
 
 請檢查 CI 日誌並修復問題後重新提交。
-PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout)
+PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != nil {
+			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
+		}
 
-		editIssueLabels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout)
+		if err := editIssueLabels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
+		}
 
 		return &SubmitReviewResult{Result: "approved_ci_failed"}, nil
 	}
 
-	// Request changes
-	requestChangesPR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout)
-	editIssueLabels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout)
+	// Request changes (critical operation - must succeed)
+	if err := requestChangesPR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout); err != nil {
+		return nil, fmt.Errorf("failed to request changes on PR #%d: %w", opts.PRNumber, err)
+	}
+	if err := editIssueLabels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
+	}
 
-	postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 不通過 (score: %d/10)
+	if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 不通過 (score: %d/10)
 
 %s
 
 ---
 **Worker 請根據以上意見修改後重新提交。**
-PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout)
+PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
+	}
 
 	return &SubmitReviewResult{Result: "changes_requested"}, nil
 }
 
 func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, sessionID string, err *EvidenceError) (*SubmitReviewResult, error) {
-	editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout)
+	if labelErr := editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout); labelErr != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", labelErr)
+	}
 
 	var details string
 	if err.Details != nil {
@@ -207,7 +230,7 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 		failureType = "assertion"
 	}
 
-	postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
+	if commentErr := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
 
 審查驗證失敗（%s）。
 
@@ -216,7 +239,9 @@ PR: #%d
 錯誤: %s
 %s
 已標記 review-failed。下一個 session 的 subagent 將重新審查。
-**當前 session 不應重試。**`, failureType, opts.PRNumber, err.Message, details), opts.GHTimeout)
+**當前 session 不應重試。**`, failureType, opts.PRNumber, err.Message, details), opts.GHTimeout); commentErr != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", commentErr)
+	}
 
 	return &SubmitReviewResult{Result: "review_blocked", Reason: err.Message}, nil
 }
@@ -259,8 +284,12 @@ mergeStateStatus: `+"`%s`"+`
 PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumber, mergeState)
 	}
 
-	editIssueLabels(ctx, opts.IssueNumber, []string{label}, []string{"pr-ready"}, opts.GHTimeout)
-	postIssueComment(ctx, opts.IssueNumber, message, opts.GHTimeout)
+	if err := editIssueLabels(ctx, opts.IssueNumber, []string{label}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
+	}
+	if err := postIssueComment(ctx, opts.IssueNumber, message, opts.GHTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
+	}
 
 	return &SubmitReviewResult{Result: result, Reason: mergeState}, nil
 }
@@ -318,40 +347,40 @@ func getTestCommand(stateRoot string, issueNumber int) string {
 	return "go test -v ./..."
 }
 
-// GitHub helper functions
+// GitHub helper functions - all functions now return errors for proper handling
 
-func postPRComment(ctx context.Context, prNumber int, body string, timeout time.Duration) {
+func postPRComment(ctx context.Context, prNumber int, body string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "comment", strconv.Itoa(prNumber), "--body", body)
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
-func postIssueComment(ctx context.Context, issueNumber int, body string, timeout time.Duration) {
+func postIssueComment(ctx context.Context, issueNumber int, body string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "gh", "issue", "comment", strconv.Itoa(issueNumber), "--body", body)
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
-func approvePR(ctx context.Context, prNumber, score int, timeout time.Duration) {
+func approvePR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "review", strconv.Itoa(prNumber),
 		"--approve", "--body", fmt.Sprintf("AWK Review: APPROVED (score: %d/10)", score))
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
-func requestChangesPR(ctx context.Context, prNumber, score int, timeout time.Duration) {
+func requestChangesPR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "review", strconv.Itoa(prNumber),
 		"--request-changes", "--body", fmt.Sprintf("AWK Review: CHANGES REQUESTED (score: %d/10)", score))
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
 func mergePR(ctx context.Context, prNumber int, timeout time.Duration) error {
@@ -363,24 +392,24 @@ func mergePR(ctx context.Context, prNumber int, timeout time.Duration) error {
 	return cmd.Run()
 }
 
-func closeIssue(ctx context.Context, issueNumber int, timeout time.Duration) {
+func closeIssue(ctx context.Context, issueNumber int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "gh", "issue", "close", strconv.Itoa(issueNumber))
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
-func removeLabel(ctx context.Context, issueNumber int, label string, timeout time.Duration) {
+func removeLabel(ctx context.Context, issueNumber int, label string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "gh", "issue", "edit", strconv.Itoa(issueNumber),
 		"--remove-label", label)
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
-func editIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabels []string, timeout time.Duration) {
+func editIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabels []string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -393,7 +422,7 @@ func editIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabe
 	}
 
 	cmd := exec.CommandContext(ctx, "gh", args...)
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
 func getMergeStateStatus(ctx context.Context, prNumber int, timeout time.Duration) string {
@@ -466,10 +495,13 @@ func updateTasksMd(ctx context.Context, stateRoot string, issueNumber int) {
 	}
 }
 
-func cleanupWorktree(stateRoot string, issueNumber int) {
+func cleanupWorktree(stateRoot string, issueNumber int) error {
 	wtDir := filepath.Join(stateRoot, ".worktrees", fmt.Sprintf("issue-%d", issueNumber))
 	if info, err := os.Stat(wtDir); err == nil && info.IsDir() {
 		cmd := exec.Command("git", "worktree", "remove", wtDir, "--force")
-		_ = cmd.Run()
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to remove worktree %s: %w", wtDir, err)
+		}
 	}
+	return nil
 }
