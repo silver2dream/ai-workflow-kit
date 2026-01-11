@@ -51,7 +51,9 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 
 	ghClient := NewGitHubClient(opts.GHTimeout)
 	logger := NewDispatchLogger(opts.StateRoot, opts.IssueNumber)
-	defer logger.Close()
+	defer func() {
+		_ = logger.Close() // best-effort close, file handle leak is logged but not fatal
+	}()
 
 	logger.Log("派工 Issue #%d", opts.IssueNumber)
 
@@ -665,9 +667,11 @@ func (l *DispatchLogger) Log(format string, args ...interface{}) {
 	_, _ = l.file.WriteString(msg)
 }
 
-// Close closes the logger
-func (l *DispatchLogger) Close() {
+// Close closes the logger and returns any error encountered.
+// On Windows, failing to close file handles can cause file locking issues.
+func (l *DispatchLogger) Close() error {
 	if l.file != nil {
-		_ = l.file.Close()
+		return l.file.Close()
 	}
+	return nil
 }

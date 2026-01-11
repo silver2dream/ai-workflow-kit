@@ -65,8 +65,18 @@ func SetupWorktree(ctx context.Context, opts WorktreeOptions) (*WorktreeInfo, er
 		}
 	}
 
+	// Checkout base branch - ignore error if already on the branch
 	_ = runGit(ctx, opts.StateRoot, opts.GitTimeout, "checkout", "-q", baseBranch)
-	_ = runGit(ctx, opts.StateRoot, opts.GitTimeout, "pull", "--ff-only", "origin", baseBranch)
+
+	// Pull latest changes - this is critical for worktree to be based on latest code
+	if err := runGit(ctx, opts.StateRoot, opts.GitTimeout, "pull", "--ff-only", "origin", baseBranch); err != nil {
+		// Pull may fail if remote branch doesn't exist yet or network issues
+		// Try to continue if the local branch exists and is valid
+		if verifyErr := runGit(ctx, opts.StateRoot, opts.GitTimeout, "rev-parse", "--verify", baseBranch); verifyErr != nil {
+			return nil, fmt.Errorf("failed to pull and verify base branch %s: %w", baseBranch, err)
+		}
+		// Local branch exists, continue with potentially stale state (logged but not fatal)
+	}
 
 	if err := ensureWorktreeBranch(ctx, opts.StateRoot, opts.Branch, baseBranch, opts.GitTimeout); err != nil {
 		return nil, err

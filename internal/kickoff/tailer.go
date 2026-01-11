@@ -47,24 +47,50 @@ func (t *LogTailer) Start() {
 	go t.tailLoop()
 }
 
-// Stop gracefully stops the tailer
-func (t *LogTailer) Stop() {
+// Stop gracefully stops the tailer and returns true if the goroutine
+// has completely stopped, false if it timed out (1 second).
+// If Stop returns false, the goroutine may still be running.
+func (t *LogTailer) Stop() bool {
 	t.mu.Lock()
 	if t.stopped {
 		t.mu.Unlock()
-		return
+		// Already stopped, wait for completion
+		select {
+		case <-t.doneChan:
+			return true
+		default:
+			return false
+		}
 	}
 	t.stopped = true
 	t.mu.Unlock()
 
 	close(t.stopChan)
 
-	// Wait with timeout (1 second per requirement)
+	// Wait with timeout (1 second per requirement Req 7.5)
+	// The timeout exists because file system operations (os.Open, file.Stat)
+	// may block indefinitely on problematic file systems and don't check channels.
 	select {
 	case <-t.doneChan:
+		return true
 	case <-time.After(1 * time.Second):
-		// Force timeout per Req 7.5
+		// Goroutine may still be running - caller should be aware
+		return false
 	}
+}
+
+// StopAndWait stops the tailer and blocks until the goroutine exits.
+// Use this when you need to guarantee the goroutine has fully stopped.
+// WARNING: This may block indefinitely if the goroutine is stuck in a syscall.
+func (t *LogTailer) StopAndWait() {
+	t.mu.Lock()
+	if !t.stopped {
+		t.stopped = true
+		close(t.stopChan)
+	}
+	t.mu.Unlock()
+
+	<-t.doneChan
 }
 
 // tailLoop is the main tailing loop

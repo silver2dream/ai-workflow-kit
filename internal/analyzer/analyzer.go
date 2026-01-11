@@ -59,7 +59,14 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 
 	// Step 0: Loop safety check
 	loopCount, err := a.updateLoopCount()
-	if err == nil && loopCount >= MaxLoop {
+	if err != nil {
+		// If we can't update/read loop count, stop to prevent infinite loop
+		return &Decision{
+			NextAction: ActionNone,
+			ExitReason: ReasonLoopCountError,
+		}, nil
+	}
+	if loopCount >= MaxLoop {
 		return &Decision{
 			NextAction: ActionNone,
 			ExitReason: ReasonMaxLoopReached,

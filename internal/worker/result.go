@@ -140,9 +140,16 @@ func LoadTrace(stateRoot string, issueNumber int) (*ExecutionTrace, error) {
 	return &trace, nil
 }
 
-// WriteFileAtomic writes data to a file atomically using tmp+rename pattern
-// This prevents file corruption if the process crashes during write
-// Note: On Windows, os.Rename cannot overwrite existing files, so we remove first
+// WriteFileAtomic writes data to a file atomically using tmp+rename pattern.
+// This prevents file corruption if the process crashes during write.
+//
+// Platform notes:
+// - On Unix: os.Rename is atomic and overwrites existing files
+// - On Windows: os.Rename fails if destination exists, so we remove first
+//
+// The remove+rename sequence on Windows is not truly atomic, but is the best
+// we can do without using Windows-specific APIs. The window of vulnerability
+// is minimized by performing both operations in quick succession.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -154,9 +161,19 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
+	// Sync the temp file to ensure data is flushed to disk before rename
+	if f, err := os.OpenFile(tmpPath, os.O_RDWR, 0); err == nil {
+		_ = f.Sync()
+		_ = f.Close()
+	}
+
 	// Remove target file first for Windows compatibility
 	// On Windows, os.Rename fails if destination exists
-	_ = os.Remove(path)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		// If we can't remove the existing file (e.g., it's locked), cleanup and fail
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to remove existing file: %w", err)
+	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath) // cleanup on failure
@@ -184,6 +201,12 @@ func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) e
 
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// Sync the temp file to ensure data is flushed to disk before rename
+	if f, err := os.OpenFile(tmpPath, os.O_RDWR, 0); err == nil {
+		_ = f.Sync()
+		_ = f.Close()
 	}
 
 	// Remove target file first for Windows compatibility

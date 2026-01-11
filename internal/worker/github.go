@@ -248,16 +248,17 @@ func (c *GitHubClient) GetPRMergeState(ctx context.Context, prNumber int) (strin
 	return mergeState, nil
 }
 
-// ExtractPRNumber extracts PR number from a GitHub PR URL
+// ExtractPRNumber extracts PR number from a GitHub PR URL.
+// It validates that the URL is from github.com to prevent URL spoofing.
 func ExtractPRNumber(prURL string) string {
 	if prURL == "" {
 		return ""
 	}
 
-	// Match patterns like:
-	// https://github.com/owner/repo/pull/123
-	// https://github.com/owner/repo/pulls/123
-	re := regexp.MustCompile(`/pulls?/(\d+)`)
+	// Match pattern: https://github.com/owner/repo/pull/123
+	// GitHub PR URLs always use "pull" (singular), not "pulls"
+	// Validate the full URL structure to prevent spoofing from other domains
+	re := regexp.MustCompile(`^https://github\.com/[^/]+/[^/]+/pull/(\d+)(?:\?|#|$)`)
 	matches := re.FindStringSubmatch(prURL)
 	if len(matches) >= 2 {
 		return matches[1]

@@ -9,12 +9,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
-// Manager handles session lifecycle operations
+// Manager handles session lifecycle operations.
+// It is safe for concurrent use.
 type Manager struct {
 	StateRoot string
+	mu        sync.Mutex // protects concurrent session log operations
 }
 
 // NewManager creates a new session manager

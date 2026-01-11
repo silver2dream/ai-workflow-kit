@@ -15,8 +15,13 @@ type Action struct {
 	Data      json.RawMessage `json:"data"`
 }
 
-// AppendAction appends an action to a session log
+// AppendAction appends an action to a session log.
+// This method is safe for concurrent use.
 func (m *Manager) AppendAction(sessionID, actionType string, data interface{}) error {
+	// Lock to prevent concurrent read-modify-write race conditions
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	logFile := filepath.Join(m.SessionsDir(), sessionID+".json")
 
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {

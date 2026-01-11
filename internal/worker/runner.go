@@ -42,6 +42,7 @@ type workflowConfig struct {
 	Repos      []workflowRepo     `yaml:"repos"`
 	Git        workflowGit        `yaml:"git"`
 	Escalation workflowEscalation `yaml:"escalation"`
+	Timeouts   workflowTimeouts   `yaml:"timeouts"`
 }
 
 type workflowRepo struct {
@@ -58,6 +59,12 @@ type workflowGit struct {
 type workflowEscalation struct {
 	RetryCount        int `yaml:"retry_count"`
 	RetryDelaySeconds int `yaml:"retry_delay_seconds"`
+}
+
+type workflowTimeouts struct {
+	GitSeconds    int `yaml:"git_seconds"`    // Git operations timeout (default: 120)
+	GHSeconds     int `yaml:"gh_seconds"`     // GitHub CLI operations timeout (default: 60)
+	CodexMinutes  int `yaml:"codex_minutes"`  // Codex execution timeout (default: 30)
 }
 
 type attemptInfo struct {
@@ -108,15 +115,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if strings.TrimSpace(opts.TicketFile) == "" {
 		return nil, fmt.Errorf("ticket file is required")
 	}
-	if opts.GHTimeout == 0 {
-		opts.GHTimeout = 60 * time.Second
-	}
-	if opts.GitTimeout == 0 {
-		opts.GitTimeout = 120 * time.Second
-	}
-	if opts.CodexTimeout == 0 {
-		opts.CodexTimeout = 30 * time.Minute
-	}
 
 	stateRoot := opts.StateRoot
 	if stateRoot == "" {
@@ -146,6 +144,29 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	cfg, cfgErr := loadWorkflowConfig(configPath)
 	if cfgErr != nil {
 		cfg = &workflowConfig{}
+	}
+
+	// Apply configured timeouts (config overrides defaults, opts overrides config)
+	if opts.GHTimeout == 0 {
+		if cfg.Timeouts.GHSeconds > 0 {
+			opts.GHTimeout = time.Duration(cfg.Timeouts.GHSeconds) * time.Second
+		} else {
+			opts.GHTimeout = 60 * time.Second
+		}
+	}
+	if opts.GitTimeout == 0 {
+		if cfg.Timeouts.GitSeconds > 0 {
+			opts.GitTimeout = time.Duration(cfg.Timeouts.GitSeconds) * time.Second
+		} else {
+			opts.GitTimeout = 120 * time.Second
+		}
+	}
+	if opts.CodexTimeout == 0 {
+		if cfg.Timeouts.CodexMinutes > 0 {
+			opts.CodexTimeout = time.Duration(cfg.Timeouts.CodexMinutes) * time.Minute
+		} else {
+			opts.CodexTimeout = 30 * time.Minute
+		}
 	}
 
 	integrationBranch := cfg.Git.IntegrationBranch
@@ -219,7 +240,12 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	earlyFailureLog := codexLogBase + ".early-failure.log"
 
 	logger := newWorkerLogger(workerLogFile, summaryFile)
-	defer logger.Close()
+	defer func() {
+		if err := logger.Close(); err != nil {
+			// Log to stderr as the logger itself is closing
+			fmt.Fprintf(os.Stderr, "WARNING: failed to close worker logger: %v\n", err)
+		}
+	}()
 
 	workerSessionID := generateSessionID("worker")
 	logger.Log("worker_session_id=%s", workerSessionID)
@@ -370,6 +396,11 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("AI_BRANCH_MODE")), "reset") {
 		baseRef := strings.TrimSpace(os.Getenv("AI_RESET_BASE"))
 		if baseRef == "" {
+			baseRef = "origin/" + integrationBranch
+		}
+		// Validate baseRef to prevent injection of invalid refs
+		if !isValidGitRef(baseRef) {
+			logger.Log("WARNING: invalid AI_RESET_BASE value, using default")
 			baseRef = "origin/" + integrationBranch
 		}
 		logger.Log("reset branch to %s", baseRef)
@@ -1003,6 +1034,15 @@ func buildWorkDirInstruction(repoType, repoPath, workDir, repoName string) strin
 		repoPath = repoName
 	}
 
+	// Validate repoPath to prevent path traversal attacks
+	// - Must not contain ".." components
+	// - Must not be an absolute path
+	// - Must not contain suspicious characters
+	if !isValidRepoPath(repoPath) {
+		// Fallback to safe default
+		repoPath = repoName
+	}
+
 	switch repoType {
 	case "directory":
 		return fmt.Sprintf("IMPORTANT: You are working in a MONOREPO (directory type).\n- Working directory: %s\n- All file paths should be relative to the worktree root\n- Example: %s/internal/foo.go (not internal/foo.go)\n", workDir, repoPath)
@@ -1013,9 +1053,95 @@ func buildWorkDirInstruction(repoType, repoPath, workDir, repoName string) strin
 	}
 }
 
+// isValidGitRef validates that a git ref name is safe and well-formed.
+// It checks for common unsafe patterns that could indicate injection attempts.
+func isValidGitRef(ref string) bool {
+	if ref == "" {
+		return false
+	}
+
+	// Git ref names cannot contain these characters
+	invalidChars := []string{" ", "~", "^", ":", "?", "*", "[", "\\", "\x00"}
+	for _, c := range invalidChars {
+		if strings.Contains(ref, c) {
+			return false
+		}
+	}
+
+	// Cannot start or end with a dot or slash
+	if strings.HasPrefix(ref, ".") || strings.HasSuffix(ref, ".") {
+		return false
+	}
+	if strings.HasPrefix(ref, "/") || strings.HasSuffix(ref, "/") {
+		return false
+	}
+
+	// Cannot contain consecutive dots (..)
+	if strings.Contains(ref, "..") {
+		return false
+	}
+
+	// Cannot contain consecutive slashes
+	if strings.Contains(ref, "//") {
+		return false
+	}
+
+	// Cannot end with .lock
+	if strings.HasSuffix(ref, ".lock") {
+		return false
+	}
+
+	// Cannot contain @{ sequence
+	if strings.Contains(ref, "@{") {
+		return false
+	}
+
+	return true
+}
+
+// isValidRepoPath validates that a repo path is safe and does not attempt path traversal.
+func isValidRepoPath(repoPath string) bool {
+	if repoPath == "" {
+		return false
+	}
+
+	// Check for absolute paths (Unix and Windows)
+	if filepath.IsAbs(repoPath) {
+		return false
+	}
+	if len(repoPath) >= 2 && repoPath[1] == ':' {
+		return false // Windows drive letter like "C:"
+	}
+
+	// Check for path traversal attempts
+	// Split by both / and \ to handle cross-platform paths
+	parts := strings.FieldsFunc(repoPath, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+
+	for _, part := range parts {
+		if part == ".." {
+			return false
+		}
+	}
+
+	// Check for suspicious patterns
+	if strings.Contains(repoPath, "..") {
+		return false
+	}
+
+	return true
+}
+
 func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return ""
+	}
+
+	// ghTimeout should be set from workflow.yaml config (timeouts.gh_seconds)
+	// or default to 60s in RunIssue. This is a safety fallback.
+	if ghTimeout <= 0 {
+		ghTimeout = 60 * time.Second
 	}
 
 	ctx, cancel := withOptionalTimeout(context.Background(), ghTimeout)
@@ -1398,6 +1524,10 @@ func writeIssueResult(ctx context.Context, stateRoot string, info issueResultCon
 	return WriteResultAtomic(stateRoot, info.IssueID, result)
 }
 
+// maxPreviousSessionIDs limits the number of previous session IDs to retain
+// to prevent unbounded memory growth
+const maxPreviousSessionIDs = 10
+
 func loadAttemptInfo(stateRoot string, issueID int) attemptInfo {
 	result, err := LoadResult(stateRoot, issueID)
 	if err != nil || result == nil {
@@ -1415,6 +1545,11 @@ func loadAttemptInfo(stateRoot string, issueID int) attemptInfo {
 
 	previous := append([]string{}, result.Session.PreviousSessionIDs...)
 	previous = append(previous, result.Session.WorkerSessionID)
+
+	// Limit the number of previous session IDs to prevent unbounded growth
+	if len(previous) > maxPreviousSessionIDs {
+		previous = previous[len(previous)-maxPreviousSessionIDs:]
+	}
 
 	return attemptInfo{
 		AttemptNumber:         attempt + 1,
@@ -1552,11 +1687,20 @@ func (l *workerLogger) Log(format string, args ...interface{}) {
 	}
 }
 
-func (l *workerLogger) Close() {
+func (l *workerLogger) Close() error {
+	var errs []string
 	if l.file != nil {
-		_ = l.file.Close()
+		if err := l.file.Close(); err != nil {
+			errs = append(errs, fmt.Sprintf("file: %v", err))
+		}
 	}
 	if l.summary != nil {
-		_ = l.summary.Close()
+		if err := l.summary.Close(); err != nil {
+			errs = append(errs, fmt.Sprintf("summary: %v", err))
+		}
 	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to close logger: %s", strings.Join(errs, "; "))
+	}
+	return nil
 }

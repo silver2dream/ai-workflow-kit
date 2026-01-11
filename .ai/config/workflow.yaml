@@ -203,6 +203,19 @@ rules:
   custom: []
 
 # ============================================================
+# Timeouts Configuration
+# ============================================================
+# 各項操作的超時設定（秒/分鐘）
+# 如果不設定，使用以下預設值：
+#   - git_seconds: 120 (Git 操作，如 fetch, push, rebase)
+#   - gh_seconds: 60 (GitHub CLI 操作，如 issue view, pr view)
+#   - codex_minutes: 30 (Codex Worker 執行時間)
+timeouts:
+  git_seconds: 120
+  gh_seconds: 60
+  codex_minutes: 30
+
+# ============================================================
 # Escalation Configuration
 # ============================================================
 # 定義何時 Principal 應該暫停並請求人工介入

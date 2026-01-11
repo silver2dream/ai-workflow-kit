@@ -121,10 +121,18 @@ func buildCodexCommand(ctx context.Context) ([]string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(helpCtx, "codex", "exec", "--help")
-	output, _ := cmd.CombinedOutput()
-	helpText := string(output)
+	output, err := cmd.CombinedOutput()
 
 	args := []string{"exec"}
+
+	// If help command fails, use basic args without auto-detection
+	if err != nil {
+		// Return basic exec command without optional flags
+		// The caller can still proceed, codex will use its defaults
+		return args, nil
+	}
+
+	helpText := string(output)
 	if strings.Contains(helpText, "--full-auto") {
 		args = append(args, "--full-auto")
 	} else if strings.Contains(helpText, "--yolo") {
@@ -145,7 +153,11 @@ func runCodexAttempt(ctx context.Context, cmdArgs []string, opts CodexOptions, l
 		writeSummary(opts.SummaryFile, fmt.Sprintf("ERROR: failed to open prompt file: %v\n", err))
 		return 127
 	}
-	defer prompt.Close()
+	defer func() {
+		if err := prompt.Close(); err != nil {
+			writeSummary(opts.SummaryFile, fmt.Sprintf("WARNING: failed to close prompt file: %v\n", err))
+		}
+	}()
 
 	logHandle, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {

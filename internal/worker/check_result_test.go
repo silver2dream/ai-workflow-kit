@@ -84,7 +84,7 @@ func TestExtractPRNumber(t *testing.T) {
 		expected string
 	}{
 		{"https://github.com/owner/repo/pull/123", "123"},
-		{"https://github.com/owner/repo/pulls/456", "456"},
+		{"https://github.com/owner/repo/pulls/456", ""},  // "pulls" is list endpoint, not a valid PR URL
 		{"https://github.com/owner/repo/pull/1", "1"},
 		{"", ""},
 		{"https://github.com/owner/repo", ""},
