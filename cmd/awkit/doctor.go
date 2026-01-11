@@ -204,5 +204,7 @@ Examples:
   awkit reset --dry-run    # Preview what would be reset
   awkit reset --all        # Reset everything
   awkit reset --labels     # Reset stuck review labels on GitHub
+
+Note: To fix missing permissions, use 'awkit upgrade' instead.
 `)
 }

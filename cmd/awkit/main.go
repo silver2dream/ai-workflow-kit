@@ -15,6 +15,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/buildinfo"
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
 	"github.com/silver2dream/ai-workflow-kit/internal/updatecheck"
+	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
 // ANSI color codes
@@ -811,6 +812,14 @@ func cmdUpgrade(args []string) int {
 			}
 		}
 
+		// Check permissions (dry-run)
+		permResult := upgrade.UpgradePermissions(targetDir, true)
+		if !permResult.Skipped {
+			fmt.Println("")
+			fmt.Println(bold("Permissions:"))
+			fmt.Printf("  %s\n", permResult.Message)
+		}
+
 		fmt.Println("")
 		success("Dry run complete. No changes made.\n")
 		return 0
@@ -841,6 +850,17 @@ func cmdUpgrade(args []string) int {
 	} else if *forceConfig {
 		fmt.Println("")
 		info("  Config overwritten: .ai/config/workflow.yaml\n")
+	}
+
+	// Upgrade permissions in settings.local.json
+	permResult := upgrade.UpgradePermissions(targetDir, *dryRun)
+	if !permResult.Skipped {
+		fmt.Println("")
+		if permResult.Success {
+			success("Permissions upgraded: %s\n", permResult.Message)
+		} else {
+			warn("Permissions upgrade: %s\n", permResult.Message)
+		}
 	}
 
 	// Auto-commit upgrade changes (unless --no-commit)

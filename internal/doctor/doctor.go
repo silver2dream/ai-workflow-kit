@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
 // CheckResult represents the result of a single check
@@ -54,6 +56,9 @@ func (d *Doctor) RunAll(ctx context.Context) []CheckResult {
 
 	// 3. Check deprecated files
 	results = append(results, d.CheckDeprecatedFiles()...)
+
+	// 4. Check Claude settings permissions
+	results = append(results, d.CheckClaudeSettings()...)
 
 	return results
 }
@@ -277,4 +282,30 @@ func (d *Doctor) CheckDeprecatedFiles() []CheckResult {
 	}
 
 	return results
+}
+
+// CheckClaudeSettings checks if settings.local.json has required Task tool permissions
+func (d *Doctor) CheckClaudeSettings() []CheckResult {
+	settingsPath := filepath.Join(d.StateRoot, ".claude", "settings.local.json")
+	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
+		return []CheckResult{{
+			Name:     "Claude Settings",
+			Status:   "warning",
+			Message:  ".claude/settings.local.json not found (run 'awkit generate')",
+			CanClean: false,
+		}}
+	}
+
+	missing := upgrade.CheckPermissions(d.StateRoot)
+	if len(missing) > 0 {
+		return []CheckResult{{
+			Name:     "Claude Settings",
+			Status:   "warning",
+			Message:  fmt.Sprintf("missing permissions: %s (run 'awkit upgrade')", strings.Join(missing, ", ")),
+			CanClean: true,
+			CleanKey: "upgrade",
+		}}
+	}
+
+	return nil
 }
