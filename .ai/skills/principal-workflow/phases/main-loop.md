@@ -52,22 +52,22 @@ awkit analyze-next --json
 
 ⚠️ **WARNING**: 忽略 merge_issue 會導致 merge conflict/rebase 無法修復，造成無限循環！
 
-### ⚠️ CRITICAL: review_pr 必須使用 Subagent
+### ⚠️ CRITICAL: review_pr 必須使用 Task Tool
 
-當 `next_action` 為 `review_pr` 時，**必須使用 Task tool 調用 pr-reviewer subagent**。
+當 `next_action` 為 `review_pr` 時，**你必須使用 Task tool 調用 pr-reviewer subagent**。
 
-**禁止**直接執行 `awkit prepare-review` 或 `awkit submit-review`。
-**禁止**自己執行 PR 審查流程。
+**絕對禁止**：
+- ❌ 直接執行 `awkit prepare-review` 命令
+- ❌ 直接執行 `awkit submit-review` 命令
+- ❌ 自己讀取 PR 代碼進行審查
+- ❌ 自己撰寫 review body
 
-使用 Task tool 調用 subagent：
+**你必須做的**：使用 Task tool，設定以下參數：
+- `subagent_type`: `"pr-reviewer"`
+- `description`: `"Review PR #<pr_number>"`
+- `prompt`: `"Review PR #<pr_number> for Issue #<issue_number>"`
 
-```
-使用 Task tool：
-- subagent_type: "pr-reviewer"
-- prompt: "審查 PR #<pr_number>，Issue #<issue_number>"
-```
-
-Subagent 會獨立執行審查流程並返回結果：
+Subagent 會獨立執行完整審查流程並返回結果：
 - `merged`: PR 已合併
 - `changes_requested`: 審查不通過
 - `review_blocked`: Evidence 驗證失敗
@@ -118,11 +118,10 @@ Principal 收到任何狀態都直接回到 Step 1，Go 命令會自動處理恢
 
 **Step 2**: 使用 Task tool 調用 conflict-resolver subagent：
 
-```
-使用 Task tool：
-- subagent_type: "conflict-resolver"
-- prompt: "解決 merge conflict。WORKTREE_PATH=<path> ISSUE_NUMBER=<n> PR_NUMBER=<n>"
-```
+使用 Task tool，設定以下參數：
+- `subagent_type`: `"conflict-resolver"`
+- `description`: `"Resolve conflict for Issue #<n>"`
+- `prompt`: `"Resolve merge conflict. WORKTREE_PATH=<path> ISSUE_NUMBER=<n> PR_NUMBER=<n>"`
 
 **Step 3**: 根據 subagent 返回結果執行對應動作：
 
