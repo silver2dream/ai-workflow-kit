@@ -112,12 +112,10 @@ func RunCodex(ctx context.Context, opts CodexOptions) CodexResult {
 	return result
 }
 
-// codexFlagsDetected tracks whether auto-detection succeeded for logging purposes
+// codexFlagsInfo tracks detected flags for logging purposes
 type codexFlagsInfo struct {
 	FullAuto bool
 	Yolo     bool
-	JSON     bool
-	Detected bool // true if help command succeeded
 }
 
 func buildCodexCommand(ctx context.Context) ([]string, error) {
@@ -143,7 +141,6 @@ func buildCodexCommand(ctx context.Context) ([]string, error) {
 
 	helpText := string(output)
 	var flags codexFlagsInfo
-	flags.Detected = true
 
 	if strings.Contains(helpText, "--full-auto") {
 		args = append(args, "--full-auto")
@@ -154,7 +151,6 @@ func buildCodexCommand(ctx context.Context) ([]string, error) {
 	}
 	if strings.Contains(helpText, "--json") {
 		args = append(args, "--json")
-		flags.JSON = true
 	}
 
 	// Log detected flags for debugging
