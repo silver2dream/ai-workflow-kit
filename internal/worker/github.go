@@ -330,3 +330,89 @@ func (info *IssueInfo) HasLabel(label string) bool {
 func (info *IssueInfo) IsOpen() bool {
 	return strings.ToUpper(info.State) == "OPEN"
 }
+
+// IssueComment represents a comment on an issue
+type IssueComment struct {
+	Body      string `json:"body"`
+	CreatedAt string `json:"createdAt"`
+	Author    struct {
+		Login string `json:"login"`
+	} `json:"author"`
+}
+
+// GetIssueComments fetches the most recent comments on an issue
+func (c *GitHubClient) GetIssueComments(ctx context.Context, number int, limit int) ([]IssueComment, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	if limit <= 0 {
+		limit = 10
+	}
+
+	cmd := exec.CommandContext(ctx, "gh", "issue", "view", fmt.Sprintf("%d", number),
+		"--json", "comments",
+		"--jq", fmt.Sprintf(".comments | .[-%d:]", limit))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("timeout fetching comments for issue %d", number)
+		}
+		return nil, fmt.Errorf("gh issue view failed: %s", stderr.String())
+	}
+
+	var comments []IssueComment
+	if err := json.Unmarshal(stdout.Bytes(), &comments); err != nil {
+		return nil, fmt.Errorf("failed to parse comments JSON: %w", err)
+	}
+
+	return comments, nil
+}
+
+// GetLatestReviewBlockedReason finds the most recent "AWK Review blocked" comment
+// and extracts the failure reason and details.
+func (c *GitHubClient) GetLatestReviewBlockedReason(ctx context.Context, issueNumber int) (string, error) {
+	comments, err := c.GetIssueComments(ctx, issueNumber, 20)
+	if err != nil {
+		return "", err
+	}
+
+	// Search from newest to oldest for "AWK Review blocked" comment
+	for i := len(comments) - 1; i >= 0; i-- {
+		body := comments[i].Body
+		if strings.Contains(body, "## AWK Review blocked") {
+			// Extract the relevant content after the header
+			lines := strings.Split(body, "\n")
+			var result strings.Builder
+			inCodeBlock := false
+
+			for _, line := range lines {
+				// Skip the header line
+				if strings.HasPrefix(line, "## AWK Review blocked") {
+					continue
+				}
+				// Skip the "已標記" and "當前 session" lines
+				if strings.Contains(line, "已標記") || strings.Contains(line, "當前 session") {
+					continue
+				}
+				// Track code blocks for test failure details
+				if strings.HasPrefix(line, "```") {
+					inCodeBlock = !inCodeBlock
+				}
+				// Include error message and details
+				if strings.HasPrefix(line, "錯誤:") || strings.HasPrefix(line, "PR:") ||
+					strings.HasPrefix(line, "審查驗證失敗") || inCodeBlock ||
+					strings.HasPrefix(line, "- ") {
+					result.WriteString(line)
+					result.WriteString("\n")
+				}
+			}
+
+			return strings.TrimSpace(result.String()), nil
+		}
+	}
+
+	return "", nil // No review blocked comment found
+}
