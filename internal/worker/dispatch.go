@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // DispatchOptions contains options for DispatchWorker
@@ -36,7 +37,7 @@ type DispatchOutput struct {
 
 // DispatchWorker dispatches an issue to a worker for execution
 // This is the Go implementation of dispatch_worker.sh
-func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput, error) {
+func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *DispatchOutput, err error) {
 	// Set defaults
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 30 * time.Second
@@ -47,6 +48,34 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (*DispatchOutput,
 	if opts.MaxRetries == 0 {
 		opts.MaxRetries = 3
 	}
+
+	startTime := time.Now()
+
+	// Write dispatch_start event
+	trace.WriteEvent(trace.ComponentPrincipal, trace.TypeDispatchStart, trace.LevelInfo,
+		trace.WithIssue(opts.IssueNumber),
+		trace.WithData(map[string]any{
+			"session":        opts.PrincipalSessionID,
+			"worker_timeout": opts.WorkerTimeout.String(),
+			"max_retries":    opts.MaxRetries,
+			"merge_issue":    opts.MergeIssue,
+		}))
+
+	// Write dispatch_end event on function return
+	defer func() {
+		level := trace.LevelInfo
+		if output != nil && output.Status == "failed" {
+			level = trace.LevelError
+		}
+		trace.WriteEvent(trace.ComponentPrincipal, trace.TypeDispatchEnd, level,
+			trace.WithIssue(opts.IssueNumber),
+			trace.WithData(map[string]any{
+				"status":   output.Status,
+				"pr_url":   output.PRURL,
+				"error":    output.Error,
+				"duration": time.Since(startTime).String(),
+			}))
+	}()
 
 	ghClient := NewGitHubClient(opts.GHTimeout)
 	logger := NewDispatchLogger(opts.StateRoot, opts.IssueNumber)

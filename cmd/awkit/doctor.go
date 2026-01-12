@@ -85,6 +85,8 @@ func cmdReset(args []string) int {
 	lock := fs.Bool("lock", false, "Remove lock file")
 	deprecated := fs.Bool("deprecated", false, "Remove deprecated files")
 	results := fs.Bool("results", false, "Reset result files")
+	traces := fs.Bool("traces", false, "Reset old trace files (deprecated, use events)")
+	events := fs.Bool("events", false, "Reset event stream files")
 	labels := fs.Bool("labels", false, "Reset review-failed labels to pr-ready on GitHub")
 	fs.Usage = usageReset
 
@@ -93,7 +95,7 @@ func cmdReset(args []string) int {
 	}
 
 	// If no specific flags, default to common reset
-	noFlags := !*state && !*attempts && !*stop && !*lock && !*deprecated && !*results && !*labels && !*all
+	noFlags := !*state && !*attempts && !*stop && !*lock && !*deprecated && !*results && !*traces && !*events && !*labels && !*all
 
 	cwd, _ := os.Getwd()
 	resetter := reset.New(cwd)
@@ -128,6 +130,12 @@ func cmdReset(args []string) int {
 	}
 	if *all || *results {
 		allResults = append(allResults, resetter.Results()...)
+	}
+	if *all || *traces {
+		allResults = append(allResults, resetter.ResetTraces()...)
+	}
+	if *all || *events {
+		allResults = append(allResults, resetter.ResetEvents()...)
 	}
 	if *labels {
 		allResults = append(allResults, resetter.ResetGitHubLabel(ctx, "review-failed", "pr-ready")...)
@@ -190,19 +198,22 @@ Usage:
 
 Options:
   --dry-run     Show what would be reset without making changes
-  --all         Reset all state including results and lock
+  --all         Reset all state including results, traces, events, and lock
   --state       Reset state files (loop_count, consecutive_failures)
   --attempts    Reset attempt tracking files
   --stop        Remove STOP marker
   --lock        Remove lock file (use with caution)
   --deprecated  Remove deprecated files
   --results     Reset result files
+  --traces      Reset old trace files (.ai/state/traces/)
+  --events      Reset event stream files (.ai/state/events/)
   --labels      Reset review-failed labels to pr-ready on GitHub
 
 Examples:
   awkit reset              # Reset common state
   awkit reset --dry-run    # Preview what would be reset
-  awkit reset --all        # Reset everything
+  awkit reset --all        # Reset everything (including traces and events)
+  awkit reset --traces     # Clean old trace files after upgrade
   awkit reset --labels     # Reset stuck review labels on GitHub
 
 Note: To fix missing permissions, use 'awkit upgrade' instead.

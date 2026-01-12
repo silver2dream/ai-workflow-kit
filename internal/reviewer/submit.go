@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // SubmitReviewOptions configures the submit review operation
@@ -37,7 +38,7 @@ type SubmitReviewResult struct {
 }
 
 // SubmitReview submits a PR review and handles the result
-func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewResult, error) {
+func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *SubmitReviewResult, err error) {
 	if opts.StateRoot == "" {
 		return nil, fmt.Errorf("state root is required")
 	}
@@ -47,6 +48,46 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewR
 	if opts.TestTimeout == 0 {
 		opts.TestTimeout = 5 * time.Minute
 	}
+
+	// Write review_start event
+	trace.WriteEvent(trace.ComponentReviewer, trace.TypeReviewStart, trace.LevelInfo,
+		trace.WithPR(opts.PRNumber),
+		trace.WithIssue(opts.IssueNumber),
+		trace.WithData(map[string]any{
+			"score":     opts.Score,
+			"ci_status": opts.CIStatus,
+		}))
+
+	// Write review_decision event on function return
+	defer func() {
+		decision := "unknown"
+		if result != nil {
+			decision = result.Result
+		}
+		level := trace.LevelInfo
+		if decision == "changes_requested" || decision == "review_blocked" {
+			level = trace.LevelWarn
+		}
+		if err != nil {
+			level = trace.LevelError
+		}
+
+		trace.WriteDecisionEvent(trace.ComponentReviewer, trace.TypeReviewDecision, trace.Decision{
+			Rule: "review score and CI status determines merge decision",
+			Conditions: map[string]any{
+				"score":     opts.Score,
+				"ci_status": opts.CIStatus,
+				"pr_number": opts.PRNumber,
+			},
+			Result: decision,
+		}, trace.WithPR(opts.PRNumber), trace.WithIssue(opts.IssueNumber))
+
+		// Also write review_end event
+		trace.WriteEvent(trace.ComponentReviewer, trace.TypeReviewEnd, level,
+			trace.WithPR(opts.PRNumber),
+			trace.WithIssue(opts.IssueNumber),
+			trace.WithData(map[string]any{"result": decision}))
+	}()
 
 	// Get session ID
 	sessionMgr := session.NewManager(opts.StateRoot)
@@ -356,7 +397,18 @@ func mergePR(ctx context.Context, prNumber int, timeout time.Duration) error {
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", strconv.Itoa(prNumber),
 		"--squash", "--delete-branch")
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		// Write PR merge failure event
+		trace.WriteEvent(trace.ComponentGitHub, trace.TypePRMergeFail, trace.LevelError,
+			trace.WithPR(prNumber),
+			trace.WithError(err))
+		return err
+	}
+
+	// Write PR merge success event
+	trace.WriteEvent(trace.ComponentGitHub, trace.TypePRMerge, trace.LevelInfo,
+		trace.WithPR(prNumber))
+	return nil
 }
 
 func closeIssue(ctx context.Context, issueNumber int, timeout time.Duration) error {

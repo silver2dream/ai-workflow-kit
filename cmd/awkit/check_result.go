@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -139,11 +140,41 @@ func cmdCheckResult(args []string) int {
 }
 
 // resolveGitRoot finds the git repository root
+// If called from a worktree, returns the main repository root (not the worktree root)
 func resolveGitRoot() (string, error) {
+	// First get the toplevel (works for both main repo and worktree)
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+	toplevel := strings.TrimSpace(string(output))
+
+	// Check if we're in a worktree by looking at --git-common-dir
+	// In a worktree, this points to the main repo's .git directory
+	cmd = exec.Command("git", "rev-parse", "--git-common-dir")
+	commonDir, err := cmd.Output()
+	if err != nil {
+		// If --git-common-dir fails, fall back to toplevel
+		return toplevel, nil
+	}
+
+	commonDirStr := strings.TrimSpace(string(commonDir))
+
+	// If commonDir contains "/worktrees/", we're in a worktree
+	// The main repo root is the parent of the .git directory
+	if strings.Contains(commonDirStr, string(filepath.Separator)+"worktrees"+string(filepath.Separator)) ||
+		strings.Contains(commonDirStr, "/worktrees/") {
+		// commonDir looks like: /main/repo/.git/worktrees/issue-27
+		// We need to extract /main/repo
+		idx := strings.Index(commonDirStr, string(filepath.Separator)+".git"+string(filepath.Separator))
+		if idx == -1 {
+			idx = strings.Index(commonDirStr, "/.git/")
+		}
+		if idx > 0 {
+			return commonDirStr[:idx], nil
+		}
+	}
+
+	return toplevel, nil
 }

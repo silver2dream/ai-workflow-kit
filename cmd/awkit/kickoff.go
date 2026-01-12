@@ -18,6 +18,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 func usageKickoff() {
@@ -137,6 +138,11 @@ func cmdKickoff(args []string) int {
 			return
 		}
 		endSessionOnce.Do(func() {
+			// Write session_end event
+			trace.WriteEvent(trace.ComponentPrincipal, trace.TypeSessionEnd, trace.LevelInfo,
+				trace.WithData(map[string]string{"reason": reason}))
+			trace.CloseGlobalWriter()
+
 			// Try Go implementation first
 			if err := sessionMgr.EndPrincipal(principalSessionID, reason); err == nil {
 				return
@@ -171,6 +177,11 @@ func cmdKickoff(args []string) int {
 		principalSessionID = sessionID
 		defer endPrincipalSession("aborted")
 		output.Success(fmt.Sprintf("Session: %s", sessionID))
+
+		// Initialize event stream for this session
+		if err := trace.InitGlobalWriter(".", sessionID); err != nil {
+			output.Warning(fmt.Sprintf("Failed to initialize event stream: %v", err))
+		}
 	}
 
 	// Lock manager
@@ -237,6 +248,13 @@ func cmdKickoff(args []string) int {
 		output.Error("Configuration not loaded")
 		return 1
 	}
+
+	// Write session_start event (after config is loaded)
+	trace.WriteEvent(trace.ComponentPrincipal, trace.TypeSessionStart, trace.LevelInfo,
+		trace.WithData(map[string]string{
+			"project": config.Project.Name,
+			"session": principalSessionID,
+		}))
 
 	// Build Claude CLI command
 	// Use stream-json format for real-time streaming output
@@ -500,6 +518,13 @@ func cmdKickoff(args []string) int {
 	var lastNext analyzeNextVars
 
 	for sessionIndex := 1; sessionIndex <= maxSessions; sessionIndex++ {
+		// Write loop_start event
+		trace.WriteEvent(trace.ComponentPrincipal, trace.TypeLoopStart, trace.LevelInfo,
+			trace.WithData(map[string]any{
+				"loop":         sessionIndex,
+				"max_sessions": maxSessions,
+			}))
+
 		if fileExists(stopMarker) {
 			fmt.Println("")
 			output.Warning("Workflow stopped (STOP marker present)")
@@ -546,6 +571,12 @@ func cmdKickoff(args []string) int {
 			PrincipalSessionID: principalSessionID,
 		})
 		if err != nil {
+			// Write loop_decision event for error case
+			trace.WriteDecisionEvent(trace.ComponentPrincipal, trace.TypeLoopDecision, trace.Decision{
+				Rule:       "analyze_next failed",
+				Conditions: map[string]any{"error": err.Error()},
+				Result:     "PAUSE",
+			})
 			fmt.Println("")
 			output.Warning(fmt.Sprintf("Workflow paused (failed to determine next action: %v)", err))
 			output.Info("Run `awkit status` for offline details.")
@@ -553,6 +584,28 @@ func cmdKickoff(args []string) int {
 			return 1
 		}
 		lastNext = next
+
+		// Write loop_decision event
+		trace.WriteDecisionEvent(trace.ComponentPrincipal, trace.TypeLoopDecision, trace.Decision{
+			Rule: "next_action determines loop continuation",
+			Conditions: map[string]any{
+				"next_action":  next.NextAction,
+				"issue_number": next.IssueNumber,
+				"pr_number":    next.PRNumber,
+				"exit_reason":  next.ExitReason,
+				"loop":         sessionIndex,
+			},
+			Result: func() string {
+				switch next.NextAction {
+				case "all_complete":
+					return "STOP_COMPLETE"
+				case "none":
+					return "STOP_NONE"
+				default:
+					return "CONTINUE"
+				}
+			}(),
+		})
 
 		switch next.NextAction {
 		case "all_complete":
