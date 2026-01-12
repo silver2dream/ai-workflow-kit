@@ -308,43 +308,10 @@ func fetchIssueBody(ctx context.Context, issueNumber int, timeout time.Duration)
 }
 
 // getTestCommand determines the test command based on config and repo
+// Delegates to getTestCommandFromConfig with worktree path derived from issue number
 func getTestCommand(stateRoot string, issueNumber int) string {
-	// Try to get from result file (has repo info)
-	resultFile := filepath.Join(stateRoot, ".ai", "results", fmt.Sprintf("issue-%d.json", issueNumber))
-	if data, err := os.ReadFile(resultFile); err == nil {
-		var result struct {
-			Repo string `json:"repo"`
-		}
-		if json.Unmarshal(data, &result) == nil && result.Repo != "" {
-			// Try to get test command from workflow.yaml
-			configFile := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
-			if configData, err := os.ReadFile(configFile); err == nil {
-				// Simple parsing - look for test_command under the repo
-				lines := strings.Split(string(configData), "\n")
-				inRepo := false
-				for _, line := range lines {
-					if strings.Contains(line, "name:") && strings.Contains(line, result.Repo) {
-						inRepo = true
-					} else if inRepo && strings.Contains(line, "test_command:") {
-						parts := strings.SplitN(line, ":", 2)
-						if len(parts) == 2 {
-							cmd := strings.TrimSpace(parts[1])
-							cmd = strings.Trim(cmd, `"'`)
-							if cmd != "" {
-								return cmd
-							}
-						}
-					} else if inRepo && strings.HasPrefix(strings.TrimSpace(line), "- name:") {
-						// Moved to next repo
-						break
-					}
-				}
-			}
-		}
-	}
-
-	// Default to Go test command
-	return "go test -v ./..."
+	worktreePath := filepath.Join(stateRoot, ".worktrees", fmt.Sprintf("issue-%d", issueNumber))
+	return getTestCommandFromConfig(stateRoot, worktreePath)
 }
 
 // GitHub helper functions - all functions now return errors for proper handling
