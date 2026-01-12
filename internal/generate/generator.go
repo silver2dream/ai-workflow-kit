@@ -236,6 +236,12 @@ func Generate(opts Options) (*Result, error) {
 	}
 	fmt.Printf("[generate] Created: %s\n", settingsPath)
 
+	// Install .claude/agents directory (CRITICAL for Task tool subagents)
+	agentsDir := filepath.Join(claudeDir, "agents")
+	if err := installAgentsDir(agentsDir); err != nil {
+		return nil, fmt.Errorf("failed to install agents: %w", err)
+	}
+
 	// Create symlinks for rules and skills
 	aiRoot := filepath.Join(opts.StateRoot, ".ai")
 	if err := setupClaudeSymlinks(aiRoot, claudeDir); err != nil {
@@ -615,6 +621,138 @@ func generateClaudeSettings(path string) error {
 }
 `
 	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func installAgentsDir(agentsDir string) error {
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return err
+	}
+
+	// pr-reviewer agent definition
+	prReviewer := `---
+name: pr-reviewer
+description: AWK PR Reviewer. Executes complete PR review flow.
+tools: Read, Grep, Glob, Bash
+model: sonnet
+---
+
+You are the AWK PR Review Expert.
+
+## Execution Flow
+
+### Step 1: Prepare Review Context
+` + "```bash" + `
+awkit prepare-review --pr $PR_NUMBER --issue $ISSUE_NUMBER
+` + "```" + `
+
+Record: CI_STATUS, WORKTREE_PATH, TEST_COMMAND, TICKET
+
+### Step 2: Extract Acceptance Criteria
+From TICKET, identify all acceptance criteria.
+
+### Step 3: Review Implementation
+` + "```bash" + `
+cd $WORKTREE_PATH
+` + "```" + `
+
+For EACH acceptance criterion:
+1. Find the implementation code
+2. Describe implementation (20+ chars, include function names)
+3. Note code location
+
+### Step 4: Review Tests
+For EACH criterion:
+1. Find the test function
+2. Copy an actual assertion line
+
+### Step 5: Submit Review
+` + "```bash" + `
+awkit submit-review --pr $PR_NUMBER --issue $ISSUE_NUMBER --score $SCORE --ci-status $CI_STATUS --body "$REVIEW_BODY"
+` + "```" + `
+
+Score: 9-10 perfect, 7-8 good, 5-6 partial, 1-4 major issues
+
+### Step 6: Return Result
+Return submit-review result to Principal immediately:
+- merged: PR merged
+- changes_requested: Review failed
+- review_blocked: Verification failed, DO NOT retry
+- merge_failed: Merge failed
+
+## CRITICAL: No Retry Rule
+When submit-review returns review_blocked:
+- DO NOT attempt to fix and resubmit
+- MUST immediately return review_blocked to Principal
+`
+
+	prReviewerPath := filepath.Join(agentsDir, "pr-reviewer.md")
+	if err := os.WriteFile(prReviewerPath, []byte(prReviewer), 0644); err != nil {
+		return err
+	}
+	fmt.Printf("[generate] Created: %s\n", prReviewerPath)
+
+	// conflict-resolver agent definition
+	conflictResolver := `---
+name: conflict-resolver
+description: AWK Merge Conflict Resolver. Resolves git merge conflicts in a worktree.
+tools: Read, Grep, Glob, Bash, Edit
+model: sonnet
+---
+
+You are the AWK Conflict Resolution Expert.
+
+## Input
+You will receive: WORKTREE_PATH, ISSUE_NUMBER, PR_NUMBER
+
+## Execution Flow
+
+### Step 1: Navigate to Worktree
+` + "```bash" + `
+cd $WORKTREE_PATH
+` + "```" + `
+
+### Step 2: Identify Conflicts
+` + "```bash" + `
+git status
+git diff --name-only --diff-filter=U
+` + "```" + `
+
+### Step 3: Resolve Each Conflict
+For each conflicted file:
+1. Read the file to understand context
+2. Identify conflict markers (<<<<<<, ======, >>>>>>)
+3. Determine correct resolution based on:
+   - Intent from both branches
+   - Code logic
+   - Project conventions
+4. Edit to resolve (remove markers, keep correct code)
+5. Stage the resolved file
+
+### Step 4: Complete Resolution
+` + "```bash" + `
+git add .
+git rebase --continue
+` + "```" + `
+
+Or if conflict is too complex:
+` + "```bash" + `
+git rebase --abort
+` + "```" + `
+
+### Step 5: Return Result
+Return one of:
+- RESOLVED: Conflict resolved successfully
+- TOO_COMPLEX: Conflict requires human intervention
+- FAILED: Resolution failed
+`
+
+	conflictResolverPath := filepath.Join(agentsDir, "conflict-resolver.md")
+	if err := os.WriteFile(conflictResolverPath, []byte(conflictResolver), 0644); err != nil {
+		return err
+	}
+	fmt.Printf("[generate] Created: %s\n", conflictResolverPath)
+
+	return nil
 }
 
 func setupClaudeSymlinks(aiRoot, claudeDir string) error {

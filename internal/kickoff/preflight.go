@@ -128,6 +128,11 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 	results = append(results, permResult)
 	// Permissions check is non-fatal but important warning
 
+	// 11. Check agents (warning only, non-fatal)
+	agentsResult := p.CheckAgents()
+	results = append(results, agentsResult)
+	// Agents check is non-fatal but critical for Task tool subagents
+
 	return results, nil
 }
 
@@ -397,6 +402,28 @@ func (p *PreflightChecker) CheckPermissions() CheckResult {
 	return CheckResult{
 		Name:    "Permissions",
 		Passed:  true, // Non-fatal, workflow can continue
+		Warning: true,
+		Message: fmt.Sprintf("Missing: %v. Run 'awkit upgrade' to fix.", missing),
+	}
+}
+
+// CheckAgents checks if .claude/agents/ has required agent definitions
+func (p *PreflightChecker) CheckAgents() CheckResult {
+	// Get state root from config path: .ai/config/workflow.yaml -> .ai/config -> .ai -> root
+	stateRoot := filepath.Dir(filepath.Dir(filepath.Dir(p.configPath)))
+
+	missing := upgrade.CheckAgents(stateRoot)
+	if len(missing) == 0 {
+		return CheckResult{
+			Name:    "Agents",
+			Passed:  true,
+			Message: "All required agent definitions present",
+		}
+	}
+
+	return CheckResult{
+		Name:    "Agents",
+		Passed:  true, // Non-fatal, workflow can continue but Task tool won't work
 		Warning: true,
 		Message: fmt.Sprintf("Missing: %v. Run 'awkit upgrade' to fix.", missing),
 	}

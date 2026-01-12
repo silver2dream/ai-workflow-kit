@@ -820,6 +820,14 @@ func cmdUpgrade(args []string) int {
 			fmt.Printf("  %s\n", permResult.Message)
 		}
 
+		// Check agents (dry-run)
+		agentsResult := upgrade.UpgradeAgents(targetDir, true)
+		if !agentsResult.Skipped {
+			fmt.Println("")
+			fmt.Println(bold("Agents:"))
+			fmt.Printf("  %s\n", agentsResult.Message)
+		}
+
 		fmt.Println("")
 		success("Dry run complete. No changes made.\n")
 		return 0
@@ -860,6 +868,17 @@ func cmdUpgrade(args []string) int {
 			success("Permissions upgraded: %s\n", permResult.Message)
 		} else {
 			warn("Permissions upgrade: %s\n", permResult.Message)
+		}
+	}
+
+	// Upgrade agents in .claude/agents/
+	agentsResult := upgrade.UpgradeAgents(targetDir, *dryRun)
+	if !agentsResult.Skipped {
+		fmt.Println("")
+		if agentsResult.Success {
+			success("Agents installed: %s\n", agentsResult.Message)
+		} else {
+			warn("Agents install: %s\n", agentsResult.Message)
 		}
 	}
 
