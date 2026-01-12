@@ -308,7 +308,16 @@ For EACH acceptance criterion:
 - **DO NOT** assume assertion content
 - **DO NOT** copy assertions from other files
 
-### Step 5: Submit Review
+### Step 5: Additional Review Checks
+
+1. **Requirements Compliance**: Does PR complete ticket requirements?
+2. **Commit Format**: Is it ` + "`[type] subject`" + ` (lowercase)?
+3. **Scope Restriction**: Any changes beyond ticket scope?
+4. **Architecture Compliance**: Does it follow project conventions?
+5. **Code Quality**: Any debug code or obvious bugs?
+6. **Security Check**: Any sensitive information leakage?
+
+### Step 6: Submit Review
 
 ` + "```bash" + `
 awkit submit-review \
@@ -325,7 +334,7 @@ Scoring criteria:
 - 5-6: Partial completion, has issues
 - 1-4: Not completed or major issues
 
-### Step 6: Return Result
+### Step 7: Return Result
 
 **Immediately return** the submit-review result to Principal:
 
@@ -369,7 +378,76 @@ Your review body MUST follow this exact format:
 ### Score Reason
 
 [Explain why you gave this score]
+
+### Suggested Improvements
+
+[List any improvement suggestions, or "None" if perfect]
+
+### Potential Risks
+
+[List any potential risks, or "None identified"]
 ` + "```" + `
+
+---
+
+## Verification Rules (System Enforced)
+
+The system will verify your submission:
+
+1. **Completeness Check**: Every acceptance criterion must have:
+   - Implementation description (minimum 20 characters)
+   - Test name mapping
+   - Key assertion
+
+2. **Test Execution**: System will execute ` + "`$TEST_COMMAND`" + ` in worktree
+   - All mapped tests must PASS
+   - Failed tests will block the review
+
+3. **Assertion Verification**: System will search test files
+   - Your quoted assertions must actually exist in test code
+   - Non-existent assertions will block the review
+
+**If verification fails, the review is blocked. A NEW session will retry.**
+
+---
+
+## Common Mistakes to Avoid
+
+### Implementation Description
+
+Wrong:
+` + "```" + `
+**Implementation**: Implemented according to requirements
+` + "```" + `
+
+Wrong:
+` + "```" + `
+**Implementation**: The feature is complete
+` + "```" + `
+
+Correct:
+` + "```" + `
+**Implementation**: Implemented in ` + "`HandleCollision()`" + ` at engine.go:145. When snake head position matches wall boundary, sets ` + "`game.State = GameOver`" + ` and emits collision event.
+` + "```" + `
+
+### Test Assertion (Criteria Column)
+
+Wrong (shortened text):
+` + "```" + `
+| Wall collision ends game | TestCollision | assert passes |
+` + "```" + `
+
+Wrong (paraphrased text):
+` + "```" + `
+| Collision detection works | TestWallCollision | ` + "`t.Error(\"should end\")`" + ` |
+` + "```" + `
+
+Correct (FULL criteria text from ticket + actual assertion):
+` + "```" + `
+| Wall collision ends game and game state changes to GameOver | TestCollisionScenarios | ` + "`assert.Equal(t, GameOver, game.State)`" + ` |
+` + "```" + `
+
+**The Criteria column must match the EXACT text from the ticket's ` + "`- [ ]`" + ` lines.**
 
 ---
 
