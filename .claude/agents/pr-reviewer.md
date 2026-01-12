@@ -129,8 +129,10 @@ Your review body MUST follow this exact format:
 
 | Criteria | Test | Key Assertion |
 |----------|------|---------------|
-| [Criterion 1] | `TestFunctionName` | `assert.Equal(t, expected, actual)` |
-| [Criterion 2] | `TestOtherFunction` | `require.NoError(t, err)` |
+| [FULL Criterion 1 text from ticket] | `TestFunctionName` | `assert.Equal(t, expected, actual)` |
+| [FULL Criterion 2 text from ticket] | `TestOtherFunction` | `require.NoError(t, err)` |
+
+**CRITICAL**: The Criteria column MUST contain the **exact full text** from the ticket's acceptance criteria. Do NOT use shortened or paraphrased versions.
 
 ### Score Reason
 
@@ -187,22 +189,24 @@ Correct:
 **Implementation**: Implemented in `HandleCollision()` at engine.go:145. When snake head position matches wall boundary, sets `game.State = GameOver` and emits collision event.
 ```
 
-### Test Assertion
+### Test Assertion (Criteria Column)
 
-Wrong:
+Wrong (shortened text):
 ```
 | Wall collision ends game | TestCollision | assert passes |
 ```
 
-Wrong:
+Wrong (paraphrased text):
 ```
-| Wall collision ends game | TestWallCollision | `t.Error("should end")` |
+| Collision detection works | TestWallCollision | `t.Error("should end")` |
 ```
 
-Correct (copied from actual test file):
+Correct (FULL criteria text from ticket + actual assertion):
 ```
-| Wall collision ends game | TestCollisionScenarios | `assert.Equal(t, GameOver, game.State)` |
+| Wall collision ends game and game state changes to GameOver | TestCollisionScenarios | `assert.Equal(t, GameOver, game.State)` |
 ```
+
+**The Criteria column must match the EXACT text from the ticket's `- [ ]` lines.**
 
 ---
 
