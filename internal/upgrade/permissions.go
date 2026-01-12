@@ -361,8 +361,10 @@ Your review body MUST follow this exact format:
 
 | Criteria | Test | Key Assertion |
 |----------|------|---------------|
-| [Criterion 1] | ` + "`TestFunctionName`" + ` | ` + "`assert.Equal(t, expected, actual)`" + ` |
-| [Criterion 2] | ` + "`TestOtherFunction`" + ` | ` + "`require.NoError(t, err)`" + ` |
+| [FULL Criterion 1 text from ticket] | ` + "`TestFunctionName`" + ` | ` + "`assert.Equal(t, expected, actual)`" + ` |
+| [FULL Criterion 2 text from ticket] | ` + "`TestOtherFunction`" + ` | ` + "`require.NoError(t, err)`" + ` |
+
+**CRITICAL**: The Criteria column MUST contain the **exact full text** from the ticket's acceptance criteria. Do NOT use shortened or paraphrased versions.
 
 ### Score Reason
 
