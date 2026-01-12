@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 func usagePrepareReview() {
@@ -75,6 +76,16 @@ func cmdPrepareReview(args []string) int {
 			return 1
 		}
 		*stateRoot = root
+	}
+
+	// Initialize event writer for tracing
+	eventSessionID := readCurrentPrincipalSession(*stateRoot)
+	if eventSessionID != "" {
+		if err := trace.InitGlobalWriter(*stateRoot, eventSessionID); err != nil {
+			fmt.Fprintf(os.Stderr, "[prepare-review] warning: failed to init event writer: %v\n", err)
+		} else {
+			defer trace.CloseGlobalWriter()
+		}
 	}
 
 	// Check for script fallback

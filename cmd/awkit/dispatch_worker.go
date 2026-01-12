@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
@@ -94,6 +96,21 @@ func cmdDispatchWorker(args []string) int {
 		*stateRoot = root
 	}
 
+	// Initialize event writer for tracing
+	// If no session ID provided, try to read from current principal session
+	eventSessionID := *sessionID
+	if eventSessionID == "" {
+		eventSessionID = readCurrentPrincipalSession(*stateRoot)
+	}
+	if eventSessionID != "" {
+		if err := trace.InitGlobalWriter(*stateRoot, eventSessionID); err != nil {
+			// Non-fatal: just log warning, events won't be recorded
+			fmt.Fprintf(os.Stderr, "[dispatch-worker] warning: failed to init event writer: %v\n", err)
+		} else {
+			defer trace.CloseGlobalWriter()
+		}
+	}
+
 	// Set up cleanup manager for signal handling
 	cleanupMgr := worker.NewCleanupManager()
 	defer cleanupMgr.Cleanup()
@@ -145,4 +162,10 @@ func cmdDispatchWorker(args []string) int {
 	default:
 		return 0
 	}
+}
+
+// readCurrentPrincipalSession reads the current principal session ID from state
+func readCurrentPrincipalSession(stateRoot string) string {
+	mgr := session.NewManager(stateRoot)
+	return mgr.GetCurrentSessionID()
 }

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
@@ -93,6 +94,16 @@ func cmdRunIssue(args []string) int {
 			return 1
 		}
 		*stateRoot = root
+	}
+
+	// Initialize event writer for tracing
+	eventSessionID := readCurrentPrincipalSession(*stateRoot)
+	if eventSessionID != "" {
+		if err := trace.InitGlobalWriter(*stateRoot, eventSessionID); err != nil {
+			fmt.Fprintf(os.Stderr, "[run-issue] warning: failed to init event writer: %v\n", err)
+		} else {
+			defer trace.CloseGlobalWriter()
+		}
 	}
 
 	ctx := context.Background()
