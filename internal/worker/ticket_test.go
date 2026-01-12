@@ -202,3 +202,121 @@ func TestLoadTicketFile_NotFound(t *testing.T) {
 		t.Errorf("expected os.IsNotExist error, got %v", err)
 	}
 }
+
+func TestParseVerificationCommands(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected []VerificationCommands
+	}{
+		{
+			name: "basic verification section",
+			body: `# [bug] Fix issue
+
+## Verification
+- backend: ` + "`go build ./...`" + ` and ` + "`go test ./...`" + `
+- frontend: ` + "`npm run build`" + ` and ` + "`npm run test`" + `
+
+## Acceptance Criteria
+- [ ] Tests pass
+`,
+			expected: []VerificationCommands{
+				{Repo: "backend", Commands: []string{"go build ./...", "go test ./..."}},
+				{Repo: "frontend", Commands: []string{"npm run build", "npm run test"}},
+			},
+		},
+		{
+			name: "single command per repo",
+			body: `## Verification
+- root: ` + "`make test`" + `
+`,
+			expected: []VerificationCommands{
+				{Repo: "root", Commands: []string{"make test"}},
+			},
+		},
+		{
+			name: "no verification section",
+			body: `# [bug] Fix issue
+
+## Objective
+Fix something.
+`,
+			expected: []VerificationCommands{},
+		},
+		{
+			name: "empty verification section",
+			body: `## Verification
+
+## Next Section
+`,
+			expected: []VerificationCommands{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseVerificationCommands(tt.body)
+
+			if len(result) != len(tt.expected) {
+				t.Fatalf("got %d entries, want %d", len(result), len(tt.expected))
+			}
+
+			for i, exp := range tt.expected {
+				if result[i].Repo != exp.Repo {
+					t.Errorf("entry %d: Repo = %q, want %q", i, result[i].Repo, exp.Repo)
+				}
+				if len(result[i].Commands) != len(exp.Commands) {
+					t.Errorf("entry %d: got %d commands, want %d", i, len(result[i].Commands), len(exp.Commands))
+					continue
+				}
+				for j, cmd := range exp.Commands {
+					if result[i].Commands[j] != cmd {
+						t.Errorf("entry %d, cmd %d: got %q, want %q", i, j, result[i].Commands[j], cmd)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGetVerificationCommandsForRepo(t *testing.T) {
+	body := `## Verification
+- backend: ` + "`go test ./...`" + `
+- frontend: ` + "`npm test`" + `
+- root: ` + "`make check`" + `
+`
+
+	tests := []struct {
+		repo     string
+		expected []string
+	}{
+		{"backend", []string{"go test ./..."}},
+		{"frontend", []string{"npm test"}},
+		{"root", []string{"make check"}},
+		{"", []string{"make check"}},       // empty defaults to root
+		{"unknown", nil},                   // no match
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.repo, func(t *testing.T) {
+			result := GetVerificationCommandsForRepo(body, tt.repo)
+
+			if tt.expected == nil {
+				if result != nil {
+					t.Errorf("expected nil, got %v", result)
+				}
+				return
+			}
+
+			if len(result) != len(tt.expected) {
+				t.Fatalf("got %d commands, want %d", len(result), len(tt.expected))
+			}
+
+			for i, cmd := range tt.expected {
+				if result[i] != cmd {
+					t.Errorf("cmd %d: got %q, want %q", i, result[i], cmd)
+				}
+			}
+		})
+	}
+}

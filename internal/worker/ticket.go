@@ -153,3 +153,86 @@ func CleanupTicketFile(stateRoot string, issueNumber int) error {
 	}
 	return err
 }
+
+// VerificationCommands contains parsed verification commands from a ticket
+type VerificationCommands struct {
+	Repo     string   // repo name (backend, frontend, root, etc.)
+	Commands []string // list of commands to run
+}
+
+// ParseVerificationCommands extracts verification commands from ticket body
+// Format: ## Verification
+//
+//	- backend: `go build ./...` and `go test ./...`
+//	- frontend: `npm run build` and `npm run test`
+func ParseVerificationCommands(body string) []VerificationCommands {
+	var results []VerificationCommands
+
+	// Find ## Verification section
+	verificationPattern := regexp.MustCompile(`(?is)##\s*Verification\s*\n(.*?)(?:\n##|\z)`)
+	matches := verificationPattern.FindStringSubmatch(body)
+	if len(matches) < 2 {
+		return results
+	}
+
+	section := matches[1]
+
+	// Parse each line: - repo: `cmd1` and `cmd2`
+	linePattern := regexp.MustCompile(`(?m)^[-*]\s*(\w+)\s*:\s*(.+)$`)
+	lineMatches := linePattern.FindAllStringSubmatch(section, -1)
+
+	for _, match := range lineMatches {
+		if len(match) < 3 {
+			continue
+		}
+
+		repo := strings.TrimSpace(match[1])
+		cmdPart := match[2]
+
+		// Extract commands from backticks
+		cmdPattern := regexp.MustCompile("`([^`]+)`")
+		cmdMatches := cmdPattern.FindAllStringSubmatch(cmdPart, -1)
+
+		var commands []string
+		for _, cm := range cmdMatches {
+			if len(cm) > 1 {
+				cmd := strings.TrimSpace(cm[1])
+				if cmd != "" {
+					commands = append(commands, cmd)
+				}
+			}
+		}
+
+		if len(commands) > 0 {
+			results = append(results, VerificationCommands{
+				Repo:     strings.ToLower(repo),
+				Commands: commands,
+			})
+		}
+	}
+
+	return results
+}
+
+// GetVerificationCommandsForRepo returns verification commands for a specific repo
+func GetVerificationCommandsForRepo(body, repoName string) []string {
+	allCommands := ParseVerificationCommands(body)
+	repoName = strings.ToLower(strings.TrimSpace(repoName))
+
+	for _, vc := range allCommands {
+		if vc.Repo == repoName {
+			return vc.Commands
+		}
+	}
+
+	// Fallback: if repo is empty or "root", try to find root commands
+	if repoName == "" || repoName == "root" {
+		for _, vc := range allCommands {
+			if vc.Repo == "root" {
+				return vc.Commands
+			}
+		}
+	}
+
+	return nil
+}

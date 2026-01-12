@@ -296,7 +296,13 @@ PR: #%d
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", commentErr)
 	}
 
-	return &SubmitReviewResult{Result: "review_blocked", Reason: err.Message}, nil
+	// Build detailed reason including failed tests
+	reason := err.Message
+	if len(err.Details) > 0 {
+		reason += ": " + strings.Join(err.Details, ", ")
+	}
+
+	return &SubmitReviewResult{Result: "review_blocked", Reason: reason}, nil
 }
 
 func handleMergeFailure(ctx context.Context, opts SubmitReviewOptions, sessionID string, mergeErr error) (*SubmitReviewResult, error) {
