@@ -1336,7 +1336,12 @@ func postIssueComment(ctx context.Context, issueID int, sessionID, commentType, 
 	ctx, cancel := withOptionalTimeout(ctx, timeout)
 	defer cancel()
 
-	timestamp := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now()
+	// Format: "20:20:11 CST (12:20:11 UTC)"
+	localTime := now.Format("15:04:05 MST")
+	utcTime := now.UTC().Format("15:04:05 UTC")
+	timestamp := fmt.Sprintf("%s (%s)", localTime, utcTime)
+
 	body := strings.Builder{}
 	// AWK marker format: <!-- AWK:session:SESSION_ID:COMMENT_TYPE[:PRURL] -->
 	// This allows IssueMonitor.parseAWKComment to extract comment type and PR URL

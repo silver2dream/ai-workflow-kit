@@ -132,7 +132,8 @@ func cmdEvents(args []string) int {
 
 func printEvent(e trace.Event) {
 	// Format: [SEQ] TIMESTAMP LEVEL COMPONENT TYPE [ISSUE/PR] message
-	ts := e.Timestamp.Format("15:04:05")
+	// Convert UTC to local time for display
+	ts := e.Timestamp.Local().Format("15:04:05")
 	level := colorizeLevel(e.Level)
 	component := colorizeComponent(e.Component)
 

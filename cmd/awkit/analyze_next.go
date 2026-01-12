@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 func usageAnalyzeNext() {
@@ -63,6 +64,16 @@ func cmdAnalyzeNext(args []string) int {
 			return 1
 		}
 		*stateRoot = root
+	}
+
+	// Initialize event writer for tracing
+	eventSessionID := readCurrentPrincipalSession(*stateRoot)
+	if eventSessionID != "" {
+		if err := trace.InitGlobalWriter(*stateRoot, eventSessionID); err != nil {
+			fmt.Fprintf(os.Stderr, "[analyze-next] warning: failed to init event writer: %v\n", err)
+		} else {
+			defer trace.CloseGlobalWriter()
+		}
 	}
 
 	// Create analyzer
