@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	evtrace "github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // TraceRecorder records execution trace steps for a worker run.
@@ -18,6 +20,7 @@ type TraceRecorder struct {
 	currentStepName     string
 	currentStepStart    time.Time
 	currentStepStartISO string
+	issueID             int // For event stream
 }
 
 // NewTraceRecorder initializes a trace file with running status.
@@ -51,11 +54,22 @@ func NewTraceRecorder(stateRoot string, issueID int, repo, branch, baseBranch st
 		path:      tracePath,
 		trace:     trace,
 		startTime: startTime,
+		issueID:   issueID,
 	}
 
 	if err := rec.writeLocked(); err != nil {
 		return nil, err
 	}
+
+	// Write worker start event to unified event stream
+	evtrace.WriteEvent(evtrace.ComponentWorker, evtrace.TypeWorkerStart, evtrace.LevelInfo,
+		evtrace.WithIssue(issueID),
+		evtrace.WithData(map[string]any{
+			"repo":        repo,
+			"branch":      branch,
+			"base_branch": baseBranch,
+			"pid":         pid,
+		}))
 
 	return rec, nil
 }
@@ -96,6 +110,20 @@ func (r *TraceRecorder) StepEnd(status, errorMessage string, context map[string]
 		r.trace.Error = errorMessage
 	}
 
+	// Write worker step event to unified event stream
+	level := evtrace.LevelInfo
+	if status == "failed" {
+		level = evtrace.LevelError
+	}
+	evtrace.WriteEvent(evtrace.ComponentWorker, evtrace.TypeWorkerStep, level,
+		evtrace.WithIssue(r.issueID),
+		evtrace.WithData(map[string]any{
+			"step":     r.currentStepName,
+			"status":   status,
+			"duration": duration,
+		}),
+		evtrace.WithErrorString(errorMessage))
+
 	r.currentStepName = ""
 	r.currentStepStartISO = ""
 
@@ -108,15 +136,30 @@ func (r *TraceRecorder) Finalize(runErr error) error {
 	defer r.mu.Unlock()
 
 	status := "success"
+	errorMsg := ""
 	if runErr != nil {
 		status = "failed"
-		r.trace.Error = runErr.Error()
+		errorMsg = runErr.Error()
+		r.trace.Error = errorMsg
 	}
 
 	now := time.Now().UTC()
 	r.trace.Status = status
 	r.trace.EndedAt = now.Format(time.RFC3339)
 	r.trace.Duration = int(now.Sub(r.startTime).Seconds())
+
+	// Write worker end event to unified event stream
+	level := evtrace.LevelInfo
+	if status == "failed" {
+		level = evtrace.LevelError
+	}
+	evtrace.WriteEvent(evtrace.ComponentWorker, evtrace.TypeWorkerEnd, level,
+		evtrace.WithIssue(r.issueID),
+		evtrace.WithData(map[string]any{
+			"status":   status,
+			"duration": r.trace.Duration,
+		}),
+		evtrace.WithErrorString(errorMsg))
 
 	return r.writeLocked()
 }

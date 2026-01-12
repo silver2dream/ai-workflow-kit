@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // GitHubClient provides GitHub operations via gh CLI
@@ -102,11 +104,24 @@ func (c *GitHubClient) EditIssueLabels(ctx context.Context, number int, add, rem
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		errMsg := ""
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("timeout editing issue %d labels", number)
+			errMsg = fmt.Sprintf("timeout editing issue %d labels", number)
+		} else {
+			errMsg = fmt.Sprintf("gh issue edit failed: %s", stderr.String())
 		}
-		return fmt.Errorf("gh issue edit failed: %s", stderr.String())
+		// Write label update failure event
+		trace.WriteEvent(trace.ComponentGitHub, trace.TypeLabelUpdate, trace.LevelError,
+			trace.WithIssue(number),
+			trace.WithData(map[string]any{"add": add, "remove": remove}),
+			trace.WithErrorString(errMsg))
+		return fmt.Errorf("%s", errMsg)
 	}
+
+	// Write label update success event
+	trace.WriteEvent(trace.ComponentGitHub, trace.TypeLabelUpdate, trace.LevelInfo,
+		trace.WithIssue(number),
+		trace.WithData(map[string]any{"add": add, "remove": remove}))
 
 	return nil
 }
@@ -131,11 +146,22 @@ func (c *GitHubClient) CommentOnIssue(ctx context.Context, number int, body stri
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		errMsg := ""
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("timeout commenting on issue %d", number)
+			errMsg = fmt.Sprintf("timeout commenting on issue %d", number)
+		} else {
+			errMsg = fmt.Sprintf("gh issue comment failed: %s", stderr.String())
 		}
-		return fmt.Errorf("gh issue comment failed: %s", stderr.String())
+		// Write comment failure event - this is critical for tracking
+		trace.WriteEvent(trace.ComponentGitHub, trace.TypeCommentFail, trace.LevelError,
+			trace.WithIssue(number),
+			trace.WithErrorString(errMsg))
+		return fmt.Errorf("%s", errMsg)
 	}
+
+	// Write comment success event
+	trace.WriteEvent(trace.ComponentGitHub, trace.TypeCommentSend, trace.LevelInfo,
+		trace.WithIssue(number))
 
 	return nil
 }

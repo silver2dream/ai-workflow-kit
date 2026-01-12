@@ -48,6 +48,8 @@ func (c *Resetter) ResetAll(ctx context.Context) []Result {
 	results = append(results, c.ResetStop())
 	results = append(results, c.ResetLock())
 	results = append(results, c.ResetDeprecated()...)
+	results = append(results, c.ResetTraces()...)
+	results = append(results, c.ResetEvents()...)
 	return results
 }
 
@@ -257,6 +259,69 @@ func (c *Resetter) ResetDeprecated() []Result {
 	}
 
 	return results
+}
+
+// ResetTraces removes old trace files (.ai/state/traces/)
+// This is part of the migration to the unified event stream
+func (c *Resetter) ResetTraces() []Result {
+	tracesDir := filepath.Join(c.StateRoot, ".ai", "state", "traces")
+
+	if _, err := os.Stat(tracesDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	if c.DryRun {
+		return []Result{{
+			Name:    "traces",
+			Success: true,
+			Message: fmt.Sprintf("Would delete %s/*", tracesDir),
+		}}
+	}
+
+	if err := os.RemoveAll(tracesDir); err != nil {
+		return []Result{{
+			Name:    "traces",
+			Success: false,
+			Message: fmt.Sprintf("Failed to delete: %v", err),
+		}}
+	}
+
+	return []Result{{
+		Name:    "traces",
+		Success: true,
+		Message: "Deleted traces directory (migrated to unified event stream)",
+	}}
+}
+
+// ResetEvents removes event stream files (.ai/state/events/)
+func (c *Resetter) ResetEvents() []Result {
+	eventsDir := filepath.Join(c.StateRoot, ".ai", "state", "events")
+
+	if _, err := os.Stat(eventsDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	if c.DryRun {
+		return []Result{{
+			Name:    "events",
+			Success: true,
+			Message: fmt.Sprintf("Would delete %s/*", eventsDir),
+		}}
+	}
+
+	if err := os.RemoveAll(eventsDir); err != nil {
+		return []Result{{
+			Name:    "events",
+			Success: false,
+			Message: fmt.Sprintf("Failed to delete: %v", err),
+		}}
+	}
+
+	return []Result{{
+		Name:    "events",
+		Success: true,
+		Message: "Deleted events directory",
+	}}
 }
 
 // Results removes result files

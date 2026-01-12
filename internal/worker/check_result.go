@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	evtrace "github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // CheckResultOptions contains options for CheckResult
@@ -28,7 +30,7 @@ type CheckResultOutput struct {
 
 // CheckResult checks the worker execution result for an issue
 // Returns structured output that can be converted to bash eval format
-func CheckResult(ctx context.Context, opts CheckResultOptions) (*CheckResultOutput, error) {
+func CheckResult(ctx context.Context, opts CheckResultOptions) (output *CheckResultOutput, err error) {
 	// Set defaults
 	if opts.MaxRetries == 0 {
 		opts.MaxRetries = 3
@@ -42,6 +44,40 @@ func CheckResult(ctx context.Context, opts CheckResultOptions) (*CheckResultOutp
 	if opts.WaitDuration == 0 {
 		opts.WaitDuration = 30 * time.Second
 	}
+
+	// Write check_result decision event on function return
+	defer func() {
+		if output == nil {
+			return
+		}
+		// Determine decision result
+		var decisionResult string
+		switch output.Status {
+		case "success":
+			decisionResult = "SUCCESS"
+		case "not_found":
+			decisionResult = "WAIT"
+		case "failed_will_retry":
+			decisionResult = "RETRY"
+		case "failed_max_retries":
+			decisionResult = "FAIL_FINAL"
+		case "crashed", "timeout":
+			decisionResult = "FAIL_RECOVERABLE"
+		default:
+			decisionResult = "UNKNOWN"
+		}
+
+		evtrace.WriteDecisionEvent(evtrace.ComponentPrincipal, evtrace.TypeCheckResult, evtrace.Decision{
+			Rule: "check worker result and determine next action",
+			Conditions: map[string]any{
+				"status":      output.Status,
+				"pr_number":   output.PRNumber,
+				"error":       output.Error,
+				"max_retries": opts.MaxRetries,
+			},
+			Result: decisionResult,
+		}, evtrace.WithIssue(opts.IssueNumber))
+	}()
 
 	// Try to load the result file
 	result, err := LoadResult(opts.StateRoot, opts.IssueNumber)

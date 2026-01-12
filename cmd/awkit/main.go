@@ -144,6 +144,8 @@ func run() int {
 		return cmdListPresets()
 	case "completion":
 		return cmdCompletion(os.Args[2:])
+	case "events":
+		return cmdEvents(os.Args[2:])
 	case "help":
 		if len(os.Args) >= 3 {
 			return cmdHelp(os.Args[2])
@@ -184,6 +186,7 @@ Commands:
   reset           Reset project state for fresh start
   generate        Generate helper docs and scaffolding
   list-presets    Show available project presets
+  events          Query unified event stream for debugging
   check-update  Check for CLI updates
   completion    Generate shell completion script
   version       Show version
@@ -276,6 +279,8 @@ func cmdHelp(command string) int {
 		usageCheckUpdate()
 	case "completion":
 		usageCompletion()
+	case "events":
+		usageEvents()
 	case "version":
 		fmt.Println("Show the awkit version.")
 	default:
