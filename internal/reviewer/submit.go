@@ -61,8 +61,10 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	// Write review_decision event on function return
 	defer func() {
 		decision := "unknown"
+		reason := ""
 		if result != nil {
 			decision = result.Result
+			reason = result.Reason
 		}
 		level := trace.LevelInfo
 		if decision == "changes_requested" || decision == "review_blocked" {
@@ -72,21 +74,31 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			level = trace.LevelError
 		}
 
+		// Build conditions map with optional reason
+		conditions := map[string]any{
+			"score":     opts.Score,
+			"ci_status": opts.CIStatus,
+			"pr_number": opts.PRNumber,
+		}
+		if reason != "" {
+			conditions["reason"] = reason
+		}
+
 		trace.WriteDecisionEvent(trace.ComponentReviewer, trace.TypeReviewDecision, trace.Decision{
-			Rule: "review score and CI status determines merge decision",
-			Conditions: map[string]any{
-				"score":     opts.Score,
-				"ci_status": opts.CIStatus,
-				"pr_number": opts.PRNumber,
-			},
-			Result: decision,
+			Rule:       "review score and CI status determines merge decision",
+			Conditions: conditions,
+			Result:     decision,
 		}, trace.WithPR(opts.PRNumber), trace.WithIssue(opts.IssueNumber))
 
-		// Also write review_end event
+		// Also write review_end event with reason if present
+		endData := map[string]any{"result": decision}
+		if reason != "" {
+			endData["reason"] = reason
+		}
 		trace.WriteEvent(trace.ComponentReviewer, trace.TypeReviewEnd, level,
 			trace.WithPR(opts.PRNumber),
 			trace.WithIssue(opts.IssueNumber),
-			trace.WithData(map[string]any{"result": decision}))
+			trace.WithData(endData))
 	}()
 
 	// Get session ID
