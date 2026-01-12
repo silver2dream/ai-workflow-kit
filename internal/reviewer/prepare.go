@@ -151,6 +151,7 @@ type workflowConfig struct {
 type repoConfig struct {
 	Name   string       `yaml:"name"`
 	Path   string       `yaml:"path"`
+	Type   string       `yaml:"type"`
 	Verify verifyConfig `yaml:"verify"`
 }
 
@@ -159,6 +160,7 @@ type verifyConfig struct {
 }
 
 // getTestCommandFromConfig extracts test command from workflow.yaml
+// For directory-type repos, returns "cd <path> && <test_command>"
 func getTestCommandFromConfig(stateRoot, worktreePath string) string {
 	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
 	content, err := os.ReadFile(configPath)
@@ -177,7 +179,7 @@ func getTestCommandFromConfig(stateRoot, worktreePath string) string {
 			// If worktree contains repo path, use this repo's test command
 			if worktreePath != "" && worktreePath != "NOT_FOUND" {
 				if strings.Contains(worktreePath, repo.Path) || strings.Contains(worktreePath, repo.Name) {
-					return repo.Verify.Test
+					return buildTestCommand(repo.Path, repo.Type, repo.Verify.Test)
 				}
 			}
 		}
@@ -186,11 +188,26 @@ func getTestCommandFromConfig(stateRoot, worktreePath string) string {
 	// Return first repo's test command if available
 	for _, repo := range cfg.Repos {
 		if repo.Verify.Test != "" {
-			return repo.Verify.Test
+			return buildTestCommand(repo.Path, repo.Type, repo.Verify.Test)
 		}
 	}
 
 	return "go test -v ./..."
+}
+
+// buildTestCommand constructs test command with proper directory handling
+// For directory-type repos (path != "./" and path != ""), prepends "cd <path> &&"
+func buildTestCommand(repoPath, repoType, testCmd string) string {
+	// Normalize path
+	path := strings.TrimSuffix(repoPath, "/")
+
+	// If root repo or no path, return command as-is
+	if path == "" || path == "." || repoType == "root" {
+		return testCmd
+	}
+
+	// For directory or submodule repos, cd into the directory first
+	return fmt.Sprintf("cd %s && %s", path, testCmd)
 }
 
 // fetchIssueJSON fetches issue details as JSON
