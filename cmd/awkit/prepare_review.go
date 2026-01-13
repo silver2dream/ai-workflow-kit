@@ -5,9 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
@@ -88,11 +85,6 @@ func cmdPrepareReview(args []string) int {
 		}
 	}
 
-	// Check for script fallback
-	if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
-		return runPrepareReviewScript(*stateRoot, *prNumber, *issueNumber)
-	}
-
 	// Run Go implementation
 	ctx := context.Background()
 	result, err := reviewer.PrepareReview(ctx, reviewer.PrepareReviewOptions{
@@ -119,20 +111,5 @@ func cmdPrepareReview(args []string) int {
 		fmt.Print(result.FormatOutput())
 	}
 
-	return 0
-}
-
-func runPrepareReviewScript(stateRoot string, prNumber, issueNumber int) int {
-	scriptPath := filepath.Join(stateRoot, ".ai/scripts/prepare_review.sh")
-	cmd := exec.Command("bash", scriptPath, strconv.Itoa(prNumber), strconv.Itoa(issueNumber))
-	cmd.Dir = stateRoot
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return exitErr.ExitCode()
-		}
-		return 1
-	}
 	return 0
 }

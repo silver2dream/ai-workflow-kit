@@ -1249,71 +1249,26 @@ func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 }
 
 func runAttemptGuard(ctx context.Context, stateRoot string, issueID int, logFile string, opts RunIssueOptions) error {
-	// Try Go implementation first unless AWKIT_USE_SCRIPT=1
-	if os.Getenv("AWKIT_USE_SCRIPT") != "1" {
-		guard := NewAttemptGuard(stateRoot, issueID)
-		result, err := guard.Check()
-		if err != nil {
-			// Fall through to bash script
-		} else {
-			if !result.CanProceed {
-				return fmt.Errorf("attempt_guard: %s (attempt %d)", result.Reason, result.AttemptNumber)
-			}
-			return nil
-		}
+	guard := NewAttemptGuard(stateRoot, issueID)
+	result, err := guard.Check()
+	if err != nil {
+		return fmt.Errorf("attempt_guard: %w", err)
 	}
-
-	// Fallback to bash script
-	scriptPath := filepath.Join(stateRoot, ".ai", "scripts", "attempt_guard.sh")
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		// Script doesn't exist, return error from Go check if we had one
-		return nil
-	}
-	cmd := exec.CommandContext(ctx, "bash", scriptPath, fmt.Sprintf("%d", issueID), "codex-auto")
-	cmd.Dir = stateRoot
-	cmd.Env = append(os.Environ(),
-		"AI_STATE_ROOT="+stateRoot,
-		"WORKER_LOG_FILE="+logFile,
-		fmt.Sprintf("AI_GIT_TIMEOUT=%d", int(opts.GitTimeout.Seconds())),
-		fmt.Sprintf("AI_GH_TIMEOUT=%d", int(opts.GHTimeout.Seconds())),
-	)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("attempt_guard failed: %w", err)
+	if !result.CanProceed {
+		return fmt.Errorf("attempt_guard: %s (attempt %d)", result.Reason, result.AttemptNumber)
 	}
 	return nil
 }
 
 func runPreflight(ctx context.Context, stateRoot, repoType, repoPath, logFile string, opts RunIssueOptions) error {
-	// Try Go implementation first unless AWKIT_USE_SCRIPT=1
-	if os.Getenv("AWKIT_USE_SCRIPT") != "1" {
-		preflight := NewWorkerPreflight(stateRoot, repoType, repoPath)
-		preflight.Timeout = opts.GitTimeout
-		result, err := preflight.Check(ctx)
-		if err != nil {
-			// Fall through to bash script
-		} else {
-			if !result.Passed {
-				return fmt.Errorf("preflight: %s", result.Message)
-			}
-			return nil
-		}
+	preflight := NewWorkerPreflight(stateRoot, repoType, repoPath)
+	preflight.Timeout = opts.GitTimeout
+	result, err := preflight.Check(ctx)
+	if err != nil {
+		return fmt.Errorf("preflight: %w", err)
 	}
-
-	// Fallback to bash script
-	scriptPath := filepath.Join(stateRoot, ".ai", "scripts", "preflight.sh")
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		// Script doesn't exist, return nil (no preflight check)
-		return nil
-	}
-	cmd := exec.CommandContext(ctx, "bash", scriptPath, repoType, repoPath)
-	cmd.Dir = stateRoot
-	cmd.Env = append(os.Environ(),
-		"AI_STATE_ROOT="+stateRoot,
-		"WORKER_LOG_FILE="+logFile,
-		fmt.Sprintf("AI_GIT_TIMEOUT=%d", int(opts.GitTimeout.Seconds())),
-	)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("preflight failed: %w", err)
+	if !result.Passed {
+		return fmt.Errorf("preflight: %s", result.Message)
 	}
 	return nil
 }
