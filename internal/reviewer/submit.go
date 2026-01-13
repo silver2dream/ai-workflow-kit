@@ -309,6 +309,9 @@ func handleMergeFailure(ctx context.Context, opts SubmitReviewOptions, sessionID
 	// Get merge state status
 	mergeState := getMergeStateStatus(ctx, opts.PRNumber, opts.GHTimeout)
 
+	// Log the original merge error for debugging
+	fmt.Fprintf(os.Stderr, "[REVIEW] merge failed: err=%v, mergeStateStatus=%s, PR=#%d\n", mergeErr, mergeState, opts.PRNumber)
+
 	var label, result, message string
 
 	switch mergeState {
@@ -339,8 +342,9 @@ PR 分支落後 base branch。Worker 將自動 rebase 後重新提交。`, opts.
 
 PR: #%d
 mergeStateStatus: `+"`%s`"+`
+mergeError: `+"`%v`"+`
 
-PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumber, mergeState)
+PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumber, mergeState, mergeErr)
 	}
 
 	if err := editIssueLabels(ctx, opts.IssueNumber, []string{label}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
@@ -350,7 +354,11 @@ PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumb
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 
-	return &SubmitReviewResult{Result: result, Reason: mergeState}, nil
+	reason := mergeState
+	if mergeErr != nil {
+		reason = fmt.Sprintf("%s: %v", mergeState, mergeErr)
+	}
+	return &SubmitReviewResult{Result: result, Reason: reason}, nil
 }
 
 // fetchIssueBody fetches the issue body from GitHub
