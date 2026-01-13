@@ -535,33 +535,18 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 	}, nil
 }
 
-// runWorkerScript runs the worker (Go command or fallback to bash script)
-// Uses awkit run-issue by default, falls back to bash script if:
-// - AWKIT_USE_SCRIPT=1 is set, or
-// - awkit binary is not found in PATH
+// runWorkerScript runs the worker using awkit run-issue command
 func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo, mergeIssue string, prNumber int) int {
-	// Check if we should use the bash script fallback
-	useScript := os.Getenv("AWKIT_USE_SCRIPT") == "1"
-
-	if !useScript {
-		// Try to use awkit run-issue (Go implementation)
-		if exitCode, ok := runWorkerCommand(ctx, stateRoot, issueNumber, ticketPath, repo, mergeIssue, prNumber); ok {
-			return exitCode
-		}
-		// Fall through to bash script if awkit not available
-	}
-
-	// Fallback: use bash script
-	return runWorkerBashScript(ctx, stateRoot, issueNumber, ticketPath, repo)
+	exitCode, _ := runWorkerCommand(ctx, stateRoot, issueNumber, ticketPath, repo, mergeIssue, prNumber)
+	return exitCode
 }
 
 // runWorkerCommand runs the worker using awkit run-issue command
-// Returns (exitCode, true) if successful, (0, false) if awkit not available
 func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo, mergeIssue string, prNumber int) (int, bool) {
 	// Check if awkit binary exists
 	awkitPath, err := exec.LookPath("awkit")
 	if err != nil {
-		return 0, false // awkit not found, signal to use fallback
+		return 1, false // awkit not found
 	}
 
 	args := []string{"run-issue",
@@ -595,88 +580,23 @@ func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ti
 	return 0, true
 }
 
-// runWorkerBashScript runs the worker using bash script (legacy fallback)
-func runWorkerBashScript(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo string) int {
-	scriptPath := filepath.Join(stateRoot, ".ai", "scripts", "run_issue_codex.sh")
-
-	// Check if script exists
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return 1
-	}
-
-	cmd := exec.CommandContext(ctx, "bash", scriptPath,
-		fmt.Sprintf("%d", issueNumber), ticketPath, strings.TrimSpace(repo))
-	cmd.Dir = stateRoot
-	cmd.Stdout = os.Stderr // Worker output goes to stderr
-	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return exitErr.ExitCode()
-		}
-		return 1
-	}
-	return 0
-}
-
 // getSessionID gets the current principal session ID
 func getSessionID(stateRoot string) string {
-	// Try Go implementation first
 	mgr := session.NewManager(stateRoot)
-	if sessionID := mgr.GetCurrentSessionID(); sessionID != "" {
-		return sessionID
-	}
-
-	// Fallback to bash script if Go implementation fails
-	if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
-		scriptPath := filepath.Join(stateRoot, ".ai", "scripts", "session_manager.sh")
-		cmd := exec.Command("bash", scriptPath, "get_current_session_id")
-		cmd.Dir = stateRoot
-		output, err := cmd.Output()
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(string(output))
-	}
-
-	return ""
+	return mgr.GetCurrentSessionID()
 }
 
 // recordSessionAction records an action in the session log
 func recordSessionAction(stateRoot, sessionID, action, data string) {
-	// Try Go implementation first
 	mgr := session.NewManager(stateRoot)
-	if err := mgr.AppendAction(sessionID, action, data); err == nil {
-		return
-	}
-
-	// Fallback to bash script
-	if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
-		scriptPath := filepath.Join(stateRoot, ".ai", "scripts", "session_manager.sh")
-		cmd := exec.Command("bash", scriptPath, "append_session_action", sessionID, action, data)
-		cmd.Dir = stateRoot
-		_ = cmd.Run()
-	}
+	_ = mgr.AppendAction(sessionID, action, data)
 }
 
 // updateResultWithSession updates the result file with principal session ID
 func updateResultWithSession(stateRoot string, issueNumber int, sessionID string) {
-	// Try Go implementation first
 	mgr := session.NewManager(stateRoot)
 	issueIDStr := fmt.Sprintf("%d", issueNumber)
-	if err := mgr.UpdateResultWithPrincipalSession(issueIDStr, sessionID); err == nil {
-		return
-	}
-
-	// Fallback to bash script
-	if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
-		scriptPath := filepath.Join(stateRoot, ".ai", "scripts", "session_manager.sh")
-		cmd := exec.Command("bash", scriptPath, "update_result_with_principal_session",
-			fmt.Sprintf("%d", issueNumber), sessionID)
-		cmd.Dir = stateRoot
-		_ = cmd.Run()
-	}
+	_ = mgr.UpdateResultWithPrincipalSession(issueIDStr, sessionID)
 }
 
 // FormatBashOutput formats the dispatch output for bash eval

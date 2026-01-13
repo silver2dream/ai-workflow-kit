@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -143,16 +142,9 @@ func cmdKickoff(args []string) int {
 				trace.WithData(map[string]string{"reason": reason}))
 			trace.CloseGlobalWriter()
 
-			// Try Go implementation first
-			if err := sessionMgr.EndPrincipal(principalSessionID, reason); err == nil {
-				return
-			}
-			// Fallback to bash script
-			if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
-				cmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "end_principal_session", principalSessionID, reason)
-				cmd.Stdout = io.Discard
-				cmd.Stderr = io.Discard
-				_ = cmd.Run()
+			if err := sessionMgr.EndPrincipal(principalSessionID, reason); err != nil {
+				// Log error but continue - session end is best-effort
+				fmt.Fprintf(os.Stderr, "Warning: failed to end principal session: %v\n", err)
 			}
 		})
 	}
@@ -160,18 +152,7 @@ func cmdKickoff(args []string) int {
 	// Initialize Principal session
 	sessionID, err := sessionMgr.InitPrincipal()
 	if err != nil {
-		// Fallback to bash script
-		if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
-			sessionCmd := exec.Command("bash", ".ai/scripts/session_manager.sh", "init_principal_session")
-			sessionOutput, err := sessionCmd.Output()
-			if err != nil {
-				output.Warning(fmt.Sprintf("Failed to initialize session: %v", err))
-			} else {
-				sessionID = strings.TrimSpace(string(sessionOutput))
-			}
-		} else {
-			output.Warning(fmt.Sprintf("Failed to initialize session: %v", err))
-		}
+		output.Warning(fmt.Sprintf("Failed to initialize session: %v", err))
 	}
 	if sessionID != "" {
 		principalSessionID = sessionID

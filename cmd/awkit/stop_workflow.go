@@ -5,8 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -93,11 +91,6 @@ func cmdStopWorkflow(args []string) int {
 		*stateRoot = root
 	}
 
-	// Check for script fallback
-	if os.Getenv("AWKIT_USE_SCRIPT") == "1" {
-		return runStopWorkflowScript(*stateRoot, reason)
-	}
-
 	// Run Go implementation
 	ctx := context.Background()
 	result, err := workflow.StopWorkflow(ctx, workflow.StopWorkflowOptions{
@@ -114,20 +107,5 @@ func cmdStopWorkflow(args []string) int {
 	// Output result (report path is already printed to stderr by StopWorkflow)
 	_ = result
 
-	return 0
-}
-
-func runStopWorkflowScript(stateRoot, reason string) int {
-	scriptPath := filepath.Join(stateRoot, ".ai/scripts/stop_work.sh")
-	cmd := exec.Command("bash", scriptPath, reason)
-	cmd.Dir = stateRoot
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return exitErr.ExitCode()
-		}
-		return 1
-	}
 	return 0
 }
