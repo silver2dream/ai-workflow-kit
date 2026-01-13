@@ -46,9 +46,15 @@ type workflowConfig struct {
 }
 
 type workflowRepo struct {
-	Name string `yaml:"name"`
-	Path string `yaml:"path"`
-	Type string `yaml:"type"`
+	Name   string             `yaml:"name"`
+	Path   string             `yaml:"path"`
+	Type   string             `yaml:"type"`
+	Verify workflowRepoVerify `yaml:"verify"`
+}
+
+type workflowRepoVerify struct {
+	Build string `yaml:"build"`
+	Test  string `yaml:"test"`
 }
 
 type workflowGit struct {
@@ -652,7 +658,16 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		trace.StepStart("run_tests")
 	}
 
+	// Try to get verification commands from ticket first, fallback to config
 	verifyCommands := GetVerificationCommandsForRepo(string(ticketBody), repoName)
+	if len(verifyCommands) == 0 {
+		// Fallback to config's verify.build and verify.test
+		verifyCommands = getConfigVerifyCommands(cfg, repoName)
+		if len(verifyCommands) > 0 {
+			logger.Log("使用 workflow.yaml 預設驗證命令")
+		}
+	}
+
 	if len(verifyCommands) > 0 {
 		logger.Log("執行驗證測試...")
 		for _, cmd := range verifyCommands {
@@ -991,6 +1006,26 @@ func resolveRepoConfig(cfg *workflowConfig, repoName string) (string, string) {
 		}
 	}
 	return "directory", "./"
+}
+
+// getConfigVerifyCommands returns verification commands from workflow.yaml config
+func getConfigVerifyCommands(cfg *workflowConfig, repoName string) []string {
+	if cfg == nil {
+		return nil
+	}
+	for _, repo := range cfg.Repos {
+		if repo.Name == repoName {
+			var commands []string
+			if repo.Verify.Build != "" {
+				commands = append(commands, repo.Verify.Build)
+			}
+			if repo.Verify.Test != "" {
+				commands = append(commands, repo.Verify.Test)
+			}
+			return commands
+		}
+	}
+	return nil
 }
 
 func extractTitleLine(content string) string {

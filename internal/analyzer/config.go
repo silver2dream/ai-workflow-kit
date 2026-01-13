@@ -10,6 +10,49 @@ import (
 type Config struct {
 	Specs  SpecsConfig  `yaml:"specs"`
 	GitHub GitHubConfig `yaml:"github"`
+	Repos  []RepoConfig `yaml:"repos"`
+}
+
+// RepoConfig represents a repository configuration
+type RepoConfig struct {
+	Name     string       `yaml:"name"`
+	Path     string       `yaml:"path"`
+	Type     string       `yaml:"type"`     // root, directory, submodule
+	Language string       `yaml:"language"` // go, node, unity, python, etc.
+	Verify   VerifyConfig `yaml:"verify"`
+}
+
+// VerifyConfig represents verification commands for a repo
+type VerifyConfig struct {
+	Build string `yaml:"build"`
+	Test  string `yaml:"test"`
+}
+
+// GetRepoByName returns the repo config by name
+func (c *Config) GetRepoByName(name string) *RepoConfig {
+	for i := range c.Repos {
+		if c.Repos[i].Name == name {
+			return &c.Repos[i]
+		}
+	}
+	return nil
+}
+
+// GetVerifyCommands returns build and test commands for a repo
+func (c *Config) GetVerifyCommands(repoName string) []string {
+	repo := c.GetRepoByName(repoName)
+	if repo == nil {
+		return nil
+	}
+
+	var commands []string
+	if repo.Verify.Build != "" {
+		commands = append(commands, repo.Verify.Build)
+	}
+	if repo.Verify.Test != "" {
+		commands = append(commands, repo.Verify.Test)
+	}
+	return commands
 }
 
 // SpecsConfig represents the specs section
