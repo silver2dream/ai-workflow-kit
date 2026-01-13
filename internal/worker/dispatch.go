@@ -219,6 +219,21 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 	logger.Log("準備 ticket 文件...")
 	ticketBody := issue.Body
 
+	// Check for previous review blocked reason and append to ticket
+	if reviewReason, err := ghClient.GetLatestReviewBlockedReason(ctx, opts.IssueNumber); err == nil && reviewReason != "" {
+		ticketBody += fmt.Sprintf(`
+
+---
+
+## ⚠️ 上次 Review 被阻擋 - 請修復以下問題
+
+%s
+
+**請根據以上錯誤修復代碼，確保所有測試通過後再提交。**
+`, reviewReason)
+		logger.Log("附加 review blocked 原因到 ticket")
+	}
+
 	// Append merge issue instructions if needed
 	if opts.MergeIssue != "" {
 		// Reset fail count - merge issue dispatch is a fresh start, not a retry

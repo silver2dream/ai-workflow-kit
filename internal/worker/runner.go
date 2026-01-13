@@ -647,6 +647,38 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		_ = trace.StepEnd("success", "", nil)
 	}
 
+	// Run verification tests before commit
+	if trace != nil {
+		trace.StepStart("run_tests")
+	}
+
+	verifyCommands := GetVerificationCommandsForRepo(string(ticketBody), repoName)
+	if len(verifyCommands) > 0 {
+		logger.Log("執行驗證測試...")
+		for _, cmd := range verifyCommands {
+			logger.Log("  運行: %s", cmd)
+			if testErr := runVerificationCommand(ctx, wtDir, cmd, opts.GitTimeout); testErr != nil {
+				runErr = fmt.Errorf("verification failed: %s: %w", cmd, testErr)
+				result.Error = runErr.Error()
+				result.Status = "failed"
+				if trace != nil {
+					_ = trace.StepEnd("failed", fmt.Sprintf("test failed: %s: %v", cmd, testErr), nil)
+				}
+				logger.Log("  ✗ 測試失敗: %v", testErr)
+				// Return error to trigger Codex retry
+				return result, runErr
+			}
+			logger.Log("  ✓ 通過")
+		}
+		logger.Log("✓ 所有驗證測試通過")
+	} else {
+		logger.Log("未找到驗證命令，跳過測試")
+	}
+
+	if trace != nil {
+		_ = trace.StepEnd("success", "", nil)
+	}
+
 	if trace != nil {
 		trace.StepStart("git_commit")
 	}
@@ -1715,5 +1747,39 @@ func (l *workerLogger) Close() error {
 	if len(errs) > 0 {
 		return fmt.Errorf("failed to close logger: %s", strings.Join(errs, "; "))
 	}
+	return nil
+}
+
+// runVerificationCommand runs a verification command in the given directory
+func runVerificationCommand(ctx context.Context, workDir, command string, timeout time.Duration) error {
+	if timeout == 0 {
+		timeout = 5 * time.Minute
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Use bash to run the command for shell expansion support
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd.Dir = workDir
+
+	// Capture output for error reporting
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("timeout after %v", timeout)
+		}
+		// Include stderr in error message for debugging
+		errOutput := strings.TrimSpace(stderr.String())
+		if errOutput != "" {
+			return fmt.Errorf("%w: %s", err, errOutput)
+		}
+		return err
+	}
+
 	return nil
 }
