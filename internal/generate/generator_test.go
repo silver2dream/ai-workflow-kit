@@ -416,3 +416,300 @@ func TestGenerateUnityCIContent(t *testing.T) {
 		t.Error("Unity CI should check .meta files")
 	}
 }
+
+// TestConfigValidation_YAMLSyntaxError tests that malformed YAML fails to parse
+func TestConfigValidation_YAMLSyntaxError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "workflow.yaml")
+
+	// Write malformed YAML (invalid indentation and syntax)
+	malformedYAML := `
+project:
+  name: test
+  type: monorepo
+  invalid yaml here: [unclosed bracket
+git
+  integration_branch: develop
+`
+	if err := os.WriteFile(configPath, []byte(malformedYAML), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := loadConfig(configPath)
+	if err == nil {
+		t.Error("loadConfig() expected error for malformed YAML")
+	}
+}
+
+// TestConfigValidation_MissingProject tests that missing project section fails validation
+func TestConfigValidation_MissingProject(t *testing.T) {
+	config := Config{
+		Git: GitConfig{IntegrationBranch: "develop"},
+		Repos: []RepoConfig{
+			{Name: "backend", Path: "backend/", Type: "directory"},
+		},
+	}
+
+	errors := config.Validate()
+	if len(errors) < 2 {
+		t.Errorf("Validate() got %d errors, want at least 2 (project.name, project.type)", len(errors))
+	}
+
+	// Check that project.name and project.type errors are present
+	var hasNameErr, hasTypeErr bool
+	for _, e := range errors {
+		if e.Field == "project.name" {
+			hasNameErr = true
+		}
+		if e.Field == "project.type" {
+			hasTypeErr = true
+		}
+	}
+	if !hasNameErr {
+		t.Error("expected error for project.name")
+	}
+	if !hasTypeErr {
+		t.Error("expected error for project.type")
+	}
+}
+
+// TestConfigValidation_MissingRepos tests that an empty repos section is handled
+func TestConfigValidation_MissingRepos(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Repos:   nil, // empty repos
+	}
+
+	// Config with no repos should still pass validation
+	// (repos being empty is valid - just means no repo-specific validation)
+	errors := config.Validate()
+	if len(errors) != 0 {
+		t.Errorf("Validate() got %d errors, want 0 for config with no repos", len(errors))
+		for _, e := range errors {
+			t.Logf("  error: %s", e.Error())
+		}
+	}
+}
+
+// TestConfigValidation_InvalidRepoType tests that invalid repo type fails validation
+func TestConfigValidation_InvalidRepoType(t *testing.T) {
+	tests := []struct {
+		name     string
+		repoType string
+		wantErr  bool
+	}{
+		{"valid root", "root", false},
+		{"valid directory", "directory", false},
+		{"valid submodule", "submodule", false},
+		{"invalid type", "invalid_type", true},
+		{"empty type", "", false}, // empty is allowed (not validated)
+		{"typo in type", "directry", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := Config{
+				Project: ProjectConfig{Name: "test", Type: "monorepo"},
+				Git:     GitConfig{IntegrationBranch: "develop"},
+				Repos: []RepoConfig{
+					{Name: "backend", Path: "backend/", Type: tt.repoType},
+				},
+			}
+
+			errors := config.Validate()
+			hasRepoTypeErr := false
+			for _, e := range errors {
+				if strings.Contains(e.Field, "repos[0].type") {
+					hasRepoTypeErr = true
+					break
+				}
+			}
+
+			if tt.wantErr && !hasRepoTypeErr {
+				t.Errorf("expected repo type validation error for type %q", tt.repoType)
+			}
+			if !tt.wantErr && hasRepoTypeErr {
+				t.Errorf("unexpected repo type validation error for type %q", tt.repoType)
+			}
+		})
+	}
+}
+
+// TestConfigValidation_ValidConfig tests that a complete valid config passes validation
+func TestConfigValidation_ValidConfig(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test-project", Type: "monorepo"},
+		Git: GitConfig{
+			IntegrationBranch: "develop",
+			ReleaseBranch:     "main",
+			CommitFormat:      "[type] subject",
+		},
+		Repos: []RepoConfig{
+			{
+				Name:     "backend",
+				Path:     "backend/",
+				Type:     "directory",
+				Language: "go",
+				Verify: VerifyConfig{
+					Build: "go build ./...",
+					Test:  "go test ./...",
+				},
+			},
+			{
+				Name:     "frontend",
+				Path:     "frontend/",
+				Type:     "directory",
+				Language: "typescript",
+				Verify: VerifyConfig{
+					Build: "npm run build",
+					Test:  "npm test",
+				},
+			},
+		},
+		Rules: RulesConfig{
+			Kit:    []string{"git-workflow"},
+			Custom: []string{},
+		},
+		Specs: SpecsConfig{
+			BasePath: ".ai/specs",
+		},
+	}
+
+	errors := config.Validate()
+	if len(errors) != 0 {
+		t.Errorf("Validate() got %d errors, want 0 for valid config", len(errors))
+		for _, e := range errors {
+			t.Logf("  error: %s", e.Error())
+		}
+	}
+}
+
+// TestConfigValidation_RootTypePath tests that root type validation works correctly
+func TestConfigValidation_RootTypePath(t *testing.T) {
+	// Note: Current implementation doesn't validate root type path constraint
+	// This test documents current behavior and can be updated if path validation is added
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "single-repo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Repos: []RepoConfig{
+			{Name: "root", Path: "./", Type: "root"},
+		},
+	}
+
+	errors := config.Validate()
+	if len(errors) != 0 {
+		t.Errorf("Validate() got %d errors, want 0 for valid root config", len(errors))
+	}
+}
+
+// TestLoadConfig_YAMLSyntaxVariants tests various YAML syntax issues
+func TestLoadConfig_YAMLSyntaxVariants(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr bool
+	}{
+		{
+			name: "valid minimal",
+			yaml: `
+project:
+  name: test
+  type: single-repo
+git:
+  integration_branch: develop
+repos:
+  - name: root
+    path: ./
+    type: root
+`,
+			wantErr: false,
+		},
+		{
+			name: "unclosed bracket in value",
+			yaml: `
+project:
+  name: "test [unclosed"
+git:
+  integration_branch: develop
+`,
+			// Unquoted brackets are parsed as strings, quoted brackets are fine
+			wantErr: false,
+		},
+		{
+			name: "invalid indentation",
+			yaml: `
+project:
+name: test
+  type: monorepo
+`,
+			wantErr: true,
+		},
+		{
+			name: "duplicate key",
+			yaml: `
+project:
+  name: test
+  name: duplicate
+  type: monorepo
+`,
+			// Go YAML library treats duplicate keys as an error
+			wantErr: true,
+		},
+		{
+			name: "tabs in indentation",
+			yaml: "project:\n\tname: test\n",
+			// Go YAML library doesn't allow tabs for indentation
+			wantErr: true,
+		},
+		{
+			name: "completely malformed",
+			yaml: `:::invalid:::yaml`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "workflow.yaml")
+			if err := os.WriteFile(configPath, []byte(tt.yaml), 0644); err != nil {
+				t.Fatalf("failed to write config: %v", err)
+			}
+
+			_, err := loadConfig(configPath)
+			if tt.wantErr && err == nil {
+				t.Error("loadConfig() expected error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("loadConfig() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestConfigValidation_MultipleErrors tests that multiple validation errors are reported
+func TestConfigValidation_MultipleErrors(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "", Type: "invalid-type"},
+		Git:     GitConfig{IntegrationBranch: ""},
+		Repos: []RepoConfig{
+			{Name: "", Path: "", Type: "invalid"},
+		},
+	}
+
+	errors := config.Validate()
+	// Should have at least:
+	// - project.name missing
+	// - project.type invalid
+	// - git.integration_branch missing
+	// - repos[0].name missing
+	// - repos[0].path missing
+	// - repos[0].type invalid
+	if len(errors) < 5 {
+		t.Errorf("Validate() got %d errors, want at least 5", len(errors))
+		for _, e := range errors {
+			t.Logf("  error: %s", e.Error())
+		}
+	}
+}
