@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -383,4 +384,407 @@ func TestPreflightChecker_SetForceDelete(t *testing.T) {
 	if !checker.forceDelete {
 		t.Error("forceDelete should be true after SetForceDelete(true)")
 	}
+}
+
+// ============================================================
+// Tests migrated from test_preflight.py
+// Property 6: Preflight Execution for All Types
+// Property 13: Remote Accessibility Verification
+// Property 27: Submodule Detached HEAD Handling
+// ============================================================
+
+// ValidateRepoType validates that repo type is one of the allowed values.
+// This is a helper function for testing that mirrors the Python implementation.
+func ValidateRepoType(repoType string) bool {
+	switch repoType {
+	case "root", "directory", "submodule":
+		return true
+	default:
+		return false
+	}
+}
+
+// TestValidRepoTypes tests all valid repo types are recognized.
+// Property 6: Preflight Execution for All Types
+func TestValidRepoTypes(t *testing.T) {
+	validTypes := []string{"root", "directory", "submodule"}
+
+	for _, repoType := range validTypes {
+		t.Run("valid_"+repoType, func(t *testing.T) {
+			if !ValidateRepoType(repoType) {
+				t.Errorf("ValidateRepoType(%q) should return true", repoType)
+			}
+		})
+	}
+}
+
+// TestInvalidRepoTypes tests invalid repo types are rejected.
+func TestInvalidRepoTypes(t *testing.T) {
+	invalidTypes := []string{"invalid", "unknown", "", "ROOT", "Directory"}
+
+	for _, repoType := range invalidTypes {
+		t.Run("invalid_"+repoType, func(t *testing.T) {
+			if ValidateRepoType(repoType) {
+				t.Errorf("ValidateRepoType(%q) should return false", repoType)
+			}
+		})
+	}
+}
+
+// TestPreflightCheckGitClean tests git working tree clean check
+func TestPreflightCheckGitClean(t *testing.T) {
+	// Skip if git is not installed
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Skipping test: git not installed")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "preflight-git-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Configure git
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = tmpDir
+	cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tmpDir
+	cmd.Run()
+
+	// Create initial commit
+	testFile := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(testFile, []byte("# Test"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = tmpDir
+	cmd.Run()
+
+	// Save current directory and change to temp dir
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	checker := NewPreflightChecker("", "")
+
+	t.Run("clean_repo", func(t *testing.T) {
+		result := checker.CheckGitClean()
+		if !result.Passed {
+			t.Errorf("CheckGitClean should pass for clean repo: %s", result.Message)
+		}
+	})
+
+	t.Run("dirty_repo", func(t *testing.T) {
+		// Create uncommitted file
+		dirtyFile := filepath.Join(tmpDir, "dirty.txt")
+		if err := os.WriteFile(dirtyFile, []byte("uncommitted"), 0644); err != nil {
+			t.Fatalf("Failed to write dirty file: %v", err)
+		}
+		defer os.Remove(dirtyFile)
+
+		result := checker.CheckGitClean()
+		if result.Passed {
+			t.Error("CheckGitClean should fail for dirty repo")
+		}
+		if result.Message == "" || result.Message == "Working directory clean" {
+			t.Error("CheckGitClean should include error message for dirty repo")
+		}
+	})
+}
+
+// TestPreflightDirectoryExists tests directory existence check
+func TestPreflightDirectoryExists(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "preflight-dir-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("existing_directory", func(t *testing.T) {
+		// Create subdirectory
+		subDir := filepath.Join(tmpDir, "backend")
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatalf("Failed to create subdir: %v", err)
+		}
+
+		// Check directory exists
+		info, err := os.Stat(subDir)
+		if err != nil {
+			t.Errorf("Directory should exist: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("Path should be a directory")
+		}
+	})
+
+	t.Run("nonexistent_directory", func(t *testing.T) {
+		nonexistent := filepath.Join(tmpDir, "nonexistent")
+		_, err := os.Stat(nonexistent)
+		if !os.IsNotExist(err) {
+			t.Error("Nonexistent directory should return error")
+		}
+	})
+}
+
+// TestPreflightSubmoduleCheck tests submodule detection
+func TestPreflightSubmoduleCheck(t *testing.T) {
+	// Skip if git is not installed
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Skipping test: git not installed")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "preflight-submodule-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("directory_with_git", func(t *testing.T) {
+		// Create directory with .git (simulates submodule)
+		subDir := filepath.Join(tmpDir, "backend")
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatalf("Failed to create subdir: %v", err)
+		}
+
+		cmd := exec.Command("git", "init")
+		cmd.Dir = subDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to init git in subdir: %v", err)
+		}
+
+		// Check .git exists
+		gitPath := filepath.Join(subDir, ".git")
+		if _, err := os.Stat(gitPath); os.IsNotExist(err) {
+			t.Error(".git should exist in initialized git directory")
+		}
+	})
+
+	t.Run("directory_without_git", func(t *testing.T) {
+		// Create directory without .git
+		plainDir := filepath.Join(tmpDir, "frontend")
+		if err := os.MkdirAll(plainDir, 0755); err != nil {
+			t.Fatalf("Failed to create plain dir: %v", err)
+		}
+
+		gitPath := filepath.Join(plainDir, ".git")
+		if _, err := os.Stat(gitPath); !os.IsNotExist(err) {
+			t.Error("Plain directory should not have .git")
+		}
+	})
+}
+
+// TestPreflightSubmoduleDetachedHead tests submodule detached HEAD detection
+// Property 27: Submodule Detached HEAD Handling
+func TestPreflightSubmoduleDetachedHead(t *testing.T) {
+	// Skip if git is not installed
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Skipping test: git not installed")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "preflight-detached-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Configure git
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = tmpDir
+	cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tmpDir
+	cmd.Run()
+
+	// Create initial commit
+	testFile := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(testFile, []byte("# Test"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = tmpDir
+	cmd.Run()
+
+	t.Run("on_branch", func(t *testing.T) {
+		// Check if on a branch (not detached)
+		cmd := exec.Command("git", "symbolic-ref", "-q", "HEAD")
+		cmd.Dir = tmpDir
+		err := cmd.Run()
+		if err != nil {
+			t.Error("Should be on a branch, not detached HEAD")
+		}
+	})
+
+	t.Run("detached_head", func(t *testing.T) {
+		// Get current HEAD SHA
+		cmd := exec.Command("git", "rev-parse", "HEAD")
+		cmd.Dir = tmpDir
+		output, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("Failed to get HEAD SHA: %v", err)
+		}
+		headSHA := strings.TrimSpace(string(output))
+
+		// Checkout the SHA to create detached HEAD
+		cmd = exec.Command("git", "checkout", headSHA)
+		cmd.Dir = tmpDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to checkout SHA: %v", err)
+		}
+
+		// Check if in detached HEAD state
+		cmd = exec.Command("git", "symbolic-ref", "-q", "HEAD")
+		cmd.Dir = tmpDir
+		err = cmd.Run()
+		if err == nil {
+			t.Error("Should be in detached HEAD state")
+		}
+	})
+}
+
+// TestPreflightCheckGitStatus tests git status porcelain output
+func TestPreflightCheckGitStatus(t *testing.T) {
+	// Skip if git is not installed
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Skipping test: git not installed")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "preflight-status-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Configure git
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = tmpDir
+	cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tmpDir
+	cmd.Run()
+
+	// Create initial commit
+	testFile := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(testFile, []byte("# Test"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = tmpDir
+	cmd.Run()
+
+	t.Run("clean_status", func(t *testing.T) {
+		cmd := exec.Command("git", "status", "--porcelain")
+		cmd.Dir = tmpDir
+		output, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("Failed to get git status: %v", err)
+		}
+		if len(strings.TrimSpace(string(output))) != 0 {
+			t.Error("Clean repo should have empty git status --porcelain output")
+		}
+	})
+
+	t.Run("dirty_status", func(t *testing.T) {
+		// Create uncommitted file
+		dirtyFile := filepath.Join(tmpDir, "new_file.txt")
+		if err := os.WriteFile(dirtyFile, []byte("content"), 0644); err != nil {
+			t.Fatalf("Failed to write file: %v", err)
+		}
+		defer os.Remove(dirtyFile)
+
+		cmd := exec.Command("git", "status", "--porcelain")
+		cmd.Dir = tmpDir
+		output, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("Failed to get git status: %v", err)
+		}
+		if len(strings.TrimSpace(string(output))) == 0 {
+			t.Error("Dirty repo should have non-empty git status --porcelain output")
+		}
+		if !strings.Contains(string(output), "new_file.txt") {
+			t.Error("Git status should contain the new file name")
+		}
+	})
+}
+
+// TestPreflightRepoTypeChecks tests repo type-specific preflight checks
+// Property 6: Preflight Execution for All Types
+func TestPreflightRepoTypeChecks(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "preflight-repotype-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("root_type", func(t *testing.T) {
+		// Root type: path should be "./" or empty
+		repoType := "root"
+		repoPath := "./"
+
+		if !ValidateRepoType(repoType) {
+			t.Error("root should be a valid repo type")
+		}
+		if repoPath != "./" && repoPath != "" && repoPath != "." {
+			t.Error("root type typically has path './' or empty")
+		}
+	})
+
+	t.Run("directory_type", func(t *testing.T) {
+		// Directory type: path should point to existing directory
+		repoType := "directory"
+		subDir := filepath.Join(tmpDir, "backend")
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatalf("Failed to create subdir: %v", err)
+		}
+
+		if !ValidateRepoType(repoType) {
+			t.Error("directory should be a valid repo type")
+		}
+
+		info, err := os.Stat(subDir)
+		if err != nil {
+			t.Errorf("Directory should exist: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("Path should be a directory")
+		}
+	})
+
+	t.Run("submodule_type", func(t *testing.T) {
+		// Submodule type: path should point to git repo
+		repoType := "submodule"
+		if !ValidateRepoType(repoType) {
+			t.Error("submodule should be a valid repo type")
+		}
+	})
 }

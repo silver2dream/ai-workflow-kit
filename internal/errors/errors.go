@@ -1,7 +1,10 @@
 // Package errors provides centralized error types and exit codes for AWK.
 package errors
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Exit codes for different error categories.
 const (
@@ -160,4 +163,131 @@ func GetExitCode(err error) int {
 		return awkErr.Code
 	}
 	return ExitGeneralError
+}
+
+// ErrorContext contains contextual information for detailed error messages.
+//
+// Property 11: Error Message Specificity
+// For any failure during repo type operations, the error message SHALL include:
+// - The specific operation that failed (Req 13.1)
+// - The repo type and path involved (Req 13.2, 13.3)
+// - A suggested fix when applicable (Req 13.4, 13.5)
+type ErrorContext struct {
+	Operation  string
+	ErrorMsg   string
+	RepoType   string
+	RepoPath   string
+	Worktree   string
+	WorkDir    string
+	Branch     string
+	Suggestion string
+}
+
+// FormatError formats a detailed error message with context.
+//
+// Property 11: Error Message Specificity
+func FormatError(ctx ErrorContext) string {
+	var sb strings.Builder
+
+	sb.WriteString("============================================================\n")
+	sb.WriteString(fmt.Sprintf("ERROR: %s\n", ctx.ErrorMsg))
+	sb.WriteString("============================================================\n")
+	sb.WriteString(fmt.Sprintf("Operation: %s\n", ctx.Operation))
+
+	if ctx.RepoType != "" {
+		sb.WriteString(fmt.Sprintf("Repo Type: %s\n", ctx.RepoType))
+	}
+	if ctx.RepoPath != "" {
+		sb.WriteString(fmt.Sprintf("Repo Path: %s\n", ctx.RepoPath))
+	}
+	if ctx.Worktree != "" {
+		sb.WriteString(fmt.Sprintf("Worktree: %s\n", ctx.Worktree))
+	}
+	if ctx.WorkDir != "" {
+		sb.WriteString(fmt.Sprintf("Work Dir: %s\n", ctx.WorkDir))
+	}
+	if ctx.Branch != "" {
+		sb.WriteString(fmt.Sprintf("Branch: %s\n", ctx.Branch))
+	}
+
+	if ctx.Suggestion != "" {
+		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf("SUGGESTION: %s\n", ctx.Suggestion))
+	}
+
+	sb.WriteString("============================================================")
+
+	return sb.String()
+}
+
+// GetErrorSuggestion returns a suggested fix for common errors.
+func GetErrorSuggestion(operation, repoType string) string {
+	suggestions := map[string]map[string]string{
+		"worktree_setup": {
+			"submodule": "Check that the submodule is properly initialized with 'git submodule update --init'",
+			"directory": "Verify the directory path exists in the repository",
+		},
+		"git_commit": {
+			"submodule": "Ensure changes are within the submodule boundary",
+		},
+		"git_push": {
+			"submodule": "Check push permissions for both submodule and parent remotes",
+		},
+		"preflight": {
+			"submodule": "Run 'git submodule update --init --recursive' to initialize submodules",
+		},
+	}
+
+	if opSuggestions, ok := suggestions[operation]; ok {
+		if suggestion, ok := opSuggestions[repoType]; ok {
+			return suggestion
+		}
+	}
+	return ""
+}
+
+// EarlyFailureContext contains information for early failure logging.
+type EarlyFailureContext struct {
+	IssueID   string
+	Stage     string
+	Message   string
+	Repo      string
+	RepoType  string
+	RepoPath  string
+	Timestamp string
+}
+
+// FormatEarlyFailureLog formats an early failure log message.
+// Early failures occur before codex execution (e.g., preflight, worktree setup).
+func FormatEarlyFailureLog(ctx EarlyFailureContext) string {
+	var sb strings.Builder
+
+	// Use a default timestamp if not provided
+	timestamp := ctx.Timestamp
+	if timestamp == "" {
+		timestamp = "unknown"
+	}
+
+	// Use defaults for repo type and path
+	repoType := ctx.RepoType
+	if repoType == "" {
+		repoType = "unknown"
+	}
+	repoPath := ctx.RepoPath
+	if repoPath == "" {
+		repoPath = "unknown"
+	}
+
+	sb.WriteString("============================================================\n")
+	sb.WriteString(fmt.Sprintf("EARLY FAILURE LOG - issue-%s\n", ctx.IssueID))
+	sb.WriteString("============================================================\n")
+	sb.WriteString(fmt.Sprintf("Timestamp: %s\n", timestamp))
+	sb.WriteString(fmt.Sprintf("Stage: %s\n", ctx.Stage))
+	sb.WriteString(fmt.Sprintf("Repo: %s\n", ctx.Repo))
+	sb.WriteString(fmt.Sprintf("Repo Type: %s\n", repoType))
+	sb.WriteString(fmt.Sprintf("Repo Path: %s\n", repoPath))
+	sb.WriteString(fmt.Sprintf("Error: %s\n", ctx.Message))
+	sb.WriteString("============================================================")
+
+	return sb.String()
 }

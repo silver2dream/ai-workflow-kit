@@ -149,3 +149,104 @@ func dirExists(path string) bool {
 	}
 	return info.IsDir()
 }
+
+// CheckUninitializedSubmodules checks for uninitialized submodules in the repository.
+// Property 8: Audit Submodule Detection - Uninitialized submodules (P1) (Req 8.1)
+func CheckUninitializedSubmodules(repoRoot string) []Finding {
+	var findings []Finding
+
+	// Check if .gitmodules exists
+	gitmodulesPath := filepath.Join(repoRoot, ".gitmodules")
+	if !fileExists(gitmodulesPath) {
+		return findings
+	}
+
+	// Get submodule status
+	cmd := exec.Command("git", "-C", repoRoot, "submodule", "status")
+	output, err := cmd.Output()
+	if err != nil {
+		return findings
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Uninitialized submodules start with '-'
+		if strings.HasPrefix(line, "-") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				path := parts[1]
+				findings = append(findings, NewFinding(FindingUninitializedSubmodule, SeverityP1, path))
+			}
+		}
+	}
+
+	return findings
+}
+
+// CheckDirtySubmodules checks for dirty submodule working trees.
+// Property 8: Audit Submodule Detection - Dirty submodule working trees (P1) (Req 8.2, 8.5)
+func CheckDirtySubmodules(repoRoot string, submodulePaths []string) []Finding {
+	var findings []Finding
+
+	for _, subPath := range submodulePaths {
+		submoduleDir := filepath.Join(repoRoot, subPath)
+		if !dirExists(submoduleDir) {
+			continue
+		}
+
+		// Check if submodule has uncommitted changes
+		cmd := exec.Command("git", "-C", submoduleDir, "status", "--porcelain")
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+
+		if len(strings.TrimSpace(string(output))) > 0 {
+			findings = append(findings, NewFinding(FindingDirtySubmodule, SeverityP1, subPath))
+		}
+	}
+
+	return findings
+}
+
+// CheckUnpushedSubmoduleCommits checks for unpushed commits in submodules.
+// Property 8: Audit Submodule Detection - Unpushed submodule commits (P1) (Req 8.3)
+func CheckUnpushedSubmoduleCommits(repoRoot string, submodulePaths []string) []Finding {
+	var findings []Finding
+
+	for _, subPath := range submodulePaths {
+		submoduleDir := filepath.Join(repoRoot, subPath)
+		if !dirExists(submoduleDir) {
+			continue
+		}
+
+		// Check if submodule has unpushed commits
+		cmd := exec.Command("git", "-C", submoduleDir, "log", "--oneline", "@{u}..HEAD")
+		output, err := cmd.Output()
+		if err != nil {
+			// Command may fail if no upstream is set, which is ok
+			continue
+		}
+
+		// If output is non-empty, there are unpushed commits
+		if len(strings.TrimSpace(string(output))) > 0 {
+			findings = append(findings, NewFinding(FindingUnpushedSubmoduleCommit, SeverityP1, subPath))
+		}
+	}
+
+	return findings
+}
+
+// RunSubmoduleAudit runs a complete submodule audit on the repository.
+// Returns findings from all submodule checks.
+func RunSubmoduleAudit(repoRoot string, submodulePaths []string) []Finding {
+	var findings []Finding
+	findings = append(findings, CheckUninitializedSubmodules(repoRoot)...)
+	findings = append(findings, CheckDirtySubmodules(repoRoot, submodulePaths)...)
+	findings = append(findings, CheckUnpushedSubmoduleCommits(repoRoot, submodulePaths)...)
+	return findings
+}

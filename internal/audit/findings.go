@@ -18,8 +18,11 @@ const (
 
 // Finding IDs for P1 (Warning - may cause issues)
 const (
-	FindingDirtyWorktree = "DIRTY_WORKTREE"
-	FindingMissingAIDir  = "MISSING_AI_DIR"
+	FindingDirtyWorktree           = "DIRTY_WORKTREE"
+	FindingMissingAIDir            = "MISSING_AI_DIR"
+	FindingUninitializedSubmodule  = "UNINITIALIZED_SUBMODULE"
+	FindingDirtySubmodule          = "DIRTY_SUBMODULE"
+	FindingUnpushedSubmoduleCommit = "UNPUSHED_SUBMODULE_COMMIT"
 )
 
 // Finding IDs for P2 (Info)
@@ -29,12 +32,15 @@ const (
 
 // Finding messages
 var findingMessages = map[string]string{
-	FindingMissingClaudeMD:     "Required file CLAUDE.md is missing",
-	FindingMissingAgentsMD:     "Required file AGENTS.md is missing",
-	FindingMissingWorkflowYAML: "Required file .ai/config/workflow.yaml is missing",
-	FindingDirtyWorktree:       "Git worktree has uncommitted changes",
-	FindingMissingAIDir:        ".ai directory structure is incomplete",
-	FindingMissingREADME:       "README.md is missing",
+	FindingMissingClaudeMD:         "Required file CLAUDE.md is missing",
+	FindingMissingAgentsMD:         "Required file AGENTS.md is missing",
+	FindingMissingWorkflowYAML:     "Required file .ai/config/workflow.yaml is missing",
+	FindingDirtyWorktree:           "Git worktree has uncommitted changes",
+	FindingMissingAIDir:            ".ai directory structure is incomplete",
+	FindingMissingREADME:           "README.md is missing",
+	FindingUninitializedSubmodule:  "Uninitialized submodule detected",
+	FindingDirtySubmodule:          "Dirty submodule working tree detected",
+	FindingUnpushedSubmoduleCommit: "Unpushed commits in submodule detected",
 }
 
 // Finding represents a single audit finding.

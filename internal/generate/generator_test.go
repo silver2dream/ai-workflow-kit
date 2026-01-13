@@ -713,3 +713,309 @@ func TestConfigValidation_MultipleErrors(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// Path Traversal Prevention Tests (migrated from test_config_validation_extended.py)
+// Property 15: Path Traversal Prevention
+// =============================================================================
+
+func TestValidateRepoPath_RejectDoubleDotPath(t *testing.T) {
+	// Test paths with .. are rejected (Req 22.1)
+	isValid, err := ValidateRepoPath("directory", "../outside")
+
+	if isValid {
+		t.Fatal("ValidateRepoPath should reject path with ..")
+	}
+	if !strings.Contains(err, "Path traversal") {
+		t.Errorf("Error should mention path traversal, got: %s", err)
+	}
+}
+
+func TestValidateRepoPath_RejectEmbeddedDoubleDot(t *testing.T) {
+	// Test paths with embedded .. are rejected (Req 22.2)
+	isValid, err := ValidateRepoPath("directory", "backend/../../../etc")
+
+	if isValid {
+		t.Fatal("ValidateRepoPath should reject path with embedded ..")
+	}
+	if !strings.Contains(err, "Path traversal") {
+		t.Errorf("Error should mention path traversal, got: %s", err)
+	}
+}
+
+func TestValidateRepoPath_AcceptValidPath(t *testing.T) {
+	// Test valid paths are accepted
+	isValid, err := ValidateRepoPath("directory", "backend/internal")
+
+	if !isValid {
+		t.Fatalf("ValidateRepoPath should accept valid path, got error: %s", err)
+	}
+	if err != "" {
+		t.Errorf("Error should be empty for valid path, got: %s", err)
+	}
+}
+
+func TestValidateRepoPath_RootTypeRequiresDotPath(t *testing.T) {
+	// Test root type requires ./ or . path (Req 9.3)
+	isValid, err := ValidateRepoPath("root", "backend")
+
+	if isValid {
+		t.Fatal("ValidateRepoPath should reject non-dot path for root type")
+	}
+	if !strings.Contains(err, "Root type path must be") {
+		t.Errorf("Error should mention root type path requirement, got: %s", err)
+	}
+}
+
+func TestValidateRepoPath_RootTypeAcceptsDot(t *testing.T) {
+	// Test root type accepts . path
+	isValid, err := ValidateRepoPath("root", ".")
+
+	if !isValid {
+		t.Fatalf("ValidateRepoPath should accept '.' for root type, got error: %s", err)
+	}
+}
+
+func TestValidateRepoPath_RootTypeAcceptsDotSlash(t *testing.T) {
+	// Test root type accepts ./ path
+	isValid, err := ValidateRepoPath("root", "./")
+
+	if !isValid {
+		t.Fatalf("ValidateRepoPath should accept './' for root type, got error: %s", err)
+	}
+}
+
+// =============================================================================
+// Submodule Config Validation Tests (migrated from test_config_validation_extended.py)
+// Property 7: Config Validation Completeness
+// =============================================================================
+
+func TestValidateSubmoduleConfig_MissingGitmodules(t *testing.T) {
+	// Test missing .gitmodules is detected (Req 1.5)
+	isValid, errors := ValidateSubmoduleConfig("backend", "", true)
+
+	if isValid {
+		t.Fatal("ValidateSubmoduleConfig should reject missing .gitmodules")
+	}
+
+	hasMissingError := false
+	for _, e := range errors {
+		if strings.Contains(e, "Missing .gitmodules") {
+			hasMissingError = true
+			break
+		}
+	}
+	if !hasMissingError {
+		t.Errorf("Errors should mention missing .gitmodules, got: %v", errors)
+	}
+}
+
+func TestValidateSubmoduleConfig_PathNotInGitmodules(t *testing.T) {
+	// Test path not in .gitmodules is detected (Req 9.1)
+	gitmodules := `[submodule "frontend"]
+    path = frontend
+    url = https://github.com/test/frontend.git
+`
+	isValid, errors := ValidateSubmoduleConfig("backend", gitmodules, true)
+
+	if isValid {
+		t.Fatal("ValidateSubmoduleConfig should reject path not in .gitmodules")
+	}
+
+	hasNotFoundError := false
+	for _, e := range errors {
+		if strings.Contains(e, "not found in .gitmodules") {
+			hasNotFoundError = true
+			break
+		}
+	}
+	if !hasNotFoundError {
+		t.Errorf("Errors should mention path not found, got: %v", errors)
+	}
+}
+
+func TestValidateSubmoduleConfig_MissingGitDirectory(t *testing.T) {
+	// Test missing .git is detected (Req 9.2)
+	gitmodules := `[submodule "backend"]
+    path = backend
+    url = https://github.com/test/backend.git
+`
+	isValid, errors := ValidateSubmoduleConfig("backend", gitmodules, false)
+
+	if isValid {
+		t.Fatal("ValidateSubmoduleConfig should reject missing .git")
+	}
+
+	hasNoGitError := false
+	for _, e := range errors {
+		if strings.Contains(e, "no .git") {
+			hasNoGitError = true
+			break
+		}
+	}
+	if !hasNoGitError {
+		t.Errorf("Errors should mention no .git, got: %v", errors)
+	}
+}
+
+func TestValidateSubmoduleConfig_ValidConfig(t *testing.T) {
+	// Test valid submodule config passes
+	gitmodules := `[submodule "backend"]
+    path = backend
+    url = https://github.com/test/backend.git
+`
+	isValid, errors := ValidateSubmoduleConfig("backend", gitmodules, true)
+
+	if !isValid {
+		t.Fatalf("ValidateSubmoduleConfig should accept valid config, got errors: %v", errors)
+	}
+	if len(errors) != 0 {
+		t.Errorf("Errors should be empty for valid config, got: %v", errors)
+	}
+}
+
+// =============================================================================
+// Directory Git File Warning Tests
+// =============================================================================
+
+func TestCheckDirectoryHasGitFile_WithGitFile(t *testing.T) {
+	// Test warning when directory has .git file (Req 9.4)
+	hasWarning, warning := CheckDirectoryHasGitFile("backend", true)
+
+	if !hasWarning {
+		t.Fatal("CheckDirectoryHasGitFile should return warning when has .git file")
+	}
+	if !strings.Contains(warning, "WARNING") {
+		t.Errorf("Warning should contain 'WARNING', got: %s", warning)
+	}
+	if !strings.Contains(warning, "might be a submodule") {
+		t.Errorf("Warning should mention 'might be a submodule', got: %s", warning)
+	}
+}
+
+func TestCheckDirectoryHasGitFile_WithoutGitFile(t *testing.T) {
+	// Test no warning when directory has no .git file
+	hasWarning, warning := CheckDirectoryHasGitFile("backend", false)
+
+	if hasWarning {
+		t.Fatal("CheckDirectoryHasGitFile should not return warning when no .git file")
+	}
+	if warning != "" {
+		t.Errorf("Warning should be empty, got: %s", warning)
+	}
+}
+
+// =============================================================================
+// Submodule Remote Validation Tests (migrated from test_config_validation_extended.py)
+// Property 18: Submodule Remote Validation
+// =============================================================================
+
+func TestValidateSubmoduleRemote_MatchingURLs(t *testing.T) {
+	// Test matching URLs pass validation (Req 26.1)
+	isValid, err := ValidateSubmoduleRemote(
+		"backend",
+		"https://github.com/test/backend.git",
+		"https://github.com/test/backend.git",
+	)
+
+	if !isValid {
+		t.Fatalf("ValidateSubmoduleRemote should accept matching URLs, got error: %s", err)
+	}
+	if err != "" {
+		t.Errorf("Error should be empty for matching URLs, got: %s", err)
+	}
+}
+
+func TestValidateSubmoduleRemote_MatchingURLsWithoutGitSuffix(t *testing.T) {
+	// Test URLs match even without .git suffix
+	isValid, err := ValidateSubmoduleRemote(
+		"backend",
+		"https://github.com/test/backend.git",
+		"https://github.com/test/backend",
+	)
+
+	if !isValid {
+		t.Fatalf("ValidateSubmoduleRemote should accept URLs with/without .git suffix, got error: %s", err)
+	}
+}
+
+func TestValidateSubmoduleRemote_MismatchedURLs(t *testing.T) {
+	// Test mismatched URLs fail validation (Req 26.2)
+	isValid, err := ValidateSubmoduleRemote(
+		"backend",
+		"https://github.com/test/backend.git",
+		"https://github.com/other/backend.git",
+	)
+
+	if isValid {
+		t.Fatal("ValidateSubmoduleRemote should reject mismatched URLs")
+	}
+	if !strings.Contains(err, "mismatch") {
+		t.Errorf("Error should mention mismatch, got: %s", err)
+	}
+}
+
+func TestValidateSubmoduleRemote_MissingGitmodulesURL(t *testing.T) {
+	// Test missing .gitmodules URL fails (Req 26.3)
+	isValid, err := ValidateSubmoduleRemote(
+		"backend",
+		"",
+		"https://github.com/test/backend.git",
+	)
+
+	if isValid {
+		t.Fatal("ValidateSubmoduleRemote should reject missing .gitmodules URL")
+	}
+	if !strings.Contains(err, "No URL found in .gitmodules") {
+		t.Errorf("Error should mention no URL in .gitmodules, got: %s", err)
+	}
+}
+
+func TestValidateSubmoduleRemote_MissingActualRemote(t *testing.T) {
+	// Test missing actual remote fails (Req 26.4)
+	isValid, err := ValidateSubmoduleRemote(
+		"backend",
+		"https://github.com/test/backend.git",
+		"",
+	)
+
+	if isValid {
+		t.Fatal("ValidateSubmoduleRemote should reject missing actual remote")
+	}
+	if !strings.Contains(err, "No remote URL configured") {
+		t.Errorf("Error should mention no remote URL configured, got: %s", err)
+	}
+}
+
+// =============================================================================
+// Path Validation by Repo Type (Table-Driven Tests)
+// =============================================================================
+
+func TestValidateRepoPath_AllRepoTypes(t *testing.T) {
+	tests := []struct {
+		name        string
+		repoType    string
+		repoPath    string
+		expectValid bool
+	}{
+		{"root with ./", "root", "./", true},
+		{"root with .", "root", ".", true},
+		{"root with backend", "root", "backend", false},
+		{"directory with backend", "directory", "backend", true},
+		{"directory with nested path", "directory", "libs/shared", true},
+		{"directory with path traversal", "directory", "../outside", false},
+		{"submodule with backend", "submodule", "backend", true},
+		{"submodule with nested path", "submodule", "libs/shared", true},
+		{"submodule with path traversal", "submodule", "../outside", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isValid, _ := ValidateRepoPath(tt.repoType, tt.repoPath)
+			if isValid != tt.expectValid {
+				t.Errorf("ValidateRepoPath(%q, %q) = %v, want %v",
+					tt.repoType, tt.repoPath, isValid, tt.expectValid)
+			}
+		})
+	}
+}
