@@ -99,3 +99,60 @@ func TestFormatDuration(t *testing.T) {
 		t.Errorf("formatDuration(3660) = %q", got)
 	}
 }
+
+func TestGetConfigVerifyCommands(t *testing.T) {
+	cfg := &workflowConfig{
+		Repos: []workflowRepo{
+			{
+				Name: "backend",
+				Path: "backend/",
+				Verify: workflowRepoVerify{
+					Build: "go build ./...",
+					Test:  "go test ./...",
+				},
+			},
+			{
+				Name: "frontend",
+				Path: "frontend/",
+				Verify: workflowRepoVerify{
+					Build: "echo 'Unity build'",
+					Test:  "echo 'Unity test'",
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		repo     string
+		expected []string
+	}{
+		{"backend", []string{"go build ./...", "go test ./..."}},
+		{"frontend", []string{"echo 'Unity build'", "echo 'Unity test'"}},
+		{"unknown", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.repo, func(t *testing.T) {
+			result := getConfigVerifyCommands(cfg, tt.repo)
+			if tt.expected == nil {
+				if result != nil {
+					t.Errorf("expected nil, got %v", result)
+				}
+				return
+			}
+			if len(result) != len(tt.expected) {
+				t.Fatalf("got %d commands, want %d", len(result), len(tt.expected))
+			}
+			for i, cmd := range tt.expected {
+				if result[i] != cmd {
+					t.Errorf("cmd %d: got %q, want %q", i, result[i], cmd)
+				}
+			}
+		})
+	}
+
+	// Test with nil config
+	if result := getConfigVerifyCommands(nil, "backend"); result != nil {
+		t.Errorf("expected nil for nil config, got %v", result)
+	}
+}
