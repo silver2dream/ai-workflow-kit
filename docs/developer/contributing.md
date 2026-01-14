@@ -72,14 +72,20 @@ git checkout -b feat/your-feature
 ### 3. 開發與測試
 
 ```bash
-# 執行測試
-python3 -m pytest .ai/tests/unit -v
+# 執行所有 Go 測試
+go test ./...
 
-# 執行特定測試
-python3 -m pytest .ai/tests/unit/test_errors.py -v
+# 執行特定套件測試
+go test ./internal/errors/... -v
 
 # 執行測試覆蓋率
-python3 -m pytest .ai/tests/unit --cov=.ai/scripts --cov-report=term-missing
+go test ./... -cover
+
+# 執行 Shell 腳本測試 (如果有)
+bash .ai/tests/run_all_tests.sh
+
+# 驗證配置
+awkit validate
 ```
 
 ### 4. 提交變更
@@ -292,65 +298,74 @@ MESSAGE=$(echo "$raw_message" | json_escape)
 ### 測試檔案結構
 
 ```
+# Go 測試 (主要測試架構)
+cmd/awkit/
+├── main_test.go
+├── kickoff_test.go
+└── *_test.go
+
+internal/
+├── errors/errors_test.go
+├── audit/auditor_test.go
+├── evaluate/evaluate_test.go
+├── generate/generator_test.go
+├── git/operations_test.go
+└── ...
+
+# Shell/Fixture 測試資料
 .ai/tests/
-├── pytest.ini          # pytest 配置
-├── conftest.py         # 共用 fixtures
-├── fixtures/           # 測試資料
-│   ├── valid_workflow.yaml
-│   └── sample_tasks.md
-└── unit/
-    ├── test_errors.py
-    ├── test_logger.py
-    └── test_*.py
+└── fixtures/
+    ├── valid_workflow.yaml
+    ├── invalid_workflow.yaml
+    └── sample_tasks.md
 ```
 
-### 撰寫測試
+### 撰寫測試 (Go)
 
-```python
-import pytest
-from pathlib import Path
+```go
+package errors
 
-class TestFeature:
-    """Test suite for feature X."""
+import (
+    "testing"
+)
 
-    def test_success_case(self, fixtures_dir):
-        """Test normal operation."""
-        # Arrange
-        input_file = fixtures_dir / "valid_input.yaml"
+func TestAWKError(t *testing.T) {
+    t.Run("creates error with message", func(t *testing.T) {
+        err := NewError("test message")
+        if err.Error() != "test message" {
+            t.Errorf("expected 'test message', got %s", err.Error())
+        }
+    })
 
-        # Act
-        result = process(input_file)
-
-        # Assert
-        assert result["status"] == "success"
-
-    def test_error_case(self):
-        """Test error handling."""
-        with pytest.raises(ValidationError) as exc_info:
-            process(None)
-
-        assert "required" in str(exc_info.value)
+    t.Run("returns correct exit code", func(t *testing.T) {
+        err := NewConfigError("config error")
+        if err.ExitCode() != 2 {
+            t.Errorf("expected exit code 2, got %d", err.ExitCode())
+        }
+    })
+}
 ```
 
-### Fixture 使用
+### 測試命令
 
-```python
-# conftest.py 中定義
-@pytest.fixture
-def fixtures_dir():
-    return Path(__file__).parent / "fixtures"
+```bash
+# 執行所有測試
+go test ./...
 
-@pytest.fixture
-def temp_output(tmp_path):
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
-    return output_dir
+# 帶覆蓋率執行
+go test ./... -cover
+
+# 帶 verbose 輸出
+go test ./... -v
+
+# 執行特定測試函數
+go test ./internal/errors -run TestAWKError -v
 ```
 
 ### 測試覆蓋率要求
 
 - 新增的程式碼應有對應的測試
-- 核心模組 (`lib/errors.py`, `lib/logger.py`) 覆蓋率應 > 80%
+- 核心套件 (`internal/errors`, `internal/config`) 覆蓋率應 > 70%
 - PR 不應降低整體覆蓋率
 
 ---

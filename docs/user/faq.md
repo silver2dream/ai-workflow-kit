@@ -264,7 +264,7 @@ escalation:
 
 ### Q: AWK 是開源的嗎？
 
-**A:** 目前尚未提供正式授權。請參考 LICENSE 檔案的最新狀態。
+**A:** 是的。AWK 採用 [Apache License 2.0](../../LICENSE) 開源授權。
 
 ---
 

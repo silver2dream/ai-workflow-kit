@@ -1,6 +1,75 @@
 # API Reference
 
-本文件說明 AI Workflow Kit 的 Python 腳本和模組 API。
+本文件說明 AI Workflow Kit 的 API 和命令參考。
+
+> **重要提示：** 原有的 Python 腳本 (`scan_repo.py`, `audit_project.py`, `parse_tasks.py` 等)
+> 已整合至 `awkit` CLI。建議使用 `awkit <command>` 取代直接呼叫腳本。
+>
+> | 舊腳本 | 新命令 |
+> |--------|--------|
+> | `python3 .ai/scripts/scan_repo.py` | `awkit scan-repo` |
+> | `python3 .ai/scripts/audit_project.py` | `awkit audit-project` |
+> | `bash .ai/scripts/kickoff.sh` | `awkit kickoff` |
+> | `python3 .ai/scripts/validate_config.py` | `awkit validate` |
+
+---
+
+## awkit CLI
+
+`awkit` 是 AWK 的主要命令列工具，整合所有工作流程功能。
+
+### 常用命令
+
+```bash
+awkit init              # 初始化專案
+awkit init --preset go  # 使用 preset 初始化
+awkit kickoff           # 啟動工作流程
+awkit kickoff --dry-run # 預覽執行
+awkit kickoff --resume  # 恢復上次執行
+awkit status            # 檢查狀態
+awkit validate          # 驗證配置
+awkit scan-repo         # 掃描專案結構
+awkit audit-project     # 審計專案狀態
+awkit dispatch-worker   # 調度 Worker
+awkit upgrade           # 升級 kit 檔案
+awkit check-update      # 檢查更新
+awkit version           # 顯示版本
+```
+
+### 詳細用法
+
+執行 `awkit --help` 或 `awkit <command> --help` 查看完整參數說明。
+
+---
+
+## Skills API
+
+Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
+
+### 結構
+
+```
+.ai/skills/<skill-name>/
+├── SKILL.md           # 技能入口與說明
+├── phases/            # 流程階段
+│   └── *.md           # 各階段指令
+├── references/        # 參考文件
+└── tasks/             # 任務範本
+```
+
+### 內建 Skills
+
+| Skill | 說明 |
+|-------|------|
+| `principal-workflow` | Principal Agent 主工作流程 |
+| `create-issues` | Issue 建立技能 |
+| `run-issues` | Issue 執行技能 |
+
+---
+
+## Legacy Python 腳本 API (已棄用)
+
+以下 API 仍可使用，但建議改用 `awkit` CLI。
 
 ---
 
