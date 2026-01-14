@@ -34,7 +34,7 @@ project:
 #   - generic     → ci-generic.yml.j2 (其他語言)
 #
 # 語言特定版本設定：
-#   - go_version: "1.22.x"
+#   - go_version: "1.25.x"
 #   - node_version: "20"
 #   - python_version: "3.11"
 #   - rust_version: "stable"

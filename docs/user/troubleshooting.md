@@ -33,14 +33,16 @@ Config file not found: .ai/config/workflow.yaml
 
 ---
 
-### 缺少 Python 依賴
+### 缺少 Python 依賴 (僅 generate.sh)
 
 **症狀：**
 ```
 Please install: pip3 install pyyaml jsonschema jinja2
 ```
 
-**原因：** 必要的 Python 套件未安裝
+**原因：** Python 套件未安裝（僅在執行 `generate.sh` 時需要）
+
+**說明：** Python 依賴為可選，僅用於執行 `bash .ai/scripts/generate.sh`。主要的 AWK 功能透過 `awkit` CLI 執行，不需要 Python。
 
 **解決：**
 ```bash
@@ -326,14 +328,16 @@ ModuleNotFoundError: No module named 'xxx'
 pip3 install xxx
 ```
 
-#### pytest 失敗
+#### pytest 失敗 (已棄用)
+
+> **注意：** AWK 主要測試已遷移至 Go。Python pytest 已棄用，僅保留向下相容。
 
 **症狀：**
 ```
 FAILED tests/test_xxx.py::test_function
 ```
 
-**解決：** 檢查測試程式碼和實作
+**解決：** 檢查測試程式碼和實作。建議使用 Go 測試：`go test ./...`
 
 ---
 
@@ -482,25 +486,19 @@ API rate limit exceeded
 ### 驗證配置
 
 ```bash
-python3 .ai/scripts/validate_config.py
+awkit validate
 ```
 
 ### 掃描專案狀態
 
 ```bash
-python3 .ai/scripts/scan_repo.py --json
+awkit scan-repo
 ```
 
 ### 執行審計
 
 ```bash
-python3 .ai/scripts/audit_project.py --json
-```
-
-### 查看執行追蹤
-
-```bash
-python3 .ai/scripts/query_traces.py --status failed
+awkit audit-project
 ```
 
 ---

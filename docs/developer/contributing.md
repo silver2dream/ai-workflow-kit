@@ -16,11 +16,11 @@
 ### 安裝開發依賴
 
 ```bash
-# 安裝 Python 依賴
-pip3 install pyyaml jsonschema jinja2
+# (選用) 安裝 Python 依賴 - 僅供維護 Legacy 腳本時使用
+# pip3 install pyyaml jsonschema jinja2
 
-# 安裝測試依賴
-pip3 install pytest pytest-cov
+# (已棄用) Python 測試依賴 - 測試已遷移到 Go
+# pip3 install pytest pytest-cov
 ```
 
 ### 專案結構
@@ -422,10 +422,12 @@ def function_name(param1: str, param2: int = 10) -> dict:
 提交 PR 前請確認：
 
 - [ ] 程式碼符合風格規範
-- [ ] 所有測試通過 (`pytest .ai/tests/unit -v`)
+- [ ] 所有測試通過 (`go test ./...`)
 - [ ] 新功能有對應測試
 - [ ] 文件已更新 (如適用)
 - [ ] Commit 格式正確
+
+> ⚠️ **已棄用**: `pytest .ai/tests/unit -v` 已棄用。請使用 `go test ./...` 執行測試。
 
 ### PR 描述模板
 
@@ -482,12 +484,18 @@ Closes #123
 ### Q: 測試失敗怎麼辦？
 
 ```bash
-# 查看詳細輸出
-python3 -m pytest .ai/tests/unit -v --tb=long
+# 查看詳細輸出 (Go)
+go test ./... -v
 
-# 執行單一測試
-python3 -m pytest .ai/tests/unit/test_errors.py::TestAWKError::test_to_dict -v
+# 執行特定套件測試
+go test ./internal/errors/... -v
 ```
+
+> ⚠️ **已棄用**: 以下 pytest 命令已棄用，僅供歷史參考：
+> ```bash
+> # python3 -m pytest .ai/tests/unit -v --tb=long
+> # python3 -m pytest .ai/tests/unit/test_errors.py::TestAWKError::test_to_dict -v
+> ```
 
 ### Q: 如何在本地測試 Shell 腳本？
 
