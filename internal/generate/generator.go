@@ -49,6 +49,83 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
 
+// ValidateRepoPath validates repo path based on type.
+// Property 15: Path Traversal Prevention - rejects paths containing ".." or resolving outside worktree.
+func ValidateRepoPath(repoType, repoPath string) (bool, string) {
+	// Check for path traversal (Req 22.1, 22.2)
+	if strings.Contains(repoPath, "..") {
+		return false, fmt.Sprintf("Path traversal detected: '%s' contains '..'", repoPath)
+	}
+
+	// Normalize path
+	normalized := strings.ReplaceAll(repoPath, "\\", "/")
+	normalized = strings.TrimSuffix(normalized, "/")
+
+	// Root type must be ./ or . (Req 9.3)
+	if repoType == "root" {
+		if normalized != "." && normalized != "./" && normalized != "" {
+			return false, fmt.Sprintf("Root type path must be './' or '.', got '%s'", repoPath)
+		}
+	}
+
+	return true, ""
+}
+
+// ValidateSubmoduleConfig validates submodule configuration.
+// Property 7: Config Validation Completeness - validates submodule-type repos.
+func ValidateSubmoduleConfig(repoPath, gitmodulesContent string, hasGit bool) (bool, []string) {
+	var errors []string
+
+	// Check .gitmodules exists (Req 1.5)
+	if gitmodulesContent == "" {
+		errors = append(errors, "Missing .gitmodules file for submodule type repo")
+		return false, errors
+	}
+
+	// Check path is in .gitmodules (Req 9.1)
+	normalizedPath := strings.TrimSuffix(repoPath, "/")
+	if !strings.Contains(gitmodulesContent, fmt.Sprintf("path = %s", normalizedPath)) {
+		errors = append(errors, fmt.Sprintf("Submodule path '%s' not found in .gitmodules", repoPath))
+	}
+
+	// Check .git exists (Req 9.2)
+	if !hasGit {
+		errors = append(errors, fmt.Sprintf("Submodule path '%s' has no .git file/directory", repoPath))
+	}
+
+	return len(errors) == 0, errors
+}
+
+// CheckDirectoryHasGitFile checks if directory type path has .git file (might be submodule).
+func CheckDirectoryHasGitFile(repoPath string, hasGitFile bool) (bool, string) {
+	if hasGitFile {
+		return true, fmt.Sprintf("WARNING: Directory '%s' has .git file - might be a submodule", repoPath)
+	}
+	return false, ""
+}
+
+// ValidateSubmoduleRemote validates submodule remote URL matches .gitmodules.
+// Property 18: Submodule Remote Validation
+func ValidateSubmoduleRemote(repoPath, gitmodulesURL, actualRemoteURL string) (bool, string) {
+	if gitmodulesURL == "" {
+		return false, "No URL found in .gitmodules for submodule"
+	}
+
+	if actualRemoteURL == "" {
+		return false, "No remote URL configured for submodule"
+	}
+
+	// Normalize URLs for comparison
+	normalizedGitmodules := strings.TrimSuffix(strings.TrimSuffix(gitmodulesURL, "/"), ".git")
+	normalizedActual := strings.TrimSuffix(strings.TrimSuffix(actualRemoteURL, "/"), ".git")
+
+	if normalizedGitmodules != normalizedActual {
+		return false, fmt.Sprintf("Remote URL mismatch: .gitmodules has '%s', actual is '%s'", gitmodulesURL, actualRemoteURL)
+	}
+
+	return true, ""
+}
+
 // Validate checks if the configuration has all required fields
 func (c *Config) Validate() []ValidationError {
 	var errors []ValidationError
