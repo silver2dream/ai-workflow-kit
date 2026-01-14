@@ -104,7 +104,14 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 			if failedTests[v.TestName] {
 				missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
 			} else {
-				missingTests = append(missingTests, fmt.Sprintf("%s (not found in output)", v.TestName))
+				// Provide more specific diagnostic for why test was not found
+				if strings.Contains(v.TestName, " ") {
+					missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: contains spaces, must be function name like TestXxx)", v.TestName))
+				} else if !strings.HasPrefix(v.TestName, "Test") {
+					missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: must start with 'Test')", v.TestName))
+				} else {
+					missingTests = append(missingTests, fmt.Sprintf("%s (not found in test output)", v.TestName))
+				}
 			}
 		}
 	}
@@ -153,7 +160,10 @@ func ParseCriteriaVerifications(reviewBody string) ([]CriteriaVerification, erro
 	implementations := parseImplementationReview(reviewBody)
 
 	// Parse Test Review table
-	testMappings := parseTestReviewTable(reviewBody)
+	testMappings, err := parseTestReviewTable(reviewBody)
+	if err != nil {
+		return nil, err
+	}
 
 	// Merge implementations and test mappings
 	for criteria, impl := range implementations {
@@ -199,6 +209,14 @@ type testMapping struct {
 	Criteria  string
 	TestName  string
 	Assertion string
+}
+
+// isValidTestName checks if a test name is a valid Go test function name
+func isValidTestName(name string) bool {
+	// Go test function names: start with Test, contain only alphanumeric and underscore
+	// Optionally support subtest format TestName/SubTest
+	matched, _ := regexp.MatchString(`^Test[A-Za-z0-9_]*(/[A-Za-z0-9_]+)?$`, name)
+	return matched
 }
 
 func parseImplementationReview(body string) map[string]string {
@@ -258,13 +276,13 @@ func extractImplementationLogic(content string) string {
 	return ""
 }
 
-func parseTestReviewTable(body string) []testMapping {
+func parseTestReviewTable(body string) ([]testMapping, error) {
 	var mappings []testMapping
 
 	// Find Test Review section
 	testSection := extractSection(body, "Test Review")
 	if testSection == "" {
-		return mappings
+		return mappings, nil
 	}
 
 	// Parse markdown table rows
@@ -300,6 +318,11 @@ func parseTestReviewTable(body string) []testMapping {
 			}
 
 			if criteria != "" && testName != "" {
+				// Validate test name format
+				if !isValidTestName(testName) {
+					return nil, fmt.Errorf("invalid test name in review table: %q (must be Go test function like TestXxx)", testName)
+				}
+
 				mappings = append(mappings, testMapping{
 					Criteria:  criteria,
 					TestName:  testName,
@@ -309,7 +332,7 @@ func parseTestReviewTable(body string) []testMapping {
 		}
 	}
 
-	return mappings
+	return mappings, nil
 }
 
 func extractSection(body, sectionName string) string {
