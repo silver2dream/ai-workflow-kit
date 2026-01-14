@@ -112,6 +112,51 @@ Check:
 
 **Pass criteria**: PR is mergeable with no conflicts
 
+### 7. PR Body Closes Keywords Check (CRITICAL)
+
+**This check is CRITICAL for auto-closing issues on merge.**
+
+When a PR addresses multiple issues, verify the PR body contains `Closes #XX` for ALL issues:
+
+```bash
+# Get PR body
+gh pr view <pr_number> --json body --jq '.body'
+```
+
+**Validation**:
+For each issue number that the PR addresses, check:
+```bash
+# Check if PR body contains the Closes keyword
+gh pr view <pr_number> --json body --jq '.body | contains("Closes #<number>")'
+```
+
+**Pass criteria**: PR body contains `Closes #XX` for EVERY issue addressed by the PR
+
+**Common failure scenarios**:
+- PR was created by first subagent with only `Closes #<first_issue>`
+- Subsequent issues were added to the same PR but `Closes` keywords were not updated
+- PR body was not updated when consolidating multiple issues into single PR
+
+**If this check fails**:
+1. Update PR body to include all missing `Closes #XX` keywords
+2. Use GitHub API to update:
+   ```bash
+   gh api repos/<owner>/<repo>/pulls/<pr_number> -X PATCH -f body="<updated_body>"
+   ```
+3. Re-verify after update
+
+**Example of correct PR body for multi-issue PR**:
+```markdown
+## Summary
+- Fix authentication bug (#101)
+- Update documentation (#102)
+- Add new endpoint (#103)
+
+Closes #101
+Closes #102
+Closes #103
+```
+
 ## Verification Results
 
 For each issue, record:
@@ -126,7 +171,8 @@ For each issue, record:
     "commit_format": true,
     "tests_pass": true,
     "build_pass": true,
-    "pr_mergeable": true
+    "pr_mergeable": true,
+    "closes_keywords": true
   },
   "status": "PASS",
   "notes": ""
@@ -142,6 +188,7 @@ For each issue, record:
 | No (commit format) | FAIL - Commit Format |
 | No (build fails) | FAIL - Build |
 | No (PR conflict) | FAIL - Conflict |
+| No (missing Closes) | FAIL - Missing Closes Keywords |
 | No PR created | FAIL - No PR |
 
 ## Approval vs Request Changes
@@ -155,6 +202,7 @@ For each issue, record:
 - Tests are failing
 - Build is broken
 - PR has conflicts
+- PR body missing `Closes #XX` keywords (auto-fix required before merge)
 
 ### Skip verification when:
 - Issue was marked as skipped (dependency failure)
@@ -178,10 +226,12 @@ Generate summary table for user:
 
 | Issue | Title | Priority | Status | PR | Checks | Notes |
 |-------|-------|----------|--------|-----|--------|-------|
-| #123 | Fix auth bug | P0 | PASS | [#456](url) | 6/6 | Ready to merge |
-| #124 | Add feature | P1 | FAIL | [#457](url) | 5/6 | Tests failing |
-| #125 | Update docs | P2 | PASS | [#458](url) | 6/6 | Ready to merge |
+| #123 | Fix auth bug | P0 | PASS | [#456](url) | 7/7 | Ready to merge |
+| #124 | Add feature | P1 | FAIL | [#457](url) | 6/7 | Tests failing |
+| #125 | Update docs | P2 | PASS | [#458](url) | 7/7 | Ready to merge |
 | #126 | Refactor | P2 | SKIP | - | - | Depends on #124 |
+
+**Checks legend**: PR created, branch naming, commit format, tests, build, mergeable, closes keywords
 
 ### Failed Issues Detail
 
@@ -190,6 +240,16 @@ Generate summary table for user:
 - **Failed check**: Tests
 - **Error**: `TestUserHandler` assertion failed
 - **Action needed**: Fix test or implementation
+
+#### Issue #125: Missing Closes Keywords (Example)
+- **PR**: #458
+- **Failed check**: Closes Keywords
+- **Error**: PR body missing `Closes #125`, `Closes #126`
+- **Action needed**: Update PR body with missing keywords before merge
+- **Auto-fix command**:
+  ```bash
+  gh api repos/<owner>/<repo>/pulls/458 -X PATCH -f body="<body with Closes keywords>"
+  ```
 
 ### Next Steps
 1. Review and merge passing PRs
