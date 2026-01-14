@@ -291,7 +291,7 @@ func parseTestReviewTable(body string) []testMapping {
 		cells := strings.Split(line, "|")
 		if len(cells) >= 4 { // | cell1 | cell2 | cell3 |
 			criteria := strings.TrimSpace(cells[1])
-			testName := strings.TrimSpace(cells[2])
+			testName := strings.Trim(strings.TrimSpace(cells[2]), "`") // Strip backticks from test name
 			assertion := strings.TrimSpace(cells[3])
 
 			// Skip header row
