@@ -69,11 +69,15 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 
 ## Legacy Python 腳本 API (已棄用)
 
+> ⚠️ **已棄用**: 以下 Python API 僅供參考。請使用 `awkit` CLI 取代。
+
 以下 API 仍可使用，但建議改用 `awkit` CLI。
 
 ---
 
 ## lib/errors.py
+
+> ⚠️ **已棄用**: 此 Python 模組僅供歷史參考。請使用 `awkit` CLI 取代。
 
 統一錯誤處理框架。
 
@@ -173,6 +177,8 @@ except Exception as exc:
 
 ## lib/logger.py
 
+> ⚠️ **已棄用**: 此 Python 模組僅供歷史參考。請使用 `awkit` CLI 取代。
+
 結構化 JSON 日誌系統。
 
 ### Constants
@@ -254,6 +260,8 @@ logger.error("Failed to process", {"error": str(e)})
 
 ## scan_repo.py
 
+> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit scan-repo` 取代。以下內容僅供歷史參考。
+
 掃描專案結構。
 
 ### CLI
@@ -308,6 +316,8 @@ def scan_repo(root: Path) -> dict
 
 ## audit_project.py
 
+> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit audit-project` 取代。以下內容僅供歷史參考。
+
 審計專案狀態。
 
 ### CLI
@@ -335,6 +345,8 @@ def audit_project(root: Path) -> dict
 ---
 
 ## parse_tasks.py
+
+> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit` CLI 取代。以下內容僅供歷史參考。
 
 解析 tasks.md 任務清單。
 
@@ -405,6 +417,8 @@ def topological_sort(tasks: List[Task]) -> List[Task]
 
 ## validate_config.py
 
+> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit validate` 取代。以下內容僅供歷史參考。
+
 驗證 workflow.yaml 配置。
 
 ### CLI
@@ -433,6 +447,8 @@ python3 .ai/scripts/validate_config.py [config_path] [--log-level LEVEL]
 ---
 
 ## query_traces.py
+
+> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit` CLI 取代。以下內容僅供歷史參考。
 
 查詢執行追蹤記錄。
 

@@ -116,6 +116,8 @@ go tool cover -html=coverage.out -o coverage.html
 
 ## 共用 Fixtures
 
+> ⚠️ **已棄用**: Python 測試已遷移到 Go。以下 pytest fixtures 內容僅供歷史參考。
+
 ### 定義位置
 
 所有共用 fixtures 定義於 `.ai/tests/conftest.py`。
@@ -153,6 +155,8 @@ def test_with_fixtures(ai_root, temp_dir, fixtures_dir):
 ---
 
 ## 測試模組說明
+
+> ⚠️ **已棄用**: Python 測試已遷移到 Go。以下內容僅供歷史參考。
 
 ### test_errors.py
 
@@ -436,8 +440,10 @@ def test_with_fixture_file(fixtures_dir):
 
 ### GitHub Actions
 
+> ⚠️ **已棄用**: 以下 Python/pytest CI 配置已棄用。目前 CI 使用 Go 測試。
+
 ```yaml
-# .github/workflows/test.yml
+# .github/workflows/test.yml (已棄用 - 僅供參考)
 name: Test
 
 on: [push, pull_request]
@@ -469,8 +475,11 @@ jobs:
 ### 本地 CI 模擬
 
 ```bash
-# 執行與 CI 相同的命令
-python3 -m pytest .ai/tests/unit -v --tb=short
+# 執行 Go 測試 (推薦)
+go test ./... -v
+
+# (已棄用) 執行 Python 測試
+# python3 -m pytest .ai/tests/unit -v --tb=short
 ```
 
 ---
@@ -479,11 +488,14 @@ python3 -m pytest .ai/tests/unit -v --tb=short
 
 ### Q: 測試找不到模組？
 
+> ⚠️ **已棄用**: Python 測試已遷移到 Go。以下內容僅供歷史參考。
+
 確保從專案根目錄執行：
 
 ```bash
 cd /path/to/ai-workflow-kit
-python3 -m pytest .ai/tests/unit -v
+# (已棄用) python3 -m pytest .ai/tests/unit -v
+go test ./... -v
 ```
 
 ### Q: Fixture 未定義？
@@ -492,11 +504,16 @@ python3 -m pytest .ai/tests/unit -v
 
 ### Q: Windows 上測試失敗？
 
+> ⚠️ **已棄用**: 以下 pytest 命令已棄用。
+
 部分 Shell 腳本測試需要 Git Bash：
 
 ```bash
-# 使用 Git Bash
-"C:\Program Files\Git\bin\bash.exe" -c "python -m pytest .ai/tests/unit -v"
+# 使用 Git Bash 執行 Go 測試
+"C:\Program Files\Git\bin\bash.exe" -c "go test ./... -v"
+
+# (已棄用) Python 測試
+# "C:\Program Files\Git\bin\bash.exe" -c "python -m pytest .ai/tests/unit -v"
 ```
 
 ### Q: 如何跳過特定測試？
