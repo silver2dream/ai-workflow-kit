@@ -16,6 +16,7 @@
 
 **A:** 可以。手動複製 `.ai/` 目錄到專案，然後執行：
 ```bash
+# Python 依賴為可選，僅用於 generate.sh
 pip3 install pyyaml jsonschema jinja2
 bash .ai/scripts/generate.sh
 ```
@@ -193,9 +194,13 @@ notifications:
 
 ### Q: 如何查詢失敗的執行記錄？
 
-**A:**
+**A:** 查看日誌目錄 `.ai/exe-logs/` 中的 Worker 日誌：
 ```bash
-python3 .ai/scripts/query_traces.py --status failed
+# 查看 Principal 日誌
+cat .ai/exe-logs/principal.log
+
+# 查看特定 Issue 的 Worker 日誌
+cat .ai/exe-logs/issue-<N>.worker.log
 ```
 
 ---

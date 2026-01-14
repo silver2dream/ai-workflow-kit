@@ -10,13 +10,17 @@
 
 | 工具 | 版本 | 說明 |
 |------|------|------|
-| Python | 3.8+ | 核心腳本執行 |
 | Bash | 4.0+ | Shell 腳本 (Windows 可用 Git Bash 或 WSL) |
 | Git | 2.20+ | 版本控制 |
 
-### Python 套件
+### 可選條件 (generate.sh)
+
+| 工具 | 版本 | 說明 |
+|------|------|------|
+| Python | 3.8+ | 僅用於 generate.sh 腳本 |
 
 ```bash
+# 僅在需要執行 generate.sh 時安裝
 pip3 install pyyaml jsonschema jinja2
 ```
 
@@ -140,7 +144,7 @@ bash .ai/scripts/generate.sh
 ### 步驟 3：驗證設定
 
 ```bash
-python3 .ai/scripts/validate_config.py
+awkit validate
 ```
 
 如果看到 `Configuration is valid` 表示設定正確。
