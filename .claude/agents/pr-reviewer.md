@@ -62,8 +62,28 @@ For EACH acceptance criterion:
 2. **Read the test code** - Understand what the test is checking
 3. **Copy key assertion** - Copy an actual assertion line from the test code
 
+**TEST NAME FORMAT (CRITICAL)**:
+- The Test column MUST contain an EXACT Go test function name
+- Use the name that appears after "func " in the test file
+- Example: `func TestMovement(t *testing.T)` → use `TestMovement`
+- For subtests, use format `TestParent/SubTest`
+- NEVER use prose descriptions like "All test functions" or "Tests in xyz_test.go"
+
+**VALID examples**:
+- `TestNewEngine`
+- `TestCollisionDetection`
+- `TestAdvanceTick/WallCollision`
+
+**INVALID examples** (will cause verification failure):
+- `All test functions` ❌
+- `Tests in engine_test.go` ❌
+- `N/A` ❌
+- `Various tests` ❌
+
 **PROHIBITIONS:**
 - **DO NOT** invent test function names
+- **DO NOT** write prose descriptions instead of function names
+- **DO NOT** write "N/A", "None", or "All tests"
 - **DO NOT** assume assertion content
 - **DO NOT** copy assertions from other files
 
