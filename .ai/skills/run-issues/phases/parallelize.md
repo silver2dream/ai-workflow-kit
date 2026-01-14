@@ -159,13 +159,18 @@ For each issue in current_batch (parallel):
         1. Create branch: feat/ai-issue-<number> or fix/ai-issue-<number>
         2. Implement the requested changes
         3. Run tests: go test ./...
-        4. Commit with format: [type] subject (NO colon after type)
+        4. Commit with format: [type] subject
+           - Type in brackets, NO colon
+           - Subject MUST be lowercase
         5. Create PR targeting the integration branch
+        6. PR body MUST include: Closes #<number>
 
-        Commit format examples:
-        - [feat] add user authentication
-        - [fix] resolve null pointer in handler
-        - [refactor] simplify error handling
+        Commit format (STRICT - from .ai/rules/_kit/git-workflow.md):
+        ✅ [feat] add user authentication
+        ✅ [fix] resolve null pointer in handler
+        ✅ [docs] update api documentation
+        ❌ [Feat] Add user authentication (uppercase = WRONG)
+        ❌ feat: add user authentication (colon = WRONG)
 ```
 
 Wait for all subagents in batch to complete before proceeding to next batch.

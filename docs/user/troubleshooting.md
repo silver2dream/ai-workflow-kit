@@ -29,7 +29,7 @@ Config file not found: .ai/config/workflow.yaml
 **解決：**
 1. 確認 `.ai/config/workflow.yaml` 存在
 2. 從正確的專案根目錄執行命令
-3. 如果是新專案，使用 `awkit install` 初始化
+3. 如果是新專案，使用 `awkit init` 初始化
 
 ---
 

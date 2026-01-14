@@ -2,6 +2,8 @@
 
 本文件說明 AI Workflow Kit 的測試架構與執行方式。
 
+> **注意：** AWK 主要測試已遷移至 Go。原有的 Python 測試已棄用。
+
 ---
 
 ## 測試環境設定
@@ -9,17 +11,11 @@
 ### 安裝依賴
 
 ```bash
-# 安裝測試框架
-pip3 install pytest pytest-cov
+# Go 1.22+ 已包含測試框架
+go version
 
-# 安裝專案依賴
-pip3 install pyyaml jsonschema jinja2
-```
-
-### 確認安裝
-
-```bash
-python3 -m pytest --version
+# (選用) 安裝 gotestsum 以獲得更好的輸出
+go install gotest.tools/gotestsum@latest
 ```
 
 ---
@@ -29,36 +25,40 @@ python3 -m pytest --version
 ### 目錄結構
 
 ```
-.ai/tests/
-├── pytest.ini          # pytest 配置
-├── conftest.py         # 共用 fixtures
-├── fixtures/           # 測試資料
-│   ├── valid_workflow.yaml
-│   ├── invalid_workflow.yaml
-│   ├── sample_tasks.md
-│   ├── sample_traces/
-│   └── ...
-└── unit/
-    ├── __init__.py
-    ├── test_errors.py         # 錯誤處理框架測試
-    ├── test_scan_repo.py      # 專案掃描測試
-    ├── test_audit_project.py  # 專案審計測試
-    ├── test_parse_tasks.py    # 任務解析測試
-    ├── test_validate_config.py # 配置驗證測試
-    ├── test_query_traces.py   # 追蹤查詢測試
-    └── test_write_result.py   # 結果寫入測試
-```
+# Go 測試 (主要)
+cmd/awkit/
+├── main_test.go              # 主程式測試
+├── kickoff_test.go           # kickoff 命令測試
+├── session_integration_test.go  # Session 整合測試
+└── reviewer_integration_test.go # PR 審查整合測試
 
-### pytest 配置
+internal/
+├── errors/errors_test.go     # 錯誤處理測試
+├── audit/auditor_test.go     # 專案審計測試
+├── evaluate/evaluate_test.go # 評估測試
+├── generate/
+│   ├── generator_test.go     # 生成器測試
+│   └── repo_type_test.go     # Repo 類型測試
+├── git/
+│   ├── branch_test.go        # 分支操作測試
+│   ├── operations_test.go    # Git 操作測試
+│   └── worktree_test.go      # Worktree 測試
+├── install/install_test.go   # 安裝測試
+├── kickoff/
+│   ├── config_test.go        # 配置測試
+│   ├── fanin_test.go         # Fan-in 測試
+│   ├── integration_test.go   # 整合測試
+│   └── lock_test.go          # 鎖定測試
+└── ...
 
-```ini
-# .ai/tests/pytest.ini
-[pytest]
-testpaths = unit
-python_files = test_*.py
-python_classes = Test*
-python_functions = test_*
-addopts = -v --tb=short
+# 測試資料
+.ai/tests/fixtures/
+├── valid_workflow.yaml       # 有效配置範例
+├── invalid_workflow.yaml     # 無效配置範例
+└── sample_tasks.md           # 範例任務清單
+
+# 後端測試
+backend/health/health_test.go # 後端健康檢查測試
 ```
 
 ---
@@ -72,45 +72,44 @@ addopts = -v --tb=short
 cd /path/to/ai-workflow-kit
 
 # 執行所有測試
-python3 -m pytest .ai/tests/unit -v
+go test ./...
 
-# 執行特定測試檔
-python3 -m pytest .ai/tests/unit/test_errors.py -v
+# 執行特定套件測試
+go test ./internal/errors/... -v
 
-# 執行特定測試類別
-python3 -m pytest .ai/tests/unit/test_errors.py::TestAWKError -v
+# 執行特定測試函數
+go test ./internal/errors -run TestConfigError -v
 
-# 執行特定測試方法
-python3 -m pytest .ai/tests/unit/test_errors.py::TestAWKError::test_to_dict -v
+# 執行符合模式的測試
+go test ./... -run "Test.*Config" -v
 ```
 
 ### 測試輸出選項
 
 ```bash
-# 簡短輸出
-python3 -m pytest .ai/tests/unit -v --tb=short
+# Verbose 輸出
+go test ./... -v
 
-# 詳細輸出 (debug 用)
-python3 -m pytest .ai/tests/unit -v --tb=long
+# 使用 gotestsum (更好的輸出格式)
+gotestsum ./...
 
-# 僅顯示失敗
-python3 -m pytest .ai/tests/unit -v --tb=short -q
-
-# 顯示 print 輸出
-python3 -m pytest .ai/tests/unit -v -s
+# 短輸出
+go test ./... -short
 ```
 
 ### 測試覆蓋率
 
 ```bash
 # 基本覆蓋率報告
-python3 -m pytest .ai/tests/unit --cov=.ai/scripts --cov-report=term
+go test ./... -cover
 
-# 詳細覆蓋率 (顯示未覆蓋的行)
-python3 -m pytest .ai/tests/unit --cov=.ai/scripts --cov-report=term-missing
+# 詳細覆蓋率 (顯示每個套件)
+go test ./... -cover -coverprofile=coverage.out
+go tool cover -func=coverage.out
 
 # 產生 HTML 報告
-python3 -m pytest .ai/tests/unit --cov=.ai/scripts --cov-report=html
+go test ./... -coverprofile=coverage.out
+go tool cover -html=coverage.out -o coverage.html
 ```
 
 ---
