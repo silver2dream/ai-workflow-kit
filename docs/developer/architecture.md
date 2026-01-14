@@ -59,56 +59,62 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Code
 │   ├── execution_trace.schema.json # 執行追蹤 Schema
 │   └── failure_patterns.json      # 錯誤模式定義
 │
-├── scripts/
-│   ├── lib/                       # Python 共用模組
-│   │   ├── __init__.py
-│   │   ├── errors.py              # 錯誤處理框架
-│   │   └── logger.py              # 結構化日誌
-│   │
-│   ├── scan_repo.py               # 掃描專案結構
-│   ├── audit_project.py           # 審計專案狀態
-│   ├── parse_tasks.py             # 解析 tasks.md
-│   ├── validate_config.py         # 驗證配置檔
-│   ├── query_traces.py            # 查詢執行追蹤
-│   │
-│   ├── kickoff.sh                 # 啟動工作流程 (legacy, 建議用 awkit kickoff)
-│   ├── run_issue_codex.sh         # 執行單一 Issue
-│   ├── write_result.sh            # 寫入執行結果
-│   ├── generate.sh                # 生成設定檔
-│   ├── evaluate.sh                # 評估腳本
-│   └── ...
+├── skills/                        # Agent Skills (Principal/Worker 技能)
+│   ├── principal-workflow/        # Principal 工作流程技能
+│   │   ├── SKILL.md               # 技能入口
+│   │   ├── phases/                # 流程階段
+│   │   │   └── main-loop.md       # 主迴圈邏輯
+│   │   ├── references/            # 參考文件
+│   │   └── tasks/                 # 任務範本
+│   ├── create-issues/             # Issue 建立技能
+│   │   ├── SKILL.md
+│   │   └── phases/                # 分析、分解、建立階段
+│   └── run-issues/                # Issue 執行技能
+│       ├── SKILL.md
+│       └── phases/                # 分析、並行、驗證階段
 │
-├── templates/                     # Jinja2 模板
-│   ├── CLAUDE.md.j2
-│   ├── AGENTS.md.j2
-│   └── git-workflow.md.j2
+├── templates/                     # 模板檔案
+│   ├── design.md.example          # 設計文件範例
+│   └── _deprecated/               # 已棄用的 Jinja2 模板 (legacy)
 │
 ├── rules/
-│   ├── _kit/                      # Kit 核心規則 (自動生成)
-│   └── _examples/                 # 範例規則
+│   ├── _kit/                      # Kit 核心規則
+│   │   └── git-workflow.md        # Git 工作流程規則
+│   └── _examples/                 # 範例規則 (可選啟用)
 │
-├── specs/                         # Spec 目錄
+├── specs/                         # Spec 規格目錄
+│   └── example/                   # 範例 spec
+│
+├── docs/                          # Kit 內部文件
+│   └── evaluate.md                # 評估指南
 │
 ├── state/                         # 狀態檔案
-│   ├── repo_scan.json
-│   ├── audit.json
-│   └── STOP
+│   ├── principal/                 # Principal 會話狀態
+│   │   ├── session.json           # 當前會話
+│   │   └── sessions/              # 歷史會話記錄
+│   ├── traces/                    # 執行追蹤
+│   ├── consecutive_failures       # 連續失敗計數
+│   └── loop_count                 # 迴圈計數
 │
 ├── results/                       # 執行結果
 │   └── issue-*.json
 │
+├── runs/                          # 執行記錄 (Worker runs)
+│
 ├── logs/                          # 結構化日誌
-│   └── <script>-<date>.log
+│   └── <command>-<date>.log
 │
-├── traces/                        # 執行追蹤
-│   └── issue-*.json
+├── exe-logs/                      # 執行日誌
+│   └── principal.log              # Principal 執行日誌
 │
-└── tests/                         # 測試套件
-    ├── pytest.ini
-    ├── conftest.py
-    ├── unit/
-    └── fixtures/
+├── analysis/                      # 分析結果 (掃描/審計輸出)
+│
+└── tests/                         # 測試 fixtures
+    └── fixtures/                  # 測試資料
 ```
+
+> **Note:** 原有的 Python 腳本 (`scan_repo.py`, `audit_project.py`, `parse_tasks.py` 等)
+> 已整合至 `awkit` CLI。請使用 `awkit <command>` 取代直接呼叫腳本。
 
 ---
 

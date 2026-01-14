@@ -342,3 +342,22 @@ Root CI workflow：`.github/workflows/ci.yml`
 ## 📄 授權
 
 本專案採用 [Apache License 2.0](LICENSE) 授權。
+
+## 🔒 安全性與信任
+
+AWK 遵循開源安全最佳實踐，並由 [OpenSSF Scorecard](https://securityscorecards.dev/) 持續監控。
+
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/silver2dream/ai-workflow-kit/badge)](https://securityscorecards.dev/viewer/?uri=github.com/silver2dream/ai-workflow-kit)
+
+### 安全功能
+
+| 功能 | 狀態 | 說明 |
+|------|------|------|
+| **SECURITY.md** | ✅ | 弱點回報政策與 SLA |
+| **Branch Protection** | ✅ | 必要的審查與 CI 檢查 |
+| **CI/CD** | ✅ | 所有 PR 自動化測試 |
+| **Dependency Updates** | ✅ | 已啟用 Dependabot |
+| **Static Analysis** | ✅ | CodeQL 掃描 |
+| **Token Permissions** | ✅ | 最小化 GitHub token 權限 |
+
+完整安全政策與弱點回報方式請參閱 [SECURITY.md](SECURITY.md)。
