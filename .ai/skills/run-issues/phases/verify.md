@@ -40,7 +40,9 @@ gh pr view <pr_number> --json headRefName --jq '.headRefName'
 
 **Pass criteria**: Branch name matches expected pattern
 
-### 3. Commit Format Validation
+### 3. Commit Format Validation (STRICT)
+
+**Reference**: `.ai/rules/_kit/git-workflow.md`
 
 Check commits on the PR branch:
 
@@ -50,25 +52,33 @@ gh pr view <pr_number> --json commits --jq '.commits[].messageHeadline'
 
 **Required format**: `[type] subject`
 
+**Rules**:
+1. Type MUST be in square brackets `[]`
+2. Type MUST be lowercase
+3. Subject MUST be lowercase (first letter lowercase)
+4. NO colon after bracket
+
 Valid examples:
 - `[feat] add new endpoint`
 - `[fix] resolve race condition`
 - `[refactor] simplify auth logic`
-- `[docs] update API documentation`
+- `[docs] update api documentation`
 - `[test] add unit tests for handler`
 - `[chore] update dependencies`
 
 Invalid examples:
-- `feat: add new endpoint` (colon instead of bracket)
-- `Add new endpoint` (no type prefix)
-- `[FEAT] Add Endpoint` (uppercase)
+- `feat: add new endpoint` (colon = WRONG)
+- `Add new endpoint` (no type prefix = WRONG)
+- `[FEAT] Add Endpoint` (uppercase type = WRONG)
+- `[feat] Add new endpoint` (uppercase subject = WRONG)
+- `[Feat] add new endpoint` (uppercase type = WRONG)
 
-**Validation regex**:
+**Validation regex** (case-sensitive):
 ```
-^\[(feat|fix|docs|style|refactor|perf|test|chore)\] .+$
+^\[(feat|fix|docs|style|refactor|perf|test|chore)\] [a-z].*$
 ```
 
-**Pass criteria**: ALL commits match the format
+**Pass criteria**: ALL commits match the format with lowercase subject
 
 ### 4. Test Verification
 

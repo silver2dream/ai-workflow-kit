@@ -91,7 +91,26 @@ For each batch of independent issues:
    Task tool parameters:
    - subagent_type: general-purpose
    - description: "Work on Issue #<number>: <title>"
-   - prompt: "Complete Issue #<number>. Requirements: <body excerpt>. Follow commit format [type] subject."
+   - prompt: |
+       Complete Issue #<number>. Requirements: <body excerpt>.
+
+       CRITICAL - Follow .ai/rules/_kit/git-workflow.md strictly:
+
+       Commit format:
+       - Format: [type] subject
+       - Subject MUST be lowercase (e.g., "add feature" not "Add feature")
+       - NO colon after bracket
+       - Valid types: feat, fix, docs, style, refactor, perf, test, chore
+
+       Examples:
+       ✅ [docs] update api reference
+       ✅ [feat] add user authentication
+       ❌ [Docs] Update API reference (uppercase = WRONG)
+       ❌ docs: update api reference (colon = WRONG)
+
+       PR requirements:
+       - PR body MUST include: Closes #<number>
+       - PR target: develop branch (or as specified)
    ```
 
 2. Wait for all subagents in batch to complete
