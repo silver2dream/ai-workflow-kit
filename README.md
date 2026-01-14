@@ -5,7 +5,6 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
 > An AI-assisted development workflow kit that drives **Spec → Implement → PR → Merge**, designed to work with **Claude Code (Principal)** + **Codex (Worker)**, and compatible with **Kiro-style specs**.
@@ -75,6 +74,9 @@ More details: `docs/ai-workflow-architecture.md`.
 ### Offline (required)
 - `bash` (Windows: Git Bash / WSL)
 - `git`
+- `go` 1.22+
+
+### Offline (optional, for generate.sh only)
 - `python3` + `pyyaml` + `jsonschema` + `jinja2`
 
 ### Online / E2E (optional)
@@ -180,7 +182,7 @@ awkit upgrade --force-config --preset react-go
 awkit init --preset react-go --force
 ```
 
-### 1) Install offline dependencies
+### 1) (Optional) Install offline dependencies for generate.sh
 
 ```bash
 pip3 install pyyaml jsonschema jinja2

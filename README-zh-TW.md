@@ -5,7 +5,6 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
 > 「睡前啟動，早上收割」的 AI 開發工作流 Kit：以 **Spec → 實作 → PR → 合併** 為主線，搭配 **Claude Code (Principal)** + **Codex (Worker)** 完成閉環；Spec 格式與 **Kiro** 相容。
@@ -75,6 +74,9 @@
 ### Offline（必備）
 - `bash`（Windows: Git Bash / WSL）
 - `git`
+- `go` 1.22+
+
+### Offline（可選，僅用於 generate.sh）
 - `python3` + `pyyaml` + `jsonschema` + `jinja2`
 
 ### Online / E2E（選配）
@@ -180,7 +182,7 @@ awkit upgrade --force-config --preset react-go
 awkit init --preset react-go --force
 ```
 
-### 1) 安裝 offline 依賴
+### 1)（可選）安裝 generate.sh 所需的 offline 依賴
 
 ```bash
 pip3 install pyyaml jsonschema jinja2
