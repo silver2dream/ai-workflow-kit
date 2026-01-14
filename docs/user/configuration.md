@@ -91,7 +91,7 @@ repos:
     path: backend/
     type: directory
     language: go
-    go_version: "1.22.x"        # Go 版本
+    go_version: "1.25.x"        # Go 版本
     verify:
       build: "go build ./..."
       test: "go test ./..."
@@ -345,7 +345,7 @@ repos:
     path: api/
     type: directory
     language: go
-    go_version: "1.22.x"
+    go_version: "1.25.x"
     verify:
       build: "go build ./..."
       test: "go test ./..."
