@@ -89,17 +89,33 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	passedTests, failedTests := ParseTestResults(testOutput)
 	fmt.Printf("[VERIFY] Tests: %d passed, %d failed\n", len(passedTests), len(failedTests))
 
+	// Log parsed test names for debugging
+	if len(passedTests) > 0 {
+		var passedNames []string
+		for name := range passedTests {
+			passedNames = append(passedNames, name)
+		}
+		fmt.Printf("[VERIFY] Passed tests: %v\n", passedNames)
+	}
+
 	if testErr != nil && len(passedTests) == 0 {
+		// Include first 500 chars of test output for debugging
+		truncatedOutput := testOutput
+		if len(truncatedOutput) > 500 {
+			truncatedOutput = truncatedOutput[:500] + "... (truncated)"
+		}
 		return &EvidenceError{
 			Code:    2,
 			Message: fmt.Sprintf("test execution failed: %v", testErr),
-			Details: []string{testOutput},
+			Details: []string{truncatedOutput},
 		}
 	}
 
 	// 6. Verify each mapped test passed
 	var missingTests []string
+	var expectedTests []string
 	for _, v := range verifications {
+		expectedTests = append(expectedTests, v.TestName)
 		if !passedTests[v.TestName] {
 			if failedTests[v.TestName] {
 				missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
@@ -117,10 +133,14 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	}
 
 	if len(missingTests) > 0 {
+		// Add diagnostic info about what was expected vs found
+		details := missingTests
+		details = append(details, fmt.Sprintf("Expected tests: %v", expectedTests))
+		details = append(details, fmt.Sprintf("Found %d passed tests in output", len(passedTests)))
 		return &EvidenceError{
 			Code:    2,
 			Message: "some tests did not pass",
-			Details: missingTests,
+			Details: details,
 		}
 	}
 
@@ -416,15 +436,26 @@ func ParseTestResults(output string) (passed map[string]bool, failed map[string]
 	passed = make(map[string]bool)
 	failed = make(map[string]bool)
 
-	// Go test format: "--- PASS: TestName" or "--- FAIL: TestName"
-	goPassRe := regexp.MustCompile(`--- PASS: (\w+)`)
-	goFailRe := regexp.MustCompile(`--- FAIL: (\w+)`)
+	// Go test format: "--- PASS: TestName" or "--- PASS: TestName/SubTest"
+	// Use [\w/]+ to match subtests with slashes
+	goPassRe := regexp.MustCompile(`--- PASS: ([\w/]+)`)
+	goFailRe := regexp.MustCompile(`--- FAIL: ([\w/]+)`)
 
 	for _, m := range goPassRe.FindAllStringSubmatch(output, -1) {
-		passed[m[1]] = true
+		testName := m[1]
+		passed[testName] = true
+		// Also mark parent test as passed if this is a subtest
+		if idx := strings.Index(testName, "/"); idx != -1 {
+			passed[testName[:idx]] = true
+		}
 	}
 	for _, m := range goFailRe.FindAllStringSubmatch(output, -1) {
-		failed[m[1]] = true
+		testName := m[1]
+		failed[testName] = true
+		// Also mark parent test as failed if this is a subtest
+		if idx := strings.Index(testName, "/"); idx != -1 {
+			failed[testName[:idx]] = true
+		}
 	}
 
 	// Node/Jest format: "✓ test name" or "✕ test name"

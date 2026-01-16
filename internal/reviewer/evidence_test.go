@@ -106,6 +106,73 @@ func TestIsValidTestName(t *testing.T) {
 	}
 }
 
+func TestParseTestResults(t *testing.T) {
+	tests := []struct {
+		name           string
+		output         string
+		expectedPassed []string
+		expectedFailed []string
+	}{
+		{
+			name: "simple pass",
+			output: `=== RUN   TestFoo
+--- PASS: TestFoo (0.00s)
+PASS
+ok  	example.com/pkg	0.001s`,
+			expectedPassed: []string{"TestFoo"},
+			expectedFailed: []string{},
+		},
+		{
+			name: "subtest pass",
+			output: `=== RUN   TestFoo
+=== RUN   TestFoo/SubTest1
+=== RUN   TestFoo/SubTest2
+--- PASS: TestFoo/SubTest1 (0.00s)
+--- PASS: TestFoo/SubTest2 (0.00s)
+--- PASS: TestFoo (0.00s)
+PASS`,
+			expectedPassed: []string{"TestFoo", "TestFoo/SubTest1", "TestFoo/SubTest2"},
+			expectedFailed: []string{},
+		},
+		{
+			name: "subtest marks parent passed",
+			output: `=== RUN   TestParent
+=== RUN   TestParent/Child
+--- PASS: TestParent/Child (0.00s)
+--- PASS: TestParent (0.00s)`,
+			expectedPassed: []string{"TestParent", "TestParent/Child"},
+			expectedFailed: []string{},
+		},
+		{
+			name: "mixed pass and fail",
+			output: `--- PASS: TestGood (0.00s)
+--- FAIL: TestBad (0.01s)`,
+			expectedPassed: []string{"TestGood"},
+			expectedFailed: []string{"TestBad"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			passed, failed := ParseTestResults(tt.output)
+
+			// Check passed tests
+			for _, name := range tt.expectedPassed {
+				if !passed[name] {
+					t.Errorf("expected %q to be in passed tests", name)
+				}
+			}
+
+			// Check failed tests
+			for _, name := range tt.expectedFailed {
+				if !failed[name] {
+					t.Errorf("expected %q to be in failed tests", name)
+				}
+			}
+		})
+	}
+}
+
 func TestParseTestReviewTable_InvalidTestName(t *testing.T) {
 	tests := []struct {
 		name        string
