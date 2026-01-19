@@ -163,7 +163,9 @@ func (l *RotatingLogger) cleanup() {
 
 	// Remove oldest files if we have too many
 	for len(logFiles) > l.maxFiles {
-		os.Remove(logFiles[0])
+		if err := os.Remove(logFiles[0]); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to remove log file %s: %v\n", logFiles[0], err)
+		}
 		logFiles = logFiles[1:]
 	}
 }
