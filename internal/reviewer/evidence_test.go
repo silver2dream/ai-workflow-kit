@@ -2,6 +2,8 @@ package reviewer
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -539,3 +541,922 @@ func TestMin(t *testing.T) {
 
 // Suppress unused import warning
 var _ = math.Abs
+
+// Tests for ParseAcceptanceCriteria
+func TestParseAcceptanceCriteria(t *testing.T) {
+	tests := []struct {
+		name   string
+		ticket string
+		want   []string
+	}{
+		{
+			name: "standard format with checkbox",
+			ticket: `## Acceptance Criteria
+- [ ] Feature A works
+- [ ] Feature B works
+- [x] Feature C completed`,
+			want: []string{"Feature A works", "Feature B works", "Feature C completed"},
+		},
+		{
+			name: "asterisk list",
+			ticket: `## Acceptance Criteria
+* [ ] First criterion
+* [x] Second criterion`,
+			want: []string{"First criterion", "Second criterion"},
+		},
+		{
+			name:   "no criteria",
+			ticket: "Just some text without criteria",
+			want:   nil,
+		},
+		{
+			name:   "empty string",
+			ticket: "",
+			want:   nil,
+		},
+		{
+			name: "mixed content",
+			ticket: `# Title
+Some description
+## Acceptance Criteria
+- [ ] Must work correctly
+- Not a criterion
+- [x] Another criterion
+
+## Other section
+- [ ] Not in criteria section but still matches`,
+			want: []string{"Must work correctly", "Another criterion", "Not in criteria section but still matches"},
+		},
+		{
+			name: "whitespace handling",
+			ticket: `- [ ] Extra space after
+- [ ]   Trailing space trimmed`,
+			want: []string{"Extra space after", "Trailing space trimmed"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseAcceptanceCriteria(tt.ticket)
+			if len(got) != len(tt.want) {
+				t.Errorf("ParseAcceptanceCriteria() returned %d criteria, want %d", len(got), len(tt.want))
+				t.Errorf("got: %v", got)
+				return
+			}
+			for i, c := range got {
+				if c != tt.want[i] {
+					t.Errorf("criteria[%d] = %q, want %q", i, c, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// Tests for ValidateCompleteness
+func TestValidateCompleteness(t *testing.T) {
+	tests := []struct {
+		name          string
+		criteria      []string
+		verifications []CriteriaVerification
+		wantErr       bool
+		errCode       int
+	}{
+		{
+			name:     "all criteria verified",
+			criteria: []string{"Feature A", "Feature B"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "Implemented using X pattern", TestName: "TestFeatureA", Assertion: "assert.Equal"},
+				{Criteria: "Feature B", Implementation: "Implemented using Y pattern", TestName: "TestFeatureB", Assertion: "assert.True"},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "missing verification",
+			criteria: []string{"Feature A", "Feature B"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "Implemented using X", TestName: "TestFeatureA", Assertion: "assert.Equal"},
+			},
+			wantErr: true,
+			errCode: 1,
+		},
+		{
+			name:     "missing implementation",
+			criteria: []string{"Feature A"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "", TestName: "TestFeatureA", Assertion: "assert.Equal"},
+			},
+			wantErr: true,
+			errCode: 1,
+		},
+		{
+			name:     "implementation too short",
+			criteria: []string{"Feature A"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "Short", TestName: "TestFeatureA", Assertion: "assert.Equal"},
+			},
+			wantErr: true,
+			errCode: 1,
+		},
+		{
+			name:     "missing test name",
+			criteria: []string{"Feature A"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "Implemented using X pattern", TestName: "", Assertion: "assert.Equal"},
+			},
+			wantErr: true,
+			errCode: 1,
+		},
+		{
+			name:     "missing assertion",
+			criteria: []string{"Feature A"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "Implemented using X pattern", TestName: "TestFeatureA", Assertion: ""},
+			},
+			wantErr: true,
+			errCode: 1,
+		},
+		{
+			name:          "empty criteria",
+			criteria:      []string{},
+			verifications: []CriteriaVerification{},
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCompleteness(tt.criteria, tt.verifications)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				} else if err.Code != tt.errCode {
+					t.Errorf("error code = %d, want %d", err.Code, tt.errCode)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// Tests for extractSection
+func TestExtractSection(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		sectionName string
+		wantEmpty   bool
+		wantContain string
+	}{
+		{
+			name: "extract h3 section",
+			body: `### Introduction
+Intro content
+
+### Test Review
+Test review content here
+
+### Conclusion
+End`,
+			sectionName: "Test Review",
+			wantEmpty:   false,
+			wantContain: "Test review content",
+		},
+		{
+			name: "extract h2 section",
+			body: `## Overview
+Overview content
+
+## Implementation Review
+Implementation details
+
+## Summary`,
+			sectionName: "Implementation Review",
+			wantEmpty:   false,
+			wantContain: "Implementation details",
+		},
+		{
+			name: "section not found",
+			body: `### Section A
+Content A
+
+### Section B
+Content B`,
+			sectionName: "Section C",
+			wantEmpty:   true,
+		},
+		{
+			name:        "empty body",
+			body:        "",
+			sectionName: "Test",
+			wantEmpty:   true,
+		},
+		{
+			name: "section at end of document",
+			body: `### First
+Content
+
+### Target Section
+Target content here`,
+			sectionName: "Target Section",
+			wantEmpty:   false,
+			wantContain: "Target content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractSection(tt.body, tt.sectionName)
+			if tt.wantEmpty {
+				if got != "" {
+					t.Errorf("extractSection() = %q, want empty", got)
+				}
+			} else {
+				if got == "" {
+					t.Error("extractSection() returned empty, want non-empty")
+				} else if tt.wantContain != "" && !strings.Contains(got, tt.wantContain) {
+					t.Errorf("extractSection() = %q, want to contain %q", got, tt.wantContain)
+				}
+			}
+		})
+	}
+}
+
+// Tests for fuzzyMatch (criteria matching)
+func TestFuzzyMatchCriteria(t *testing.T) {
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want bool
+	}{
+		{"exact match", "Feature works", "Feature works", true},
+		{"case insensitive", "Feature Works", "feature works", true},
+		{"contains match", "Feature A works correctly", "Feature A", true},
+		{"reverse contains", "Feature", "Feature works correctly", true},
+		{"whitespace normalized", "Feature  works", "Feature works", true},
+		{"completely different", "Feature A", "Something else", false},
+		{"empty strings", "", "", true},
+		{"one empty", "Feature", "", true}, // empty is contained in everything
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fuzzyMatch(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("fuzzyMatch(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+// Tests for normalizeForMatching
+func TestNormalizeForMatching(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"simple string", "hello", "hello"},
+		{"with backticks", "`code`", "code"},
+		{"with tabs", "hello\tworld", "hello world"},
+		{"with multiple spaces", "hello   world", "hello world"},
+		{"with carriage return", "hello\r\nworld", "hello world"},
+		{"leading/trailing space", "  hello  ", "hello"},
+		{"complex", "  `code`\twith\r\n  spaces  ", "code with spaces"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeForMatching(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeForMatching(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// Tests for parseImplementationReview
+func TestParseImplementationReview(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantCount int
+		wantKey   string
+		wantValue string
+	}{
+		{
+			name: "standard format",
+			body: `### Implementation Review
+
+#### 1. Feature A works
+**實作邏輯**: Using the new algorithm to process data
+
+#### 2. Feature B works
+**實作邏輯**: Implemented with caching layer`,
+			wantCount: 2,
+			wantKey:   "Feature A works",
+			wantValue: "Using the new algorithm to process data",
+		},
+		{
+			name: "english format",
+			body: `### Implementation Review
+
+#### 1. Feature A
+**Implementation**: The feature is implemented using X pattern`,
+			wantCount: 1,
+			wantKey:   "Feature A",
+			wantValue: "The feature is implemented using X pattern",
+		},
+		{
+			name:      "no implementation section",
+			body:      `### Other Section\nSome content`,
+			wantCount: 0,
+		},
+		{
+			name:      "empty body",
+			body:      "",
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseImplementationReview(tt.body)
+			if len(got) != tt.wantCount {
+				t.Errorf("parseImplementationReview() returned %d items, want %d", len(got), tt.wantCount)
+			}
+			if tt.wantKey != "" {
+				if val, ok := got[tt.wantKey]; !ok {
+					t.Errorf("missing key %q", tt.wantKey)
+				} else if tt.wantValue != "" && val != tt.wantValue {
+					t.Errorf("value for %q = %q, want %q", tt.wantKey, val, tt.wantValue)
+				}
+			}
+		})
+	}
+}
+
+// Tests for ParseCriteriaVerifications
+func TestParseCriteriaVerifications(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantCount int
+		wantErr   bool
+	}{
+		{
+			name: "complete review body",
+			body: `### Implementation Review
+
+#### 1. Feature A works
+**實作邏輯**: Using the new algorithm to process data efficiently
+
+### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature A works | TestFeatureA | assert.Equal(t, expected, actual) |
+`,
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name: "only test review",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature A | TestA | assert.True |
+| Feature B | TestB | assert.False |
+`,
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name:      "empty body",
+			body:      "",
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name: "invalid test name",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature A | invalid test name | assert.True |
+`,
+			wantCount: 0,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseCriteriaVerifications(tt.body)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if len(got) != tt.wantCount {
+					t.Errorf("ParseCriteriaVerifications() returned %d items, want %d", len(got), tt.wantCount)
+				}
+			}
+		})
+	}
+}
+
+// Tests for findTestFiles
+func TestFindTestFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create test files
+	files := map[string]string{
+		"main.go":                  "package main",
+		"main_test.go":             "package main",
+		"sub/helper.go":            "package sub",
+		"sub/helper_test.go":       "package sub",
+		"js/app.js":                "console.log('app')",
+		"js/app.test.js":           "test('app')",
+		"ts/util.ts":               "export {}",
+		"ts/util.spec.ts":          "describe('util')",
+		"vendor/dep/dep_test.go":   "package dep",
+		"node_modules/pkg/test.js": "test",
+	}
+
+	for path, content := range files {
+		fullPath := filepath.Join(tmpDir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("failed to create dir: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+	}
+
+	testFiles, err := findTestFiles(tmpDir)
+	if err != nil {
+		t.Fatalf("findTestFiles() error: %v", err)
+	}
+
+	// Should find: main_test.go, sub/helper_test.go, js/app.test.js, ts/util.spec.ts
+	// Should NOT find: vendor/*, node_modules/*
+	expectedCount := 4
+	if len(testFiles) != expectedCount {
+		t.Errorf("findTestFiles() found %d files, want %d", len(testFiles), expectedCount)
+		for _, f := range testFiles {
+			t.Logf("  found: %s", f)
+		}
+	}
+
+	// Verify vendor and node_modules are excluded
+	for _, f := range testFiles {
+		if strings.Contains(f, "vendor") {
+			t.Errorf("vendor file should be excluded: %s", f)
+		}
+		if strings.Contains(f, "node_modules") {
+			t.Errorf("node_modules file should be excluded: %s", f)
+		}
+	}
+}
+
+// Tests for VerifyAssertions
+func TestVerifyAssertions(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create test file with assertions
+	testContent := `package main
+
+import "testing"
+
+func TestFeatureA(t *testing.T) {
+	assert.Equal(t, expected, actual)
+	require.NoError(t, err)
+}
+
+func TestFeatureB(t *testing.T) {
+	assert.True(t, condition)
+}
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "main_test.go"), []byte(testContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	tests := []struct {
+		name          string
+		verifications []CriteriaVerification
+		wantErr       bool
+	}{
+		{
+			name: "assertions found",
+			verifications: []CriteriaVerification{
+				{TestName: "TestFeatureA", Assertion: "assert.Equal"},
+				{TestName: "TestFeatureB", Assertion: "assert.True"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "assertion not found",
+			verifications: []CriteriaVerification{
+				{TestName: "TestFeatureA", Assertion: "assert.NotExists"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty assertion skipped",
+			verifications: []CriteriaVerification{
+				{TestName: "TestFeatureA", Assertion: ""},
+			},
+			wantErr: false,
+		},
+		{
+			name:          "no verifications",
+			verifications: []CriteriaVerification{},
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := VerifyAssertions(tmpDir, tt.verifications)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// Tests for CriteriaVerification struct
+func TestCriteriaVerificationStruct(t *testing.T) {
+	cv := CriteriaVerification{
+		Criteria:       "Feature A works",
+		Implementation: "Implemented using X",
+		TestName:       "TestFeatureA",
+		Assertion:      "assert.Equal",
+	}
+
+	if cv.Criteria != "Feature A works" {
+		t.Errorf("Criteria = %q", cv.Criteria)
+	}
+	if cv.Implementation != "Implemented using X" {
+		t.Errorf("Implementation = %q", cv.Implementation)
+	}
+	if cv.TestName != "TestFeatureA" {
+		t.Errorf("TestName = %q", cv.TestName)
+	}
+	if cv.Assertion != "assert.Equal" {
+		t.Errorf("Assertion = %q", cv.Assertion)
+	}
+}
+
+// Tests for VerifyOptions struct
+func TestVerifyOptionsDefaults(t *testing.T) {
+	opts := VerifyOptions{
+		Ticket:       "ticket content",
+		ReviewBody:   "review body",
+		WorktreePath: "/path/to/worktree",
+		TestCommand:  "go test ./...",
+	}
+
+	if opts.TestTimeout != 0 {
+		t.Errorf("TestTimeout should be 0 initially, got %v", opts.TestTimeout)
+	}
+}
+
+// Tests for extractImplementationLogic
+func TestExtractImplementationLogic(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "chinese format",
+			content: "**實作邏輯**: This is the implementation logic\n\n**Something else**",
+			want:    "This is the implementation logic",
+		},
+		{
+			name:    "english format",
+			content: "**Implementation**: The feature is implemented using pattern X\n\n",
+			want:    "The feature is implemented using pattern X",
+		},
+		{
+			name:    "simple chinese format",
+			content: "實作邏輯: Simple implementation\n\n",
+			want:    "Simple implementation",
+		},
+		{
+			name:    "no implementation",
+			content: "Some other content without implementation section",
+			want:    "",
+		},
+		{
+			name:    "empty content",
+			content: "",
+			want:    "",
+		},
+		{
+			name:    "with colon variants",
+			content: "**實作邏輯**：使用中文冒號\n\n",
+			want:    "使用中文冒號",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractImplementationLogic(tt.content)
+			if got != tt.want {
+				t.Errorf("extractImplementationLogic() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Tests for VerifyTestEvidence validation paths
+func TestVerifyTestEvidence_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    VerifyOptions
+		wantErr bool
+		errCode int
+		errMsg  string
+	}{
+		{
+			name: "empty ticket",
+			opts: VerifyOptions{
+				Ticket:       "",
+				ReviewBody:   "some review",
+				WorktreePath: "/tmp/test",
+				TestCommand:  "go test ./...",
+			},
+			wantErr: true,
+			errCode: 1,
+			errMsg:  "no acceptance criteria",
+		},
+		{
+			name: "ticket without criteria",
+			opts: VerifyOptions{
+				Ticket:       "Just some text without checkboxes",
+				ReviewBody:   "some review",
+				WorktreePath: "/tmp/test",
+				TestCommand:  "go test ./...",
+			},
+			wantErr: true,
+			errCode: 1,
+			errMsg:  "no acceptance criteria",
+		},
+		{
+			name: "empty review body",
+			opts: VerifyOptions{
+				Ticket:       "- [ ] Feature A",
+				ReviewBody:   "",
+				WorktreePath: "/tmp/test",
+				TestCommand:  "go test ./...",
+			},
+			wantErr: true,
+			errCode: 1,
+			errMsg:  "no criteria verifications",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := VerifyTestEvidence(nil, tt.opts)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				} else {
+					if err.Code != tt.errCode {
+						t.Errorf("error code = %d, want %d", err.Code, tt.errCode)
+					}
+					if tt.errMsg != "" && !strings.Contains(err.Message, tt.errMsg) {
+						t.Errorf("error message = %q, want to contain %q", err.Message, tt.errMsg)
+					}
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// Tests for testMapping struct
+func TestTestMappingStruct(t *testing.T) {
+	tm := testMapping{
+		Criteria:  "Feature A",
+		TestName:  "TestFeatureA",
+		Assertion: "assert.Equal",
+	}
+
+	if tm.Criteria != "Feature A" {
+		t.Errorf("Criteria = %q", tm.Criteria)
+	}
+	if tm.TestName != "TestFeatureA" {
+		t.Errorf("TestName = %q", tm.TestName)
+	}
+	if tm.Assertion != "assert.Equal" {
+		t.Errorf("Assertion = %q", tm.Assertion)
+	}
+}
+
+// Tests for parseTestReviewTable edge cases
+func TestParseTestReviewTable_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantCount int
+		wantErr   bool
+	}{
+		{
+			name:      "no test review section",
+			body:      "### Other Section\nSome content",
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name: "empty table",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+`,
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name: "table with empty criteria",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+|  | TestA | assert.True |
+`,
+			wantCount: 0, // Empty criteria should be skipped
+			wantErr:   false,
+		},
+		{
+			name: "multiple valid rows",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature A | TestA | assert.True |
+| Feature B | TestB | assert.False |
+| Feature C | TestC | require.NoError |
+`,
+			wantCount: 3,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTestReviewTable(tt.body)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if len(got) != tt.wantCount {
+					t.Errorf("parseTestReviewTable() returned %d mappings, want %d", len(got), tt.wantCount)
+				}
+			}
+		})
+	}
+}
+
+// Test for findTestFiles with non-existent directory
+func TestFindTestFiles_NonExistent(t *testing.T) {
+	testFiles, err := findTestFiles("/non/existent/path")
+	if err != nil {
+		// Error is acceptable for non-existent path
+		return
+	}
+	if len(testFiles) != 0 {
+		t.Errorf("findTestFiles() should return 0 files for non-existent path, got %d", len(testFiles))
+	}
+}
+
+// Test for VerifyAssertions with non-existent worktree
+func TestVerifyAssertions_NonExistentWorktree(t *testing.T) {
+	verifications := []CriteriaVerification{
+		{TestName: "TestFeature", Assertion: "assert.True"},
+	}
+
+	err := VerifyAssertions("/non/existent/path", verifications)
+	// Should not error - just won't find any assertions
+	if err != nil && err.Code != 3 {
+		t.Errorf("unexpected error code: %d", err.Code)
+	}
+}
+
+// Test for ParseTestResults with Node/Jest format
+func TestParseTestResults_NodeFormat(t *testing.T) {
+	// The Node/Jest parser includes the timing in the test name
+	// Test that the format is correctly parsed (spaces become underscores)
+	tests := []struct {
+		name           string
+		output         string
+		expectedPassed []string
+		expectedFailed []string
+	}{
+		{
+			name: "jest pass format",
+			output: `  ✓ should handle empty input (5ms)
+  ✓ should process valid data (10ms)`,
+			// The parser converts "should handle empty input (5ms)" to "should_handle_empty_input_(5ms)"
+			expectedPassed: []string{"should_handle_empty_input_(5ms)", "should_process_valid_data_(10ms)"},
+			expectedFailed: []string{},
+		},
+		{
+			name:           "jest fail format",
+			output:         `  ✕ should fail gracefully (15ms)`,
+			expectedFailed: []string{"should_fail_gracefully_(15ms)"},
+			expectedPassed: []string{},
+		},
+		{
+			name: "mixed go and node",
+			output: `--- PASS: TestGoFunction (0.00s)
+  ✓ node test passes`,
+			expectedPassed: []string{"TestGoFunction", "node_test_passes"},
+			expectedFailed: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			passed, failed := ParseTestResults(tt.output)
+
+			for _, name := range tt.expectedPassed {
+				if !passed[name] {
+					t.Errorf("expected %q to be in passed tests, got %v", name, passed)
+				}
+			}
+
+			for _, name := range tt.expectedFailed {
+				if !failed[name] {
+					t.Errorf("expected %q to be in failed tests, got %v", name, failed)
+				}
+			}
+		})
+	}
+}
+
+// Test for EvidenceError
+func TestEvidenceError_Fields(t *testing.T) {
+	err := &EvidenceError{
+		Code:    2,
+		Message: "test execution failed",
+		Details: []string{"detail 1", "detail 2"},
+	}
+
+	if err.Code != 2 {
+		t.Errorf("Code = %d, want 2", err.Code)
+	}
+	if err.Message != "test execution failed" {
+		t.Errorf("Message = %q", err.Message)
+	}
+	if len(err.Details) != 2 {
+		t.Errorf("Details length = %d, want 2", len(err.Details))
+	}
+	if err.Error() != "test execution failed" {
+		t.Errorf("Error() = %q", err.Error())
+	}
+}
+
+// Test for fuzzyMatch with Chinese stop words
+func TestFuzzyMatchWithStopWords(t *testing.T) {
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want bool
+	}{
+		{"with 的", "功能的實作", "功能實作", true},
+		{"with 後", "完成後檢查", "完成檢查", true},
+		{"with 要", "需要驗證", "需驗證", true},
+		{"with 會", "系統會回應", "系統回應", true},
+		{"with 應該", "應該成功", "成功", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fuzzyMatch(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("fuzzyMatch(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
