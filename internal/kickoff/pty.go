@@ -28,8 +28,9 @@ func (p *PTYExecutor) Start() error {
 }
 
 // Wait waits for the command to complete
+// Platform-specific implementation handles ConPTY vs standard execution
 func (p *PTYExecutor) Wait() error {
-	return p.cmd.Wait()
+	return p.waitPlatform()
 }
 
 // Output returns a reader for the command output
@@ -38,11 +39,9 @@ func (p *PTYExecutor) Output() io.Reader {
 }
 
 // Kill terminates the command
+// Platform-specific implementation handles ConPTY vs standard execution
 func (p *PTYExecutor) Kill() error {
-	if p.cmd.Process != nil {
-		return p.cmd.Process.Kill()
-	}
-	return nil
+	return p.killPlatform()
 }
 
 // IsFallback returns true if using standard execution instead of PTY

@@ -23,6 +23,19 @@ func (p *PTYExecutor) startPlatform() error {
 	return nil
 }
 
+// waitPlatform waits for the command to complete on Unix
+func (p *PTYExecutor) waitPlatform() error {
+	return p.cmd.Wait()
+}
+
+// killPlatform terminates the command on Unix
+func (p *PTYExecutor) killPlatform() error {
+	if p.cmd.Process != nil {
+		return p.cmd.Process.Kill()
+	}
+	return nil
+}
+
 // startStandard starts the command without PTY (fallback mode)
 func (p *PTYExecutor) startStandard() error {
 	p.fallback = true

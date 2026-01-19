@@ -92,12 +92,19 @@ func TestPTYExecutor_Output(t *testing.T) {
 
 // TestPTYExecutor_OutputLatency tests Property 2: PTY output latency < 100ms
 func TestPTYExecutor_OutputLatency(t *testing.T) {
+	var cmd string
+	var args []string
 	if runtime.GOOS == "windows" {
-		t.Skip("PTY latency test not applicable on Windows (uses fallback)")
+		// Use cmd.exe with timeout to produce output with known timing
+		cmd = "cmd"
+		args = []string{"/c", "echo start && timeout /t 1 /nobreak >nul && echo end"}
+	} else {
+		cmd = "sh"
+		args = []string{"-c", "echo start; sleep 0.05; echo end"}
 	}
 
 	// Use a command that produces output with known timing
-	executor, err := NewPTYExecutor("sh", []string{"-c", "echo start; sleep 0.05; echo end"})
+	executor, err := NewPTYExecutor(cmd, args)
 	if err != nil {
 		t.Fatalf("NewPTYExecutor failed: %v", err)
 	}
@@ -132,13 +139,22 @@ func TestPTYExecutor_OutputLatency(t *testing.T) {
 
 // TestPTYExecutor_ANSIPreservation tests Property 3: ANSI code preservation
 func TestPTYExecutor_ANSIPreservation(t *testing.T) {
+	var cmd string
+	var args []string
+	ansiCode := "\033[31mred\033[0m"
+
 	if runtime.GOOS == "windows" {
-		t.Skip("ANSI preservation test not applicable on Windows (uses fallback)")
+		// Windows cmd.exe with ANSI escape sequences
+		// Note: Windows 10+ supports ANSI codes in cmd when virtual terminal is enabled
+		cmd = "cmd"
+		args = []string{"/c", "echo", ansiCode}
+	} else {
+		cmd = "printf"
+		args = []string{ansiCode}
 	}
 
 	// Echo ANSI escape sequence
-	ansiCode := "\033[31mred\033[0m"
-	executor, err := NewPTYExecutor("printf", []string{ansiCode})
+	executor, err := NewPTYExecutor(cmd, args)
 	if err != nil {
 		t.Fatalf("NewPTYExecutor failed: %v", err)
 	}
@@ -228,9 +244,11 @@ func TestPTYExecutor_IsFallback(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// On Windows, should use fallback
-	if runtime.GOOS == "windows" && !executor.IsFallback() {
-		t.Log("Expected fallback mode on Windows")
+	// Log whether we're using fallback or native PTY/ConPTY
+	if executor.IsFallback() {
+		t.Logf("Using fallback mode (standard execution)")
+	} else {
+		t.Logf("Using native PTY/ConPTY")
 	}
 
 	executor.Wait()
