@@ -24,7 +24,7 @@ const (
 type Analyzer struct {
 	StateRoot string
 	Config    *Config
-	GHClient  *GitHubClient
+	GHClient  GitHubClientInterface
 	GHTimeout time.Duration
 	mu        sync.Mutex // protects loop counter updates
 }
