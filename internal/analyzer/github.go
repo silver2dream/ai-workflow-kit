@@ -33,10 +33,25 @@ func (i *Issue) HasLabel(name string) bool {
 	return false
 }
 
+// GitHubClientInterface defines the interface for GitHub operations
+// This allows for mocking in tests
+type GitHubClientInterface interface {
+	ListIssuesByLabel(ctx context.Context, label string) ([]Issue, error)
+	ListPendingIssues(ctx context.Context, labels LabelsConfig) ([]Issue, error)
+	CountOpenIssues(ctx context.Context, taskLabel string) (int, error)
+	RemoveLabel(ctx context.Context, issueNumber int, label string) error
+	AddLabel(ctx context.Context, issueNumber int, label string) error
+	IsPRMerged(ctx context.Context, prNumber int) (bool, error)
+	CloseIssue(ctx context.Context, issueNumber int) error
+}
+
 // GitHubClient wraps GitHub CLI operations
 type GitHubClient struct {
 	Timeout time.Duration
 }
+
+// Ensure GitHubClient implements GitHubClientInterface
+var _ GitHubClientInterface = (*GitHubClient)(nil)
 
 // NewGitHubClient creates a new GitHub client
 func NewGitHubClient(timeout time.Duration) *GitHubClient {

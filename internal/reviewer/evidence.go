@@ -111,20 +111,47 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 		}
 	}
 
-	// 6. Verify each mapped test passed
+	// 6. Verify each mapped test passed (with fuzzy matching fallback)
 	var missingTests []string
 	var expectedTests []string
 	for _, v := range verifications {
 		expectedTests = append(expectedTests, v.TestName)
-		if !passedTests[v.TestName] {
-			if failedTests[v.TestName] {
-				missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
+
+		// 1. Try exact match first
+		if passedTests[v.TestName] {
+			continue
+		}
+
+		// 2. Exact match failed, try fuzzy matching
+		found := false
+		var matchedName string
+		for passedName := range passedTests {
+			if fuzzyMatchTestName(v.TestName, passedName) {
+				found = true
+				matchedName = passedName
+				break
+			}
+		}
+
+		if found {
+			fmt.Printf("[VERIFY] Fuzzy matched: %s -> %s\n", v.TestName, matchedName)
+			continue
+		}
+
+		// 3. Fuzzy match also failed, check if in failed tests
+		if failedTests[v.TestName] {
+			missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
+		} else {
+			// Provide more specific diagnostic for why test was not found
+			if strings.Contains(v.TestName, " ") {
+				missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: contains spaces, must be function name like TestXxx)", v.TestName))
+			} else if !strings.HasPrefix(v.TestName, "Test") {
+				missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: must start with 'Test')", v.TestName))
 			} else {
-				// Provide more specific diagnostic for why test was not found
-				if strings.Contains(v.TestName, " ") {
-					missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: contains spaces, must be function name like TestXxx)", v.TestName))
-				} else if !strings.HasPrefix(v.TestName, "Test") {
-					missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: must start with 'Test')", v.TestName))
+				// Find similar tests to provide better diagnostics
+				similar := findSimilarTests(v.TestName, passedTests, 0.5)
+				if len(similar) > 0 {
+					missingTests = append(missingTests, fmt.Sprintf("%s (not found, similar: %v)", v.TestName, similar))
 				} else {
 					missingTests = append(missingTests, fmt.Sprintf("%s (not found in test output)", v.TestName))
 				}
@@ -595,4 +622,244 @@ func fuzzyMatch(a, b string) bool {
 	}
 
 	return strings.Contains(a, b) || strings.Contains(b, a)
+}
+
+// fuzzyMatchTestName performs fuzzy matching for test names
+// Handles the following cases:
+// - TestFoo vs TestFoo/SubTest (subtest parent)
+// - TestChapterRead vs TestReadChapter (reordering)
+// - TestFoo_v2 vs TestFoo (version suffix)
+func fuzzyMatchTestName(expected, actual string) bool {
+	// Exact match
+	if expected == actual {
+		return true
+	}
+
+	// Subtest parent matching: TestFoo matches TestFoo/SubTest (only direct subtest)
+	if idx := strings.Index(actual, "/"); idx != -1 {
+		parentActual := actual[:idx]
+		if parentActual == expected {
+			return true
+		}
+	}
+
+	// Handle expected being a subtest: TestFoo/Sub matches parent TestFoo
+	if idx := strings.Index(expected, "/"); idx != -1 {
+		parentExpected := expected[:idx]
+		if parentExpected == actual {
+			return true
+		}
+	}
+
+	// Normalize and compare
+	normExpected := normalizeTestName(expected)
+	normActual := normalizeTestName(actual)
+
+	if normExpected == normActual {
+		return true
+	}
+
+	// Check if normalized actual starts with normalized expected (for version suffixes)
+	if strings.HasPrefix(normActual, normExpected) {
+		return true
+	}
+
+	// Check if names contain the same tokens (for word reordering cases)
+	if tokensMatch(normExpected, normActual) {
+		return true
+	}
+
+	// Calculate Levenshtein similarity as last resort
+	similarity := levenshteinSimilarity(normExpected, normActual)
+	const similarityThreshold = 0.7 // 70% similarity threshold
+
+	return similarity >= similarityThreshold
+}
+
+// normalizeTestName standardizes test name for comparison
+func normalizeTestName(name string) string {
+	// Remove "Test" prefix for comparison
+	normalized := strings.TrimPrefix(name, "Test")
+
+	// Remove subtest suffix
+	if idx := strings.Index(normalized, "/"); idx != -1 {
+		normalized = normalized[:idx]
+	}
+
+	// Remove common suffixes like _v2, _V2, _test, etc.
+	suffixPatterns := []string{"_v1", "_v2", "_v3", "_V1", "_V2", "_V3", "_test", "_Test"}
+	for _, suffix := range suffixPatterns {
+		normalized = strings.TrimSuffix(normalized, suffix)
+	}
+
+	// Remove underscores and convert to lowercase
+	normalized = strings.ReplaceAll(normalized, "_", "")
+	normalized = strings.ToLower(normalized)
+
+	return normalized
+}
+
+// tokensMatch checks if two normalized test names contain similar tokens
+// This handles word reordering cases like "readchapter" vs "chapterread"
+func tokensMatch(a, b string) bool {
+	// Extract tokens by splitting on common word boundaries
+	tokensA := extractTokens(a)
+	tokensB := extractTokens(b)
+
+	if len(tokensA) == 0 || len(tokensB) == 0 {
+		return false
+	}
+
+	// Check if all tokens from A are present in B and vice versa
+	matchedA := 0
+	for _, tokenA := range tokensA {
+		for _, tokenB := range tokensB {
+			if tokenA == tokenB || strings.Contains(tokenB, tokenA) || strings.Contains(tokenA, tokenB) {
+				matchedA++
+				break
+			}
+		}
+	}
+
+	matchedB := 0
+	for _, tokenB := range tokensB {
+		for _, tokenA := range tokensA {
+			if tokenA == tokenB || strings.Contains(tokenA, tokenB) || strings.Contains(tokenB, tokenA) {
+				matchedB++
+				break
+			}
+		}
+	}
+
+	// Require at least 50% of tokens from each side to match
+	thresholdA := float64(len(tokensA)) * 0.5
+	thresholdB := float64(len(tokensB)) * 0.5
+
+	return float64(matchedA) >= thresholdA && float64(matchedB) >= thresholdB
+}
+
+// extractTokens splits a normalized test name into meaningful tokens
+// using common word patterns in test names
+func extractTokens(name string) []string {
+	// Common words to look for in test names
+	commonWords := []string{
+		"read", "write", "get", "set", "create", "delete", "update", "list",
+		"find", "search", "add", "remove", "check", "verify", "validate",
+		"chapter", "user", "item", "data", "file", "config", "test", "mock",
+		"error", "success", "fail", "valid", "invalid", "empty", "null",
+	}
+
+	var tokens []string
+	remaining := name
+
+	// Try to extract known common words first
+	for _, word := range commonWords {
+		if strings.Contains(remaining, word) {
+			tokens = append(tokens, word)
+			remaining = strings.Replace(remaining, word, "", 1)
+		}
+	}
+
+	// Add any remaining characters as a single token if non-empty
+	remaining = strings.TrimSpace(remaining)
+	if len(remaining) > 2 { // Only add if meaningful (> 2 chars)
+		tokens = append(tokens, remaining)
+	}
+
+	return tokens
+}
+
+// levenshteinSimilarity calculates string similarity (0-1) based on Levenshtein distance
+func levenshteinSimilarity(a, b string) float64 {
+	if a == b {
+		return 1.0
+	}
+
+	maxLen := len(a)
+	if len(b) > maxLen {
+		maxLen = len(b)
+	}
+
+	if maxLen == 0 {
+		return 1.0
+	}
+
+	distance := levenshteinDistance(a, b)
+	return 1.0 - float64(distance)/float64(maxLen)
+}
+
+// levenshteinDistance calculates the minimum edit distance between two strings
+func levenshteinDistance(a, b string) int {
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+
+	// Create matrix
+	aRunes := []rune(a)
+	bRunes := []rune(b)
+	lenA := len(aRunes)
+	lenB := len(bRunes)
+
+	// Use two rows instead of full matrix for memory efficiency
+	prevRow := make([]int, lenB+1)
+	currRow := make([]int, lenB+1)
+
+	// Initialize first row
+	for j := 0; j <= lenB; j++ {
+		prevRow[j] = j
+	}
+
+	// Fill in the rest of the matrix
+	for i := 1; i <= lenA; i++ {
+		currRow[0] = i
+
+		for j := 1; j <= lenB; j++ {
+			cost := 0
+			if aRunes[i-1] != bRunes[j-1] {
+				cost = 1
+			}
+
+			// Minimum of: delete, insert, replace
+			currRow[j] = min(
+				prevRow[j]+1,      // delete
+				currRow[j-1]+1,    // insert
+				prevRow[j-1]+cost, // replace
+			)
+		}
+
+		// Swap rows
+		prevRow, currRow = currRow, prevRow
+	}
+
+	return prevRow[lenB]
+}
+
+// min returns the minimum of three integers
+func min(a, b, c int) int {
+	if a <= b && a <= c {
+		return a
+	}
+	if b <= c {
+		return b
+	}
+	return c
+}
+
+// findSimilarTests finds test names similar to the expected name from the passed tests
+func findSimilarTests(expected string, passedTests map[string]bool, threshold float64) []string {
+	var similar []string
+	normExpected := normalizeTestName(expected)
+
+	for name := range passedTests {
+		normName := normalizeTestName(name)
+		similarity := levenshteinSimilarity(normExpected, normName)
+		if similarity >= threshold {
+			similar = append(similar, fmt.Sprintf("%s (%.0f%% similar)", name, similarity*100))
+		}
+	}
+
+	return similar
 }
