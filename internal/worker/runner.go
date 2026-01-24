@@ -669,10 +669,10 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	if len(verifyCommands) > 0 {
-		logger.Log("執行驗證測試...")
+		logger.Log("執行驗證測試 (目錄: %s)...", workDir)
 		for _, cmd := range verifyCommands {
 			logger.Log("  運行: %s", cmd)
-			if testErr := runVerificationCommand(ctx, wtDir, cmd, opts.GitTimeout); testErr != nil {
+			if testErr := runVerificationCommand(ctx, workDir, cmd, opts.GitTimeout); testErr != nil {
 				runErr = fmt.Errorf("verification failed: %s: %w", cmd, testErr)
 				result.Error = runErr.Error()
 				result.Status = "failed"
