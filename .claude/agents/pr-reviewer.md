@@ -31,6 +31,11 @@ From the TICKET output, identify all acceptance criteria (lines like `- [ ] crit
 
 **These criteria are the foundation of your review.** Each criterion MUST be addressed.
 
+**IMPORTANT**: Acceptance Criteria describe INTENT (expected behavior), NOT specific test function names. When reviewing:
+- Find tests that COVER the described behavior, regardless of their naming
+- Do NOT expect test names to match criterion text exactly
+- Verify the behavior is tested, not that a specific function name exists
+
 ### Step 3: Switch to Worktree and Review Implementation
 
 ```bash
@@ -80,12 +85,19 @@ For EACH acceptance criterion:
 - `N/A` ❌
 - `Various tests` ❌
 
+**MATCHING CRITERIA TO TESTS:**
+- Acceptance Criteria describe INTENT, not test function names
+- Find tests that COVER the described behavior
+- A criterion like "Wall collision ends game" should map to whichever test covers that behavior
+- The test may be named `TestCollision`, `TestWallCollisionEndsGame`, or `TestAdvanceTick/WallCollision` - any is valid if it tests the behavior
+
 **PROHIBITIONS:**
-- **DO NOT** invent test function names
+- **DO NOT** invent test function names (must exist in code)
 - **DO NOT** write prose descriptions instead of function names
 - **DO NOT** write "N/A", "None", or "All tests"
 - **DO NOT** assume assertion content
 - **DO NOT** copy assertions from other files
+- **DO NOT** fail review just because test name differs from criterion wording
 
 ### Step 5: Additional Review Checks
 

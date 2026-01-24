@@ -20,7 +20,7 @@ For each issue, prepare the full body using this template:
 {scope list from proposal}
 
 ## Acceptance Criteria
-{criteria list from proposal}
+{criteria list from proposal - describe INTENT, not test function names}
 
 ## Verification
 ```bash
@@ -60,7 +60,7 @@ gh issue create \
 {scope list}
 
 ## Acceptance Criteria
-{criteria list}
+{criteria list - describe INTENT, not test function names}
 
 ## Verification
 ```bash

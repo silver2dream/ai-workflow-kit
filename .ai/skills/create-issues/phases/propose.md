@@ -29,10 +29,13 @@ Clear statement of what this issue achieves. One to two sentences maximum.
 - `path/to/another.go` - modify (update function Y)
 
 **Acceptance Criteria:**
-- [ ] Criteria 1 with measurable outcome
-- [ ] Criteria 2 with measurable outcome
-- [ ] All tests pass
+- [ ] Feature/behavior description (what it does, not test function name)
+- [ ] Edge case handling description (what edge cases are covered)
+- [ ] Unit tests added for new functionality
+- [ ] All tests pass (`go test ./...` or equivalent)
 - [ ] Code builds without errors
+
+**IMPORTANT**: Acceptance Criteria should describe the INTENT (what behavior is expected), NOT specific test function names. The Worker decides how to name and structure tests.
 
 **Verification:**
 ```bash
@@ -95,8 +98,12 @@ List all files that will be touched:
 ### Acceptance Criteria
 - Use checkbox format: `- [ ]`
 - Make criteria measurable and verifiable
-- Include "tests pass" and "builds without errors"
+- Describe the INTENT/BEHAVIOR, NOT specific test function names
+- Include "Unit tests added for new functionality"
+- Include "All tests pass" and "builds without errors"
 - 3-5 criteria per issue
+- **DO NOT** pre-specify exact test function names (e.g., avoid "TestFooBar passes")
+- **DO** describe what behavior should be tested (e.g., "Unit tests cover edge case X")
 
 ### Verification
 Include actual commands to verify:
@@ -167,6 +174,8 @@ Define the repository port interface for user data access, establishing the cont
 - [ ] UserRepository interface defined with GetByID, Create, Update methods
 - [ ] Domain errors defined: ErrUserNotFound, ErrUserConflict
 - [ ] Interface follows existing repository patterns in codebase
+- [ ] Unit tests added for new functionality
+- [ ] All tests pass (`go test ./...`)
 - [ ] Code builds without errors
 
 **Verification:**
