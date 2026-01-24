@@ -514,7 +514,11 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 		sb.WriteString(fmt.Sprintf("- %s: %s%s%s and %s%s%s\n", repo.Name, bt, repo.Verify.Build, bt, bt, repo.Verify.Test, bt))
 	}
 
-	sb.WriteString("\n## Acceptance Criteria\n- [ ] ...\n```\n")
+	sb.WriteString("\n## Acceptance Criteria\n")
+	sb.WriteString("- [ ] <describe expected behavior, NOT test function names>\n")
+	sb.WriteString("- [ ] Unit tests added for new functionality\n")
+	sb.WriteString("- [ ] All tests pass\n```\n")
+	sb.WriteString("\n**NOTE**: Acceptance Criteria should describe INTENT (expected behavior), NOT specific test function names. Worker decides test naming.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
@@ -739,6 +743,11 @@ From the TICKET output, identify all acceptance criteria (lines like ` + "`- [ ]
 
 **These criteria are the foundation of your review.** Each criterion MUST be addressed.
 
+**IMPORTANT**: Acceptance Criteria describe INTENT (expected behavior), NOT specific test function names. When reviewing:
+- Find tests that COVER the described behavior, regardless of their naming
+- Do NOT expect test names to match criterion text exactly
+- Verify the behavior is tested, not that a specific function name exists
+
 ### Step 3: Switch to Worktree and Review Implementation
 
 ` + "```bash" + `
@@ -770,10 +779,17 @@ For EACH acceptance criterion:
 2. **Read the test code** - Understand what the test is checking
 3. **Copy key assertion** - Copy an actual assertion line from the test code
 
+**MATCHING CRITERIA TO TESTS:**
+- Acceptance Criteria describe INTENT, not test function names
+- Find tests that COVER the described behavior
+- A criterion like "Wall collision ends game" should map to whichever test covers that behavior
+- The test may be named ` + "`TestCollision`" + `, ` + "`TestWallCollisionEndsGame`" + `, or ` + "`TestAdvanceTick/WallCollision`" + ` - any is valid if it tests the behavior
+
 **PROHIBITIONS:**
-- **DO NOT** invent test function names
+- **DO NOT** invent test function names (must exist in code)
 - **DO NOT** assume assertion content
 - **DO NOT** copy assertions from other files
+- **DO NOT** fail review just because test name differs from criterion wording
 
 ### Step 5: Additional Review Checks
 

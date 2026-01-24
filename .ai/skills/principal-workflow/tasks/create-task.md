@@ -38,10 +38,13 @@
 - <列出要改/要加的功能點>
 
 ## Acceptance Criteria
-- [ ] <可驗收條件 1>
+- [ ] <描述預期行為，而非測試函數名稱>
+- [ ] <描述邊界條件處理>
 - [ ] Unit tests added for new functionality
 - [ ] Existing tests updated if modifying functionality
 - [ ] All tests pass (`go test ./...` or equivalent)
+
+**注意**: Acceptance Criteria 應描述「意圖」（預期行為），而非精確的測試函數名稱。Worker 自行決定測試的命名和結構。
 
 ## Testing Requirements
 - New features MUST have corresponding unit tests
@@ -80,4 +83,5 @@ awkit create-task \
 
 - 這個 step 只負責「建立 Issue + 回寫 tasks.md」，不要在這裡 dispatch worker 或 review PR。
 - Ticket body 不可空白/模板化；Acceptance Criteria 要可測、可驗收。
+- **Acceptance Criteria 不可預先指定精確的測試函數名稱**（如 `TestFooBar passes`），應描述預期行為（如 `Wall collision correctly ends the game`）。
 - 若 `tasks.md` 該行已存在 `<!-- Issue #N -->`，`awkit create-task` 會直接 no-op（避免重複開 Issue）。
