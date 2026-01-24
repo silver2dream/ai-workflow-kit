@@ -37,6 +37,101 @@ type VerifyOptions struct {
 	WorktreePath string        // Path to worktree
 	TestCommand  string        // Command to run tests
 	TestTimeout  time.Duration // Timeout for test execution
+	Language     string        // Programming language for test name validation
+}
+
+// TestNameValidator defines interface for language-specific test name validation
+type TestNameValidator interface {
+	IsValid(name string) bool
+	FormatHint() string // Returns hint for valid test name format
+}
+
+// GoTestValidator validates Go test function names (TestXxx format)
+type GoTestValidator struct{}
+
+func (v *GoTestValidator) IsValid(name string) bool {
+	matched, _ := regexp.MatchString(`^Test[A-Za-z0-9_]*(/[A-Za-z0-9_]+)?$`, name)
+	return matched
+}
+
+func (v *GoTestValidator) FormatHint() string {
+	return "Go test function like TestXxx or TestXxx/SubTest"
+}
+
+// NodeTestValidator validates Node.js test names (Vitest/Jest - natural language)
+type NodeTestValidator struct{}
+
+func (v *NodeTestValidator) IsValid(name string) bool {
+	if name == "" {
+		return false
+	}
+	// Reject obvious invalid patterns
+	invalidPatterns := []string{
+		`^N/A$`,
+		`^All test`,
+		`^test in file`,
+		`^TODO`,
+		`^SKIP`,
+	}
+	for _, pattern := range invalidPatterns {
+		if matched, _ := regexp.MatchString("(?i)"+pattern, name); matched {
+			return false
+		}
+	}
+	return true
+}
+
+func (v *NodeTestValidator) FormatHint() string {
+	return "test description string (e.g., 'renders component correctly')"
+}
+
+// PythonTestValidator validates Python test names (test_xxx or TestClass::test_method)
+type PythonTestValidator struct{}
+
+func (v *PythonTestValidator) IsValid(name string) bool {
+	// test_function, TestClass::test_method, or pytest node IDs
+	matched, _ := regexp.MatchString(`^(test_[a-z0-9_]+|Test[A-Za-z0-9_]*(::(test_)?[a-z0-9_]+)?|.+::test_[a-z0-9_]+)$`, name)
+	return matched
+}
+
+func (v *PythonTestValidator) FormatHint() string {
+	return "Python test like test_xxx or TestClass::test_method"
+}
+
+// PermissiveValidator allows any non-empty test name (fallback)
+type PermissiveValidator struct{}
+
+func (v *PermissiveValidator) IsValid(name string) bool {
+	if name == "" {
+		return false
+	}
+	// Only reject obviously invalid patterns
+	invalidPatterns := []string{`^N/A$`, `^$`}
+	for _, pattern := range invalidPatterns {
+		if matched, _ := regexp.MatchString("(?i)"+pattern, name); matched {
+			return false
+		}
+	}
+	return true
+}
+
+func (v *PermissiveValidator) FormatHint() string {
+	return "non-empty test name"
+}
+
+// GetTestNameValidator returns appropriate validator for the given language
+func GetTestNameValidator(language string) TestNameValidator {
+	switch strings.ToLower(language) {
+	case "go", "golang":
+		return &GoTestValidator{}
+	case "node", "nodejs", "typescript", "javascript", "ts", "js":
+		return &NodeTestValidator{}
+	case "python", "py":
+		return &PythonTestValidator{}
+	default:
+		// For unknown languages, use permissive validator
+		return &PermissiveValidator{}
+	}
 }
 
 // VerifyTestEvidence performs the complete verification
@@ -56,8 +151,8 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 
 	fmt.Printf("[VERIFY] Found %d acceptance criteria in ticket\n", len(criteria))
 
-	// 2. Parse criteria verifications from review body
-	verifications, err := ParseCriteriaVerifications(opts.ReviewBody)
+	// 2. Parse criteria verifications from review body (with language-aware validation)
+	verifications, err := ParseCriteriaVerifications(opts.ReviewBody, opts.Language)
 	if err != nil {
 		return &EvidenceError{
 			Code:    1,
@@ -142,11 +237,10 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 		if failedTests[v.TestName] {
 			missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
 		} else {
-			// Provide more specific diagnostic for why test was not found
-			if strings.Contains(v.TestName, " ") {
-				missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: contains spaces, must be function name like TestXxx)", v.TestName))
-			} else if !strings.HasPrefix(v.TestName, "Test") {
-				missingTests = append(missingTests, fmt.Sprintf("%s (invalid format: must start with 'Test')", v.TestName))
+			// Provide language-aware diagnostic for why test was not found
+			validator := GetTestNameValidator(opts.Language)
+			if !validator.IsValid(v.TestName) {
+				missingTests = append(missingTests, fmt.Sprintf("%s (invalid format for %s: expected %s)", v.TestName, opts.Language, validator.FormatHint()))
 			} else {
 				// Find similar tests to provide better diagnostics
 				similar := findSimilarTests(v.TestName, passedTests, 0.5)
@@ -200,14 +294,14 @@ func ParseAcceptanceCriteria(ticket string) []string {
 }
 
 // ParseCriteriaVerifications parses the review body to extract verifications
-func ParseCriteriaVerifications(reviewBody string) ([]CriteriaVerification, error) {
+func ParseCriteriaVerifications(reviewBody, language string) ([]CriteriaVerification, error) {
 	var verifications []CriteriaVerification
 
 	// Parse Implementation Review section
 	implementations := parseImplementationReview(reviewBody)
 
-	// Parse Test Review table
-	testMappings, err := parseTestReviewTable(reviewBody)
+	// Parse Test Review table with language-aware validation
+	testMappings, err := parseTestReviewTable(reviewBody, language)
 	if err != nil {
 		return nil, err
 	}
@@ -258,12 +352,22 @@ type testMapping struct {
 	Assertion string
 }
 
-// isValidTestName checks if a test name is a valid Go test function name
+// isValidTestNameForLanguage validates test name using language-specific rules
+func isValidTestNameForLanguage(name, language string) bool {
+	validator := GetTestNameValidator(language)
+	return validator.IsValid(name)
+}
+
+// isValidTestName validates test name using Go format (for backward compatibility)
+// Deprecated: Use isValidTestNameForLanguage instead
 func isValidTestName(name string) bool {
-	// Go test function names: start with Test, contain only alphanumeric and underscore
-	// Optionally support subtest format TestName/SubTest
-	matched, _ := regexp.MatchString(`^Test[A-Za-z0-9_]*(/[A-Za-z0-9_]+)?$`, name)
-	return matched
+	return isValidTestNameForLanguage(name, "go")
+}
+
+// getTestNameFormatHint returns format hint for the given language
+func getTestNameFormatHint(language string) string {
+	validator := GetTestNameValidator(language)
+	return validator.FormatHint()
 }
 
 func parseImplementationReview(body string) map[string]string {
@@ -323,7 +427,7 @@ func extractImplementationLogic(content string) string {
 	return ""
 }
 
-func parseTestReviewTable(body string) ([]testMapping, error) {
+func parseTestReviewTable(body, language string) ([]testMapping, error) {
 	var mappings []testMapping
 
 	// Find Test Review section
@@ -365,9 +469,9 @@ func parseTestReviewTable(body string) ([]testMapping, error) {
 			}
 
 			if criteria != "" && testName != "" {
-				// Validate test name format
-				if !isValidTestName(testName) {
-					return nil, fmt.Errorf("invalid test name in review table: %q (must be Go test function like TestXxx)", testName)
+				// Validate test name format using language-specific validator
+				if !isValidTestNameForLanguage(testName, language) {
+					return nil, fmt.Errorf("invalid test name in review table: %q (expected: %s)", testName, getTestNameFormatHint(language))
 				}
 
 				mappings = append(mappings, testMapping{

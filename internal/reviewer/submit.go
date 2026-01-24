@@ -26,6 +26,7 @@ type SubmitReviewOptions struct {
 	StateRoot    string
 	WorktreePath string        // Path to worktree for test execution
 	TestCommand  string        // Command to run tests
+	Language     string        // Programming language for test name validation
 	Ticket       string        // Issue body with acceptance criteria
 	GHTimeout    time.Duration
 	TestTimeout  time.Duration
@@ -132,15 +133,22 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		opts.WorktreePath = filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueNumber))
 	}
 
-	// Get test command if not provided
-	if opts.TestCommand == "" {
-		opts.TestCommand = getTestCommand(opts.StateRoot, opts.IssueNumber)
+	// Get test command and language if not provided
+	if opts.TestCommand == "" || opts.Language == "" {
+		settings := getRepoSettingsFromConfig(opts.StateRoot, opts.WorktreePath)
+		if opts.TestCommand == "" {
+			opts.TestCommand = settings.TestCommand
+		}
+		if opts.Language == "" {
+			opts.Language = settings.Language
+		}
 	}
 
 	// Verify evidence using new test-based verification
 	fmt.Printf("[REVIEW] Starting verification...\n")
 	fmt.Printf("[REVIEW] Worktree: %s\n", opts.WorktreePath)
 	fmt.Printf("[REVIEW] Test Command: %s\n", opts.TestCommand)
+	fmt.Printf("[REVIEW] Language: %s\n", opts.Language)
 
 	verifyErr := VerifyTestEvidence(ctx, VerifyOptions{
 		Ticket:       opts.Ticket,
@@ -148,6 +156,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		WorktreePath: opts.WorktreePath,
 		TestCommand:  opts.TestCommand,
 		TestTimeout:  opts.TestTimeout,
+		Language:     opts.Language,
 	})
 
 	if verifyErr != nil {

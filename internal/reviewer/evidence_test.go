@@ -20,7 +20,7 @@ func TestParseTestReviewTable_StripBackticks(t *testing.T) {
 | Deterministic ticks | ` + "`TestDeterministicTicksWithSameSeed`" + ` | assert.Equal(t, state1, state2) |
 `
 
-	mappings, err := parseTestReviewTable(reviewBody)
+	mappings, err := parseTestReviewTable(reviewBody, "go")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestParseTestReviewTable_NoBackticks(t *testing.T) {
 | Snake moves | TestMovement | assert.Equal |
 `
 
-	mappings, err := parseTestReviewTable(reviewBody)
+	mappings, err := parseTestReviewTable(reviewBody, "go")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestParseTestReviewTable_InvalidTestName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseTestReviewTable(tt.reviewBody)
+			_, err := parseTestReviewTable(tt.reviewBody, "go")
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got nil")
@@ -954,7 +954,7 @@ func TestParseCriteriaVerifications(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseCriteriaVerifications(tt.body)
+			got, err := ParseCriteriaVerifications(tt.body, "go")
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -1320,7 +1320,7 @@ func TestParseTestReviewTable_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseTestReviewTable(tt.body)
+			got, err := parseTestReviewTable(tt.body, "go")
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error but got nil")
@@ -1456,6 +1456,310 @@ func TestFuzzyMatchWithStopWords(t *testing.T) {
 			got := fuzzyMatch(tt.a, tt.b)
 			if got != tt.want {
 				t.Errorf("fuzzyMatch(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+// Tests for language-aware test name validators
+func TestGoTestValidator(t *testing.T) {
+	validator := &GoTestValidator{}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"valid simple", "TestFoo", true},
+		{"valid with underscore", "TestFoo_Bar", true},
+		{"valid with subtest", "TestFoo/SubTest", true},
+		{"valid complex", "TestFoo_Bar123", true},
+		{"invalid no Test prefix", "FooTest", false},
+		{"invalid lowercase", "testFoo", false},
+		{"invalid spaces", "Test Foo", false},
+		{"invalid empty", "", false},
+		{"invalid special chars", "Test@Foo", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validator.IsValid(tt.input)
+			if got != tt.expected {
+				t.Errorf("GoTestValidator.IsValid(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+
+	// Test format hint
+	hint := validator.FormatHint()
+	if hint == "" {
+		t.Error("GoTestValidator.FormatHint() should not be empty")
+	}
+}
+
+func TestNodeTestValidator(t *testing.T) {
+	validator := &NodeTestValidator{}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"valid natural language", "renders component correctly", true},
+		{"valid with spaces", "should handle empty input", true},
+		{"valid single word", "works", true},
+		{"valid camelCase", "rendersLobbyShell", true},
+		{"invalid empty", "", false},
+		{"invalid N/A", "N/A", false},
+		{"invalid All test", "All test functions", false},
+		{"invalid test in file", "test in file.go", false},
+		{"invalid TODO", "TODO: fix this", false},
+		{"invalid SKIP", "SKIP: not implemented", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validator.IsValid(tt.input)
+			if got != tt.expected {
+				t.Errorf("NodeTestValidator.IsValid(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+
+	// Test format hint
+	hint := validator.FormatHint()
+	if hint == "" {
+		t.Error("NodeTestValidator.FormatHint() should not be empty")
+	}
+}
+
+func TestPythonTestValidator(t *testing.T) {
+	validator := &PythonTestValidator{}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"valid test_function", "test_foo", true},
+		{"valid test_with_underscores", "test_foo_bar", true},
+		{"valid TestClass", "TestFoo", true},
+		{"valid TestClass::method", "TestFoo::test_bar", true},
+		{"valid path::test", "tests/test_foo.py::test_bar", true},
+		{"invalid empty", "", false},
+		{"invalid camelCase", "testFoo", false},
+		{"invalid no test prefix", "foo_test", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validator.IsValid(tt.input)
+			if got != tt.expected {
+				t.Errorf("PythonTestValidator.IsValid(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+
+	// Test format hint
+	hint := validator.FormatHint()
+	if hint == "" {
+		t.Error("PythonTestValidator.FormatHint() should not be empty")
+	}
+}
+
+func TestPermissiveValidator(t *testing.T) {
+	validator := &PermissiveValidator{}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"valid any string", "anything goes here", true},
+		{"valid numbers", "test123", true},
+		{"valid unicode", "測試案例", true},
+		{"valid special chars", "test@foo#bar", true},
+		{"invalid empty", "", false},
+		{"invalid N/A", "N/A", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validator.IsValid(tt.input)
+			if got != tt.expected {
+				t.Errorf("PermissiveValidator.IsValid(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+
+	// Test format hint
+	hint := validator.FormatHint()
+	if hint == "" {
+		t.Error("PermissiveValidator.FormatHint() should not be empty")
+	}
+}
+
+func TestGetTestNameValidator(t *testing.T) {
+	tests := []struct {
+		language string
+	}{
+		{"go"},
+		{"golang"},
+		{"node"},
+		{"nodejs"},
+		{"typescript"},
+		{"javascript"},
+		{"ts"},
+		{"js"},
+		{"python"},
+		{"py"},
+		{"unknown"},
+		{"rust"},
+		{""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.language, func(t *testing.T) {
+			got := GetTestNameValidator(tt.language)
+			// Just check it returns a non-nil validator
+			if got == nil {
+				t.Errorf("GetTestNameValidator(%q) returned nil", tt.language)
+			}
+			// Verify it has FormatHint
+			if got.FormatHint() == "" {
+				t.Errorf("GetTestNameValidator(%q).FormatHint() should not be empty", tt.language)
+			}
+		})
+	}
+}
+
+func TestIsValidTestNameForLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		testName string
+		language string
+		expected bool
+	}{
+		// Go tests
+		{"go valid", "TestFoo", "go", true},
+		{"go invalid", "test foo", "go", false},
+		// Node tests
+		{"node valid", "renders component correctly", "node", true},
+		{"node invalid N/A", "N/A", "node", false},
+		// Python tests
+		{"python valid", "test_foo", "python", true},
+		{"python invalid", "foo", "python", false},
+		// Unknown language uses permissive
+		{"unknown valid", "anything", "unknown", true},
+		{"unknown invalid empty", "", "unknown", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isValidTestNameForLanguage(tt.testName, tt.language)
+			if got != tt.expected {
+				t.Errorf("isValidTestNameForLanguage(%q, %q) = %v, want %v", tt.testName, tt.language, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseTestReviewTable_MultiLanguage(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		language  string
+		wantCount int
+		wantErr   bool
+	}{
+		{
+			name: "Go format valid",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature works | TestFeature | assert.True |
+`,
+			language:  "go",
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name: "Go format invalid - has spaces",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature works | renders lobby shell | assert.True |
+`,
+			language:  "go",
+			wantCount: 0,
+			wantErr:   true,
+		},
+		{
+			name: "Node format valid - natural language",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature works | renders lobby shell with controls | expect(screen).toBeDefined |
+`,
+			language:  "node",
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name: "Node format invalid - N/A",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature works | N/A | none |
+`,
+			language:  "node",
+			wantCount: 0,
+			wantErr:   true,
+		},
+		{
+			name: "Python format valid",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature works | test_feature | assert result == expected |
+`,
+			language:  "python",
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name: "Unknown language - permissive",
+			body: `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature works | any_test_name_123 | assert something |
+`,
+			language:  "rust",
+			wantCount: 1,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTestReviewTable(tt.body, tt.language)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if len(got) != tt.wantCount {
+					t.Errorf("parseTestReviewTable() returned %d mappings, want %d", len(got), tt.wantCount)
+				}
 			}
 		})
 	}

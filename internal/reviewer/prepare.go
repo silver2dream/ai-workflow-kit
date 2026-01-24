@@ -31,6 +31,7 @@ type ReviewContext struct {
 	ReviewDir          string `json:"review_dir"`
 	WorktreePath       string `json:"worktree_path"`
 	TestCommand        string `json:"test_command"`
+	Language           string `json:"language"` // Programming language for test name validation
 	Ticket             string `json:"ticket,omitempty"`    // Issue body with acceptance criteria
 	IssueJSON          string `json:"issue_json,omitempty"`
 	TaskContent        string `json:"task_content,omitempty"`
@@ -94,8 +95,10 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 	// 7. Fetch commits
 	rc.CommitsJSON = fetchPRCommits(ctx, opts.PRNumber, opts.GHTimeout)
 
-	// 8. Get test command from workflow.yaml
-	rc.TestCommand = getTestCommandFromConfig(opts.StateRoot, rc.WorktreePath)
+	// 8. Get test command and language from workflow.yaml
+	settings := getRepoSettingsFromConfig(opts.StateRoot, rc.WorktreePath)
+	rc.TestCommand = settings.TestCommand
+	rc.Language = settings.Language
 
 	return rc, nil
 }
@@ -149,50 +152,67 @@ type workflowConfig struct {
 }
 
 type repoConfig struct {
-	Name   string       `yaml:"name"`
-	Path   string       `yaml:"path"`
-	Type   string       `yaml:"type"`
-	Verify verifyConfig `yaml:"verify"`
+	Name     string       `yaml:"name"`
+	Path     string       `yaml:"path"`
+	Type     string       `yaml:"type"`
+	Language string       `yaml:"language"`
+	Verify   verifyConfig `yaml:"verify"`
 }
 
 type verifyConfig struct {
 	Test string `yaml:"test"`
 }
 
-// getTestCommandFromConfig extracts test command from workflow.yaml
-// For directory-type repos, returns "cd <path> && <test_command>"
-func getTestCommandFromConfig(stateRoot, worktreePath string) string {
+// repoSettings holds test command and language from workflow.yaml
+type repoSettings struct {
+	TestCommand string
+	Language    string
+}
+
+// getRepoSettingsFromConfig extracts test command and language from workflow.yaml
+// For directory-type repos, test command returns "cd <path> && <test_command>"
+func getRepoSettingsFromConfig(stateRoot, worktreePath string) repoSettings {
 	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
 	content, err := os.ReadFile(configPath)
 	if err != nil {
-		return "go test -v ./..."
+		return repoSettings{TestCommand: "go test -v ./...", Language: "go"}
 	}
 
 	var cfg workflowConfig
 	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return "go test -v ./..."
+		return repoSettings{TestCommand: "go test -v ./...", Language: "go"}
 	}
 
-	// Try to match repo based on worktree path or return first repo's test command
+	// Try to match repo based on worktree path
 	for _, repo := range cfg.Repos {
-		if repo.Verify.Test != "" {
-			// If worktree contains repo path, use this repo's test command
-			if worktreePath != "" && worktreePath != "NOT_FOUND" {
-				if strings.Contains(worktreePath, repo.Path) || strings.Contains(worktreePath, repo.Name) {
-					return buildTestCommand(repo.Path, repo.Type, repo.Verify.Test)
+		if worktreePath != "" && worktreePath != "NOT_FOUND" {
+			if strings.Contains(worktreePath, repo.Path) || strings.Contains(worktreePath, repo.Name) {
+				return repoSettings{
+					TestCommand: buildTestCommand(repo.Path, repo.Type, repo.Verify.Test),
+					Language:    repo.Language,
 				}
 			}
 		}
 	}
 
-	// Return first repo's test command if available
+	// Return first repo's settings if available
 	for _, repo := range cfg.Repos {
 		if repo.Verify.Test != "" {
-			return buildTestCommand(repo.Path, repo.Type, repo.Verify.Test)
+			return repoSettings{
+				TestCommand: buildTestCommand(repo.Path, repo.Type, repo.Verify.Test),
+				Language:    repo.Language,
+			}
 		}
 	}
 
-	return "go test -v ./..."
+	return repoSettings{TestCommand: "go test -v ./...", Language: "go"}
+}
+
+// getTestCommandFromConfig extracts test command from workflow.yaml
+// For directory-type repos, returns "cd <path> && <test_command>"
+// Deprecated: Use getRepoSettingsFromConfig instead for access to both test command and language
+func getTestCommandFromConfig(stateRoot, worktreePath string) string {
+	return getRepoSettingsFromConfig(stateRoot, worktreePath).TestCommand
 }
 
 // buildTestCommand constructs test command with proper directory handling
@@ -253,6 +273,7 @@ func (rc *ReviewContext) FormatOutput() string {
 	sb.WriteString(fmt.Sprintf("CI_STATUS: %s\n", rc.CIStatus))
 	sb.WriteString(fmt.Sprintf("WORKTREE_PATH: %s\n", rc.WorktreePath))
 	sb.WriteString(fmt.Sprintf("TEST_COMMAND: %s\n", rc.TestCommand))
+	sb.WriteString(fmt.Sprintf("LANGUAGE: %s\n", rc.Language))
 	sb.WriteString("============================================================\n\n")
 
 	// Ticket with acceptance criteria
