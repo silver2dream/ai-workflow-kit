@@ -124,9 +124,20 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		if prNumber > 0 {
 			attempts := a.getReviewAttempts(prNumber)
 			if attempts < MaxReviewAttempts {
+				// Try to persist the incremented attempt count BEFORE allowing retry
+				// This prevents infinite loops if we can't track attempts
+				if err := a.incrementReviewAttempts(prNumber); err != nil {
+					// Cannot persist attempt count - escalate to human to prevent infinite loop
+					a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.ReviewFailed})
+					return &Decision{
+						NextAction:  ActionNone,
+						IssueNumber: issue.Number,
+						PRNumber:    prNumber,
+						ExitReason:  ReasonNeedsHumanReview,
+					}, nil
+				}
 				// Allow new subagent to retry
 				a.updateIssueLabels(ctx, issue.Number, []string{labels.PRReady}, []string{labels.ReviewFailed})
-				a.incrementReviewAttempts(prNumber)
 				return &Decision{
 					NextAction:  ActionReviewPR,
 					IssueNumber: issue.Number,
@@ -416,12 +427,17 @@ func (a *Analyzer) getReviewAttempts(prNumber int) int {
 }
 
 // incrementReviewAttempts increments the review attempt count for a PR
-func (a *Analyzer) incrementReviewAttempts(prNumber int) {
+// Returns error if the attempt count cannot be persisted (which could cause infinite retry loops)
+func (a *Analyzer) incrementReviewAttempts(prNumber int) error {
 	attemptFile := filepath.Join(a.StateRoot, ".ai", "state", "attempts", "review-pr-"+strconv.Itoa(prNumber))
 
 	count := a.getReviewAttempts(prNumber) + 1
 	// Use atomic write to prevent corruption
-	_ = writeFileAtomic(attemptFile, []byte(strconv.Itoa(count)), 0644)
+	if err := writeFileAtomic(attemptFile, []byte(strconv.Itoa(count)), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] error: failed to persist review attempt count for PR #%d: %v\n", prNumber, err)
+		return err
+	}
+	return nil
 }
 
 // updateIssueLabels is a helper that logs warnings if label operations fail.
