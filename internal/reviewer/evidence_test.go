@@ -1414,6 +1414,105 @@ func TestParseTestResults_NodeFormat(t *testing.T) {
 	}
 }
 
+// Test for ParseTestResults with Vitest format
+func TestParseTestResults_VitestFormat(t *testing.T) {
+	tests := []struct {
+		name           string
+		output         string
+		expectedPassed []string
+		expectedFailed []string
+	}{
+		{
+			name: "vitest verbose pass format",
+			output: ` ✓ __tests__/math.test.ts > addition > 2 + 2 should equal 4 1ms
+ ✓ __tests__/math.test.ts > addition > 3 + 3 should equal 6 2ms
+ ✓ __tests__/string.test.ts > concat > joins strings 1ms`,
+			expectedPassed: []string{
+				"2_+_2_should_equal_4",
+				"3_+_3_should_equal_6",
+				"joins_strings",
+				"addition/2_+_2_should_equal_4",
+				"addition/3_+_3_should_equal_6",
+				"concat/joins_strings",
+			},
+			expectedFailed: []string{},
+		},
+		{
+			name: "vitest verbose fail format",
+			output: ` ✕ __tests__/math.test.ts > subtraction > 5 - 3 should equal 2 5ms`,
+			expectedPassed: []string{},
+			expectedFailed: []string{
+				"5_-_3_should_equal_2",
+				"subtraction/5_-_3_should_equal_2",
+			},
+		},
+		{
+			name: "vitest default pass format",
+			output: ` ✓ test/example.test.ts (5 tests) 306ms
+ ✓ src/utils.test.js (3 tests | 1 skipped) 150ms`,
+			expectedPassed: []string{
+				"test/example.test.ts",
+				"src/utils.test.js",
+			},
+			expectedFailed: []string{},
+		},
+		{
+			name: "vitest default fail format",
+			output: ` ✕ test/broken.test.ts (2 failed) 100ms`,
+			expectedPassed: []string{},
+			expectedFailed: []string{
+				"test/broken.test.ts",
+			},
+		},
+		{
+			name: "vitest mixed verbose and summary",
+			output: ` ✓ __tests__/api.test.ts > GET /users > returns user list 10ms
+ ✓ __tests__/api.test.ts > POST /users > creates new user 15ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  1.26s`,
+			expectedPassed: []string{
+				"returns_user_list",
+				"creates_new_user",
+				"GET_/users/returns_user_list",
+				"POST_/users/creates_new_user",
+			},
+			expectedFailed: []string{},
+		},
+		{
+			name: "vitest with tsx files",
+			output: ` ✓ components/Button.test.tsx > Button > renders correctly 5ms
+ ✓ components/Input.test.jsx > Input > handles change 3ms`,
+			expectedPassed: []string{
+				"renders_correctly",
+				"handles_change",
+				"Button/renders_correctly",
+				"Input/handles_change",
+			},
+			expectedFailed: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			passed, failed := ParseTestResults(tt.output)
+
+			for _, name := range tt.expectedPassed {
+				if !passed[name] {
+					t.Errorf("expected %q to be in passed tests, got passed=%v", name, passed)
+				}
+			}
+
+			for _, name := range tt.expectedFailed {
+				if !failed[name] {
+					t.Errorf("expected %q to be in failed tests, got failed=%v", name, failed)
+				}
+			}
+		})
+	}
+}
+
 // Test for EvidenceError
 func TestEvidenceError_Fields(t *testing.T) {
 	err := &EvidenceError{
