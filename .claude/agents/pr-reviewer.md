@@ -19,7 +19,12 @@ You will receive PR number and Issue number.
 awkit prepare-review --pr $PR_NUMBER --issue $ISSUE_NUMBER
 ```
 
-Record the output:
+**CRITICAL ERROR HANDLING:**
+- If this command **fails** (returns error), **IMMEDIATELY** return `review_blocked` to Principal with the error message
+- Common failure: "worktree not found" - this means the worktree doesn't exist and review cannot proceed
+- **DO NOT** attempt to retry or work around the error
+
+If successful, record the output:
 - `CI_STATUS`: passed or failed
 - `WORKTREE_PATH`: worktree path
 - `TEST_COMMAND`: command to run tests

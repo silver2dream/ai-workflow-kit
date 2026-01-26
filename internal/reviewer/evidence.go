@@ -589,18 +589,75 @@ func ParseTestResults(output string) (passed map[string]bool, failed map[string]
 		}
 	}
 
-	// Node/Jest format: "✓ test name" or "✕ test name"
-	nodePassRe := regexp.MustCompile(`✓\s+(.+)`)
-	nodeFailRe := regexp.MustCompile(`✕\s+(.+)`)
+	// Vitest verbose format: "✓ file.test.ts > describe > test name 1ms"
+	// Extract the last segment (actual test name) from the chain
+	vitestVerboseRe := regexp.MustCompile(`✓\s+\S+\.test\.[jt]sx?\s*>\s*(.+?)\s+\d+m?s`)
+	vitestVerboseFailRe := regexp.MustCompile(`✕\s+\S+\.test\.[jt]sx?\s*>\s*(.+?)\s+\d+m?s`)
 
-	for _, m := range nodePassRe.FindAllStringSubmatch(output, -1) {
-		// Convert to function-like name
-		name := strings.ReplaceAll(strings.TrimSpace(m[1]), " ", "_")
+	for _, m := range vitestVerboseRe.FindAllStringSubmatch(output, -1) {
+		// Get the full path after file name (e.g., "describe > test name")
+		fullPath := strings.TrimSpace(m[1])
+		// Extract the last segment as the test name
+		parts := strings.Split(fullPath, ">")
+		testName := strings.TrimSpace(parts[len(parts)-1])
+		name := strings.ReplaceAll(testName, " ", "_")
 		passed[name] = true
+		// Also store the full path for better matching
+		fullName := strings.ReplaceAll(strings.ReplaceAll(fullPath, " > ", "/"), " ", "_")
+		passed[fullName] = true
 	}
-	for _, m := range nodeFailRe.FindAllStringSubmatch(output, -1) {
-		name := strings.ReplaceAll(strings.TrimSpace(m[1]), " ", "_")
+	for _, m := range vitestVerboseFailRe.FindAllStringSubmatch(output, -1) {
+		fullPath := strings.TrimSpace(m[1])
+		parts := strings.Split(fullPath, ">")
+		testName := strings.TrimSpace(parts[len(parts)-1])
+		name := strings.ReplaceAll(testName, " ", "_")
 		failed[name] = true
+		fullName := strings.ReplaceAll(strings.ReplaceAll(fullPath, " > ", "/"), " ", "_")
+		failed[fullName] = true
+	}
+
+	// Vitest default format: "✓ file.test.ts (5 tests) 306ms"
+	// This indicates all tests in the file passed
+	vitestDefaultPassRe := regexp.MustCompile(`✓\s+(\S+\.test\.[jt]sx?)\s+\((\d+)\s+tests?`)
+	vitestDefaultFailRe := regexp.MustCompile(`✕\s+(\S+\.test\.[jt]sx?)\s+\((\d+)`)
+
+	for _, m := range vitestDefaultPassRe.FindAllStringSubmatch(output, -1) {
+		fileName := m[1]
+		// Mark file-level pass (useful for fuzzy matching)
+		passed[fileName] = true
+		// Also create a normalized version
+		baseName := strings.TrimSuffix(strings.TrimSuffix(fileName, ".ts"), ".test")
+		baseName = strings.TrimSuffix(strings.TrimSuffix(baseName, ".js"), ".test")
+		passed[baseName] = true
+	}
+	for _, m := range vitestDefaultFailRe.FindAllStringSubmatch(output, -1) {
+		fileName := m[1]
+		failed[fileName] = true
+		baseName := strings.TrimSuffix(strings.TrimSuffix(fileName, ".ts"), ".test")
+		baseName = strings.TrimSuffix(strings.TrimSuffix(baseName, ".js"), ".test")
+		failed[baseName] = true
+	}
+
+	// Node/Jest format: "✓ test name" or "✕ test name"
+	// Only match lines that don't look like Vitest format (no file.test.ts pattern)
+	nodePassRe := regexp.MustCompile(`✓\s+([^>\n]+)$`)
+	nodeFailRe := regexp.MustCompile(`✕\s+([^>\n]+)$`)
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		// Skip if it looks like Vitest format (contains .test.ts or .test.js)
+		if strings.Contains(line, ".test.ts") || strings.Contains(line, ".test.js") ||
+			strings.Contains(line, ".test.tsx") || strings.Contains(line, ".test.jsx") {
+			continue
+		}
+		if m := nodePassRe.FindStringSubmatch(line); m != nil {
+			name := strings.ReplaceAll(strings.TrimSpace(m[1]), " ", "_")
+			passed[name] = true
+		}
+		if m := nodeFailRe.FindStringSubmatch(line); m != nil {
+			name := strings.ReplaceAll(strings.TrimSpace(m[1]), " ", "_")
+			failed[name] = true
+		}
 	}
 
 	return passed, failed

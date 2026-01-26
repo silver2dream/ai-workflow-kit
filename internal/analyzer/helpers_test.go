@@ -101,14 +101,18 @@ func TestIncrementReviewAttempts(t *testing.T) {
 	a := New(tmpDir, nil)
 
 	// Increment from 0
-	a.incrementReviewAttempts(200)
+	if err := a.incrementReviewAttempts(200); err != nil {
+		t.Fatalf("First increment failed: %v", err)
+	}
 	count := a.getReviewAttempts(200)
 	if count != 1 {
 		t.Errorf("After first increment, count = %d, want 1", count)
 	}
 
 	// Increment again
-	a.incrementReviewAttempts(200)
+	if err := a.incrementReviewAttempts(200); err != nil {
+		t.Fatalf("Second increment failed: %v", err)
+	}
 	count = a.getReviewAttempts(200)
 	if count != 2 {
 		t.Errorf("After second increment, count = %d, want 2", count)

@@ -331,6 +331,13 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if trace != nil {
 		trace.StepStart("preflight")
 	}
+
+	// Auto-clean root repository before checking dirty state (Issue #122 fix)
+	// This handles leftover changes from previous failed Worker executions
+	if err := autoCleanRootRepository(ctx, stateRoot, opts.GitTimeout, logger.Log); err != nil {
+		logger.Log("WARNING: auto-clean failed: %v (proceeding with dirty check)", err)
+	}
+
 	if dirty, details := isWorkingTreeDirty(ctx, stateRoot); dirty {
 		runErr = fmt.Errorf("working tree not clean")
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "preflight", runErr.Error())
@@ -1283,6 +1290,47 @@ func isWorkingTreeDirty(ctx context.Context, dir string) (bool, string) {
 		return false, ""
 	}
 	return true, output
+}
+
+// autoCleanRootRepository cleans the root repository before preflight check.
+// This handles leftover changes from previous failed Worker executions.
+// It performs: remove index.lock, git reset --hard HEAD, git clean -fd
+func autoCleanRootRepository(ctx context.Context, stateRoot string, timeout time.Duration, logf func(string, ...interface{})) error {
+	// Step 1: Remove stale index lock
+	lockPath := filepath.Join(stateRoot, ".git", "index.lock")
+	if _, err := os.Stat(lockPath); err == nil {
+		if err := os.Remove(lockPath); err != nil {
+			if logf != nil {
+				logf("WARNING: failed to remove index.lock: %v", err)
+			}
+		} else if logf != nil {
+			logf("Removed stale .git/index.lock")
+		}
+	}
+
+	// Step 2: Check if working tree is dirty before cleaning
+	dirty, details := isWorkingTreeDirty(ctx, stateRoot)
+	if !dirty {
+		return nil // Nothing to clean
+	}
+	if logf != nil {
+		logf("Auto-cleaning dirty working tree: %s", details)
+	}
+
+	// Step 3: Hard reset to HEAD (discard staged and unstaged changes)
+	if err := runGit(ctx, stateRoot, timeout, "reset", "--hard", "HEAD"); err != nil {
+		return fmt.Errorf("git reset --hard failed: %w", err)
+	}
+
+	// Step 4: Clean untracked files and directories
+	if err := runGit(ctx, stateRoot, timeout, "clean", "-fd"); err != nil {
+		return fmt.Errorf("git clean -fd failed: %w", err)
+	}
+
+	if logf != nil {
+		logf("Successfully cleaned root repository")
+	}
+	return nil
 }
 
 func appendGitStatusDiff(ctx context.Context, wtDir, summaryFile string) {

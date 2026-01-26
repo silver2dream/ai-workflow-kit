@@ -32,6 +32,13 @@ type WorktreeInfo struct {
 func SetupWorktree(ctx context.Context, opts WorktreeOptions) (*WorktreeInfo, error) {
 	wtDir := filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueID))
 	if _, err := os.Stat(wtDir); err == nil {
+		// Clean worktree on reuse to prevent "working tree not clean" errors (Issue #122)
+		if cleanErr := cleanWorktree(ctx, wtDir, opts.GitTimeout, opts.Logf); cleanErr != nil {
+			// Log warning but continue - cleanup is best effort
+			if opts.Logf != nil {
+				opts.Logf("WARNING: failed to clean existing worktree: %v", cleanErr)
+			}
+		}
 		return &WorktreeInfo{
 			WorktreeDir: wtDir,
 			WorkDir:     resolveWorkDir(wtDir, opts.RepoType, opts.RepoPath),
@@ -175,4 +182,35 @@ func ensureWorktreeBranch(ctx context.Context, root, branch, baseBranch string, 
 		return runGit(ctx, root, timeout, "branch", branch, "origin/"+branch)
 	}
 	return runGit(ctx, root, timeout, "branch", branch, baseBranch)
+}
+
+// cleanWorktree resets and cleans the worktree to remove leftover changes.
+// This prevents "working tree not clean" errors when reusing worktrees (Issue #122).
+func cleanWorktree(ctx context.Context, wtDir string, timeout time.Duration, logf func(string, ...interface{})) error {
+	// Step 1: Remove stale index lock if present
+	lockPath := filepath.Join(wtDir, ".git", "index.lock")
+	if _, err := os.Stat(lockPath); err == nil {
+		if rmErr := os.Remove(lockPath); rmErr != nil {
+			if logf != nil {
+				logf("WARNING: failed to remove worktree index.lock: %v", rmErr)
+			}
+		} else if logf != nil {
+			logf("Removed stale worktree index.lock")
+		}
+	}
+
+	// Step 2: Hard reset to HEAD to discard staged/unstaged changes
+	if err := runGit(ctx, wtDir, timeout, "reset", "--hard", "HEAD"); err != nil {
+		return fmt.Errorf("git reset --hard failed: %w", err)
+	}
+
+	// Step 3: Clean untracked files and directories
+	if err := runGit(ctx, wtDir, timeout, "clean", "-fd"); err != nil {
+		return fmt.Errorf("git clean -fd failed: %w", err)
+	}
+
+	if logf != nil {
+		logf("Cleaned worktree: %s", wtDir)
+	}
+	return nil
 }

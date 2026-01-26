@@ -74,12 +74,13 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 		return nil, fmt.Errorf("failed to create review directory: %w", err)
 	}
 
-	// 4. Check worktree path
+	// 4. Check worktree path - fail fast if worktree doesn't exist
+	// This prevents pr-reviewer agent from attempting to cd to non-existent directory
 	wtPath := filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueNumber))
 	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
 		rc.WorktreePath = wtPath
 	} else {
-		rc.WorktreePath = "NOT_FOUND"
+		return nil, fmt.Errorf("worktree not found for issue #%d: expected at %s", opts.IssueNumber, wtPath)
 	}
 
 	// 5. Fetch issue details (ticket with acceptance criteria)
