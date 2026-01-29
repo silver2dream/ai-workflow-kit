@@ -218,6 +218,17 @@ func processResult(ctx context.Context, opts CheckResultOptions, result *IssueRe
 			PRNumber: prNumStr,
 		}, nil
 
+	case "success_no_changes":
+		// Task completed successfully but no code changes were needed
+		_ = ResetConsecutiveFailures(opts.StateRoot)
+		_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"completed"}, []string{"in-progress"})
+		_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber,
+			"Worker completed successfully. No code changes were required for this task.")
+
+		return &CheckResultOutput{
+			Status: "success_no_changes",
+		}, nil
+
 	case "failed", "crashed", "timeout":
 		// Check retry count (AttemptGuard already incremented before worker started)
 		failCount := ReadFailCount(opts.StateRoot, opts.IssueNumber)
