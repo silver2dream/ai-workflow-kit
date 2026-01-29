@@ -773,14 +773,15 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		consistencyStatus = submoduleState.ConsistencyStatus
 	} else {
 		if err := runGit(ctx, wtDir, opts.GitTimeout, "diff", "--cached", "--quiet"); err == nil {
-			runErr = fmt.Errorf("no changes staged")
-			result.Error = runErr.Error()
+			// No staged changes - but if codex succeeded and tests passed, this is success_no_changes
+			// (task was completed without requiring code changes)
 			if trace != nil {
-				_ = trace.StepEnd("failed", "no changes staged", nil)
+				_ = trace.StepEnd("success", "no changes needed", nil)
 			}
+			result.Status = "success_no_changes"
 			_ = writeIssueResult(ctx, stateRoot, issueResultContext{
 				IssueID:               opts.IssueID,
-				Status:                "failed",
+				Status:                "success_no_changes",
 				RepoName:              repoName,
 				RepoType:              repoType,
 				RepoPath:              repoPath,
@@ -789,8 +790,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 				Branch:                branch,
 				BaseBranch:            prBase,
 				SummaryFile:           summaryFile,
-				ErrorMessage:          runErr.Error(),
-				FailureStage:          "git_commit",
 				WorkerSessionID:       workerSessionID,
 				AttemptNumber:         attemptInfo.AttemptNumber,
 				PreviousSessionIDs:    attemptInfo.PreviousSessionIDs,
@@ -803,7 +802,8 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 				TaskLine:              resolveTaskLine(meta),
 			})
 			resultWritten = true
-			return result, runErr
+			// Return success (no error) for success_no_changes
+			return result, nil
 		}
 
 		if err := runGit(ctx, wtDir, opts.GitTimeout, "commit", "-m", commitMsg); err != nil {

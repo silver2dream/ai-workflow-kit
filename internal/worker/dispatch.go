@@ -387,6 +387,10 @@ PR 分支落後 base branch，請執行以下步驟：
 		return handleWorkerSuccess(ctx, opts, logger, ghClient, result)
 	}
 
+	if result.Status == "success_no_changes" {
+		return handleWorkerSuccessNoChanges(ctx, opts, logger, ghClient, result)
+	}
+
 	return handleWorkerFailure(ctx, opts, logger, ghClient, meta, result.Status)
 }
 
@@ -477,6 +481,39 @@ func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *Disp
 	return &DispatchOutput{
 		Status: "success",
 		PRURL:  result.PRURL,
+	}, nil
+}
+
+// handleWorkerSuccessNoChanges handles successful worker execution that didn't require code changes
+func handleWorkerSuccessNoChanges(ctx context.Context, opts DispatchOptions, logger *DispatchLogger, ghClient *GitHubClient, result *IssueResult) (*DispatchOutput, error) {
+	logger.Log("✓ Worker 成功完成 (無需程式碼變更)")
+
+	// Update labels: remove in-progress, add completed
+	if err := ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"completed"}, []string{"in-progress"}); err != nil {
+		logger.Log("⚠ 無法更新 Issue 標籤: %v", err)
+	} else {
+		logger.Log("✓ Issue 標籤已更新 (in-progress → completed)")
+	}
+
+	// Post comment explaining the result
+	comment := "Worker 已成功完成任務，但無需修改程式碼。\n\n" +
+		"可能的原因：\n" +
+		"- 任務已經完成\n" +
+		"- 程式碼已符合要求\n" +
+		"- 任務屬於調查/分析類型，無需修改程式碼"
+	if err := ghClient.CommentOnIssue(ctx, opts.IssueNumber, comment); err != nil {
+		logger.Log("⚠ 無法發送評論: %v", err)
+	}
+
+	// Record worker_completed
+	recordSessionAction(opts.StateRoot, opts.PrincipalSessionID, "worker_completed",
+		fmt.Sprintf(`{"issue_id":"%d","status":"success_no_changes"}`, opts.IssueNumber))
+
+	// Reset consecutive failures
+	_ = ResetConsecutiveFailures(opts.StateRoot)
+
+	return &DispatchOutput{
+		Status: "success_no_changes",
 	}, nil
 }
 
