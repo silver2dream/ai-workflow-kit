@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
 
 // WorktreeOptions controls worktree creation.
@@ -119,15 +121,10 @@ func ensureWorktreeDirs(stateRoot string) error {
 }
 
 func resolveWorkDir(wtDir, repoType, repoPath string) string {
-	if repoType == "root" {
+	if repoType == "root" || util.IsRootPath(repoPath) {
 		return wtDir
 	}
-	repoPath = strings.TrimSuffix(repoPath, "/")
-	repoPath = strings.TrimSuffix(repoPath, "\\")
-	if repoPath == "" || repoPath == "." {
-		return wtDir
-	}
-	return filepath.Join(wtDir, repoPath)
+	return filepath.Join(wtDir, util.NormalizePath(repoPath))
 }
 
 func finalizeWorktree(ctx context.Context, wtDir string, opts WorktreeOptions) error {

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1243,8 +1244,8 @@ func generateCIContent(repo RepoConfig, git GitConfig, templateType string) stri
 	}
 
 	workingDir := ""
-	if repo.Type == "directory" && repo.Path != "./" {
-		workingDir = strings.TrimSuffix(repo.Path, "/")
+	if repo.Type == "directory" && !util.IsRootPath(repo.Path) {
+		workingDir = util.NormalizePath(repo.Path)
 	}
 
 	var sb strings.Builder

@@ -8,6 +8,19 @@ import (
 	"time"
 )
 
+// IsRootPath checks if the given path represents a root/current directory.
+// It handles "", ".", "./", ".\", and variants with trailing slashes.
+//
+// Property 21: Consistent Root Path Detection
+// For any repo path comparison, the system SHALL use a unified function
+// to determine if a path represents the root/current directory.
+func IsRootPath(path string) bool {
+	// Normalize: convert backslashes to forward slashes and remove trailing slashes
+	normalized := strings.ReplaceAll(path, "\\", "/")
+	normalized = strings.TrimRight(normalized, "/")
+	return normalized == "" || normalized == "."
+}
+
 // NormalizePath normalizes a path for cross-platform comparison.
 // It converts backslashes to forward slashes and removes trailing slashes.
 // On Windows, it also converts the path to lowercase for case-insensitive comparison.

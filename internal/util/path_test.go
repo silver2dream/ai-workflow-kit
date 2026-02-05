@@ -5,6 +5,42 @@ import (
 	"testing"
 )
 
+// TestIsRootPath tests the IsRootPath function.
+// Property 21: Consistent Root Path Detection
+func TestIsRootPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		// Root paths (should return true)
+		{name: "empty_string", input: "", expected: true},
+		{name: "dot", input: ".", expected: true},
+		{name: "dot_slash", input: "./", expected: true},
+		{name: "dot_backslash", input: ".\\", expected: true},
+		{name: "multiple_trailing_slashes", input: ".///", expected: true},
+		{name: "single_slash", input: "/", expected: true},
+		{name: "single_backslash", input: "\\", expected: true},
+
+		// Non-root paths (should return false)
+		{name: "backend", input: "backend", expected: false},
+		{name: "backend_with_slash", input: "backend/", expected: false},
+		{name: "backend_with_backslash", input: "backend\\", expected: false},
+		{name: "relative_path", input: "./backend", expected: false},
+		{name: "nested_path", input: "backend/internal", expected: false},
+		{name: "dot_dot", input: "..", expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsRootPath(tt.input)
+			if result != tt.expected {
+				t.Errorf("IsRootPath(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 // TestCrossPlatformPathConsistency tests cross-platform path consistency.
 // Property 19: Cross-Platform Path Consistency
 func TestCrossPlatformPathConsistency(t *testing.T) {

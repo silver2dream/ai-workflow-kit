@@ -299,10 +299,10 @@ func TestGetTestCommand(t *testing.T) {
 	// Test the getTestCommand helper that uses getTestCommandFromConfig
 	tmpDir := t.TempDir()
 
-	// Without config, should return default
+	// Without config, should return empty (no longer defaults to go test)
 	cmd := getTestCommand(tmpDir, 123)
-	if cmd != "go test -v ./..." {
-		t.Errorf("default command = %q, want %q", cmd, "go test -v ./...")
+	if cmd != "" {
+		t.Errorf("default command = %q, want empty string", cmd)
 	}
 }
 
