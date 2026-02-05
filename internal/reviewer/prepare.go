@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -172,21 +173,28 @@ type repoSettings struct {
 
 // getRepoSettingsFromConfig extracts test command and language from workflow.yaml
 // For directory-type repos, test command returns "cd <path> && <test_command>"
+// Returns empty settings (TestCommand: "", Language: "unknown") if config cannot be read
+// or no matching repo is found, allowing callers to handle the fallback appropriately.
 func getRepoSettingsFromConfig(stateRoot, worktreePath string) repoSettings {
 	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
 	content, err := os.ReadFile(configPath)
 	if err != nil {
-		return repoSettings{TestCommand: "go test -v ./...", Language: "go"}
+		// Return empty/unknown settings instead of assuming Go project
+		return repoSettings{TestCommand: "", Language: "unknown"}
 	}
 
 	var cfg workflowConfig
 	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return repoSettings{TestCommand: "go test -v ./...", Language: "go"}
+		// Return empty/unknown settings instead of assuming Go project
+		return repoSettings{TestCommand: "", Language: "unknown"}
 	}
 
 	// Try to match repo based on worktree path
+	// Use Contains to find repo path or name anywhere in the worktree path
+	// This handles cases like ".worktrees/issue-1/backend" or paths containing the repo name
 	for _, repo := range cfg.Repos {
 		if worktreePath != "" && worktreePath != "NOT_FOUND" {
+			// Match if worktree contains repo path or name
 			if strings.Contains(worktreePath, repo.Path) || strings.Contains(worktreePath, repo.Name) {
 				return repoSettings{
 					TestCommand: buildTestCommand(repo.Path, repo.Type, repo.Verify.Test),
@@ -206,7 +214,8 @@ func getRepoSettingsFromConfig(stateRoot, worktreePath string) repoSettings {
 		}
 	}
 
-	return repoSettings{TestCommand: "go test -v ./...", Language: "go"}
+	// Return empty/unknown settings instead of assuming Go project
+	return repoSettings{TestCommand: "", Language: "unknown"}
 }
 
 // getTestCommandFromConfig extracts test command from workflow.yaml
@@ -219,13 +228,13 @@ func getTestCommandFromConfig(stateRoot, worktreePath string) string {
 // buildTestCommand constructs test command with proper directory handling
 // For directory-type repos (path != "./" and path != ""), prepends "cd <path> &&"
 func buildTestCommand(repoPath, repoType, testCmd string) string {
-	// Normalize path
-	path := strings.TrimSuffix(repoPath, "/")
-
-	// If root repo or no path, return command as-is
-	if path == "" || path == "." || repoType == "root" {
+	// If root repo or root path, return command as-is
+	if repoType == "root" || util.IsRootPath(repoPath) {
 		return testCmd
 	}
+
+	// Normalize path for the cd command
+	path := util.NormalizePath(repoPath)
 
 	// For directory or submodule repos, cd into the directory first
 	return fmt.Sprintf("cd %s && %s", path, testCmd)

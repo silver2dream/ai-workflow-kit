@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1102,10 +1103,11 @@ func writePromptFile(path, workDirInstruction, ticket string, issueID int, ghTim
 }
 
 func buildWorkDirInstruction(repoType, repoPath, workDir, repoName string) string {
-	repoPath = strings.TrimSuffix(repoPath, "/")
-	repoPath = strings.TrimSuffix(repoPath, "\\")
-	if repoPath == "" || repoPath == "." {
+	// Use IsRootPath for consistent root path detection
+	if util.IsRootPath(repoPath) {
 		repoPath = repoName
+	} else {
+		repoPath = util.NormalizePath(repoPath)
 	}
 
 	// Validate repoPath to prevent path traversal attacks

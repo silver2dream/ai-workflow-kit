@@ -17,7 +17,7 @@ func TestGetTestCommandFromConfig(t *testing.T) {
 			name:         "no config file",
 			configYAML:   "",
 			worktreePath: "/some/worktree",
-			want:         "go test -v ./...",
+			want:         "", // Now returns empty when config not found
 		},
 		{
 			name: "root type repo",
@@ -117,7 +117,7 @@ func TestGetTestCommandFromConfig(t *testing.T) {
 			name:         "invalid yaml",
 			configYAML:   "invalid: yaml: content: [",
 			worktreePath: "/some/path",
-			want:         "go test -v ./...",
+			want:         "", // Now returns empty when config parsing fails
 		},
 		{
 			name: "repo without test command",
@@ -129,7 +129,7 @@ func TestGetTestCommandFromConfig(t *testing.T) {
       build: "mkdocs build"
 `,
 			worktreePath: "/some/path",
-			want:         "go test -v ./...",
+			want:         "", // Now returns empty when no repo has test command
 		},
 	}
 
@@ -150,6 +150,96 @@ func TestGetTestCommandFromConfig(t *testing.T) {
 			got := getTestCommandFromConfig(tmpDir, tt.worktreePath)
 			if got != tt.want {
 				t.Errorf("getTestCommandFromConfig() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetRepoSettingsFromConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		configYAML   string
+		worktreePath string
+		wantCmd      string
+		wantLang     string
+	}{
+		{
+			name:         "no config file returns unknown language",
+			configYAML:   "",
+			worktreePath: "/some/worktree",
+			wantCmd:      "",
+			wantLang:     "unknown",
+		},
+		{
+			name:         "invalid yaml returns unknown language",
+			configYAML:   "invalid: yaml: content: [",
+			worktreePath: "/some/path",
+			wantCmd:      "",
+			wantLang:     "unknown",
+		},
+		{
+			name: "go repo returns go language",
+			configYAML: `repos:
+  - name: backend
+    path: "backend"
+    type: directory
+    language: go
+    verify:
+      test: "go test ./..."
+`,
+			worktreePath: "/some/worktree/backend",
+			wantCmd:      "cd backend && go test ./...",
+			wantLang:     "go",
+		},
+		{
+			name: "typescript repo returns typescript language",
+			configYAML: `repos:
+  - name: frontend
+    path: "frontend"
+    type: directory
+    language: typescript
+    verify:
+      test: "npm test"
+`,
+			worktreePath: "/some/worktree/frontend",
+			wantCmd:      "cd frontend && npm test",
+			wantLang:     "typescript",
+		},
+		{
+			name: "no matching repo returns unknown language",
+			configYAML: `repos:
+  - name: docs
+    path: "docs"
+    type: directory
+    verify:
+      build: "mkdocs build"
+`,
+			worktreePath: "/some/path",
+			wantCmd:      "",
+			wantLang:     "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+
+			if tt.configYAML != "" {
+				configDir := filepath.Join(tmpDir, ".ai", "config")
+				if err := os.MkdirAll(configDir, 0755); err != nil {
+					t.Fatalf("failed to create config dir: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(tt.configYAML), 0644); err != nil {
+					t.Fatalf("failed to write config: %v", err)
+				}
+			}
+
+			settings := getRepoSettingsFromConfig(tmpDir, tt.worktreePath)
+			if settings.TestCommand != tt.wantCmd {
+				t.Errorf("TestCommand = %q, want %q", settings.TestCommand, tt.wantCmd)
+			}
+			if settings.Language != tt.wantLang {
+				t.Errorf("Language = %q, want %q", settings.Language, tt.wantLang)
 			}
 		})
 	}
