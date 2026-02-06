@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -84,6 +85,9 @@ type LabelsConfig struct {
 	MergeConflict    string `yaml:"merge_conflict"`
 	NeedsRebase      string `yaml:"needs_rebase"`
 	Completed        string `yaml:"completed"`
+
+	// Deprecated: old key name, kept for backward compat with v1.0 configs
+	ReviewFail string `yaml:"review_fail,omitempty"`
 }
 
 // DefaultLabels returns default label names
@@ -112,6 +116,13 @@ func LoadConfig(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+
+	// Backward compat: support old "review_fail" key from v1.0 configs
+	if cfg.GitHub.Labels.ReviewFailed == "" && cfg.GitHub.Labels.ReviewFail != "" {
+		cfg.GitHub.Labels.ReviewFailed = cfg.GitHub.Labels.ReviewFail
+		fmt.Fprintf(os.Stderr, "warning: config uses deprecated 'review_fail' label key; run 'awkit upgrade' to migrate\n")
+	}
+	cfg.GitHub.Labels.ReviewFail = "" // clear deprecated field
 
 	// Apply defaults
 	if cfg.Specs.BasePath == "" {
