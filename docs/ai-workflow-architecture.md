@@ -168,7 +168,7 @@
 │      │                                                       │
 │      ├─► [2] Create Issue: gh issue create                   │
 │      │                                                       │
-│      ├─► [3] Dispatch: bash run_issue_codex.sh (blocking)    │
+│      ├─► [3] Dispatch: awkit run-issue (blocking)            │
 │      │       │                                               │
 │      │       └─► Codex 執行...                               │
 │      │       └─► 寫入 result.json                            │

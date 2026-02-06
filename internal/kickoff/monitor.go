@@ -186,7 +186,10 @@ func (m *IssueMonitor) poll() error {
 
 // fetchComments calls gh issue view to get comments
 func (m *IssueMonitor) fetchComments() (*IssueResponse, error) {
-	output, err := ghutil.RunWithRetry(context.Background(), ghutil.DefaultRetryConfig(), "gh", "issue", "view",
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "view",
 		fmt.Sprintf("%d", m.issueID),
 		"--json", "comments,state")
 	if err != nil {

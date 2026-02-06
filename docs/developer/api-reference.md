@@ -7,8 +7,8 @@
 >
 > | 舊腳本 | 新命令 |
 > |--------|--------|
-> | `python3 .ai/scripts/scan_repo.py` | `awkit scan-repo` |
-> | `python3 .ai/scripts/audit_project.py` | `awkit audit-project` |
+> | `python3 .ai/scripts/scan_repo.py` | (integrated into `awkit kickoff`) |
+> | `python3 .ai/scripts/audit_project.py` | (integrated into `awkit kickoff`) |
 > | `bash .ai/scripts/kickoff.sh` | `awkit kickoff` |
 > | `python3 .ai/scripts/validate_config.py` | `awkit validate` |
 
@@ -258,16 +258,19 @@ logger.error("Failed to process", {"error": str(e)})
 
 ---
 
-## scan_repo.py
+## Legacy Python Scripts (Removed)
 
-> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit scan-repo` 取代。以下內容僅供歷史參考。
+> **DEPRECATED**: The following Python scripts have been removed. Their functionality is now integrated into the `awkit` CLI. This section is preserved for historical reference only.
 
-掃描專案結構。
+### scan_repo.py
 
-### CLI
+掃描專案結構。Replaced by: `awkit kickoff` (scan is integrated into the kickoff workflow).
+
+#### CLI (removed)
 
 ```bash
-python3 .ai/scripts/scan_repo.py [--json] [--log-level LEVEL]
+# REMOVED — use `awkit kickoff` instead
+# python3 .ai/scripts/scan_repo.py [--json] [--log-level LEVEL]
 ```
 
 **參數：**
@@ -314,16 +317,15 @@ def scan_repo(root: Path) -> dict
 
 ---
 
-## audit_project.py
+### audit_project.py
 
-> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit audit-project` 取代。以下內容僅供歷史參考。
+審計專案狀態。Replaced by: `awkit kickoff` (audit is integrated into the kickoff workflow).
 
-審計專案狀態。
-
-### CLI
+#### CLI (removed)
 
 ```bash
-python3 .ai/scripts/audit_project.py [--json] [--log-level LEVEL]
+# REMOVED — use `awkit kickoff` instead
+# python3 .ai/scripts/audit_project.py [--json] [--log-level LEVEL]
 ```
 
 **輸出：** 寫入 `.ai/state/audit.json`
@@ -344,16 +346,15 @@ def audit_project(root: Path) -> dict
 
 ---
 
-## parse_tasks.py
+### parse_tasks.py
 
-> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit` CLI 取代。以下內容僅供歷史參考。
+解析 tasks.md 任務清單。Replaced by: `awkit` CLI (task parsing is integrated).
 
-解析 tasks.md 任務清單。
-
-### CLI
+#### CLI (removed)
 
 ```bash
-python3 .ai/scripts/parse_tasks.py <tasks_file> [--json] [--next] [--parallel]
+# REMOVED — use `awkit` CLI instead
+# python3 .ai/scripts/parse_tasks.py <tasks_file> [--json] [--next] [--parallel]
 ```
 
 **參數：**
@@ -415,16 +416,15 @@ def topological_sort(tasks: List[Task]) -> List[Task]
 
 ---
 
-## validate_config.py
+### validate_config.py
 
-> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit validate` 取代。以下內容僅供歷史參考。
+驗證 workflow.yaml 配置。Replaced by: `awkit validate`.
 
-驗證 workflow.yaml 配置。
-
-### CLI
+#### CLI (removed)
 
 ```bash
-python3 .ai/scripts/validate_config.py [config_path] [--log-level LEVEL]
+# REMOVED — use `awkit validate` instead
+# python3 .ai/scripts/validate_config.py [config_path] [--log-level LEVEL]
 ```
 
 **參數：**
@@ -446,16 +446,15 @@ python3 .ai/scripts/validate_config.py [config_path] [--log-level LEVEL]
 
 ---
 
-## query_traces.py
+### query_traces.py
 
-> ⚠️ **已棄用**: 此 Python 腳本已由 `awkit` CLI 取代。以下內容僅供歷史參考。
+查詢執行追蹤記錄。Replaced by: `awkit` CLI (trace querying is integrated).
 
-查詢執行追蹤記錄。
-
-### CLI
+#### CLI (removed)
 
 ```bash
-python3 .ai/scripts/query_traces.py [--issue-id ID] [--status STATUS] [--json]
+# REMOVED — use `awkit` CLI instead
+# python3 .ai/scripts/query_traces.py [--issue-id ID] [--status STATUS] [--json]
 ```
 
 **參數：**

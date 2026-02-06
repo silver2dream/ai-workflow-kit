@@ -369,7 +369,7 @@ awkit generate
 
 方法三：使用 `--dangerously-skip-permissions` flag（不推薦）
 ```bash
-claude --print --dangerously-skip-permissions < .ai/scripts/principal_boot.txt
+claude --print --dangerously-skip-permissions -p "awkit kickoff"
 ```
 
 ---
@@ -554,7 +554,8 @@ Permission denied
 
 **解決：**
 ```bash
-chmod +x .ai/scripts/*.sh
+# Ensure awkit is executable
+chmod +x "$(which awkit)"
 ```
 
 ---
