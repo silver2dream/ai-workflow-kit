@@ -13,14 +13,14 @@
 | Bash | 4.0+ | Shell 腳本 (Windows 可用 Git Bash 或 WSL) |
 | Git | 2.20+ | 版本控制 |
 
-### 可選條件 (generate.sh)
+### 可選條件 (legacy 腳本)
 
 | 工具 | 版本 | 說明 |
 |------|------|------|
-| Python | 3.8+ | 僅用於 generate.sh 腳本 |
+| Python | 3.8+ | 僅用於 legacy 腳本（生成功能已內建於 `awkit`） |
 
 ```bash
-# 僅在需要執行 generate.sh 時安裝
+# 僅在需要執行 legacy Python 腳本時安裝
 pip3 install pyyaml jsonschema jinja2
 ```
 
@@ -70,14 +70,13 @@ awkit init /path/to/your-project --preset react-go
 awkit upgrade
 
 # 重新生成輔助檔案
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 ### 方式二：手動安裝
 
 1. 複製 `.ai/` 目錄到你的專案
-2. 安裝 Python 依賴：`pip3 install pyyaml jsonschema jinja2`
-3. 執行生成腳本：`bash .ai/scripts/generate.sh`
+2. 執行生成命令：`awkit generate`
 
 ---
 
@@ -132,7 +131,7 @@ repos:
 ### 步驟 2：生成設定檔
 
 ```bash
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 這會產生：
@@ -275,6 +274,9 @@ brew install bash
 | `awkit kickoff --dry-run` | 預覽工作流程 |
 | `awkit kickoff --resume` | 從上次狀態恢復 |
 | `awkit validate` | 驗證配置 |
+| `awkit doctor` | 檢查專案健康狀態，報告問題 |
+| `awkit reset` | 重設專案狀態（支援 `--all`、`--dry-run` 等 flags） |
+| `awkit evaluate` | 執行品質評估（離線/線上 gate 檢查與評分） |
 
 ### init 選項
 
@@ -287,7 +289,7 @@ Options:
   --force             覆蓋所有現有檔案
   --force-config      只覆蓋 workflow.yaml
   --dry-run           預覽操作，不實際執行
-  --no-generate       跳過執行 generate.sh
+  --no-generate       跳過執行 awkit generate
   --project-name      覆蓋專案名稱
 ```
 
@@ -301,7 +303,7 @@ Options:
   --preset <name>     scaffold 使用的 preset
   --force             覆蓋 scaffold 檔案
   --dry-run           預覽操作，不實際執行
-  --no-generate       跳過執行 generate.sh
+  --no-generate       跳過執行 awkit generate
   --no-commit         跳過自動 commit
 ```
 

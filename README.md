@@ -76,8 +76,8 @@ More details: `docs/ai-workflow-architecture.md`.
 - `git`
 - `go` 1.25+
 
-### Offline (optional, for generate.sh only)
-- `python3` + `pyyaml` + `jsonschema` + `jinja2`
+### Offline (optional)
+- `python3` + `pyyaml` + `jsonschema` + `jinja2` (only needed for legacy scripts; generation is built into `awkit`)
 
 ### Online / E2E (optional)
 - `gh` (GitHub CLI) + `gh auth login`
@@ -90,9 +90,8 @@ More details: `docs/ai-workflow-architecture.md`.
 
 ```
 .
-├── .ai/                         # kit (scripts/templates/rules/specs)
+├── .ai/                         # kit (config/templates/rules/specs)
 │   ├── config/workflow.yaml     # main config
-│   ├── scripts/                 # automation scripts
 │   ├── templates/               # generators (CLAUDE/AGENTS/CI)
 │   ├── rules/                   # architecture + git workflow rules
 │   ├── docs/evaluate.md         # evaluation standard
@@ -166,7 +165,7 @@ Update kit files inside a project (preserves your workflow.yaml):
 
 ```bash
 awkit upgrade
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 Other update options:
@@ -182,19 +181,13 @@ awkit upgrade --force-config --preset react-go
 awkit init --preset react-go --force
 ```
 
-### 1) (Optional) Install offline dependencies for generate.sh
+### 1) Generate outputs
 
 ```bash
-pip3 install pyyaml jsonschema jinja2
+awkit generate
 ```
 
-### 2) Generate outputs
-
-```bash
-bash .ai/scripts/generate.sh
-```
-
-### 3) (Optional) Run the full workflow
+### 2) (Optional) Run the full workflow
 
 ```bash
 gh auth login
@@ -205,9 +198,7 @@ awkit kickoff              # Start the workflow
 awkit kickoff --resume     # Resume from saved state
 awkit validate             # Validate config only
 
-# Or using bash script (legacy)
-bash .ai/scripts/kickoff.sh --dry-run
-bash .ai/scripts/kickoff.sh
+# Legacy bash scripts have been removed; use awkit commands above
 ```
 
 Stop:
@@ -284,11 +275,11 @@ Root CI workflow: `.github/workflows/ci.yml`
 - `awkit upgrade` automatically migrates deprecated CI configurations (removes old `awk` job)
 
 **For this repo (awkit itself):**
-This repo ships a hand-maintained CI example. `bash .ai/scripts/generate.sh` does **not** modify workflows unless you pass `--generate-ci`.
+This repo ships a hand-maintained CI example. `awkit generate` does **not** modify workflows unless you pass `--generate-ci`.
 
 It runs:
-- AWK evaluation: `bash .ai/scripts/evaluate.sh --offline` and `--offline --strict`
-- Kit tests: `bash .ai/tests/run_all_tests.sh`
+- AWK evaluation: `awkit evaluate --offline` and `--offline --strict`
+- Kit tests: `go test ./...`
 - Backend tests: `go test ./...` (in `backend/`)
 - Frontend sanity: `frontend/Packages/manifest.json` JSON validation + folder checks
 
@@ -298,7 +289,7 @@ It runs:
 
 - For kit maintainers/CI only; regular users can skip.
 - Standard: `.ai/docs/evaluate.md`
-- Executor: `.ai/scripts/evaluate.sh`
+- Executor: `awkit evaluate`
 
 ---
 

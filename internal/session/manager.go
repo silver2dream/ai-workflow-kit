@@ -49,10 +49,10 @@ func (m *Manager) ResultsDir() string {
 }
 
 // GenerateSessionID generates a unique session ID
-// Format: <role>-<YYYYMMDD>-<HHMMSS>-<random_hex_4>
+// Format: <role>-<YYYYMMDD>-<HHMMSS>-<random_hex_8>
 func GenerateSessionID(role string) string {
 	timestamp := time.Now().UTC().Format("20060102-150405")
-	randomBytes := make([]byte, 2)
+	randomBytes := make([]byte, 4)
 	_, _ = rand.Read(randomBytes)
 	randomHex := hex.EncodeToString(randomBytes)
 	return fmt.Sprintf("%s-%s-%s", role, timestamp, randomHex)

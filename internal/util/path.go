@@ -50,6 +50,21 @@ func PathsEqual(path1, path2 string) bool {
 	return NormalizePath(path1) == NormalizePath(path2)
 }
 
+// ShellSafe sanitizes a string value for safe use in bash eval output.
+// It replaces newlines with spaces, wraps the value in single quotes,
+// and escapes internal single quotes to prevent shell injection.
+func ShellSafe(s string) string {
+	// Replace newlines and carriage returns with spaces
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+
+	// Escape single quotes: replace ' with '\''
+	// This closes the current single-quoted string, adds an escaped quote, and reopens
+	s = strings.ReplaceAll(s, "'", `'\''`)
+
+	return "'" + s + "'"
+}
+
 // PushPermissionCache caches push permission results.
 //
 // Property 20: Submodule Push Permission Verification

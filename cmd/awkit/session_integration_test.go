@@ -63,8 +63,8 @@ func getTestRepoRoot(t *testing.T) string {
 	}
 }
 
-// sessionIDRegex matches the expected session ID format: principal-YYYYMMDD-HHMMSS-xxxx
-var sessionIDRegex = regexp.MustCompile(`^principal-\d{8}-\d{6}-[a-f0-9]{4}$`)
+// sessionIDRegex matches the expected session ID format: principal-YYYYMMDD-HHMMSS-xxxxxxxx (8 hex chars)
+var sessionIDRegex = regexp.MustCompile(`^principal-\d{8}-\d{6}-[a-f0-9]{8}$`)
 
 func TestSessionIntegration_Property7_StrictSequentialExecution(t *testing.T) {
 	awkit := findAwkitBinary(t)

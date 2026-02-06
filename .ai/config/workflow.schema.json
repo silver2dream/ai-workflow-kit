@@ -118,10 +118,12 @@
             "task": { "type": "string" },
             "in_progress": { "type": "string" },
             "pr_ready": { "type": "string" },
-            "review_pass": { "type": "string" },
-            "review_fail": { "type": "string" },
+            "review_failed": { "type": "string" },
             "worker_failed": { "type": "string" },
-            "needs_human_review": { "type": "string" }
+            "needs_human_review": { "type": "string" },
+            "merge_conflict": { "type": "string", "default": "merge-conflict" },
+            "needs_rebase": { "type": "string", "default": "needs-rebase" },
+            "completed": { "type": "string", "default": "completed" }
           }
         }
       }
@@ -131,6 +133,60 @@
       "properties": {
         "kit": { "type": "array", "items": { "type": "string" } },
         "custom": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "timeouts": {
+      "type": "object",
+      "description": "Timeout settings for various operations",
+      "properties": {
+        "git_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 120,
+          "description": "Timeout in seconds for Git operations (fetch, push, rebase)"
+        },
+        "gh_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "Timeout in seconds for GitHub CLI operations (issue view, pr view)"
+        },
+        "codex_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "Timeout in minutes for Codex Worker execution"
+        },
+        "gh_retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Maximum retry attempts for gh CLI calls"
+        },
+        "gh_retry_base_delay": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2,
+          "description": "Base delay in seconds for exponential backoff on gh retries"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "description": "Review and merge settings for PR approval",
+      "properties": {
+        "score_threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 7,
+          "description": "Minimum review score (1-10) required to approve a PR"
+        },
+        "merge_strategy": {
+          "enum": ["squash", "merge", "rebase"],
+          "default": "squash",
+          "description": "Git merge strategy used when merging approved PRs"
+        }
       }
     },
     "escalation": {
@@ -189,6 +245,8 @@
     },
     "notifications": {
       "type": "object",
+      "description": "PLANNED: Notification support is not yet implemented. This schema is reserved for future use.",
+      "deprecated": true,
       "properties": {
         "slack_webhook": { "type": "string" },
         "discord_webhook": { "type": "string" },

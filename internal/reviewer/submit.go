@@ -11,30 +11,35 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
+
+	"gopkg.in/yaml.v3"
 )
 
 // SubmitReviewOptions configures the submit review operation
 type SubmitReviewOptions struct {
-	PRNumber     int
-	IssueNumber  int
-	Score        int    // 1-10
-	CIStatus     string // "passed" | "failed"
-	ReviewBody   string
-	StateRoot    string
-	WorktreePath string        // Path to worktree for test execution
-	TestCommand  string        // Command to run tests
-	Language     string        // Programming language for test name validation
-	Ticket       string        // Issue body with acceptance criteria
-	GHTimeout    time.Duration
-	TestTimeout  time.Duration
+	PRNumber       int
+	IssueNumber    int
+	Score          int    // 1-10
+	CIStatus       string // "passed" | "failed"
+	ReviewBody     string
+	StateRoot      string
+	WorktreePath   string        // Path to worktree for test execution
+	TestCommand    string        // Command to run tests
+	Language       string        // Programming language for test name validation
+	Ticket         string        // Issue body with acceptance criteria
+	ScoreThreshold int           // Minimum score to approve (default: 7, from config)
+	MergeStrategy  string        // Merge strategy: "squash" | "merge" | "rebase" (default: "squash", from config)
+	GHTimeout      time.Duration
+	TestTimeout    time.Duration
 }
 
 // SubmitReviewResult holds the result of submitting a review
 type SubmitReviewResult struct {
-	Result string // merged, approved_ci_failed, changes_requested, review_blocked, merge_failed
+	Result string // merged, changes_requested, review_blocked, merge_failed
 	Reason string
 }
 
@@ -48,6 +53,12 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	}
 	if opts.TestTimeout == 0 {
 		opts.TestTimeout = 5 * time.Minute
+	}
+	if opts.ScoreThreshold <= 0 {
+		opts.ScoreThreshold = 7
+	}
+	if opts.MergeStrategy == "" {
+		opts.MergeStrategy = "squash"
 	}
 
 	// Write review_start event
@@ -198,7 +209,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	}
 
 	// Submit GitHub Review
-	if opts.Score >= 7 {
+	if opts.Score >= opts.ScoreThreshold {
 		// Approve (critical operation - must succeed)
 		if err := approvePR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout); err != nil {
 			return nil, fmt.Errorf("failed to approve PR #%d: %w", opts.PRNumber, err)
@@ -206,7 +217,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 
 		if opts.CIStatus == "passed" {
 			// Try to merge
-			if err := mergePR(ctx, opts.PRNumber, opts.GHTimeout); err != nil {
+			if err := mergePR(ctx, opts.PRNumber, opts.GHTimeout, opts.MergeStrategy); err != nil {
 				return handleMergeFailure(ctx, opts, sessionID, err)
 			}
 
@@ -225,26 +236,34 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			return &SubmitReviewResult{Result: "merged"}, nil
 		}
 
-		// CI failed
-		if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 失敗
+		// CI not passed - treat as changes_requested so Worker fixes CI issues
+		// Use review-failed label (not ai-task) to avoid infinite dispatch loop
+		ciReason := "CI failed"
+		ciStatusDisplay := "❌ 失敗"
+		if opts.CIStatus == "unknown" {
+			ciReason = "CI status unknown"
+			ciStatusDisplay = "⚠️ 無法確認（未自動合併以確保安全）"
+		}
+
+		if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 未通過
 
 審查評分: %d/10 ✅
 
 %s
 
 ---
-**CI 狀態**: ❌ 失敗
+**CI 狀態**: %s
 
 請檢查 CI 日誌並修復問題後重新提交。
-PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != nil {
+PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHTimeout); err != nil {
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 		}
 
-		if err := editIssueLabels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+		if err := editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 		}
 
-		return &SubmitReviewResult{Result: "approved_ci_failed"}, nil
+		return &SubmitReviewResult{Result: "changes_requested", Reason: ciReason}, nil
 	}
 
 	// Request changes (critical operation - must succeed)
@@ -326,7 +345,7 @@ func handleMergeFailure(ctx context.Context, opts SubmitReviewOptions, sessionID
 	switch mergeState {
 	case "DIRTY":
 		label = "merge-conflict"
-		result = "conflict_needs_fix"
+		result = "merge_failed"
 		message = fmt.Sprintf(`## AWK Review: Merge Conflict
 
 PR: #%d
@@ -336,7 +355,7 @@ PR 有 merge conflict。Worker 將自動解決衝突後重新提交。`, opts.PR
 
 	case "BEHIND":
 		label = "needs-rebase"
-		result = "behind_needs_rebase"
+		result = "merge_failed"
 		message = fmt.Sprintf(`## AWK Review: Branch Behind
 
 PR: #%d
@@ -346,7 +365,7 @@ PR 分支落後 base branch。Worker 將自動 rebase 後重新提交。`, opts.
 
 	default: // BLOCKED or other
 		label = "needs-human-review"
-		result = "merge_blocked"
+		result = "merge_failed"
 		message = fmt.Sprintf(`## AWK Review: 合併失敗（需要人工介入）
 
 PR: #%d
@@ -375,8 +394,7 @@ func fetchIssueBody(ctx context.Context, issueNumber int, timeout time.Duration)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "view", strconv.Itoa(issueNumber), "--json", "body", "--jq", ".body")
-	output, err := cmd.Output()
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "view", strconv.Itoa(issueNumber), "--json", "body", "--jq", ".body")
 	if err != nil {
 		return "", err
 	}
@@ -396,43 +414,58 @@ func postPRComment(ctx context.Context, prNumber int, body string, timeout time.
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "comment", strconv.Itoa(prNumber), "--body", body)
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "comment", strconv.Itoa(prNumber), "--body", body)
+	return err
 }
 
 func postIssueComment(ctx context.Context, issueNumber int, body string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "comment", strconv.Itoa(issueNumber), "--body", body)
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "comment", strconv.Itoa(issueNumber), "--body", body)
+	return err
 }
 
 func approvePR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "review", strconv.Itoa(prNumber),
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", strconv.Itoa(prNumber),
 		"--approve", "--body", fmt.Sprintf("AWK Review: APPROVED (score: %d/10)", score))
-	return cmd.Run()
+	return err
 }
 
 func requestChangesPR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "review", strconv.Itoa(prNumber),
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", strconv.Itoa(prNumber),
 		"--request-changes", "--body", fmt.Sprintf("AWK Review: CHANGES REQUESTED (score: %d/10)", score))
-	return cmd.Run()
+	return err
 }
 
-func mergePR(ctx context.Context, prNumber int, timeout time.Duration) error {
+func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStrategy ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", strconv.Itoa(prNumber),
-		"--squash", "--delete-branch")
-	if err := cmd.Run(); err != nil {
+	strategy := "squash"
+	if len(mergeStrategy) > 0 && mergeStrategy[0] != "" {
+		strategy = mergeStrategy[0]
+	}
+
+	var strategyFlag string
+	switch strategy {
+	case "merge":
+		strategyFlag = "--merge"
+	case "rebase":
+		strategyFlag = "--rebase"
+	default:
+		strategyFlag = "--squash"
+	}
+
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "merge", strconv.Itoa(prNumber),
+		strategyFlag, "--delete-branch")
+	if err != nil {
 		// Write PR merge failure event
 		trace.WriteEvent(trace.ComponentGitHub, trace.TypePRMergeFail, trace.LevelError,
 			trace.WithPR(prNumber),
@@ -450,17 +483,17 @@ func closeIssue(ctx context.Context, issueNumber int, timeout time.Duration) err
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "close", strconv.Itoa(issueNumber))
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "close", strconv.Itoa(issueNumber))
+	return err
 }
 
 func removeLabel(ctx context.Context, issueNumber int, label string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "edit", strconv.Itoa(issueNumber),
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "edit", strconv.Itoa(issueNumber),
 		"--remove-label", label)
-	return cmd.Run()
+	return err
 }
 
 func editIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabels []string, timeout time.Duration) error {
@@ -475,17 +508,16 @@ func editIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabe
 		args = append(args, "--remove-label", l)
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", args...)
+	return err
 }
 
 func getMergeStateStatus(ctx context.Context, prNumber int, timeout time.Duration) string {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", strconv.Itoa(prNumber),
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "view", strconv.Itoa(prNumber),
 		"--json", "mergeStateStatus", "--jq", ".mergeStateStatus")
-	output, err := cmd.Output()
 	if err != nil {
 		return "unknown"
 	}
@@ -511,18 +543,17 @@ func updateTasksMd(ctx context.Context, stateRoot string, issueNumber int) {
 		return
 	}
 
-	// Find tasks.md path
+	// Find tasks.md path via proper YAML parsing
 	configFile := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
 	specBasePath := ".ai/specs"
 	if configData, err := os.ReadFile(configFile); err == nil {
-		// Simple extraction without full YAML parsing
-		for _, line := range strings.Split(string(configData), "\n") {
-			if strings.Contains(line, "base_path:") {
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) == 2 {
-					specBasePath = strings.TrimSpace(parts[1])
-				}
-			}
+		var cfg struct {
+			Specs struct {
+				BasePath string `yaml:"base_path"`
+			} `yaml:"specs"`
+		}
+		if err := yaml.Unmarshal(configData, &cfg); err == nil && cfg.Specs.BasePath != "" {
+			specBasePath = cfg.Specs.BasePath
 		}
 	}
 

@@ -88,6 +88,10 @@ func cmdReset(args []string) int {
 	traces := fs.Bool("traces", false, "Reset old trace files (deprecated, use events)")
 	events := fs.Bool("events", false, "Reset event stream files")
 	labels := fs.Bool("labels", false, "Reset review-failed labels to pr-ready on GitHub")
+	temp := fs.Bool("temp", false, "Clean ticket temp files (.ai/temp/ticket-*.md)")
+	sessions := fs.Bool("sessions", false, "Clean old session files (keep last 5)")
+	reports := fs.Bool("reports", false, "Clean old workflow reports")
+	orphans := fs.Bool("orphans", false, "Clean orphaned .tmp files older than 1 hour")
 	fs.Usage = usageReset
 
 	if err := fs.Parse(args); err != nil {
@@ -95,7 +99,9 @@ func cmdReset(args []string) int {
 	}
 
 	// If no specific flags, default to common reset
-	noFlags := !*state && !*attempts && !*stop && !*lock && !*deprecated && !*results && !*traces && !*events && !*labels && !*all
+	noFlags := !*state && !*attempts && !*stop && !*lock && !*deprecated &&
+		!*results && !*traces && !*events && !*labels && !*all &&
+		!*temp && !*sessions && !*reports && !*orphans
 
 	cwd, _ := os.Getwd()
 	resetter := reset.New(cwd)
@@ -136,6 +142,18 @@ func cmdReset(args []string) int {
 	}
 	if *all || *events {
 		allResults = append(allResults, resetter.ResetEvents()...)
+	}
+	if *all || *temp || noFlags {
+		allResults = append(allResults, resetter.CleanTemp()...)
+	}
+	if *all || *orphans || noFlags {
+		allResults = append(allResults, resetter.CleanOrphans()...)
+	}
+	if *all || *sessions {
+		allResults = append(allResults, resetter.CleanSessions()...)
+	}
+	if *all || *reports {
+		allResults = append(allResults, resetter.CleanReports()...)
 	}
 	if *labels {
 		allResults = append(allResults, resetter.ResetGitHubLabel(ctx, "review-failed", "pr-ready")...)
@@ -191,14 +209,14 @@ func usageReset() {
 
 This command resets state files to allow a fresh start.
 Without flags, it resets common state (loop_count, consecutive_failures,
-attempts, STOP marker, deprecated files).
+attempts, STOP marker, deprecated files, temp tickets, orphan .tmp files).
 
 Usage:
   awkit reset [options]
 
 Options:
   --dry-run     Show what would be reset without making changes
-  --all         Reset all state including results, traces, events, and lock
+  --all         Reset all state including results, traces, events, lock, and cleanup
   --state       Reset state files (loop_count, consecutive_failures)
   --attempts    Reset attempt tracking files
   --stop        Remove STOP marker
@@ -208,12 +226,18 @@ Options:
   --traces      Reset old trace files (.ai/state/traces/)
   --events      Reset event stream files (.ai/state/events/)
   --labels      Reset review-failed labels to pr-ready on GitHub
+  --temp        Clean ticket temp files (.ai/temp/ticket-*.md)
+  --sessions    Clean old session files (keep last 5)
+  --reports     Clean old workflow reports (.ai/state/workflow-report-*.md)
+  --orphans     Clean orphaned .tmp files older than 1 hour
 
 Examples:
-  awkit reset              # Reset common state
+  awkit reset              # Reset common state (includes --temp, --orphans)
   awkit reset --dry-run    # Preview what would be reset
-  awkit reset --all        # Reset everything (including traces and events)
+  awkit reset --all        # Reset everything (including traces, events, sessions, reports)
   awkit reset --traces     # Clean old trace files after upgrade
+  awkit reset --sessions   # Clean old session files (keep last 5)
+  awkit reset --reports    # Clean old workflow reports
   awkit reset --labels     # Reset stuck review labels on GitHub
 
 Note: To fix missing permissions, use 'awkit upgrade' instead.

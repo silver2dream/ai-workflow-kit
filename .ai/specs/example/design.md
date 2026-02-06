@@ -17,7 +17,7 @@ AWK 的配置使用 `type: directory`，表示這兩個子目錄不是獨立 git
 
 ## Verification Strategy
 
-- Offline: `bash .ai/scripts/evaluate.sh --offline` + `bash .ai/tests/run_all_tests.sh`
+- Offline: `awkit evaluate --offline` + `go test ./...`
 - CI:
   - AWK Offline + strict（只檢 P0）
   - Backend Go tests（`working-directory: backend`）

@@ -305,7 +305,7 @@ Options:
   --force         Overwrite all existing kit files (and scaffold files if --scaffold)
   --force-config  Overwrite only workflow.yaml (apply preset to existing project)
   --dry-run       Show what would be done without making changes
-  --no-generate   Skip running generate.sh after init
+  --no-generate   Skip running awkit generate after init
   --project-name  Override project name in config
 
 Examples:
@@ -340,7 +340,7 @@ Options:
   --force-config  Overwrite .ai/config/workflow.yaml using the preset (requires --preset)
   --force         Overwrite scaffold files (only affects scaffold, not kit files)
   --dry-run       Show what would be updated without making changes
-  --no-generate   Skip running generate.sh after upgrade
+  --no-generate   Skip running awkit generate after upgrade
   --no-commit     Skip auto-commit of upgrade changes
 
 Examples:
@@ -1225,7 +1225,7 @@ _awkit() {
                         '--force[Overwrite all existing files]' \
                         '--force-config[Overwrite only workflow.yaml]' \
                         '--dry-run[Show what would be done]' \
-                        '--no-generate[Skip generate.sh]' \
+                        '--no-generate[Skip awkit generate]' \
                         '--project-name[Override project name]:name:' \
                         '*:directory:_files -/'
                     ;;
@@ -1236,7 +1236,7 @@ _awkit() {
                         '--force-config[Overwrite only workflow.yaml]' \
                         '--force[Overwrite scaffold files]' \
                         '--dry-run[Show what would be done]' \
-                        '--no-generate[Skip generate.sh]' \
+                        '--no-generate[Skip awkit generate]' \
                         '--no-commit[Skip auto-commit]' \
                         '*:directory:_files -/'
                     ;;
@@ -1287,7 +1287,7 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l scaffold -d '
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Overwrite all existing files'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l dry-run -d 'Show what would be done'
-complete -c awkit -n '__fish_seen_subcommand_from init install' -l no-generate -d 'Skip generate.sh'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l no-generate -d 'Skip awkit generate'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name -d 'Override project name'
 
 # upgrade options
@@ -1296,7 +1296,7 @@ complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset 
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force -d 'Overwrite scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'
-complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-generate -d 'Skip generate.sh'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-generate -d 'Skip awkit generate'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-commit -d 'Skip auto-commit'
 
 # uninstall options

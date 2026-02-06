@@ -76,8 +76,8 @@
 - `git`
 - `go` 1.25+
 
-### Offline（可選，僅用於 generate.sh）
-- `python3` + `pyyaml` + `jsonschema` + `jinja2`
+### Offline（可選）
+- `python3` + `pyyaml` + `jsonschema` + `jinja2`（僅供 legacy 腳本使用；生成功能已內建於 `awkit`）
 
 ### Online / E2E（選配）
 - `gh`（GitHub CLI）+ `gh auth login`
@@ -90,9 +90,8 @@
 
 ```
 .
-├── .ai/                         # kit (scripts/templates/rules/specs)
+├── .ai/                         # kit (config/templates/rules/specs)
 │   ├── config/workflow.yaml     # main config
-│   ├── scripts/                 # automation scripts
 │   ├── templates/               # generators (CLAUDE/AGENTS/CI)
 │   ├── rules/                   # architecture + git workflow rules
 │   ├── docs/evaluate.md         # evaluation standard
@@ -166,7 +165,7 @@ curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/downl
 
 ```bash
 awkit upgrade
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 其他更新選項：
@@ -182,19 +181,13 @@ awkit upgrade --force-config --preset react-go
 awkit init --preset react-go --force
 ```
 
-### 1)（可選）安裝 generate.sh 所需的 offline 依賴
+### 1) 生成輸出
 
 ```bash
-pip3 install pyyaml jsonschema jinja2
+awkit generate
 ```
 
-### 2) 生成輸出
-
-```bash
-bash .ai/scripts/generate.sh
-```
-
-### 3)（選配）跑完整工作流
+### 2)（選配）跑完整工作流
 
 ```bash
 gh auth login
@@ -205,9 +198,7 @@ awkit kickoff              # 啟動工作流
 awkit kickoff --resume     # 從上次狀態恢復
 awkit validate             # 只驗證設定
 
-# 或使用 bash 腳本（legacy）
-bash .ai/scripts/kickoff.sh --dry-run
-bash .ai/scripts/kickoff.sh
+# Legacy bash 腳本已移除；請使用上方的 awkit 命令
 ```
 
 停止：
@@ -284,11 +275,11 @@ Root CI workflow：`.github/workflows/ci.yml`
 - `awkit upgrade` 會自動遷移舊版 CI 設定（移除過時的 `awk` job）
 
 **此 repo（awkit 本身）：**
-此 repo 內建的是手寫 CI 範例。`bash .ai/scripts/generate.sh` 預設不會改動 workflows；需要從模板生成時才使用 `--generate-ci`。
+此 repo 內建的是手寫 CI 範例。`awkit generate` 預設不會改動 workflows；需要從模板生成時才使用 `--generate-ci`。
 
 包含：
-- AWK evaluation：`bash .ai/scripts/evaluate.sh --offline` 與 `--offline --strict`
-- Kit tests：`bash .ai/tests/run_all_tests.sh`
+- AWK evaluation：`awkit evaluate --offline` 與 `--offline --strict`
+- Kit tests：`go test ./...`
 - Backend：`go test ./...`（在 `backend/`）
 - Frontend：`frontend/Packages/manifest.json` JSON 檢查 + 資料夾存在性
 
@@ -298,7 +289,7 @@ Root CI workflow：`.github/workflows/ci.yml`
 
 - 僅供 kit 維護者 / CI 使用，一般使用者可跳過。
 - 標準：`.ai/docs/evaluate.md`
-- 執行器：`.ai/scripts/evaluate.sh`
+- 執行器：`awkit evaluate`
 
 ---
 

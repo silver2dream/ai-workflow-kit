@@ -1,13 +1,15 @@
 package kickoff
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
 const (
@@ -184,11 +186,12 @@ func (m *IssueMonitor) poll() error {
 
 // fetchComments calls gh issue view to get comments
 func (m *IssueMonitor) fetchComments() (*IssueResponse, error) {
-	cmd := exec.Command("gh", "issue", "view",
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "view",
 		fmt.Sprintf("%d", m.issueID),
 		"--json", "comments,state")
-
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}

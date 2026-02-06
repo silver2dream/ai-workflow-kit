@@ -128,7 +128,7 @@ go tool cover -html=coverage.out -o coverage.html
 |---------|------|----------|
 | `ai_root` | `.ai` 目錄路徑 | 存取配置和腳本 |
 | `project_root` | 專案根目錄 | 存取專案檔案 |
-| `scripts_dir` | `.ai/scripts` 目錄 | 存取腳本檔案 |
+| `scripts_dir` | `.ai/scripts` 目錄 (removed) | 已棄用，腳本已遷移至 `awkit` CLI |
 | `fixtures_dir` | 測試 fixtures 目錄 | 載入測試資料 |
 | `temp_dir` | 暫時目錄 (自動清理) | 寫入測試檔案 |
 | `temp_git_repo` | 暫時 git repo | 測試 git 相關功能 |
@@ -300,7 +300,8 @@ from pathlib import Path
 
 # 導入被測試的模組
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
+# NOTE: .ai/scripts/ has been removed; this import path is no longer valid
+# sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 from lib.errors import AWKError, ConfigError
 
 
@@ -371,17 +372,14 @@ def test_raises_validation_error():
 ```python
 import subprocess
 
-def test_shell_script(temp_dir, scripts_dir):
-    """測試 shell 腳本."""
-    result = subprocess.run(
-        ["bash", str(scripts_dir / "script.sh"), "arg1"],
-        capture_output=True,
-        text=True,
-        cwd=temp_dir
-    )
-
-    assert result.returncode == 0
-    assert "expected output" in result.stdout
+# NOTE: scripts_dir fixture is deprecated; .ai/scripts/ has been removed.
+# Shell script testing is no longer applicable. Use Go tests instead.
+# def test_shell_script(temp_dir, scripts_dir):
+#     result = subprocess.run(
+#         ["bash", str(scripts_dir / "script.sh"), "arg1"],
+#         capture_output=True, text=True, cwd=temp_dir
+#     )
+#     assert result.returncode == 0
 ```
 
 ### 參數化測試
@@ -469,7 +467,9 @@ jobs:
 
       - name: Coverage report
         run: |
-          python -m pytest .ai/tests/unit --cov=.ai/scripts --cov-report=term-missing
+          # DEPRECATED: .ai/scripts/ has been removed. Use Go test coverage instead.
+          # python -m pytest .ai/tests/unit --cov=.ai/scripts --cov-report=term-missing
+          go test ./... -cover
 ```
 
 ### 本地 CI 模擬

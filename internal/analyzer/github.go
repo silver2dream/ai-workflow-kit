@@ -3,11 +3,12 @@ package analyzer
 import (
 	"context"
 	"encoding/json"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
 // Issue represents a GitHub issue
@@ -43,11 +44,13 @@ type GitHubClientInterface interface {
 	AddLabel(ctx context.Context, issueNumber int, label string) error
 	IsPRMerged(ctx context.Context, prNumber int) (bool, error)
 	CloseIssue(ctx context.Context, issueNumber int) error
+	FindPRByBranch(ctx context.Context, branchName string) (int, error)
 }
 
 // GitHubClient wraps GitHub CLI operations
 type GitHubClient struct {
 	Timeout time.Duration
+	Retry   ghutil.RetryConfig
 }
 
 // Ensure GitHubClient implements GitHubClientInterface
@@ -58,7 +61,10 @@ func NewGitHubClient(timeout time.Duration) *GitHubClient {
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-	return &GitHubClient{Timeout: timeout}
+	return &GitHubClient{
+		Timeout: timeout,
+		Retry:   ghutil.DefaultRetryConfig(),
+	}
 }
 
 // ListIssuesByLabel lists issues with a specific label
@@ -66,12 +72,11 @@ func (c *GitHubClient) ListIssuesByLabel(ctx context.Context, label string) ([]I
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "list",
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
 		"--label", label,
 		"--state", "open",
+		"--limit", "200",
 		"--json", "number,body,labels,state")
-
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
@@ -85,17 +90,16 @@ func (c *GitHubClient) ListIssuesByLabel(ctx context.Context, label string) ([]I
 }
 
 // ListPendingIssues lists issues with task label but without blocking labels
-// (in-progress, pr-ready, worker-failed, needs-human-review, review-failed, merge-conflict, needs-rebase)
+// (in-progress, pr-ready, worker-failed, needs-human-review, review-failed, merge-conflict, needs-rebase, completed)
 func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfig) ([]Issue, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "list",
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
 		"--label", labels.Task,
 		"--state", "open",
+		"--limit", "200",
 		"--json", "number,body,labels,state")
-
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +118,8 @@ func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfi
 			!issue.HasLabel(labels.NeedsHumanReview) &&
 			!issue.HasLabel(labels.ReviewFailed) &&
 			!issue.HasLabel(labels.MergeConflict) &&
-			!issue.HasLabel(labels.NeedsRebase) {
+			!issue.HasLabel(labels.NeedsRebase) &&
+			!issue.HasLabel(labels.Completed) {
 			pendingIssues = append(pendingIssues, issue)
 		}
 	}
@@ -127,13 +132,12 @@ func (c *GitHubClient) CountOpenIssues(ctx context.Context, taskLabel string) (i
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "list",
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
 		"--label", taskLabel,
 		"--state", "open",
+		"--limit", "200",
 		"--json", "number",
 		"--jq", ". | length")
-
-	output, err := cmd.Output()
 	if err != nil {
 		return 0, err
 	}
@@ -151,11 +155,10 @@ func (c *GitHubClient) RemoveLabel(ctx context.Context, issueNumber int, label s
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "edit",
+	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "edit",
 		strconv.Itoa(issueNumber),
 		"--remove-label", label)
-
-	return cmd.Run()
+	return err
 }
 
 // AddLabel adds a label to an issue
@@ -163,11 +166,10 @@ func (c *GitHubClient) AddLabel(ctx context.Context, issueNumber int, label stri
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "edit",
+	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "edit",
 		strconv.Itoa(issueNumber),
 		"--add-label", label)
-
-	return cmd.Run()
+	return err
 }
 
 // ExtractPRNumber extracts PR number from issue body or result file
@@ -208,11 +210,9 @@ func (c *GitHubClient) IsPRMerged(ctx context.Context, prNumber int) (bool, erro
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view",
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "view",
 		strconv.Itoa(prNumber),
 		"--json", "state,mergedAt")
-
-	output, err := cmd.Output()
 	if err != nil {
 		return false, err
 	}
@@ -228,11 +228,40 @@ func (c *GitHubClient) IsPRMerged(ctx context.Context, prNumber int) (bool, erro
 	return pr.State == "MERGED" || pr.MergedAt != "", nil
 }
 
+// FindPRByBranch finds an open PR by head branch name and returns its number
+// Returns 0 if no open PR is found for the branch
+func (c *GitHubClient) FindPRByBranch(ctx context.Context, branchName string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "list",
+		"--head", branchName,
+		"--state", "open",
+		"--limit", "1",
+		"--json", "number",
+		"--jq", ".[0].number")
+	if err != nil {
+		return 0, err
+	}
+
+	numStr := strings.TrimSpace(string(output))
+	if numStr == "" || numStr == "null" {
+		return 0, nil
+	}
+
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return 0, nil
+	}
+
+	return num, nil
+}
+
 // CloseIssue closes an issue
 func (c *GitHubClient) CloseIssue(ctx context.Context, issueNumber int) error {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "close", strconv.Itoa(issueNumber))
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "close", strconv.Itoa(issueNumber))
+	return err
 }

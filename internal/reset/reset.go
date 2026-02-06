@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -50,6 +51,10 @@ func (c *Resetter) ResetAll(ctx context.Context) []Result {
 	results = append(results, c.ResetDeprecated()...)
 	results = append(results, c.ResetTraces()...)
 	results = append(results, c.ResetEvents()...)
+	results = append(results, c.CleanTemp()...)
+	results = append(results, c.CleanSessions()...)
+	results = append(results, c.CleanReports()...)
+	results = append(results, c.CleanOrphans()...)
 	return results
 }
 
@@ -187,7 +192,7 @@ func (c *Resetter) ResetStop() Result {
 
 // ResetLock removes the lock file
 func (c *Resetter) ResetLock() Result {
-	lockFile := filepath.Join(c.StateRoot, ".ai", "state", "principal.lock")
+	lockFile := filepath.Join(c.StateRoot, ".ai", "state", "kickoff.lock")
 
 	if _, err := os.Stat(lockFile); os.IsNotExist(err) {
 		return Result{
@@ -365,6 +370,174 @@ func (c *Resetter) Results() []Result {
 	}
 
 	return results
+}
+
+// cleanGlob finds files matching a glob pattern and removes them.
+// In dry-run mode it only reports what would be deleted.
+func (c *Resetter) cleanGlob(pattern, label string) []Result {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return []Result{{
+			Name:    label,
+			Success: false,
+			Message: fmt.Sprintf("Glob error: %v", err),
+		}}
+	}
+
+	if len(matches) == 0 {
+		return nil
+	}
+
+	if c.DryRun {
+		return []Result{{
+			Name:    label,
+			Success: true,
+			Message: fmt.Sprintf("Would delete %d file(s)", len(matches)),
+		}}
+	}
+
+	var removed int
+	for _, m := range matches {
+		if err := os.Remove(m); err == nil {
+			removed++
+		}
+	}
+
+	return []Result{{
+		Name:    label,
+		Success: true,
+		Message: fmt.Sprintf("Deleted %d file(s)", removed),
+	}}
+}
+
+// CleanTemp removes ticket temp files (.ai/temp/ticket-*.md)
+func (c *Resetter) CleanTemp() []Result {
+	pattern := filepath.Join(c.StateRoot, ".ai", "temp", "ticket-*.md")
+	return c.cleanGlob(pattern, "temp tickets")
+}
+
+// CleanSessions removes old session files, keeping the last 5
+func (c *Resetter) CleanSessions() []Result {
+	dir := filepath.Join(c.StateRoot, ".ai", "state", "principal", "sessions")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil // directory doesn't exist, nothing to do
+	}
+
+	// Collect .json files with their mod times
+	type fileInfo struct {
+		path    string
+		modTime time.Time
+	}
+	var files []fileInfo
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{
+			path:    filepath.Join(dir, entry.Name()),
+			modTime: info.ModTime(),
+		})
+	}
+
+	const keepCount = 5
+	if len(files) <= keepCount {
+		return nil
+	}
+
+	// Sort by mod time descending (newest first)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
+	})
+
+	toRemove := files[keepCount:]
+
+	if c.DryRun {
+		return []Result{{
+			Name:    "sessions",
+			Success: true,
+			Message: fmt.Sprintf("Would delete %d old session file(s), keeping last %d", len(toRemove), keepCount),
+		}}
+	}
+
+	var removed int
+	for _, f := range toRemove {
+		if err := os.Remove(f.path); err == nil {
+			removed++
+		}
+	}
+
+	return []Result{{
+		Name:    "sessions",
+		Success: true,
+		Message: fmt.Sprintf("Deleted %d old session file(s), kept last %d", removed, keepCount),
+	}}
+}
+
+// CleanReports removes old workflow report files (.ai/state/workflow-report-*.md)
+func (c *Resetter) CleanReports() []Result {
+	pattern := filepath.Join(c.StateRoot, ".ai", "state", "workflow-report-*.md")
+	return c.cleanGlob(pattern, "workflow reports")
+}
+
+// CleanOrphans removes orphaned .tmp files in .ai/state/ and .ai/results/
+// that are older than 1 hour (to avoid removing active writes)
+func (c *Resetter) CleanOrphans() []Result {
+	dirs := []string{
+		filepath.Join(c.StateRoot, ".ai", "state"),
+		filepath.Join(c.StateRoot, ".ai", "results"),
+	}
+
+	cutoff := time.Now().Add(-1 * time.Hour)
+	var orphans []string
+
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".tmp" {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().Before(cutoff) {
+				orphans = append(orphans, filepath.Join(dir, entry.Name()))
+			}
+		}
+	}
+
+	if len(orphans) == 0 {
+		return nil
+	}
+
+	if c.DryRun {
+		return []Result{{
+			Name:    "orphan .tmp files",
+			Success: true,
+			Message: fmt.Sprintf("Would delete %d orphaned .tmp file(s) older than 1 hour", len(orphans)),
+		}}
+	}
+
+	var removed int
+	for _, f := range orphans {
+		if err := os.Remove(f); err == nil {
+			removed++
+		}
+	}
+
+	return []Result{{
+		Name:    "orphan .tmp files",
+		Success: true,
+		Message: fmt.Sprintf("Deleted %d orphaned .tmp file(s)", removed),
+	}}
 }
 
 // ResetGitHubLabel resets a label on issues

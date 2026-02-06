@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
@@ -76,13 +77,17 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 		return nil, fmt.Errorf("failed to create review directory: %w", err)
 	}
 
-	// 4. Check worktree path - fail fast if worktree doesn't exist
-	// This prevents pr-reviewer agent from attempting to cd to non-existent directory
+	// 4. Check worktree path - auto-rebuild if missing
 	wtPath := filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueNumber))
 	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
 		rc.WorktreePath = wtPath
 	} else {
-		return nil, fmt.Errorf("worktree not found for issue #%d: expected at %s", opts.IssueNumber, wtPath)
+		// Worktree missing - try to rebuild from PR branch
+		rebuilt, rebuildErr := rebuildWorktree(ctx, opts.StateRoot, opts.IssueNumber, opts.PRNumber, opts.GHTimeout)
+		if rebuildErr != nil {
+			return nil, fmt.Errorf("worktree not found for issue #%d and auto-rebuild failed: %w", opts.IssueNumber, rebuildErr)
+		}
+		rc.WorktreePath = rebuilt
 	}
 
 	// 5. Fetch issue details (ticket with acceptance criteria)
@@ -107,14 +112,16 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 }
 
 // getCIStatus checks PR CI status via gh cli
+// Returns "passed", "failed", or "unknown" (when CI status cannot be determined)
 func getCIStatus(ctx context.Context, prNumber int, timeout time.Duration) string {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	retryCfg := ghutil.DefaultRetryConfig()
+
 	// Try --json first (gh >= 2.12)
-	cmd := exec.CommandContext(ctx, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber),
+	output, err := ghutil.RunWithRetry(ctx, retryCfg, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber),
 		"--json", "state", "--jq", ".[].state")
-	output, err := cmd.Output()
 	if err == nil && len(output) > 0 {
 		if strings.Contains(string(output), "FAILURE") {
 			return "failed"
@@ -123,15 +130,19 @@ func getCIStatus(ctx context.Context, prNumber int, timeout time.Duration) strin
 	}
 
 	// Fallback for older gh versions
-	cmd = exec.CommandContext(ctx, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber))
-	output, err = cmd.Output()
+	output, err = ghutil.RunWithRetry(ctx, retryCfg, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber))
 	if err == nil {
-		if strings.Contains(strings.ToLower(string(output)), "fail") {
+		lower := strings.ToLower(string(output))
+		if strings.Contains(lower, "fail") {
 			return "failed"
+		}
+		if strings.Contains(lower, "pass") {
+			return "passed"
 		}
 	}
 
-	return "passed"
+	// Cannot determine CI status - fail-safe: do not assume passed
+	return "unknown"
 }
 
 // extractIssueBody extracts the body from issue JSON
@@ -149,9 +160,16 @@ func extractIssueBody(issueJSON string) string {
 	return issue.Body
 }
 
+// reviewConfig represents the review section in workflow.yaml
+type reviewConfig struct {
+	ScoreThreshold int    `yaml:"score_threshold"`
+	MergeStrategy  string `yaml:"merge_strategy"`
+}
+
 // workflowConfig represents the workflow.yaml structure for test command extraction
 type workflowConfig struct {
-	Repos []repoConfig `yaml:"repos"`
+	Repos  []repoConfig `yaml:"repos"`
+	Review reviewConfig `yaml:"review"`
 }
 
 type repoConfig struct {
@@ -164,6 +182,47 @@ type repoConfig struct {
 
 type verifyConfig struct {
 	Test string `yaml:"test"`
+}
+
+// ReviewSettings holds review configuration loaded from workflow.yaml
+type ReviewSettings struct {
+	ScoreThreshold int
+	MergeStrategy  string
+}
+
+// GetReviewSettings loads review config from workflow.yaml and applies defaults.
+// Returns default values (score_threshold=7, merge_strategy="squash") if config cannot be read.
+func GetReviewSettings(stateRoot string) ReviewSettings {
+	defaults := ReviewSettings{
+		ScoreThreshold: 7,
+		MergeStrategy:  "squash",
+	}
+
+	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return defaults
+	}
+
+	var cfg workflowConfig
+	if err := yaml.Unmarshal(content, &cfg); err != nil {
+		return defaults
+	}
+
+	result := defaults
+	if cfg.Review.ScoreThreshold > 0 {
+		result.ScoreThreshold = cfg.Review.ScoreThreshold
+	}
+	if cfg.Review.MergeStrategy != "" {
+		switch cfg.Review.MergeStrategy {
+		case "squash", "merge", "rebase":
+			result.MergeStrategy = cfg.Review.MergeStrategy
+		default:
+			// Invalid strategy, keep default
+		}
+	}
+
+	return result
 }
 
 // repoSettings holds test command and language from workflow.yaml
@@ -238,14 +297,53 @@ func buildTestCommand(repoPath, repoType, testCmd string) string {
 	return fmt.Sprintf("cd %s && %s", path, testCmd)
 }
 
+// rebuildWorktree attempts to recreate a missing worktree from the PR's head branch
+func rebuildWorktree(ctx context.Context, stateRoot string, issueNumber, prNumber int, timeout time.Duration) (string, error) {
+	wtPath := filepath.Join(stateRoot, ".worktrees", fmt.Sprintf("issue-%d", issueNumber))
+
+	// First, fetch latest refs
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout)
+	defer fetchCancel()
+	fetchCmd := exec.CommandContext(fetchCtx, "git", "fetch", "--all")
+	fetchCmd.Dir = stateRoot
+	_ = fetchCmd.Run() // best-effort
+
+	// Try branch name convention: feat/ai-issue-{N}
+	branchName := fmt.Sprintf("feat/ai-issue-%d", issueNumber)
+
+	// Try to add worktree from the branch
+	addCtx, addCancel := context.WithTimeout(ctx, timeout)
+	defer addCancel()
+	addCmd := exec.CommandContext(addCtx, "git", "worktree", "add", wtPath, branchName)
+	addCmd.Dir = stateRoot
+	if err := addCmd.Run(); err != nil {
+		// Try remote tracking branch
+		remoteBranch := fmt.Sprintf("origin/%s", branchName)
+		addCtx2, addCancel2 := context.WithTimeout(ctx, timeout)
+		defer addCancel2()
+		addCmd2 := exec.CommandContext(addCtx2, "git", "worktree", "add", wtPath, remoteBranch)
+		addCmd2.Dir = stateRoot
+		if err2 := addCmd2.Run(); err2 != nil {
+			return "", fmt.Errorf("failed to rebuild worktree from branch %s or %s: %v / %v", branchName, remoteBranch, err, err2)
+		}
+	}
+
+	// Verify the worktree was created
+	if info, err := os.Stat(wtPath); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("worktree rebuild succeeded but directory not found at %s", wtPath)
+	}
+
+	fmt.Fprintf(os.Stderr, "[REVIEW] auto-rebuilt worktree at %s from branch %s\n", wtPath, branchName)
+	return wtPath, nil
+}
+
 // fetchIssueJSON fetches issue details as JSON
 func fetchIssueJSON(ctx context.Context, issueNumber int, timeout time.Duration) string {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "view", fmt.Sprintf("%d", issueNumber),
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "view", fmt.Sprintf("%d", issueNumber),
 		"--json", "title,body,labels")
-	output, err := cmd.Output()
 	if err != nil {
 		return "ERROR: Cannot fetch issue"
 	}
@@ -257,9 +355,8 @@ func fetchPRCommits(ctx context.Context, prNumber int, timeout time.Duration) st
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber),
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "view", fmt.Sprintf("%d", prNumber),
 		"--json", "commits", "--jq", `.commits[] | "- \(.oid[0:7]) \(.messageHeadline)"`)
-	output, err := cmd.Output()
 	if err != nil {
 		return "ERROR: Cannot fetch commits"
 	}

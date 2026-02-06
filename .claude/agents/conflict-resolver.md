@@ -66,6 +66,24 @@ If more conflicts appear, repeat Steps 2-4.
 git push --force-with-lease origin HEAD
 ```
 
+If push is **rejected** (e.g. `[rejected]`, `stale info`, or `failed to push`), retry up to 2 times:
+
+1. Fetch latest remote state:
+   ```bash
+   git fetch origin
+   ```
+2. Re-rebase onto the updated branch:
+   ```bash
+   git rebase origin/<base-branch>
+   ```
+   If new conflicts appear, resolve them (repeat Steps 2-4).
+3. Push again:
+   ```bash
+   git push --force-with-lease origin HEAD
+   ```
+
+If push still fails after 2 retries, return `FAILED`.
+
 ### Step 6: Return Result
 
 Output one of these results on the **final line**:

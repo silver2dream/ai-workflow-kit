@@ -26,7 +26,7 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 				"NEXT_ACTION":  ActionDispatchWorker,
 				"ISSUE_NUMBER": "42",
 				"PR_NUMBER":    "0",
-				"SPEC_NAME":    "",
+				"SPEC_NAME":    "''",
 				"TASK_LINE":    "0",
 				"EXIT_REASON":  "",
 				"MERGE_ISSUE":  "",
@@ -62,7 +62,7 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 			},
 			want: map[string]string{
 				"NEXT_ACTION": ActionCreateTask,
-				"SPEC_NAME":   "my-feature",
+				"SPEC_NAME":   "'my-feature'",
 				"TASK_LINE":   "5",
 			},
 		},
@@ -184,6 +184,7 @@ func TestExitReasonConstants(t *testing.T) {
 		"ReasonNoActionableTasks":      ReasonNoActionableTasks,
 		"ReasonConfigNotFound":         ReasonConfigNotFound,
 		"ReasonLoopCountError":         ReasonLoopCountError,
+		"ReasonGitHubAPIError":         ReasonGitHubAPIError,
 	}
 
 	expected := map[string]string{
@@ -195,6 +196,7 @@ func TestExitReasonConstants(t *testing.T) {
 		"ReasonNoActionableTasks":      "no_actionable_tasks",
 		"ReasonConfigNotFound":         "config_not_found",
 		"ReasonLoopCountError":         "loop_count_error",
+		"ReasonGitHubAPIError":         "github_api_error",
 	}
 
 	for name, got := range reasons {

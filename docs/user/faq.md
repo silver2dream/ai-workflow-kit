@@ -16,9 +16,7 @@
 
 **A:** 可以。手動複製 `.ai/` 目錄到專案，然後執行：
 ```bash
-# Python 依賴為可選，僅用於 generate.sh
-pip3 install pyyaml jsonschema jinja2
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 ---
@@ -41,7 +39,7 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 awkit upgrade
 
 # 重新生成輔助檔案
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 ---
@@ -54,10 +52,10 @@ bash .ai/scripts/generate.sh
 
 ## 工作流程
 
-### Q: awkit kickoff 和 generate.sh 有什麼差別？
+### Q: awkit kickoff 和 awkit generate 有什麼差別？
 
 **A:**
-- `generate.sh` - 根據 workflow.yaml 生成設定檔 (CLAUDE.md, AGENTS.md 等)
+- `awkit generate` - 根據 workflow.yaml 生成設定檔 (CLAUDE.md, AGENTS.md 等)
 - `awkit kickoff` - 啟動完整的 AI 工作流程 (審計、建立 Issue、執行任務)
 - `kickoff.sh` - legacy bash 版本，建議使用 `awkit kickoff` 取代
 
@@ -155,11 +153,11 @@ rules:
 
 ### Q: 可以整合 CI/CD 嗎？
 
-**A:** 可以。AWK 提供 `evaluate.sh` 腳本用於 CI：
+**A:** 可以。AWK 提供 `awkit evaluate` 命令用於 CI：
 ```yaml
 # .github/workflows/ci.yml
 - name: AWK Evaluation
-  run: bash .ai/scripts/evaluate.sh --offline --strict
+  run: awkit evaluate --offline --strict
 ```
 
 ---
@@ -175,11 +173,11 @@ rules:
 
 ### Q: 支援哪些 Webhook 通知？
 
-**A:** 目前支援 Slack 和 Discord：
+**A:** Slack 和 Discord webhook 通知已規劃但**尚未實作**。配置 schema 中保留了相關欄位，將在未來版本中實作：
 ```yaml
-notifications:
-  slack_webhook: "${AI_SLACK_WEBHOOK}"
-  discord_webhook: "${AI_DISCORD_WEBHOOK}"
+# notifications: (planned for future release)
+# slack_webhook: "${AI_SLACK_WEBHOOK}"
+# discord_webhook: "${AI_DISCORD_WEBHOOK}"
 ```
 
 ---

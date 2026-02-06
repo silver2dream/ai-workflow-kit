@@ -27,7 +27,7 @@ rules:
 3) Regenerate helper docs (recommended):
 
 ```bash
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 This refreshes `AGENTS.md` and `CLAUDE.md` so agents will be instructed to read the enabled custom rules.

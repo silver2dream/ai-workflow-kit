@@ -4,6 +4,132 @@
 
 ---
 
+## 快速診斷：awkit doctor
+
+遇到問題時，建議先執行 `awkit doctor` 進行健康檢查。此命令會掃描專案狀態並報告所有潛在問題。
+
+**執行方式：**
+```bash
+awkit doctor
+```
+
+**檢查項目：**
+
+| 檢查項目 | 說明 |
+|----------|------|
+| Loop Count | 檢查迴圈計數器是否殘留（上一次 session 的狀態） |
+| Consecutive Failures | 檢查連續失敗次數 |
+| Attempt Tracking | 檢查 issue 重試次數追蹤檔案 |
+| Stop Marker | 檢查 STOP 標記是否存在（工作流程已停止） |
+| Lock File | 檢查鎖定檔案是否存在或過期（超過 1 小時視為過期） |
+| GitHub Labels | 檢查 GitHub 上的問題標籤（needs-human-review, review-failed, worker-failed, in-progress） |
+| Deprecated Files | 檢查是否有已棄用的檔案需要移除 |
+| Temp Tickets | 檢查暫存票據檔案是否累積過多（超過 10 個） |
+| Session Files | 檢查 session 檔案是否累積過多（超過 20 個） |
+| Orphan .tmp Files | 檢查是否有超過 1 小時的孤立 .tmp 檔案 |
+| Claude Settings | 檢查 `.claude/settings.local.json` 權限設定是否完整 |
+
+**輸出範例：**
+```
+AWK Health Check
+================
+
+[OK] Stop Marker: No stop marker
+[OK] Lock File: No lock file
+[WARNING] Loop Count: loop_count = 3 (previous session state)
+[WARNING] Consecutive Failures: consecutive_failures = 2
+[WARNING] GitHub: Issues with failed review: 1 issue(s) with 'review-failed' label: #42 [can reset: awkit reset --labels]
+
+Found 3 warning(s)
+
+To reset state, run:
+  awkit reset
+```
+
+如果報告中有可清理的項目，doctor 會建議執行 `awkit reset`。
+
+---
+
+## 重設狀態：awkit reset
+
+當 doctor 發現問題或需要從頭開始時，使用 `awkit reset` 清理專案狀態。
+
+**執行方式：**
+```bash
+awkit reset              # 預設清理
+awkit reset --all         # 完整清理（包含所有項目）
+awkit reset --dry-run     # 預覽模式，不實際執行
+```
+
+**預設行為（不帶 flag）：** 重設 state（loop_count、consecutive_failures）、attempts、STOP 標記、已棄用檔案、暫存票據、孤立 .tmp 檔案。
+
+**`--all` 行為：** 包含預設項目，加上 lock、results、traces、events、sessions、reports、orphans。
+
+**可用 flags：**
+
+| Flag | 說明 |
+|------|------|
+| `--dry-run` | 預覽將清理的項目，不實際執行 |
+| `--all` | 清理所有項目（包含 results、traces、events 等） |
+| `--state` | 重設 state 檔案（loop_count、consecutive_failures） |
+| `--attempts` | 重設 issue 重試追蹤檔案（attempts 目錄和 runs 目錄） |
+| `--stop` | 移除 STOP 標記 |
+| `--lock` | 移除鎖定檔案（kickoff.lock）（謹慎使用） |
+| `--deprecated` | 移除已棄用檔案 |
+| `--results` | 清理 result 檔案（`.ai/results/`） |
+| `--traces` | 清理舊版 trace 檔案（`.ai/state/traces/`，已遷移至 events） |
+| `--events` | 清理 event stream 檔案（`.ai/state/events/`） |
+| `--labels` | 將 GitHub 上的 `review-failed` 標籤重設為 `pr-ready` |
+| `--temp` | 清理暫存票據檔案（`.ai/temp/ticket-*.md`） |
+| `--sessions` | 清理舊 session 檔案（保留最近 5 個） |
+| `--reports` | 清理舊版工作流程報告（`.ai/state/workflow-report-*.md`） |
+| `--orphans` | 清理超過 1 小時的孤立 .tmp 檔案 |
+
+**輸出範例：**
+```
+AWK Reset
+=========
+
+[OK] loop_count: Deleted
+[OK] consecutive_failures: Deleted
+[OK] STOP marker: Not present
+[OK] temp tickets: Deleted 3 file(s)
+
+4 reset
+```
+
+---
+
+## 專案品質評估：awkit evaluate
+
+`awkit evaluate` 是內建的品質評估框架，透過離線門檻（Offline Gates）和線上門檻（Online Gates）評估專案的健康狀態。
+
+**離線門檻（O0-O10）：**
+
+| Gate | 說明 | 權重 |
+|------|------|------|
+| O0 | Git ignore — 檢查 state/result 目錄是否被 git 忽略 | 10 |
+| O1 | Scan repo（預留） | 5 |
+| O3 | Audit project（預留） | 5 |
+| O5 | Config validation — 驗證 workflow.yaml 結構與必要欄位 | 15 |
+| O7 | Version sync — 檢查版本檔案是否存在 | 5 |
+| O8 | File encoding — 檢查 CRLF 行尾和 UTF-16 BOM 編碼問題 | 10 |
+| O10 | Test suite（預留） | 10 |
+
+**線上門檻（N1-N3）：**
+
+| Gate | 說明 | 權重 |
+|------|------|------|
+| N1 | Kickoff dry-run — 檢查 kickoff 前置條件是否滿足 | 20 |
+| N2 | Rollback output（預留） | 10 |
+| N3 | Stats JSON — 驗證 stats.json 結構 | 10 |
+
+**評分規則：** PASS = 滿分，SKIP = 半分，FAIL = 0 分。總分轉換為等級：A (90+)、B (80+)、C (70+)、D (60+)、F (<60)。
+
+> **注意：** evaluate 功能目前作為內部框架運作，部分 gate 仍為預留狀態。
+
+---
+
 ## 錯誤類型總覽
 
 | Exit Code | 錯誤類型 | 說明 |
@@ -33,19 +159,23 @@ Config file not found: .ai/config/workflow.yaml
 
 ---
 
-### 缺少 Python 依賴 (僅 generate.sh)
+### 缺少 Python 依賴 (僅 legacy 腳本)
 
 **症狀：**
 ```
 Please install: pip3 install pyyaml jsonschema jinja2
 ```
 
-**原因：** Python 套件未安裝（僅在執行 `generate.sh` 時需要）
+**原因：** Python 套件未安裝（僅在執行 legacy Python 腳本時需要）
 
-**說明：** Python 依賴為可選，僅用於執行 `bash .ai/scripts/generate.sh`。主要的 AWK 功能透過 `awkit` CLI 執行，不需要 Python。
+**說明：** Python 依賴為可選，僅用於執行 legacy Python 腳本。生成功能已內建於 `awkit generate`，不需要 Python。主要的 AWK 功能透過 `awkit` CLI 執行。
 
 **解決：**
 ```bash
+# 建議使用 awkit generate 取代，不需要 Python
+awkit generate
+
+# 如果仍需要執行 legacy 腳本：
 pip3 install pyyaml jsonschema jinja2
 ```
 
@@ -68,7 +198,7 @@ Schema file not found: .ai/config/workflow.schema.json
 **解決：**
 ```bash
 # 重新生成配置
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 ---
@@ -219,7 +349,7 @@ GitHub CLI operations require approval in the current execution context
 
 方法一：重新生成權限設定（推薦）
 ```bash
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 這會生成 `.claude/settings.local.json`，自動批准 `gh`、`git`、`codex` 等命令。
 
@@ -239,7 +369,7 @@ bash .ai/scripts/generate.sh
 
 方法三：使用 `--dangerously-skip-permissions` flag（不推薦）
 ```bash
-claude --print --dangerously-skip-permissions < .ai/scripts/principal_boot.txt
+claude --print --dangerously-skip-permissions -p "awkit kickoff"
 ```
 
 ---
@@ -252,7 +382,7 @@ claude --print --dangerously-skip-permissions < .ai/scripts/principal_boot.txt
 
 **解決：**
 1. 使用 `awkit kickoff` 取代 `kickoff.sh`（提供 PTY 即時輸出和 Spinner 動畫）
-2. 或升級到最新版本：`awkit upgrade && bash .ai/scripts/generate.sh`
+2. 或升級到最新版本：`awkit upgrade && awkit generate`
 
 ---
 
@@ -424,7 +554,8 @@ Permission denied
 
 **解決：**
 ```bash
-chmod +x .ai/scripts/*.sh
+# Ensure awkit is executable
+chmod +x "$(which awkit)"
 ```
 
 ---

@@ -11,6 +11,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
 
 // DispatchOptions contains options for DispatchWorker
@@ -488,11 +489,11 @@ func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *Disp
 func handleWorkerSuccessNoChanges(ctx context.Context, opts DispatchOptions, logger *DispatchLogger, ghClient *GitHubClient, result *IssueResult) (*DispatchOutput, error) {
 	logger.Log("✓ Worker 成功完成 (無需程式碼變更)")
 
-	// Update labels: remove in-progress, add completed
-	if err := ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"completed"}, []string{"in-progress"}); err != nil {
+	// Update labels: remove in-progress and ai-task, add completed
+	if err := ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"completed"}, []string{"in-progress", "ai-task"}); err != nil {
 		logger.Log("⚠ 無法更新 Issue 標籤: %v", err)
 	} else {
-		logger.Log("✓ Issue 標籤已更新 (in-progress → completed)")
+		logger.Log("✓ Issue 標籤已更新 (in-progress, ai-task → completed)")
 	}
 
 	// Post comment explaining the result
@@ -503,6 +504,13 @@ func handleWorkerSuccessNoChanges(ctx context.Context, opts DispatchOptions, log
 		"- 任務屬於調查/分析類型，無需修改程式碼"
 	if err := ghClient.CommentOnIssue(ctx, opts.IssueNumber, comment); err != nil {
 		logger.Log("⚠ 無法發送評論: %v", err)
+	}
+
+	// Close the issue (consistent with merge-success behavior)
+	if err := ghClient.CloseIssue(ctx, opts.IssueNumber); err != nil {
+		logger.Log("⚠ 無法關閉 Issue: %v", err)
+	} else {
+		logger.Log("✓ Issue #%d 已關閉", opts.IssueNumber)
 	}
 
 	// Record worker_completed
@@ -641,14 +649,14 @@ func (o *DispatchOutput) FormatBashOutput() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("WORKER_STATUS=%s\n", o.Status))
 	if o.PRURL != "" {
-		sb.WriteString(fmt.Sprintf("PR_URL=%s\n", o.PRURL))
+		sb.WriteString(fmt.Sprintf("PR_URL=%s\n", util.ShellSafe(o.PRURL)))
 	}
 	if o.Error != "" {
-		sb.WriteString(fmt.Sprintf("WORKER_ERROR=%s\n", o.Error))
+		sb.WriteString(fmt.Sprintf("WORKER_ERROR=%s\n", util.ShellSafe(o.Error)))
 	}
 	// needs_conflict_resolution specific fields
 	if o.Status == "needs_conflict_resolution" {
-		sb.WriteString(fmt.Sprintf("WORKTREE_PATH=%s\n", o.WorktreePath))
+		sb.WriteString(fmt.Sprintf("WORKTREE_PATH=%s\n", util.ShellSafe(o.WorktreePath)))
 		sb.WriteString(fmt.Sprintf("ISSUE_NUMBER=%d\n", o.IssueNumber))
 		sb.WriteString(fmt.Sprintf("PR_NUMBER=%d\n", o.PRNumber))
 	}

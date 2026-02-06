@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
 // CreateTaskOptions contains options for creating a task.
@@ -146,8 +146,7 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 	ctx, cancel := context.WithTimeout(ctx, opts.GHTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", ghArgs...)
-	output, err := cmd.CombinedOutput()
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", ghArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("gh issue create failed: %s\n%s", err, string(output))
 	}

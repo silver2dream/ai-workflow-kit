@@ -8,7 +8,7 @@
 
 ### 必要條件
 
-- Python 3.8+
+- Go 1.25+
 - Git
 - GitHub CLI (`gh`)
 - Bash (Windows 使用者需要 Git Bash 或 WSL)
@@ -28,8 +28,6 @@
 ```
 .ai/
 ├── config/           # 配置檔與 Schema
-├── scripts/          # Python 腳本與 Shell 腳本
-│   └── lib/          # Python 共用模組
 ├── templates/        # Jinja2 模板
 ├── rules/            # 規則檔案
 ├── tests/            # 測試套件
@@ -80,9 +78,6 @@ go test ./internal/errors/... -v
 
 # 執行測試覆蓋率
 go test ./... -cover
-
-# 執行 Shell 腳本測試 (如果有)
-bash .ai/tests/run_all_tests.sh
 
 # 驗證配置
 awkit validate
@@ -140,6 +135,8 @@ gh pr create --base main --title "[feat] add GitLab support" --body "..."
 
 ### Python
 
+> **⚠️ DEPRECATED**: 以下 Python 規範僅供參考，AWK 已遷移至 Go。新功能請遵循 Go 規範。
+
 #### 風格指南
 
 - 遵循 PEP 8
@@ -157,7 +154,7 @@ from lib.errors import AWKError, ConfigError, ValidationError, ExecutionError, p
 # 配置相關錯誤
 raise ConfigError(
     message="Config file not found",
-    suggestion="Run generate.sh first"
+    suggestion="Run awkit generate first"
 )
 
 # 驗證相關錯誤
@@ -389,6 +386,8 @@ go test ./internal/errors -run TestAWKError -v
 
 ### API 文件格式
 
+> **⚠️ DEPRECATED**: 以下 Python docstring 範例僅供參考，AWK 已遷移至 Go。新程式碼請使用 Go doc 註解風格。
+
 ```python
 def function_name(param1: str, param2: int = 10) -> dict:
     """簡短描述。
@@ -500,14 +499,11 @@ go test ./internal/errors/... -v
 ### Q: 如何在本地測試 Shell 腳本？
 
 ```bash
-# 使用 awkit CLI（推薦）
+# 使用 awkit CLI
 awkit kickoff --dry-run
 
-# 或使用 bash 腳本
-bash .ai/scripts/kickoff.sh --dry-run
-
 # 啟用 debug 輸出
-bash -x .ai/scripts/generate.sh
+awkit generate
 ```
 
 ### Q: Windows 上腳本執行失敗？

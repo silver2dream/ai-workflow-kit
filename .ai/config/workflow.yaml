@@ -170,18 +170,18 @@ github:
     task: "ai-task"
     in_progress: "in-progress"
     pr_ready: "pr-ready"
-    review_pass: "review-pass"
-    review_fail: "review-fail"
+    review_failed: "review-fail"
     worker_failed: "worker-failed"
     needs_human_review: "needs-human-review"
     merge_conflict: "merge-conflict"
     needs_rebase: "needs-rebase"
+    completed: "completed"
 
 # ============================================================
 # Rules Configuration
 # ============================================================
 # Kit 核心規則 vs 使用者自訂規則：
-#   - Kit 核心規則：generate.sh 自動生成到 .ai/rules/_kit/
+#   - Kit 核心規則：awkit generate 自動生成到 .ai/rules/_kit/
 #     - git-workflow.md（從模板生成，包含分支配置）
 #   - 使用者自訂規則：放在 .ai/rules/（不會被覆蓋）
 #     - backend-go.md, frontend-unity.md 等
@@ -190,7 +190,7 @@ github:
 #   1. .ai/rules/{rule}.md（使用者自訂優先）
 #   2. .ai/rules/_kit/{rule}.md（Kit 核心）
 rules:
-  # Kit 核心規則（由 generate.sh 管理，不要手動編輯）
+  # Kit 核心規則（由 awkit generate 管理，不要手動編輯）
   kit:
     - git-workflow  # 從 git-workflow.md.j2 生成
   
@@ -214,6 +214,9 @@ timeouts:
   git_seconds: 120
   gh_seconds: 60
   codex_minutes: 30
+  # GitHub API retry configuration
+  gh_retry_count: 3          # max retry attempts for gh CLI calls
+  gh_retry_base_delay: 2     # base delay in seconds (exponential backoff)
 
 # ============================================================
 # Escalation Configuration
@@ -252,9 +255,18 @@ escalation:
   max_single_pr_lines: 500
 
 # ============================================================
+# Review Configuration
+# ============================================================
+# 審查相關設定
+review:
+  # Minimum score (1-10) to approve a PR (default: 7)
+  score_threshold: 7
+  # Merge strategy: squash | merge | rebase (default: squash)
+  merge_strategy: squash
+
+# ============================================================
 # Notification Configuration
 # ============================================================
-notifications:
-  slack_webhook: "${AI_SLACK_WEBHOOK}"
-  discord_webhook: "${AI_DISCORD_WEBHOOK}"
-  system_notify: true
+# notifications: (planned for future release)
+# Slack/Discord webhook notifications are not yet implemented in Go code.
+# See: https://github.com/silver2dream/ai-workflow-kit/issues for updates.

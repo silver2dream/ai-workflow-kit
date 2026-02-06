@@ -760,7 +760,9 @@ func normalizeForMatching(s string) string {
 	return s
 }
 
-// fuzzyMatch checks if two criteria strings match loosely
+// fuzzyMatch checks if two criteria strings match loosely.
+// A length ratio threshold prevents short substrings from matching
+// unrelated longer strings (e.g. "fix" matching "fix all logging modules").
 func fuzzyMatch(a, b string) bool {
 	a = normalizeForMatching(strings.ToLower(a))
 	b = normalizeForMatching(strings.ToLower(b))
@@ -770,8 +772,9 @@ func fuzzyMatch(a, b string) bool {
 		return true
 	}
 
-	// Contains match
-	if strings.Contains(a, b) || strings.Contains(b, a) {
+	// Contains match with length ratio guard:
+	// the shorter string must be at least 60% of the longer string's length.
+	if containsWithRatio(a, b) {
 		return true
 	}
 
@@ -782,7 +785,23 @@ func fuzzyMatch(a, b string) bool {
 		b = strings.ReplaceAll(b, w, "")
 	}
 
-	return strings.Contains(a, b) || strings.Contains(b, a)
+	return containsWithRatio(a, b)
+}
+
+// containsWithRatio returns true if one string contains the other AND
+// the shorter string is at least 60% the length of the longer string.
+func containsWithRatio(a, b string) bool {
+	if !strings.Contains(a, b) && !strings.Contains(b, a) {
+		return false
+	}
+	shorter, longer := len(a), len(b)
+	if shorter > longer {
+		shorter, longer = longer, shorter
+	}
+	if longer == 0 {
+		return true
+	}
+	return float64(shorter)/float64(longer) >= 0.6
 }
 
 // fuzzyMatchTestName performs fuzzy matching for test names

@@ -56,7 +56,7 @@ func TestGenerateSessionID(t *testing.T) {
 				t.Errorf("GenerateSessionID(%q) = %q, should start with %q-", tt.role, id, tt.role)
 			}
 
-			// Should have format: role-YYYYMMDD-HHMMSS-xxxx
+			// Should have format: role-YYYYMMDD-HHMMSS-xxxxxxxx
 			parts := strings.Split(id, "-")
 			if len(parts) != 4 {
 				t.Errorf("GenerateSessionID(%q) = %q, expected 4 parts separated by -", tt.role, id)

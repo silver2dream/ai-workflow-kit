@@ -3,9 +3,10 @@ package workflow
 import (
 	"context"
 	"encoding/json"
-	"os/exec"
 	"strconv"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
 // WorkflowStats holds GitHub issue statistics
@@ -23,13 +24,12 @@ type WorkflowStats struct {
 func CollectGitHubStats(ctx context.Context, timeout time.Duration) (*WorkflowStats, error) {
 	stats := &WorkflowStats{}
 
-	// Helper to run gh command with timeout
+	// Helper to run gh command with timeout and retry
 	ghQuery := func(args ...string) int {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
-		cmd := exec.CommandContext(ctx, "gh", args...)
-		output, err := cmd.Output()
+		output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", args...)
 		if err != nil {
 			return 0
 		}

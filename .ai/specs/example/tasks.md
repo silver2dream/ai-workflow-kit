@@ -27,4 +27,4 @@ Sync: independent
     - _Requirements: R3_
 
 - [ ] 4. Checkpoint
-  - Ensure `bash .ai/scripts/evaluate.sh --offline` and `bash .ai/tests/run_all_tests.sh` pass.
+  - Ensure `awkit evaluate --offline` and `go test ./...` pass.

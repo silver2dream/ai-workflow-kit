@@ -161,7 +161,7 @@ rules:
 Then regenerate helper docs (recommended):
 
 ```bash
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 This will also generate `.claude/settings.local.json` with pre-approved permissions for `gh`, `git`, `codex`, and your verify commands. This enables true autopilot mode without manual approval prompts.
@@ -175,16 +175,16 @@ You can use `.ai/specs/example/` as a template (it includes `requirements.md`, `
 ## 4) Run offline verification
 
 ```bash
-bash .ai/scripts/evaluate.sh --offline
-bash .ai/tests/run_all_tests.sh
+awkit evaluate --offline
+go test ./...
 ```
 
 ## 5) Enable CI (GitHub Actions)
 
 Add a workflow under `.github/workflows/` that runs:
 
-- `bash .ai/scripts/evaluate.sh --offline`
-- `bash .ai/tests/run_all_tests.sh`
+- `awkit evaluate --offline`
+- `go test ./...`
 - backend tests: `go test ./...` in `backend/`
 - frontend sanity checks in `frontend/`
 
@@ -193,5 +193,5 @@ This repo ships with a working example workflow in `.github/workflows/ci.yml`.
 If you prefer generating CI from templates, run:
 
 ```bash
-bash .ai/scripts/generate.sh --generate-ci
+awkit generate --generate-ci
 ```
