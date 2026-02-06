@@ -90,7 +90,7 @@ func TestGetTestCommandFromConfig(t *testing.T) {
 			want:         "cd be && go test ./...",
 		},
 		{
-			name: "no matching repo - use first",
+			name: "no matching repo - returns empty (no false positive)",
 			configYAML: `repos:
   - name: backend
     path: "backend"
@@ -99,10 +99,10 @@ func TestGetTestCommandFromConfig(t *testing.T) {
       test: "go test ./..."
 `,
 			worktreePath: "/unrelated/path",
-			want:         "cd backend && go test ./...",
+			want:         "", // Should NOT fallback to first repo - this was the bug!
 		},
 		{
-			name: "worktree NOT_FOUND",
+			name: "worktree NOT_FOUND - returns empty",
 			configYAML: `repos:
   - name: backend
     path: "backend"
@@ -111,7 +111,7 @@ func TestGetTestCommandFromConfig(t *testing.T) {
       test: "go test ./..."
 `,
 			worktreePath: "NOT_FOUND",
-			want:         "cd backend && go test ./...",
+			want:         "", // Should NOT fallback to first repo
 		},
 		{
 			name:         "invalid yaml",

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
@@ -189,32 +190,29 @@ func getRepoSettingsFromConfig(stateRoot, worktreePath string) repoSettings {
 		return repoSettings{TestCommand: "", Language: "unknown"}
 	}
 
-	// Try to match repo based on worktree path
-	// Use Contains to find repo path or name anywhere in the worktree path
-	// This handles cases like ".worktrees/issue-1/backend" or paths containing the repo name
-	for _, repo := range cfg.Repos {
-		if worktreePath != "" && worktreePath != "NOT_FOUND" {
-			// Match if worktree contains repo path or name
-			if strings.Contains(worktreePath, repo.Path) || strings.Contains(worktreePath, repo.Name) {
-				return repoSettings{
-					TestCommand: buildTestCommand(repo.Path, repo.Type, repo.Verify.Test),
-					Language:    repo.Language,
-				}
-			}
+	// Convert to repo.Config and use unified RepoResolver
+	repoConfigs := make([]repo.Config, len(cfg.Repos))
+	for i, r := range cfg.Repos {
+		repoConfigs[i] = repo.Config{
+			Name:     r.Name,
+			Path:     r.Path,
+			Type:     r.Type,
+			Language: r.Language,
+			Verify:   repo.VerifyConfig{Test: r.Verify.Test},
 		}
 	}
 
-	// Return first repo's settings if available
-	for _, repo := range cfg.Repos {
-		if repo.Verify.Test != "" {
-			return repoSettings{
-				TestCommand: buildTestCommand(repo.Path, repo.Type, repo.Verify.Test),
-				Language:    repo.Language,
-			}
+	resolver := repo.NewResolver(repoConfigs)
+	matched := resolver.FindByWorktreePath(worktreePath)
+
+	if matched != nil {
+		return repoSettings{
+			TestCommand: buildTestCommand(matched.Path, matched.Type, matched.Verify.Test),
+			Language:    matched.Language,
 		}
 	}
 
-	// Return empty/unknown settings instead of assuming Go project
+	// No match found - return unknown (fail explicitly rather than wrong guess)
 	return repoSettings{TestCommand: "", Language: "unknown"}
 }
 
