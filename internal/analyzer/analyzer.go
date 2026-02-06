@@ -15,9 +15,9 @@ import (
 
 // Constants for loop safety
 const (
-	MaxLoop                = 1000
-	MaxConsecutiveFailures = 5
-	MaxReviewAttempts      = 2
+	MaxLoop                      = 1000
+	MaxConsecutiveFailures       = 5
+	DefaultMaxReviewAttempts     = 3
 )
 
 // Analyzer implements workflow decision logic
@@ -85,16 +85,32 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}
 
 	// Step 1: Check in-progress issues
+	// CRITICAL: This check MUST succeed. If it fails, we might double-dispatch a worker
+	// to an issue that already has one running.
 	inProgressIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.InProgress)
-	if err == nil && len(inProgressIssues) > 0 {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] error: failed to check in-progress issues: %v\n", err)
+		return &Decision{
+			NextAction: ActionNone,
+			ExitReason: ReasonGitHubAPIError,
+		}, nil
+	}
+	if len(inProgressIssues) > 0 {
 		return &Decision{
 			NextAction:  ActionCheckResult,
 			IssueNumber: inProgressIssues[0].Number,
 		}, nil
 	}
 
+	// Track API errors for subsequent non-critical checks
+	var apiErrors int
+
 	// Step 2: Check pr-ready issues
 	prReadyIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.PRReady)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check pr-ready issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && len(prReadyIssues) > 0 {
 		issue := prReadyIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
@@ -117,13 +133,17 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 
 	// Step 2.3: Check review-failed issues (retry with new subagent)
 	reviewFailedIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.ReviewFailed)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check review-failed issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && len(reviewFailedIssues) > 0 {
 		issue := reviewFailedIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
 
 		if prNumber > 0 {
 			attempts := a.getReviewAttempts(prNumber)
-			if attempts < MaxReviewAttempts {
+			if attempts < a.maxReviewAttempts() {
 				// Try to persist the incremented attempt count BEFORE allowing retry
 				// This prevents infinite loops if we can't track attempts
 				if err := a.incrementReviewAttempts(prNumber); err != nil {
@@ -166,6 +186,10 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	// Note: Don't remove the label here - dispatch-worker will handle it
 	// This ensures the label persists if dispatch fails or MergeIssue isn't passed correctly
 	conflictIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.MergeConflict)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check merge-conflict issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && len(conflictIssues) > 0 {
 		issue := conflictIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
@@ -189,6 +213,10 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	// Step 2.6: Check needs-rebase label (Worker needs to rebase)
 	// Note: Don't remove the label here - dispatch-worker will handle it
 	rebaseIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.NeedsRebase)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check needs-rebase issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && len(rebaseIssues) > 0 {
 		issue := rebaseIssues[0]
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
@@ -211,6 +239,10 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 
 	// Step 2.7: Check for blocking labels
 	workerFailedIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.WorkerFailed)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check worker-failed issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && len(workerFailedIssues) > 0 {
 		return &Decision{
 			NextAction:  ActionNone,
@@ -220,6 +252,10 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}
 
 	needsReviewIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.NeedsHumanReview)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check needs-human-review issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && len(needsReviewIssues) > 0 {
 		return &Decision{
 			NextAction:  ActionNone,
@@ -230,6 +266,10 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 
 	// Step 3: Check pending issues
 	pendingIssues, err := a.GHClient.ListPendingIssues(ctx, labels)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check pending issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && len(pendingIssues) > 0 {
 		// Check each pending issue for merged PR (cleanup orphaned issues)
 		for _, issue := range pendingIssues {
@@ -257,6 +297,10 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 
 	// Step 5: Check if all complete
 	openCount, err := a.GHClient.CountOpenIssues(ctx, labels.Task)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to count open issues: %v\n", err)
+		apiErrors++
+	}
 	if err == nil && openCount == 0 {
 		return &Decision{
 			NextAction: ActionAllComplete,
@@ -264,6 +308,13 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}
 
 	// Step 6: No actionable tasks
+	// Distinguish between "no tasks found" and "couldn't check due to API errors"
+	if apiErrors > 0 {
+		return &Decision{
+			NextAction: ActionNone,
+			ExitReason: ReasonGitHubAPIError,
+		}, nil
+	}
 	return &Decision{
 		NextAction: ActionNone,
 		ExitReason: ReasonNoActionableTasks,
@@ -333,21 +384,41 @@ func (a *Analyzer) readConsecutiveFailures() int {
 	return count
 }
 
-// extractPRNumberForIssue extracts PR number from result file or issue body
+// extractPRNumberForIssue extracts PR number from result file, issue body, or branch lookup
 func (a *Analyzer) extractPRNumberForIssue(issueNumber int, issueBody string) int {
-	// Try result file first
+	// Try result file first (most reliable: has pr_url from worker)
 	resultFile := filepath.Join(a.StateRoot, ".ai", "results", "issue-"+strconv.Itoa(issueNumber)+".json")
 	if data, err := os.ReadFile(resultFile); err == nil {
 		var result struct {
-			PRURL string `json:"pr_url"`
+			PRURL    string `json:"pr_url"`
+			PRNumber int    `json:"pr_number"`
 		}
-		if json.Unmarshal(data, &result) == nil && result.PRURL != "" {
-			return ExtractPRNumber(result.PRURL)
+		if json.Unmarshal(data, &result) == nil {
+			// Try pr_number field first (integer, more reliable)
+			if result.PRNumber > 0 {
+				return result.PRNumber
+			}
+			// Fallback to pr_url string parsing
+			if result.PRURL != "" {
+				if num := ExtractPRNumber(result.PRURL); num > 0 {
+					return num
+				}
+			}
 		}
 	}
 
-	// Fallback to issue body
-	return ExtractPRNumber(issueBody)
+	// Try issue body
+	if num := ExtractPRNumber(issueBody); num > 0 {
+		return num
+	}
+
+	// Fallback: look up PR by branch name convention (feat/ai-issue-{N})
+	branchName := fmt.Sprintf("feat/ai-issue-%d", issueNumber)
+	if prNum, err := a.GHClient.FindPRByBranch(context.Background(), branchName); err == nil && prNum > 0 {
+		return prNum
+	}
+
+	return 0
 }
 
 // checkTasksFiles checks tasks.md files for uncompleted tasks
@@ -413,6 +484,14 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 	}
 
 	return nil
+}
+
+// maxReviewAttempts returns the configured max review attempts, falling back to default.
+func (a *Analyzer) maxReviewAttempts() int {
+	if a.Config != nil && a.Config.Escalation.MaxReviewAttempts > 0 {
+		return a.Config.Escalation.MaxReviewAttempts
+	}
+	return DefaultMaxReviewAttempts
 }
 
 // getReviewAttempts returns the number of review attempts for a PR

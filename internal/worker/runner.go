@@ -1294,9 +1294,17 @@ func isWorkingTreeDirty(ctx context.Context, dir string) (bool, string) {
 	return true, output
 }
 
-// autoCleanRootRepository cleans the root repository before preflight check.
-// This handles leftover changes from previous failed Worker executions.
-// It performs: remove index.lock, git reset --hard HEAD, git clean -fd
+// workflowManagedPaths are path prefixes that autoCleanRootRepository is
+// allowed to reset. Changes outside these paths are left untouched so that
+// user modifications (e.g. edited config files) are never silently discarded.
+var workflowManagedPaths = []string{
+	".ai/",
+	".worktrees/",
+}
+
+// autoCleanRootRepository cleans workflow-managed paths in the root repository
+// before preflight check. Only .ai/ and .worktrees/ are cleaned; user files
+// outside these paths are preserved.
 func autoCleanRootRepository(ctx context.Context, stateRoot string, timeout time.Duration, logf func(string, ...interface{})) error {
 	// Step 1: Remove stale index lock
 	lockPath := filepath.Join(stateRoot, ".git", "index.lock")
@@ -1310,27 +1318,42 @@ func autoCleanRootRepository(ctx context.Context, stateRoot string, timeout time
 		}
 	}
 
-	// Step 2: Check if working tree is dirty before cleaning
-	dirty, details := isWorkingTreeDirty(ctx, stateRoot)
+	// Step 2: Check if working tree is dirty at all
+	dirty, _ := isWorkingTreeDirty(ctx, stateRoot)
 	if !dirty {
 		return nil // Nothing to clean
 	}
-	if logf != nil {
-		logf("Auto-cleaning dirty working tree: %s", details)
+
+	// Step 3: Restore tracked files and clean untracked files in workflow-managed paths only.
+	// This avoids parsing porcelain output and directly targets workflow directories.
+	cleaned := false
+	for _, prefix := range workflowManagedPaths {
+		managedDir := filepath.Join(stateRoot, prefix)
+		if _, err := os.Stat(managedDir); err != nil {
+			continue // directory doesn't exist, skip
+		}
+
+		// Restore tracked changes in this path (best-effort)
+		if err := runGit(ctx, stateRoot, timeout, "checkout", "HEAD", "--", prefix); err != nil {
+			if logf != nil {
+				logf("git checkout %s partial: %v", prefix, err)
+			}
+		} else {
+			cleaned = true
+		}
+
+		// Remove untracked files in this path
+		if err := runGit(ctx, stateRoot, timeout, "clean", "-fd", prefix); err != nil {
+			if logf != nil {
+				logf("WARNING: git clean %s failed: %v", prefix, err)
+			}
+		} else {
+			cleaned = true
+		}
 	}
 
-	// Step 3: Hard reset to HEAD (discard staged and unstaged changes)
-	if err := runGit(ctx, stateRoot, timeout, "reset", "--hard", "HEAD"); err != nil {
-		return fmt.Errorf("git reset --hard failed: %w", err)
-	}
-
-	// Step 4: Clean untracked files and directories
-	if err := runGit(ctx, stateRoot, timeout, "clean", "-fd"); err != nil {
-		return fmt.Errorf("git clean -fd failed: %w", err)
-	}
-
-	if logf != nil {
-		logf("Successfully cleaned root repository")
+	if cleaned && logf != nil {
+		logf("Successfully cleaned workflow-managed files in root repository")
 	}
 	return nil
 }
@@ -1664,11 +1687,11 @@ func resolveTaskLine(meta *TicketMetadata) string {
 
 func generateSessionID(role string) string {
 	now := time.Now().UTC().Format("20060102-150405")
-	random := make([]byte, 2)
+	random := make([]byte, 4)
 	if _, err := rand.Read(random); err != nil {
-		random = []byte{0, 0}
+		random = []byte{0, 0, 0, 0}
 	}
-	return fmt.Sprintf("%s-%s-%02x%02x", role, now, random[0], random[1])
+	return fmt.Sprintf("%s-%s-%x", role, now, random)
 }
 
 func containsString(values []string, target string) bool {

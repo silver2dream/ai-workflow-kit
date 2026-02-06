@@ -285,6 +285,36 @@ func TestWindowsCaseInsensitivity(t *testing.T) {
 	})
 }
 
+// TestShellSafe tests the ShellSafe function for bash eval safety.
+func TestShellSafe(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple string", "hello", "'hello'"},
+		{"empty string", "", "''"},
+		{"with spaces", "hello world", "'hello world'"},
+		{"with single quote", "it's fine", `'it'\''s fine'`},
+		{"with newline", "line1\nline2", "'line1 line2'"},
+		{"with carriage return", "line1\r\nline2", "'line1 line2'"},
+		{"shell injection attempt", "$(rm -rf /)", "'$(rm -rf /)'"},
+		{"backtick injection", "`rm -rf /`", "'`rm -rf /`'"},
+		{"double quotes", `he said "hello"`, `'he said "hello"'`},
+		{"semicolon", "a; rm -rf /", "'a; rm -rf /'"},
+		{"pipe", "a | cat /etc/passwd", "'a | cat /etc/passwd'"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ShellSafe(tt.input)
+			if result != tt.expected {
+				t.Errorf("ShellSafe(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 // Helper functions for tests
 func containsBackslash(s string) bool {
 	for _, c := range s {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
 
 func usageSubmitReview() {
@@ -128,7 +129,7 @@ func cmdSubmitReview(args []string) int {
 	// Output result
 	fmt.Printf("RESULT=%s\n", result.Result)
 	if result.Reason != "" {
-		fmt.Printf("REASON=%s\n", result.Reason)
+		fmt.Printf("REASON=%s\n", util.ShellSafe(result.Reason))
 	}
 
 	return 0

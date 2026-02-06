@@ -43,6 +43,7 @@ type GitHubClientInterface interface {
 	AddLabel(ctx context.Context, issueNumber int, label string) error
 	IsPRMerged(ctx context.Context, prNumber int) (bool, error)
 	CloseIssue(ctx context.Context, issueNumber int) error
+	FindPRByBranch(ctx context.Context, branchName string) (int, error)
 }
 
 // GitHubClient wraps GitHub CLI operations
@@ -69,6 +70,7 @@ func (c *GitHubClient) ListIssuesByLabel(ctx context.Context, label string) ([]I
 	cmd := exec.CommandContext(ctx, "gh", "issue", "list",
 		"--label", label,
 		"--state", "open",
+		"--limit", "200",
 		"--json", "number,body,labels,state")
 
 	output, err := cmd.Output()
@@ -85,7 +87,7 @@ func (c *GitHubClient) ListIssuesByLabel(ctx context.Context, label string) ([]I
 }
 
 // ListPendingIssues lists issues with task label but without blocking labels
-// (in-progress, pr-ready, worker-failed, needs-human-review, review-failed, merge-conflict, needs-rebase)
+// (in-progress, pr-ready, worker-failed, needs-human-review, review-failed, merge-conflict, needs-rebase, completed)
 func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfig) ([]Issue, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
@@ -93,6 +95,7 @@ func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfi
 	cmd := exec.CommandContext(ctx, "gh", "issue", "list",
 		"--label", labels.Task,
 		"--state", "open",
+		"--limit", "200",
 		"--json", "number,body,labels,state")
 
 	output, err := cmd.Output()
@@ -114,7 +117,8 @@ func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfi
 			!issue.HasLabel(labels.NeedsHumanReview) &&
 			!issue.HasLabel(labels.ReviewFailed) &&
 			!issue.HasLabel(labels.MergeConflict) &&
-			!issue.HasLabel(labels.NeedsRebase) {
+			!issue.HasLabel(labels.NeedsRebase) &&
+			!issue.HasLabel(labels.Completed) {
 			pendingIssues = append(pendingIssues, issue)
 		}
 	}
@@ -130,6 +134,7 @@ func (c *GitHubClient) CountOpenIssues(ctx context.Context, taskLabel string) (i
 	cmd := exec.CommandContext(ctx, "gh", "issue", "list",
 		"--label", taskLabel,
 		"--state", "open",
+		"--limit", "200",
 		"--json", "number",
 		"--jq", ". | length")
 
@@ -226,6 +231,37 @@ func (c *GitHubClient) IsPRMerged(ctx context.Context, prNumber int) (bool, erro
 	}
 
 	return pr.State == "MERGED" || pr.MergedAt != "", nil
+}
+
+// FindPRByBranch finds an open PR by head branch name and returns its number
+// Returns 0 if no open PR is found for the branch
+func (c *GitHubClient) FindPRByBranch(ctx context.Context, branchName string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
+		"--head", branchName,
+		"--state", "open",
+		"--limit", "1",
+		"--json", "number",
+		"--jq", ".[0].number")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+
+	numStr := strings.TrimSpace(string(output))
+	if numStr == "" || numStr == "null" {
+		return 0, nil
+	}
+
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return 0, nil
+	}
+
+	return num, nil
 }
 
 // CloseIssue closes an issue

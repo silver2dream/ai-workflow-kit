@@ -316,6 +316,24 @@ func ExtractPRNumber(body string) int {
 	return 0
 }
 
+// CloseIssue closes an issue
+func (c *GitHubClient) CloseIssue(ctx context.Context, number int) error {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "issue", "close", strconv.Itoa(number))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("timeout closing issue %d", number)
+		}
+		return fmt.Errorf("gh issue close failed: %s", stderr.String())
+	}
+	return nil
+}
+
 // HasLabel checks if an issue has a specific label
 func (info *IssueInfo) HasLabel(label string) bool {
 	for _, l := range info.Labels {

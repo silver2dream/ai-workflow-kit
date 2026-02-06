@@ -76,13 +76,17 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 		return nil, fmt.Errorf("failed to create review directory: %w", err)
 	}
 
-	// 4. Check worktree path - fail fast if worktree doesn't exist
-	// This prevents pr-reviewer agent from attempting to cd to non-existent directory
+	// 4. Check worktree path - auto-rebuild if missing
 	wtPath := filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueNumber))
 	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
 		rc.WorktreePath = wtPath
 	} else {
-		return nil, fmt.Errorf("worktree not found for issue #%d: expected at %s", opts.IssueNumber, wtPath)
+		// Worktree missing - try to rebuild from PR branch
+		rebuilt, rebuildErr := rebuildWorktree(ctx, opts.StateRoot, opts.IssueNumber, opts.PRNumber, opts.GHTimeout)
+		if rebuildErr != nil {
+			return nil, fmt.Errorf("worktree not found for issue #%d and auto-rebuild failed: %w", opts.IssueNumber, rebuildErr)
+		}
+		rc.WorktreePath = rebuilt
 	}
 
 	// 5. Fetch issue details (ticket with acceptance criteria)
@@ -107,6 +111,7 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 }
 
 // getCIStatus checks PR CI status via gh cli
+// Returns "passed", "failed", or "unknown" (when CI status cannot be determined)
 func getCIStatus(ctx context.Context, prNumber int, timeout time.Duration) string {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -126,12 +131,17 @@ func getCIStatus(ctx context.Context, prNumber int, timeout time.Duration) strin
 	cmd = exec.CommandContext(ctx, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber))
 	output, err = cmd.Output()
 	if err == nil {
-		if strings.Contains(strings.ToLower(string(output)), "fail") {
+		lower := strings.ToLower(string(output))
+		if strings.Contains(lower, "fail") {
 			return "failed"
+		}
+		if strings.Contains(lower, "pass") {
+			return "passed"
 		}
 	}
 
-	return "passed"
+	// Cannot determine CI status - fail-safe: do not assume passed
+	return "unknown"
 }
 
 // extractIssueBody extracts the body from issue JSON
@@ -236,6 +246,46 @@ func buildTestCommand(repoPath, repoType, testCmd string) string {
 
 	// For directory or submodule repos, cd into the directory first
 	return fmt.Sprintf("cd %s && %s", path, testCmd)
+}
+
+// rebuildWorktree attempts to recreate a missing worktree from the PR's head branch
+func rebuildWorktree(ctx context.Context, stateRoot string, issueNumber, prNumber int, timeout time.Duration) (string, error) {
+	wtPath := filepath.Join(stateRoot, ".worktrees", fmt.Sprintf("issue-%d", issueNumber))
+
+	// First, fetch latest refs
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout)
+	defer fetchCancel()
+	fetchCmd := exec.CommandContext(fetchCtx, "git", "fetch", "--all")
+	fetchCmd.Dir = stateRoot
+	_ = fetchCmd.Run() // best-effort
+
+	// Try branch name convention: feat/ai-issue-{N}
+	branchName := fmt.Sprintf("feat/ai-issue-%d", issueNumber)
+
+	// Try to add worktree from the branch
+	addCtx, addCancel := context.WithTimeout(ctx, timeout)
+	defer addCancel()
+	addCmd := exec.CommandContext(addCtx, "git", "worktree", "add", wtPath, branchName)
+	addCmd.Dir = stateRoot
+	if err := addCmd.Run(); err != nil {
+		// Try remote tracking branch
+		remoteBranch := fmt.Sprintf("origin/%s", branchName)
+		addCtx2, addCancel2 := context.WithTimeout(ctx, timeout)
+		defer addCancel2()
+		addCmd2 := exec.CommandContext(addCtx2, "git", "worktree", "add", wtPath, remoteBranch)
+		addCmd2.Dir = stateRoot
+		if err2 := addCmd2.Run(); err2 != nil {
+			return "", fmt.Errorf("failed to rebuild worktree from branch %s or %s: %v / %v", branchName, remoteBranch, err, err2)
+		}
+	}
+
+	// Verify the worktree was created
+	if info, err := os.Stat(wtPath); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("worktree rebuild succeeded but directory not found at %s", wtPath)
+	}
+
+	fmt.Fprintf(os.Stderr, "[REVIEW] auto-rebuilt worktree at %s from branch %s\n", wtPath, branchName)
+	return wtPath, nil
 }
 
 // fetchIssueJSON fetches issue details as JSON

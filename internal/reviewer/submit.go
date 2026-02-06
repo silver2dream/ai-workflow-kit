@@ -14,6 +14,8 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
+
+	"gopkg.in/yaml.v3"
 )
 
 // SubmitReviewOptions configures the submit review operation
@@ -34,7 +36,7 @@ type SubmitReviewOptions struct {
 
 // SubmitReviewResult holds the result of submitting a review
 type SubmitReviewResult struct {
-	Result string // merged, approved_ci_failed, changes_requested, review_blocked, merge_failed
+	Result string // merged, changes_requested, review_blocked, merge_failed
 	Reason string
 }
 
@@ -225,26 +227,34 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			return &SubmitReviewResult{Result: "merged"}, nil
 		}
 
-		// CI failed
-		if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 失敗
+		// CI not passed - treat as changes_requested so Worker fixes CI issues
+		// Use review-failed label (not ai-task) to avoid infinite dispatch loop
+		ciReason := "CI failed"
+		ciStatusDisplay := "❌ 失敗"
+		if opts.CIStatus == "unknown" {
+			ciReason = "CI status unknown"
+			ciStatusDisplay = "⚠️ 無法確認（未自動合併以確保安全）"
+		}
+
+		if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 未通過
 
 審查評分: %d/10 ✅
 
 %s
 
 ---
-**CI 狀態**: ❌ 失敗
+**CI 狀態**: %s
 
 請檢查 CI 日誌並修復問題後重新提交。
-PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != nil {
+PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHTimeout); err != nil {
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 		}
 
-		if err := editIssueLabels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+		if err := editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 		}
 
-		return &SubmitReviewResult{Result: "approved_ci_failed"}, nil
+		return &SubmitReviewResult{Result: "changes_requested", Reason: ciReason}, nil
 	}
 
 	// Request changes (critical operation - must succeed)
@@ -326,7 +336,7 @@ func handleMergeFailure(ctx context.Context, opts SubmitReviewOptions, sessionID
 	switch mergeState {
 	case "DIRTY":
 		label = "merge-conflict"
-		result = "conflict_needs_fix"
+		result = "merge_failed"
 		message = fmt.Sprintf(`## AWK Review: Merge Conflict
 
 PR: #%d
@@ -336,7 +346,7 @@ PR 有 merge conflict。Worker 將自動解決衝突後重新提交。`, opts.PR
 
 	case "BEHIND":
 		label = "needs-rebase"
-		result = "behind_needs_rebase"
+		result = "merge_failed"
 		message = fmt.Sprintf(`## AWK Review: Branch Behind
 
 PR: #%d
@@ -346,7 +356,7 @@ PR 分支落後 base branch。Worker 將自動 rebase 後重新提交。`, opts.
 
 	default: // BLOCKED or other
 		label = "needs-human-review"
-		result = "merge_blocked"
+		result = "merge_failed"
 		message = fmt.Sprintf(`## AWK Review: 合併失敗（需要人工介入）
 
 PR: #%d
@@ -511,18 +521,17 @@ func updateTasksMd(ctx context.Context, stateRoot string, issueNumber int) {
 		return
 	}
 
-	// Find tasks.md path
+	// Find tasks.md path via proper YAML parsing
 	configFile := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
 	specBasePath := ".ai/specs"
 	if configData, err := os.ReadFile(configFile); err == nil {
-		// Simple extraction without full YAML parsing
-		for _, line := range strings.Split(string(configData), "\n") {
-			if strings.Contains(line, "base_path:") {
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) == 2 {
-					specBasePath = strings.TrimSpace(parts[1])
-				}
-			}
+		var cfg struct {
+			Specs struct {
+				BasePath string `yaml:"base_path"`
+			} `yaml:"specs"`
+		}
+		if err := yaml.Unmarshal(configData, &cfg); err == nil && cfg.Specs.BasePath != "" {
+			specBasePath = cfg.Specs.BasePath
 		}
 	}
 

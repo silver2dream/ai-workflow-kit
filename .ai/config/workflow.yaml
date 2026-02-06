@@ -176,6 +176,7 @@ github:
     needs_human_review: "needs-human-review"
     merge_conflict: "merge-conflict"
     needs_rebase: "needs-rebase"
+    completed: "completed"
 
 # ============================================================
 # Rules Configuration

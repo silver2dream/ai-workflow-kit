@@ -146,10 +146,17 @@ func TestAutoCleanRootRepository(t *testing.T) {
 	_ = runGit(ctx, tmpDir, timeout, "config", "user.email", "test@test.com")
 	_ = runGit(ctx, tmpDir, timeout, "config", "user.name", "Test")
 
-	// Create initial commit
-	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("initial"), 0644); err != nil {
-		t.Fatalf("failed to create test file: %v", err)
+	// Create initial commit with both workflow and user files
+	aiFile := filepath.Join(tmpDir, ".ai", "state", "test.txt")
+	userFile := filepath.Join(tmpDir, "README.md")
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".ai", "state"), 0755); err != nil {
+		t.Fatalf("failed to create .ai/state dir: %v", err)
+	}
+	if err := os.WriteFile(aiFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create .ai file: %v", err)
+	}
+	if err := os.WriteFile(userFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create user file: %v", err)
 	}
 	if err := runGit(ctx, tmpDir, timeout, "add", "."); err != nil {
 		t.Fatalf("git add failed: %v", err)
@@ -158,27 +165,43 @@ func TestAutoCleanRootRepository(t *testing.T) {
 		t.Fatalf("git commit failed: %v", err)
 	}
 
-	t.Run("cleans dirty repository", func(t *testing.T) {
-		// Make repo dirty
-		if err := os.WriteFile(testFile, []byte("dirty"), 0644); err != nil {
-			t.Fatalf("failed to modify test file: %v", err)
+	t.Run("cleans workflow files only", func(t *testing.T) {
+		// Make both files dirty
+		if err := os.WriteFile(aiFile, []byte("dirty"), 0644); err != nil {
+			t.Fatalf("failed to modify .ai file: %v", err)
+		}
+		if err := os.WriteFile(userFile, []byte("dirty"), 0644); err != nil {
+			t.Fatalf("failed to modify user file: %v", err)
 		}
 
-		// Clean
 		err := autoCleanRootRepository(ctx, tmpDir, timeout, nil)
 		if err != nil {
 			t.Fatalf("autoCleanRootRepository failed: %v", err)
 		}
 
-		// Verify cleaned
-		content, _ := os.ReadFile(testFile)
+		// Workflow file should be reset
+		content, _ := os.ReadFile(aiFile)
 		if string(content) != "initial" {
-			t.Errorf("file not reset: got %q, want %q", string(content), "initial")
+			t.Errorf(".ai file not reset: got %q, want %q", string(content), "initial")
 		}
+
+		// User file should be preserved
+		content, _ = os.ReadFile(userFile)
+		if string(content) != "dirty" {
+			t.Errorf("user file should be preserved: got %q, want %q", string(content), "dirty")
+		}
+
+		// Restore user file for next test
+		if err := os.WriteFile(userFile, []byte("initial"), 0644); err != nil {
+			t.Fatalf("failed to restore user file: %v", err)
+		}
+		_ = runGit(ctx, tmpDir, timeout, "checkout", "HEAD", "--", "README.md")
 	})
 
 	t.Run("skips clean repository", func(t *testing.T) {
-		// Repo should be clean now
+		// Ensure repo is clean
+		_ = runGit(ctx, tmpDir, timeout, "reset", "--hard", "HEAD")
+
 		var logCalled bool
 		logf := func(format string, args ...interface{}) {
 			logCalled = true
@@ -189,9 +212,26 @@ func TestAutoCleanRootRepository(t *testing.T) {
 			t.Fatalf("autoCleanRootRepository failed: %v", err)
 		}
 
-		// Should not log anything if repo was clean
 		if logCalled {
 			t.Error("should not log when repo is clean")
+		}
+	})
+
+	t.Run("preserves user files when only user changes", func(t *testing.T) {
+		// Only modify user file
+		if err := os.WriteFile(userFile, []byte("user edit"), 0644); err != nil {
+			t.Fatalf("failed to modify user file: %v", err)
+		}
+
+		err := autoCleanRootRepository(ctx, tmpDir, timeout, nil)
+		if err != nil {
+			t.Fatalf("autoCleanRootRepository failed: %v", err)
+		}
+
+		// User file should still be modified
+		content, _ := os.ReadFile(userFile)
+		if string(content) != "user edit" {
+			t.Errorf("user file should be preserved: got %q, want %q", string(content), "user edit")
 		}
 	})
 }

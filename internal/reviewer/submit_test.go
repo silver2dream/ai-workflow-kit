@@ -140,10 +140,10 @@ func TestHandleMergeFailure_MergeStates(t *testing.T) {
 		wantResult string
 		wantLabel  string
 	}{
-		{"dirty state", "DIRTY", "conflict_needs_fix", "merge-conflict"},
-		{"behind state", "BEHIND", "behind_needs_rebase", "needs-rebase"},
-		{"blocked state", "BLOCKED", "merge_blocked", "needs-human-review"},
-		{"unknown state", "unknown", "merge_blocked", "needs-human-review"},
+		{"dirty state", "DIRTY", "merge_failed", "merge-conflict"},
+		{"behind state", "BEHIND", "merge_failed", "needs-rebase"},
+		{"blocked state", "BLOCKED", "merge_failed", "needs-human-review"},
+		{"unknown state", "unknown", "merge_failed", "needs-human-review"},
 	}
 
 	for _, tt := range tests {
@@ -154,13 +154,13 @@ func TestHandleMergeFailure_MergeStates(t *testing.T) {
 			switch tt.mergeState {
 			case "DIRTY":
 				label = "merge-conflict"
-				result = "conflict_needs_fix"
+				result = "merge_failed"
 			case "BEHIND":
 				label = "needs-rebase"
-				result = "behind_needs_rebase"
+				result = "merge_failed"
 			default:
 				label = "needs-human-review"
-				result = "merge_blocked"
+				result = "merge_failed"
 			}
 
 			if result != tt.wantResult {

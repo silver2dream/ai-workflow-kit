@@ -8,9 +8,15 @@ import (
 
 // Config represents the workflow configuration
 type Config struct {
-	Specs  SpecsConfig  `yaml:"specs"`
-	GitHub GitHubConfig `yaml:"github"`
-	Repos  []RepoConfig `yaml:"repos"`
+	Specs      SpecsConfig      `yaml:"specs"`
+	GitHub     GitHubConfig     `yaml:"github"`
+	Repos      []RepoConfig     `yaml:"repos"`
+	Escalation EscalationConfig `yaml:"escalation"`
+}
+
+// EscalationConfig represents escalation/retry limits
+type EscalationConfig struct {
+	MaxReviewAttempts int `yaml:"max_review_attempts"`
 }
 
 // RepoConfig represents a repository configuration
@@ -77,6 +83,7 @@ type LabelsConfig struct {
 	ReviewFailed     string `yaml:"review_failed"`
 	MergeConflict    string `yaml:"merge_conflict"`
 	NeedsRebase      string `yaml:"needs_rebase"`
+	Completed        string `yaml:"completed"`
 }
 
 // DefaultLabels returns default label names
@@ -90,6 +97,7 @@ func DefaultLabels() LabelsConfig {
 		ReviewFailed:     "review-failed",
 		MergeConflict:    "merge-conflict",
 		NeedsRebase:      "needs-rebase",
+		Completed:        "completed",
 	}
 }
 
@@ -132,6 +140,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.GitHub.Labels.NeedsRebase == "" {
 		cfg.GitHub.Labels.NeedsRebase = "needs-rebase"
+	}
+	if cfg.GitHub.Labels.Completed == "" {
+		cfg.GitHub.Labels.Completed = "completed"
+	}
+	if cfg.Escalation.MaxReviewAttempts <= 0 {
+		cfg.Escalation.MaxReviewAttempts = 3
 	}
 
 	return &cfg, nil

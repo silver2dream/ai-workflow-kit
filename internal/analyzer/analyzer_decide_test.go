@@ -3,40 +3,51 @@ package analyzer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
 // MockGitHubClient is a mock implementation of GitHubClientInterface for testing
 type MockGitHubClient struct {
 	// Mock data for responses
-	IssuesByLabel   map[string][]Issue
-	PendingIssues   []Issue
-	OpenIssueCount  int
-	PRMerged        map[int]bool
-	PRMergedError   map[int]error
-	ClosedIssues    []int
-	AddedLabels     map[int][]string
-	RemovedLabels   map[int][]string
-	ListIssuesError error
-	CountError      error
-	AddLabelError   error
-	RemoveLabelError error
-	CloseIssueError error
+	IssuesByLabel       map[string][]Issue
+	IssuesByLabelError  map[string]error // Per-label errors for ListIssuesByLabel
+	PendingIssues       []Issue
+	PendingIssuesError  error // Specific error for ListPendingIssues
+	OpenIssueCount      int
+	PRMerged            map[int]bool
+	PRMergedError       map[int]error
+	PRByBranch          map[string]int // branch name -> PR number
+	ClosedIssues        []int
+	AddedLabels         map[int][]string
+	RemovedLabels       map[int][]string
+	ListIssuesError     error
+	CountError          error
+	AddLabelError       error
+	RemoveLabelError    error
+	CloseIssueError     error
 }
 
 func NewMockGitHubClient() *MockGitHubClient {
 	return &MockGitHubClient{
-		IssuesByLabel: make(map[string][]Issue),
-		PRMerged:      make(map[int]bool),
-		PRMergedError: make(map[int]error),
-		AddedLabels:   make(map[int][]string),
-		RemovedLabels: make(map[int][]string),
+		IssuesByLabel:      make(map[string][]Issue),
+		IssuesByLabelError: make(map[string]error),
+		PRMerged:           make(map[int]bool),
+		PRMergedError:      make(map[int]error),
+		PRByBranch:         make(map[string]int),
+		AddedLabels:        make(map[int][]string),
+		RemovedLabels:      make(map[int][]string),
 	}
 }
 
 func (m *MockGitHubClient) ListIssuesByLabel(ctx context.Context, label string) ([]Issue, error) {
+	// Check per-label errors first
+	if err, ok := m.IssuesByLabelError[label]; ok && err != nil {
+		return nil, err
+	}
 	if m.ListIssuesError != nil {
 		return nil, m.ListIssuesError
 	}
@@ -44,6 +55,9 @@ func (m *MockGitHubClient) ListIssuesByLabel(ctx context.Context, label string) 
 }
 
 func (m *MockGitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfig) ([]Issue, error) {
+	if m.PendingIssuesError != nil {
+		return nil, m.PendingIssuesError
+	}
 	if m.ListIssuesError != nil {
 		return nil, m.ListIssuesError
 	}
@@ -86,6 +100,13 @@ func (m *MockGitHubClient) CloseIssue(ctx context.Context, issueNumber int) erro
 	}
 	m.ClosedIssues = append(m.ClosedIssues, issueNumber)
 	return nil
+}
+
+func (m *MockGitHubClient) FindPRByBranch(ctx context.Context, branchName string) (int, error) {
+	if num, ok := m.PRByBranch[branchName]; ok {
+		return num, nil
+	}
+	return 0, nil
 }
 
 // Helper function to create test analyzer with mock client
@@ -316,10 +337,10 @@ func TestDecide_ReviewFailedMaxRetries(t *testing.T) {
 		{Number: 30, Body: "https://github.com/owner/repo/pull/300"},
 	}
 
-	// Set review attempts to max
+	// Set review attempts to max (default is 3)
 	attemptDir := filepath.Join(tmpDir, ".ai", "state", "attempts")
 	os.MkdirAll(attemptDir, 0755)
-	os.WriteFile(filepath.Join(attemptDir, "review-pr-300"), []byte("2"), 0644)
+	os.WriteFile(filepath.Join(attemptDir, "review-pr-300"), []byte(strconv.Itoa(DefaultMaxReviewAttempts)), 0644)
 
 	a := newTestAnalyzer(tmpDir, config, mockClient)
 	decision, err := a.Decide(context.Background())
@@ -669,5 +690,103 @@ func TestDecide_ReviewFailedNoPR(t *testing.T) {
 	}
 	if decision.ExitReason != ReasonNeedsHumanReview {
 		t.Errorf("ExitReason = %q, want %q", decision.ExitReason, ReasonNeedsHumanReview)
+	}
+}
+
+func TestDecide_InProgressAPIError(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := defaultTestConfig()
+
+	// Simulate in-progress API failure - MUST return github_api_error to prevent double dispatch
+	mockClient.IssuesByLabelError[config.GitHub.Labels.InProgress] = fmt.Errorf("API timeout")
+
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+	decision, err := a.Decide(context.Background())
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+
+	if decision.NextAction != ActionNone {
+		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionNone)
+	}
+	if decision.ExitReason != ReasonGitHubAPIError {
+		t.Errorf("ExitReason = %q, want %q", decision.ExitReason, ReasonGitHubAPIError)
+	}
+}
+
+func TestDecide_AllAPIErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := defaultTestConfig()
+
+	// In-progress succeeds (returns empty), but all other API calls fail
+	mockClient.IssuesByLabelError[config.GitHub.Labels.PRReady] = fmt.Errorf("rate limited")
+	mockClient.IssuesByLabelError[config.GitHub.Labels.ReviewFailed] = fmt.Errorf("rate limited")
+	mockClient.IssuesByLabelError[config.GitHub.Labels.MergeConflict] = fmt.Errorf("rate limited")
+	mockClient.IssuesByLabelError[config.GitHub.Labels.NeedsRebase] = fmt.Errorf("rate limited")
+	mockClient.IssuesByLabelError[config.GitHub.Labels.WorkerFailed] = fmt.Errorf("rate limited")
+	mockClient.IssuesByLabelError[config.GitHub.Labels.NeedsHumanReview] = fmt.Errorf("rate limited")
+	mockClient.PendingIssuesError = fmt.Errorf("rate limited")
+	mockClient.CountError = fmt.Errorf("rate limited")
+
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+	decision, err := a.Decide(context.Background())
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+
+	// Should return github_api_error, NOT no_actionable_tasks
+	if decision.NextAction != ActionNone {
+		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionNone)
+	}
+	if decision.ExitReason != ReasonGitHubAPIError {
+		t.Errorf("ExitReason = %q, want %q (should not be %q)", decision.ExitReason, ReasonGitHubAPIError, ReasonNoActionableTasks)
+	}
+}
+
+func TestDecide_PRReadyFromBranchLookup(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := defaultTestConfig()
+
+	// Add pr-ready issue without PR in body or result file
+	mockClient.IssuesByLabel[config.GitHub.Labels.PRReady] = []Issue{
+		{Number: 85, Body: "PR ready but no link anywhere"},
+	}
+
+	// Set up branch lookup fallback
+	mockClient.PRByBranch["feat/ai-issue-85"] = 850
+
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+	decision, err := a.Decide(context.Background())
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+
+	if decision.NextAction != ActionReviewPR {
+		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionReviewPR)
+	}
+	if decision.PRNumber != 850 {
+		t.Errorf("PRNumber = %d, want 850", decision.PRNumber)
+	}
+}
+
+func TestExtractPRNumberForIssue_PRNumberField(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := defaultTestConfig()
+
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+
+	// Create result file with pr_number integer field
+	resultDir := filepath.Join(tmpDir, ".ai", "results")
+	os.MkdirAll(resultDir, 0755)
+	resultData, _ := json.Marshal(map[string]any{"pr_number": 999})
+	os.WriteFile(filepath.Join(resultDir, "issue-90.json"), resultData, 0644)
+
+	prNumber := a.extractPRNumberForIssue(90, "no PR link")
+	if prNumber != 999 {
+		t.Errorf("PRNumber = %d, want 999", prNumber)
 	}
 }

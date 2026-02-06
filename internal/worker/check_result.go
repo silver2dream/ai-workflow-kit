@@ -221,9 +221,10 @@ func processResult(ctx context.Context, opts CheckResultOptions, result *IssueRe
 	case "success_no_changes":
 		// Task completed successfully but no code changes were needed
 		_ = ResetConsecutiveFailures(opts.StateRoot)
-		_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"completed"}, []string{"in-progress"})
+		_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"completed"}, []string{"in-progress", "ai-task"})
 		_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber,
 			"Worker completed successfully. No code changes were required for this task.")
+		_ = ghClient.CloseIssue(ctx, opts.IssueNumber)
 
 		return &CheckResultOutput{
 			Status: "success_no_changes",

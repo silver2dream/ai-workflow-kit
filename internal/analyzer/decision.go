@@ -1,7 +1,11 @@
 // Package analyzer implements workflow decision logic
 package analyzer
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
+)
 
 // Decision represents the next action to take
 type Decision struct {
@@ -35,6 +39,7 @@ const (
 	ReasonNoActionableTasks        = "no_actionable_tasks"
 	ReasonConfigNotFound           = "config_not_found"
 	ReasonLoopCountError           = "loop_count_error"
+	ReasonGitHubAPIError           = "github_api_error"
 )
 
 // Merge issue constants
@@ -52,5 +57,5 @@ SPEC_NAME=%s
 TASK_LINE=%d
 EXIT_REASON=%s
 MERGE_ISSUE=%s
-`, d.NextAction, d.IssueNumber, d.PRNumber, d.SpecName, d.TaskLine, d.ExitReason, d.MergeIssue)
+`, d.NextAction, d.IssueNumber, d.PRNumber, util.ShellSafe(d.SpecName), d.TaskLine, d.ExitReason, d.MergeIssue)
 }

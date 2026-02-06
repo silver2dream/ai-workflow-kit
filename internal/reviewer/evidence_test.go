@@ -792,12 +792,14 @@ func TestFuzzyMatchCriteria(t *testing.T) {
 	}{
 		{"exact match", "Feature works", "Feature works", true},
 		{"case insensitive", "Feature Works", "feature works", true},
-		{"contains match", "Feature A works correctly", "Feature A", true},
-		{"reverse contains", "Feature", "Feature works correctly", true},
+		{"close contains match", "add authentication check", "add authentication", true},          // 18/24 = 75%
+		{"too short contains", "Feature A works correctly", "Feature A", false},                   // 9/24 = 37% → rejected by ratio
+		{"too short reverse", "Feature", "Feature works correctly", false},                        // 7/22 = 31% → rejected
 		{"whitespace normalized", "Feature  works", "Feature works", true},
 		{"completely different", "Feature A", "Something else", false},
 		{"empty strings", "", "", true},
-		{"one empty", "Feature", "", true}, // empty is contained in everything
+		{"one empty", "Feature", "", false},                                                       // empty vs non-empty → rejected
+		{"similar criteria prevent false positive", "add logging", "add logging to all modules", false}, // 11/26 = 42% → rejected
 	}
 
 	for _, tt := range tests {
