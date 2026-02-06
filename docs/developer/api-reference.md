@@ -498,49 +498,32 @@ def summarize_trace(trace: Dict[str, Any]) -> Dict[str, Any]
 
 ---
 
-## Shell Scripts
+## CLI Commands
 
-### kickoff.sh (Legacy)
+### awkit kickoff
 
-啟動工作流程入口（建議使用 `awkit kickoff` 取代）。
-
-```bash
-bash .ai/scripts/kickoff.sh [--dry-run] [--background] [--help]
-```
-
-### awkit kickoff (推薦)
-
-Go 實作的工作流程啟動命令，提供更好的 UX：
-- PTY 即時輸出
-- Issue Monitor 顯示 Worker 進度
-- Spinner 動畫
+啟動工作流程入口。提供 PTY 即時輸出、Issue Monitor 顯示 Worker 進度、Spinner 動畫。
 
 ```bash
 awkit kickoff [--dry-run] [--background] [--resume] [--fresh]
 awkit validate  # 只驗證配置
 ```
 
-### run_issue_codex.sh
+### awkit run-issue
 
-執行單一 Issue。
-
-```bash
-bash .ai/scripts/run_issue_codex.sh <issue_id> <ticket_file> <repo>
-```
-
-### write_result.sh
-
-寫入執行結果。
+執行單一 Issue（內部命令，由 `awkit kickoff` 調度）。
 
 ```bash
-bash .ai/scripts/write_result.sh <issue_id> <status> <pr_url> <summary_file>
+awkit run-issue <issue_id> <ticket_file> <repo>
 ```
 
-**環境變數：**
-- `AI_STATE_ROOT` - 狀態目錄根路徑
-- `AI_RESULTS_ROOT` - 結果目錄根路徑
-- `AI_EXEC_DURATION` - 執行時間 (秒)
-- `AI_RETRY_COUNT` - 重試次數
+### awkit status
+
+查看工作流狀態與統計。
+
+```bash
+awkit status
+```
 
 ### awkit generate
 
@@ -550,12 +533,12 @@ bash .ai/scripts/write_result.sh <issue_id> <status> <pr_url> <summary_file>
 awkit generate [--generate-ci]
 ```
 
-### evaluate.sh
+### awkit evaluate
 
 評估腳本。
 
 ```bash
-bash .ai/scripts/evaluate.sh [--offline] [--strict]
+awkit evaluate [--offline] [--strict]
 ```
 
 ---

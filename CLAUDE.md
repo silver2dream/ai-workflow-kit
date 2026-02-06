@@ -106,12 +106,23 @@ awkit status
 touch .ai/state/STOP
 ```
 
+### Diagnose Issues
+```bash
+awkit doctor
+```
+
+### Reset State
+```bash
+awkit reset          # default cleanup
+awkit reset --all    # full cleanup
+awkit reset --dry-run # preview only
+```
+
 ## File Locations
 
 | What | Where |
 |------|-------|
 | Config | `.ai/config/workflow.yaml` |
-| Scripts | `.ai/scripts/` |
 | Skills | `.ai/skills/` |
 | Rules | `.ai/rules/` |
 | Specs | `.ai/specs/` |

@@ -63,8 +63,8 @@ func getSessionTestRepoRoot(t *testing.T) string {
 	}
 }
 
-// sessionIDFormatRegex matches the expected session ID format
-var sessionIDFormatRegex = regexp.MustCompile(`^principal-\d{8}-\d{6}-[a-f0-9]{4}$`)
+// sessionIDFormatRegex matches the expected session ID format: principal-YYYYMMDD-HHMMSS-xxxxxxxx (8 hex chars)
+var sessionIDFormatRegex = regexp.MustCompile(`^principal-\d{8}-\d{6}-[a-f0-9]{8}$`)
 
 // iso8601Regex matches ISO 8601 timestamp format
 var iso8601Regex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`)
@@ -85,7 +85,7 @@ func TestIntegration_Property1_SessionIDFormatConsistency(t *testing.T) {
 
 		sessionID := strings.TrimSpace(string(output))
 		if !sessionIDFormatRegex.MatchString(sessionID) {
-			t.Errorf("session ID %q does not match format principal-YYYYMMDD-HHMMSS-xxxx", sessionID)
+			t.Errorf("session ID %q does not match format principal-YYYYMMDD-HHMMSS-xxxxxxxx", sessionID)
 		}
 	})
 
@@ -121,7 +121,7 @@ func TestIntegration_Property2_SessionIDUniqueness(t *testing.T) {
 
 	sessionID := strings.TrimSpace(string(output))
 
-	t.Run("Random hex suffix is 4 characters", func(t *testing.T) {
+	t.Run("Random hex suffix is 8 characters", func(t *testing.T) {
 		parts := strings.Split(sessionID, "-")
 		if len(parts) != 4 {
 			t.Errorf("session ID should have 4 parts, got %d", len(parts))
@@ -129,8 +129,8 @@ func TestIntegration_Property2_SessionIDUniqueness(t *testing.T) {
 		}
 
 		hexSuffix := parts[3]
-		if len(hexSuffix) != 4 {
-			t.Errorf("hex suffix should be 4 characters, got %d: %s", len(hexSuffix), hexSuffix)
+		if len(hexSuffix) != 8 {
+			t.Errorf("hex suffix should be 8 characters, got %d: %s", len(hexSuffix), hexSuffix)
 		}
 	})
 }

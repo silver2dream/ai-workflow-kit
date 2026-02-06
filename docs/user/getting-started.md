@@ -274,6 +274,9 @@ brew install bash
 | `awkit kickoff --dry-run` | 預覽工作流程 |
 | `awkit kickoff --resume` | 從上次狀態恢復 |
 | `awkit validate` | 驗證配置 |
+| `awkit doctor` | 檢查專案健康狀態，報告問題 |
+| `awkit reset` | 重設專案狀態（支援 `--all`、`--dry-run` 等 flags） |
+| `awkit evaluate` | 執行品質評估（離線/線上 gate 檢查與評分） |
 
 ### init 選項
 

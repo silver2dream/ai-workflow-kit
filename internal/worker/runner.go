@@ -1230,8 +1230,7 @@ func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 	ctx, cancel := withOptionalTimeout(context.Background(), ghTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "view", fmt.Sprintf("%d", issueID), "--json", "comments")
-	output, err := cmd.Output()
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "view", fmt.Sprintf("%d", issueID), "--json", "comments")
 	if err != nil {
 		return ""
 	}
@@ -1413,13 +1412,12 @@ func createOrFindPR(ctx context.Context, branch, base, title string, issueID int
 	prCtx, cancel := withOptionalTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(prCtx, "gh", "pr", "create",
+	output, err := ghutil.RunWithRetry(prCtx, retryCfg, "gh", "pr", "create",
 		"--base", base,
 		"--head", branch,
 		"--title", title,
 		"--body", body,
 	)
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("gh pr create failed: %w", err)
 	}
@@ -1472,8 +1470,7 @@ func postIssueComment(ctx context.Context, issueID int, sessionID, commentType, 
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "comment", fmt.Sprintf("%d", issueID), "--body", body.String())
-	_ = cmd.Run()
+	_, _ = ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "comment", fmt.Sprintf("%d", issueID), "--body", body.String())
 }
 
 func buildWorkerStartExtra(attempt int) string {

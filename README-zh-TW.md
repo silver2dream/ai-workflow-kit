@@ -90,9 +90,8 @@
 
 ```
 .
-├── .ai/                         # kit (scripts/templates/rules/specs)
+├── .ai/                         # kit (config/templates/rules/specs)
 │   ├── config/workflow.yaml     # main config
-│   ├── scripts/                 # automation scripts
 │   ├── templates/               # generators (CLAUDE/AGENTS/CI)
 │   ├── rules/                   # architecture + git workflow rules
 │   ├── docs/evaluate.md         # evaluation standard
@@ -199,9 +198,7 @@ awkit kickoff              # 啟動工作流
 awkit kickoff --resume     # 從上次狀態恢復
 awkit validate             # 只驗證設定
 
-# 或使用 bash 腳本（legacy）
-bash .ai/scripts/kickoff.sh --dry-run
-bash .ai/scripts/kickoff.sh
+# Legacy bash 腳本已移除；請使用上方的 awkit 命令
 ```
 
 停止：
@@ -281,8 +278,8 @@ Root CI workflow：`.github/workflows/ci.yml`
 此 repo 內建的是手寫 CI 範例。`awkit generate` 預設不會改動 workflows；需要從模板生成時才使用 `--generate-ci`。
 
 包含：
-- AWK evaluation：`bash .ai/scripts/evaluate.sh --offline` 與 `--offline --strict`
-- Kit tests：`bash .ai/tests/run_all_tests.sh`
+- AWK evaluation：`awkit evaluate --offline` 與 `--offline --strict`
+- Kit tests：`go test ./...`
 - Backend：`go test ./...`（在 `backend/`）
 - Frontend：`frontend/Packages/manifest.json` JSON 檢查 + 資料夾存在性
 
@@ -292,7 +289,7 @@ Root CI workflow：`.github/workflows/ci.yml`
 
 - 僅供 kit 維護者 / CI 使用，一般使用者可跳過。
 - 標準：`.ai/docs/evaluate.md`
-- 執行器：`.ai/scripts/evaluate.sh`
+- 執行器：`awkit evaluate`
 
 ---
 

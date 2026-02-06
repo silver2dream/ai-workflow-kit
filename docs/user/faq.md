@@ -153,11 +153,11 @@ rules:
 
 ### Q: 可以整合 CI/CD 嗎？
 
-**A:** 可以。AWK 提供 `evaluate.sh` 腳本用於 CI：
+**A:** 可以。AWK 提供 `awkit evaluate` 命令用於 CI：
 ```yaml
 # .github/workflows/ci.yml
 - name: AWK Evaluation
-  run: bash .ai/scripts/evaluate.sh --offline --strict
+  run: awkit evaluate --offline --strict
 ```
 
 ---

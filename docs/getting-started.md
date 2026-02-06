@@ -175,16 +175,16 @@ You can use `.ai/specs/example/` as a template (it includes `requirements.md`, `
 ## 4) Run offline verification
 
 ```bash
-bash .ai/scripts/evaluate.sh --offline
-bash .ai/tests/run_all_tests.sh
+awkit evaluate --offline
+go test ./...
 ```
 
 ## 5) Enable CI (GitHub Actions)
 
 Add a workflow under `.github/workflows/` that runs:
 
-- `bash .ai/scripts/evaluate.sh --offline`
-- `bash .ai/tests/run_all_tests.sh`
+- `awkit evaluate --offline`
+- `go test ./...`
 - backend tests: `go test ./...` in `backend/`
 - frontend sanity checks in `frontend/`
 

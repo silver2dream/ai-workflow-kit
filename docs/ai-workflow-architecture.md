@@ -152,7 +152,7 @@
 我們採用 **Sequential Chain**，因為：
 - 不需要額外的監聽進程或工具
 - Claude Code 本身就是一個長時間運行的 session
-- `run_issue_codex.sh` 是同步阻塞的，完成後直接返回結果
+- `awkit run-issue` 是同步阻塞的，完成後直接返回結果
 - 對於「睡前啟動，早上收割」的場景，串行執行已經足夠
 
 ### 3.2 執行流程
@@ -193,7 +193,7 @@
 
 | 決策 | 說明 |
 |------|------|
-| **同步阻塞調用** | `run_issue_codex.sh` 完成才返回，不需要輪詢 |
+| **同步阻塞調用** | `awkit run-issue` 完成才返回，不需要輪詢 |
 | **文件作為狀態** | `result.json` 記錄執行結果，可靠且可追溯 |
 | **Claude Code 作為 Orchestrator** | 不需要獨立的調度進程 |
 | **GitHub Labels 作為狀態機** | 可視化追蹤 Issue 生命週期 |
@@ -221,7 +221,7 @@ while True:
        - 找出未完成任務
        - 創建新 Issue（含完整 ticket 模板）
     3. 選擇優先級最高的 issue
-    4. 執行 Worker: `bash .ai/scripts/run_issue_codex.sh <id> <file>`
+    4. 執行 Worker: `awkit run-issue <id> <file>`
     5. 讀取結果: `cat .ai/results/issue-<id>.json`
     6. 如果成功且有 PR:
        - 審查: `gh pr diff <pr_number>`
@@ -239,8 +239,8 @@ while True:
 ### 4.2 Worker Integration
 
 ```bash
-# .ai/scripts/run_issue_codex.sh
-# 這是現有腳本，已經實現了：
+# awkit run-issue (internal command)
+# 處理：
 # - 創建 worktree
 # - 執行 codex exec
 # - 提交代碼
@@ -283,7 +283,7 @@ Issue 生命週期:
                                 │                  │
                                 │         ┌───────┴───────┐
                                 │         ▼               ▼
-                                │   [review-pass]   [review-fail]
+                                │      [merged]    [review-failed]
                                 │         │               │
                                 │         ▼               ▼
                                 │     [closed]     [requeue]
@@ -424,8 +424,8 @@ touch .ai/state/STOP
 These scripts are not part of the automatic workflow loop, but can be used manually:
 - `audit_to_tickets.sh` - convert audit findings into issue tickets
 - `cleanup.sh` - remove old worktrees/branches/results
-- `stats.sh` - generate workflow statistics (text/json/html)
-- `notify.sh` - send system/Slack/Discord notifications (planned for future release)
+- `awkit status` - generate workflow statistics
+- notify - send system/Slack/Discord notifications (planned for future release)
 
 ### Phase 4: Polish (in progress)
 - [ ] 通知機制（系統通知 + Slack/Discord 可選）- planned for future release
@@ -451,19 +451,14 @@ awkit kickoff --resume     # 從上次狀態恢復
 awkit kickoff --fresh      # 忽略舊狀態，重新開始
 awkit validate             # 只驗證配置
 
-# 方式 B: 使用 bash 腳本（legacy）
-bash .ai/scripts/kickoff.sh
-bash .ai/scripts/kickoff.sh --dry-run
-bash .ai/scripts/kickoff.sh --background
+# Legacy bash 腳本已移除；請使用上方的 awkit 命令
 
 # 方式 C: 手動進入 Claude Code
 claude
 > /start-work
 
 # 3. 查看進度
-bash .ai/scripts/stats.sh              # 統計報告
-bash .ai/scripts/stats.sh --json       # JSON 格式
-bash .ai/scripts/stats.sh --html       # 生成 HTML 報告
+awkit status                           # 統計報告
 gh issue list --label ai-task         # GitHub Issues
 gh pr list                            # GitHub PRs
 
@@ -473,8 +468,7 @@ touch .ai/state/STOP
 # 或執行 /stop-work
 
 # 5. 手動發送通知 (planned for future release)
-# bash .ai/scripts/notify.sh "標題" "內容"
-# bash .ai/scripts/notify.sh --summary   # 發送統計摘要
+# awkit notify "標題" "內容"             # not yet implemented
 ```
 
 ### 通知配置（planned for future release）

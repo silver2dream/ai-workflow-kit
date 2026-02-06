@@ -17,6 +17,8 @@ audit: { ... }
 github: { ... }
 rules: { ... }
 escalation: { ... }
+timeouts: { ... }
+review: { ... }
 # notifications: (planned for future release)
 ```
 
@@ -205,8 +207,7 @@ github:
     task: "ai-task"
     in_progress: "in-progress"
     pr_ready: "pr-ready"
-    review_pass: "review-pass"
-    review_fail: "review-fail"
+    review_failed: "review-failed"
     worker_failed: "worker-failed"
 ```
 
@@ -273,6 +274,46 @@ escalation:
 | `require_human_approval` | 必須人工審批 |
 | `pause_and_ask` | 暫停並詢問 |
 | `notify_only` | 僅通知 |
+
+---
+
+## timeouts - 逾時設定
+
+```yaml
+timeouts:
+  git_seconds: 120        # Git 操作逾時（秒）
+  gh_seconds: 60          # GitHub CLI 操作逾時（秒）
+  codex_minutes: 30       # Codex Worker 執行逾時（分鐘）
+  gh_retry_count: 3       # GitHub API 重試次數
+  gh_retry_base_delay: 2  # 重試基礎延遲（秒，指數退避）
+```
+
+各項操作的超時與重試設定。如果未設定，將使用上述預設值。
+
+| 欄位 | 預設值 | 說明 |
+|------|--------|------|
+| `git_seconds` | `120` | Git 操作（如 fetch、push、rebase）的逾時秒數 |
+| `gh_seconds` | `60` | GitHub CLI 操作（如 issue view、pr view）的逾時秒數 |
+| `codex_minutes` | `30` | Codex Worker 單次執行的逾時分鐘數 |
+| `gh_retry_count` | `3` | GitHub API 呼叫失敗時的最大重試次數 |
+| `gh_retry_base_delay` | `2` | 重試的基礎延遲秒數，採用指數退避策略（2s → 4s → 8s） |
+
+---
+
+## review - 審查設定
+
+```yaml
+review:
+  score_threshold: 7       # PR 審核通過的最低分數（1-10）
+  merge_strategy: squash   # 合併策略：squash | merge | rebase
+```
+
+Principal 審查 Worker 提交的 PR 時使用的設定。
+
+| 欄位 | 預設值 | 說明 |
+|------|--------|------|
+| `score_threshold` | `7` | PR 審核通過的最低分數（範圍 1-10）。Reviewer 給予的分數必須 >= 此值才會 approve PR |
+| `merge_strategy` | `squash` | PR 通過審核後的合併方式。可選值：`squash`（壓縮合併）、`merge`（一般合併）、`rebase`（變基合併） |
 
 ---
 
