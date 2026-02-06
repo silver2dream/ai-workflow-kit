@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
@@ -116,10 +117,11 @@ func getCIStatus(ctx context.Context, prNumber int, timeout time.Duration) strin
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	retryCfg := ghutil.DefaultRetryConfig()
+
 	// Try --json first (gh >= 2.12)
-	cmd := exec.CommandContext(ctx, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber),
+	output, err := ghutil.RunWithRetry(ctx, retryCfg, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber),
 		"--json", "state", "--jq", ".[].state")
-	output, err := cmd.Output()
 	if err == nil && len(output) > 0 {
 		if strings.Contains(string(output), "FAILURE") {
 			return "failed"
@@ -128,8 +130,7 @@ func getCIStatus(ctx context.Context, prNumber int, timeout time.Duration) strin
 	}
 
 	// Fallback for older gh versions
-	cmd = exec.CommandContext(ctx, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber))
-	output, err = cmd.Output()
+	output, err = ghutil.RunWithRetry(ctx, retryCfg, "gh", "pr", "checks", fmt.Sprintf("%d", prNumber))
 	if err == nil {
 		lower := strings.ToLower(string(output))
 		if strings.Contains(lower, "fail") {
@@ -341,9 +342,8 @@ func fetchIssueJSON(ctx context.Context, issueNumber int, timeout time.Duration)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "view", fmt.Sprintf("%d", issueNumber),
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "view", fmt.Sprintf("%d", issueNumber),
 		"--json", "title,body,labels")
-	output, err := cmd.Output()
 	if err != nil {
 		return "ERROR: Cannot fetch issue"
 	}
@@ -355,9 +355,8 @@ func fetchPRCommits(ctx context.Context, prNumber int, timeout time.Duration) st
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber),
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "view", fmt.Sprintf("%d", prNumber),
 		"--json", "commits", "--jq", `.commits[] | "- \(.oid[0:7]) \(.messageHeadline)"`)
-	output, err := cmd.Output()
 	if err != nil {
 		return "ERROR: Cannot fetch commits"
 	}

@@ -8,7 +8,7 @@
 
 ### 必要條件
 
-- Python 3.8+
+- Go 1.25+
 - Git
 - GitHub CLI (`gh`)
 - Bash (Windows 使用者需要 Git Bash 或 WSL)
@@ -139,6 +139,8 @@ gh pr create --base main --title "[feat] add GitLab support" --body "..."
 ## 程式碼規範
 
 ### Python
+
+> **⚠️ DEPRECATED**: 以下 Python 規範僅供參考，AWK 已遷移至 Go。新功能請遵循 Go 規範。
 
 #### 風格指南
 
@@ -388,6 +390,8 @@ go test ./internal/errors -run TestAWKError -v
 - 中英文之間加空格
 
 ### API 文件格式
+
+> **⚠️ DEPRECATED**: 以下 Python docstring 範例僅供參考，AWK 已遷移至 Go。新程式碼請使用 Go doc 註解風格。
 
 ```python
 def function_name(param1: str, param2: int = 10) -> dict:

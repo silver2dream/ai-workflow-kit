@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
@@ -393,8 +394,7 @@ func fetchIssueBody(ctx context.Context, issueNumber int, timeout time.Duration)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "view", strconv.Itoa(issueNumber), "--json", "body", "--jq", ".body")
-	output, err := cmd.Output()
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "view", strconv.Itoa(issueNumber), "--json", "body", "--jq", ".body")
 	if err != nil {
 		return "", err
 	}
@@ -414,34 +414,34 @@ func postPRComment(ctx context.Context, prNumber int, body string, timeout time.
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "comment", strconv.Itoa(prNumber), "--body", body)
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "comment", strconv.Itoa(prNumber), "--body", body)
+	return err
 }
 
 func postIssueComment(ctx context.Context, issueNumber int, body string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "comment", strconv.Itoa(issueNumber), "--body", body)
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "comment", strconv.Itoa(issueNumber), "--body", body)
+	return err
 }
 
 func approvePR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "review", strconv.Itoa(prNumber),
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", strconv.Itoa(prNumber),
 		"--approve", "--body", fmt.Sprintf("AWK Review: APPROVED (score: %d/10)", score))
-	return cmd.Run()
+	return err
 }
 
 func requestChangesPR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "review", strconv.Itoa(prNumber),
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", strconv.Itoa(prNumber),
 		"--request-changes", "--body", fmt.Sprintf("AWK Review: CHANGES REQUESTED (score: %d/10)", score))
-	return cmd.Run()
+	return err
 }
 
 func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStrategy ...string) error {
@@ -463,9 +463,9 @@ func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStra
 		strategyFlag = "--squash"
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", strconv.Itoa(prNumber),
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "merge", strconv.Itoa(prNumber),
 		strategyFlag, "--delete-branch")
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		// Write PR merge failure event
 		trace.WriteEvent(trace.ComponentGitHub, trace.TypePRMergeFail, trace.LevelError,
 			trace.WithPR(prNumber),
@@ -483,17 +483,17 @@ func closeIssue(ctx context.Context, issueNumber int, timeout time.Duration) err
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "close", strconv.Itoa(issueNumber))
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "close", strconv.Itoa(issueNumber))
+	return err
 }
 
 func removeLabel(ctx context.Context, issueNumber int, label string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "edit", strconv.Itoa(issueNumber),
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "edit", strconv.Itoa(issueNumber),
 		"--remove-label", label)
-	return cmd.Run()
+	return err
 }
 
 func editIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabels []string, timeout time.Duration) error {
@@ -508,17 +508,16 @@ func editIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabe
 		args = append(args, "--remove-label", l)
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	return cmd.Run()
+	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", args...)
+	return err
 }
 
 func getMergeStateStatus(ctx context.Context, prNumber int, timeout time.Duration) string {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", strconv.Itoa(prNumber),
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "view", strconv.Itoa(prNumber),
 		"--json", "mergeStateStatus", "--jq", ".mergeStateStatus")
-	output, err := cmd.Output()
 	if err != nil {
 		return "unknown"
 	}

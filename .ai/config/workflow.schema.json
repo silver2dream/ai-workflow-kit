@@ -121,7 +121,10 @@
             "review_pass": { "type": "string" },
             "review_fail": { "type": "string" },
             "worker_failed": { "type": "string" },
-            "needs_human_review": { "type": "string" }
+            "needs_human_review": { "type": "string" },
+            "merge_conflict": { "type": "string", "default": "merge-conflict" },
+            "needs_rebase": { "type": "string", "default": "needs-rebase" },
+            "completed": { "type": "string", "default": "completed" }
           }
         }
       }
@@ -131,6 +134,42 @@
       "properties": {
         "kit": { "type": "array", "items": { "type": "string" } },
         "custom": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "timeouts": {
+      "type": "object",
+      "description": "Timeout settings for various operations",
+      "properties": {
+        "git_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 120,
+          "description": "Timeout in seconds for Git operations (fetch, push, rebase)"
+        },
+        "gh_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "Timeout in seconds for GitHub CLI operations (issue view, pr view)"
+        },
+        "codex_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "Timeout in minutes for Codex Worker execution"
+        },
+        "gh_retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Maximum retry attempts for gh CLI calls"
+        },
+        "gh_retry_base_delay": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2,
+          "description": "Base delay in seconds for exponential backoff on gh retries"
+        }
       }
     },
     "review": {
