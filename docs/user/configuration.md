@@ -7,7 +7,7 @@
 ## 配置檔結構
 
 ```yaml
-version: "1.0"
+version: "1.1"
 project: { ... }
 repos: [ ... ]
 git: { ... }
@@ -335,7 +335,7 @@ Slack/Discord webhook notifications are defined in the configuration schema but 
 ### Single-Repo (Python)
 
 ```yaml
-version: "1.0"
+version: "1.1"
 
 project:
   name: "my-python-app"
@@ -375,7 +375,7 @@ escalation:
 ### Monorepo (Go + React)
 
 ```yaml
-version: "1.0"
+version: "1.1"
 
 project:
   name: "fullstack-app"
@@ -420,6 +420,55 @@ rules:
 
 escalation:
   max_consecutive_failures: 3
+```
+
+---
+
+## Config Migration
+
+AWK 升級時可能引入 config 格式變更。Migration 系統會自動處理這些變更。
+
+### 自動遷移
+
+`awkit upgrade` 會自動偵測 `workflow.yaml` 的版本並執行所需的 migration：
+
+```bash
+# 升級 AWK 並自動遷移 config
+awkit upgrade
+
+# 預覽會執行的 migration（不修改檔案）
+awkit upgrade --dry-run
+
+# 跳過 config migration
+awkit upgrade --skip-migrate
+```
+
+### 偵測過期 Config
+
+使用 `awkit doctor` 可以檢查 config 是否需要遷移：
+
+```bash
+awkit doctor
+```
+
+如果 config 版本過舊，doctor 會顯示警告並建議執行 `awkit upgrade`。
+
+### 手動遷移
+
+如果需要手動遷移，以下是 v1.0 → v1.1 的變更清單：
+
+1. **Label 值修正**：`review_failed: "review-fail"` → `review_failed: "review-failed"`
+2. **新增 labels**：`merge_conflict`、`needs_rebase`、`completed`
+3. **新增 timeout 欄位**：`gh_retry_count`、`gh_retry_base_delay`
+4. **新增 review section**：`score_threshold`、`merge_strategy`
+5. **版本號更新**：`version: "1.0"` → `version: "1.1"`
+
+### 備份
+
+Migration 執行前會自動建立 `workflow.yaml.bak` 備份。如果遷移結果有問題，可以還原：
+
+```bash
+cp .ai/config/workflow.yaml.bak .ai/config/workflow.yaml
 ```
 
 ---

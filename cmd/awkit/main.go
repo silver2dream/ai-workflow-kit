@@ -14,6 +14,7 @@ import (
 	awkit "github.com/silver2dream/ai-workflow-kit"
 	"github.com/silver2dream/ai-workflow-kit/internal/buildinfo"
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
+	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/updatecheck"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
@@ -665,6 +666,7 @@ func cmdUpgrade(args []string) int {
 	dryRun := fs.Bool("dry-run", false, "")
 	noGenerate := fs.Bool("no-generate", false, "")
 	noCommit := fs.Bool("no-commit", false, "")
+	skipMigrate := fs.Bool("skip-migrate", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
@@ -833,6 +835,21 @@ func cmdUpgrade(args []string) int {
 			fmt.Printf("  %s\n", agentsResult.Message)
 		}
 
+		// Check config migrations (dry-run)
+		if !*skipMigrate && !*forceConfig {
+			configPath := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
+			if _, err := os.Stat(configPath); err == nil {
+				migrations, _ := migrate.Run(configPath, true)
+				if len(migrations) > 0 {
+					fmt.Println("")
+					fmt.Println(bold("Config migrations (would apply):"))
+					for _, m := range migrations {
+						fmt.Printf("  %s → %s: %s\n", m.FromVersion, m.ToVersion, m.Description)
+					}
+				}
+			}
+		}
+
 		fmt.Println("")
 		success("Dry run complete. No changes made.\n")
 		return 0
@@ -884,6 +901,28 @@ func cmdUpgrade(args []string) int {
 			success("Agents installed: %s\n", agentsResult.Message)
 		} else {
 			warn("Agents install: %s\n", agentsResult.Message)
+		}
+	}
+
+	// Run config migrations (unless --skip-migrate or --force-config)
+	if !*skipMigrate && !*forceConfig {
+		configPath := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
+		if _, err := os.Stat(configPath); err == nil {
+			migrations, migrateErr := migrate.Run(configPath, *dryRun)
+			if migrateErr != nil {
+				fmt.Println("")
+				warn("Config migration failed: %v\n", migrateErr)
+			} else if len(migrations) > 0 {
+				fmt.Println("")
+				if *dryRun {
+					fmt.Println(bold("Config migrations (would apply):"))
+				} else {
+					success("Config migrated:\n")
+				}
+				for _, m := range migrations {
+					fmt.Printf("  %s → %s: %s\n", m.FromVersion, m.ToVersion, m.Description)
+				}
+			}
 		}
 	}
 

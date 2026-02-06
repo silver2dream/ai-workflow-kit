@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
@@ -68,7 +69,10 @@ func (d *Doctor) RunAll(ctx context.Context) []CheckResult {
 	results = append(results, d.CheckSessionFiles()...)
 	results = append(results, d.CheckOrphanTmpFiles()...)
 
-	// 5. Check Claude settings permissions
+	// 5. Check config version
+	results = append(results, d.CheckConfigVersion()...)
+
+	// 6. Check Claude settings permissions
 	results = append(results, d.CheckClaudeSettings()...)
 
 	return results
@@ -407,4 +411,26 @@ func (d *Doctor) CheckClaudeSettings() []CheckResult {
 	}
 
 	return nil
+}
+
+// CheckConfigVersion checks if workflow.yaml needs migration to a newer version
+func (d *Doctor) CheckConfigVersion() []CheckResult {
+	configPath := filepath.Join(d.StateRoot, ".ai", "config", "workflow.yaml")
+	currentVersion, needed, err := migrate.NeedsMigration(configPath)
+	if err != nil {
+		// Config not found or unreadable — not an error for doctor
+		return nil
+	}
+	if !needed {
+		return nil
+	}
+
+	return []CheckResult{{
+		Name:   "Config Version",
+		Status: "warning",
+		Message: fmt.Sprintf(
+			"workflow.yaml is version %s (latest: %s). Run 'awkit upgrade' to migrate.",
+			currentVersion, migrate.LatestVersion,
+		),
+	}}
 }
