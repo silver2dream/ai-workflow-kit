@@ -14,6 +14,12 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
+const (
+	ticketFileWarnThreshold  = 10
+	sessionFileWarnThreshold = 20
+	orphanTmpMaxAge          = time.Hour
+)
+
 // CheckResult represents the result of a single check
 type CheckResult struct {
 	Name     string
@@ -57,7 +63,12 @@ func (d *Doctor) RunAll(ctx context.Context) []CheckResult {
 	// 3. Check deprecated files
 	results = append(results, d.CheckDeprecatedFiles()...)
 
-	// 4. Check Claude settings permissions
+	// 4. Check state file accumulation
+	results = append(results, d.CheckTempTickets()...)
+	results = append(results, d.CheckSessionFiles()...)
+	results = append(results, d.CheckOrphanTmpFiles()...)
+
+	// 5. Check Claude settings permissions
 	results = append(results, d.CheckClaudeSettings()...)
 
 	return results
@@ -157,7 +168,7 @@ func (d *Doctor) CheckStopMarker() CheckResult {
 
 // CheckLockFile checks for stale lock file
 func (d *Doctor) CheckLockFile() CheckResult {
-	lockFile := filepath.Join(d.StateRoot, ".ai", "state", "principal.lock")
+	lockFile := filepath.Join(d.StateRoot, ".ai", "state", "kickoff.lock")
 	info, err := os.Stat(lockFile)
 	if err != nil {
 		return CheckResult{
@@ -282,6 +293,94 @@ func (d *Doctor) CheckDeprecatedFiles() []CheckResult {
 	}
 
 	return results
+}
+
+// CheckTempTickets warns if there are too many ticket files in .ai/temp/
+func (d *Doctor) CheckTempTickets() []CheckResult {
+	pattern := filepath.Join(d.StateRoot, ".ai", "temp", "ticket-*.md")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return nil
+	}
+
+	if len(matches) > ticketFileWarnThreshold {
+		return []CheckResult{{
+			Name:     "Temp Tickets",
+			Status:   "warning",
+			Message:  fmt.Sprintf("%d ticket file(s) in .ai/temp/ (run 'awkit reset --temp' to clean)", len(matches)),
+			CanClean: true,
+			CleanKey: "temp",
+		}}
+	}
+	return nil
+}
+
+// CheckSessionFiles warns if there are too many session files
+func (d *Doctor) CheckSessionFiles() []CheckResult {
+	dir := filepath.Join(d.StateRoot, ".ai", "state", "principal", "sessions")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var count int
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+			count++
+		}
+	}
+
+	if count > sessionFileWarnThreshold {
+		return []CheckResult{{
+			Name:     "Session Files",
+			Status:   "warning",
+			Message:  fmt.Sprintf("%d session file(s) in .ai/state/principal/sessions/ (run 'awkit reset --sessions' to clean)", count),
+			CanClean: true,
+			CleanKey: "sessions",
+		}}
+	}
+	return nil
+}
+
+// CheckOrphanTmpFiles warns if there are orphaned .tmp files older than 1 hour
+func (d *Doctor) CheckOrphanTmpFiles() []CheckResult {
+	dirs := []string{
+		filepath.Join(d.StateRoot, ".ai", "state"),
+		filepath.Join(d.StateRoot, ".ai", "results"),
+	}
+
+	cutoff := time.Now().Add(-orphanTmpMaxAge)
+	var count int
+
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".tmp" {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().Before(cutoff) {
+				count++
+			}
+		}
+	}
+
+	if count > 0 {
+		return []CheckResult{{
+			Name:     "Orphan .tmp Files",
+			Status:   "warning",
+			Message:  fmt.Sprintf("%d orphaned .tmp file(s) older than 1 hour (run 'awkit reset --orphans' to clean)", count),
+			CanClean: true,
+			CleanKey: "orphans",
+		}}
+	}
+	return nil
 }
 
 // CheckClaudeSettings checks if settings.local.json has required Task tool permissions

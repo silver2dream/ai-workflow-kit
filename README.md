@@ -76,8 +76,8 @@ More details: `docs/ai-workflow-architecture.md`.
 - `git`
 - `go` 1.25+
 
-### Offline (optional, for generate.sh only)
-- `python3` + `pyyaml` + `jsonschema` + `jinja2`
+### Offline (optional)
+- `python3` + `pyyaml` + `jsonschema` + `jinja2` (only needed for legacy scripts; generation is built into `awkit`)
 
 ### Online / E2E (optional)
 - `gh` (GitHub CLI) + `gh auth login`
@@ -166,7 +166,7 @@ Update kit files inside a project (preserves your workflow.yaml):
 
 ```bash
 awkit upgrade
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 Other update options:
@@ -182,19 +182,13 @@ awkit upgrade --force-config --preset react-go
 awkit init --preset react-go --force
 ```
 
-### 1) (Optional) Install offline dependencies for generate.sh
+### 1) Generate outputs
 
 ```bash
-pip3 install pyyaml jsonschema jinja2
+awkit generate
 ```
 
-### 2) Generate outputs
-
-```bash
-bash .ai/scripts/generate.sh
-```
-
-### 3) (Optional) Run the full workflow
+### 2) (Optional) Run the full workflow
 
 ```bash
 gh auth login
@@ -284,7 +278,7 @@ Root CI workflow: `.github/workflows/ci.yml`
 - `awkit upgrade` automatically migrates deprecated CI configurations (removes old `awk` job)
 
 **For this repo (awkit itself):**
-This repo ships a hand-maintained CI example. `bash .ai/scripts/generate.sh` does **not** modify workflows unless you pass `--generate-ci`.
+This repo ships a hand-maintained CI example. `awkit generate` does **not** modify workflows unless you pass `--generate-ci`.
 
 It runs:
 - AWK evaluation: `bash .ai/scripts/evaluate.sh --offline` and `--offline --strict`

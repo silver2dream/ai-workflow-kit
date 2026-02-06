@@ -17,7 +17,7 @@ audit: { ... }
 github: { ... }
 rules: { ... }
 escalation: { ... }
-notifications: { ... }
+# notifications: (planned for future release)
 ```
 
 ---
@@ -276,16 +276,16 @@ escalation:
 
 ---
 
-## notifications - 通知設定
+## notifications - 通知設定 (planned for future release)
+
+Slack/Discord webhook notifications are defined in the configuration schema but **not yet implemented** in the Go codebase. This section is reserved for a future release.
 
 ```yaml
-notifications:
-  slack_webhook: "${AI_SLACK_WEBHOOK}"
-  discord_webhook: "${AI_DISCORD_WEBHOOK}"
-  system_notify: true
+# notifications: (planned for future release)
+# slack_webhook: "${AI_SLACK_WEBHOOK}"
+# discord_webhook: "${AI_DISCORD_WEBHOOK}"
+# system_notify: true
 ```
-
-使用環境變數設定 webhook URL，避免硬編碼敏感資訊。
 
 ---
 

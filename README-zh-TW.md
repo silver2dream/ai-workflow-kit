@@ -76,8 +76,8 @@
 - `git`
 - `go` 1.25+
 
-### Offline（可選，僅用於 generate.sh）
-- `python3` + `pyyaml` + `jsonschema` + `jinja2`
+### Offline（可選）
+- `python3` + `pyyaml` + `jsonschema` + `jinja2`（僅供 legacy 腳本使用；生成功能已內建於 `awkit`）
 
 ### Online / E2E（選配）
 - `gh`（GitHub CLI）+ `gh auth login`
@@ -166,7 +166,7 @@ curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/downl
 
 ```bash
 awkit upgrade
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 其他更新選項：
@@ -182,19 +182,13 @@ awkit upgrade --force-config --preset react-go
 awkit init --preset react-go --force
 ```
 
-### 1)（可選）安裝 generate.sh 所需的 offline 依賴
+### 1) 生成輸出
 
 ```bash
-pip3 install pyyaml jsonschema jinja2
+awkit generate
 ```
 
-### 2) 生成輸出
-
-```bash
-bash .ai/scripts/generate.sh
-```
-
-### 3)（選配）跑完整工作流
+### 2)（選配）跑完整工作流
 
 ```bash
 gh auth login
@@ -284,7 +278,7 @@ Root CI workflow：`.github/workflows/ci.yml`
 - `awkit upgrade` 會自動遷移舊版 CI 設定（移除過時的 `awk` job）
 
 **此 repo（awkit 本身）：**
-此 repo 內建的是手寫 CI 範例。`bash .ai/scripts/generate.sh` 預設不會改動 workflows；需要從模板生成時才使用 `--generate-ci`。
+此 repo 內建的是手寫 CI 範例。`awkit generate` 預設不會改動 workflows；需要從模板生成時才使用 `--generate-ci`。
 
 包含：
 - AWK evaluation：`bash .ai/scripts/evaluate.sh --offline` 與 `--offline --strict`

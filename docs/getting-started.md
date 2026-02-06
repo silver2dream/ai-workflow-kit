@@ -161,7 +161,7 @@ rules:
 Then regenerate helper docs (recommended):
 
 ```bash
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 This will also generate `.claude/settings.local.json` with pre-approved permissions for `gh`, `git`, `codex`, and your verify commands. This enables true autopilot mode without manual approval prompts.
@@ -193,5 +193,5 @@ This repo ships with a working example workflow in `.github/workflows/ci.yml`.
 If you prefer generating CI from templates, run:
 
 ```bash
-bash .ai/scripts/generate.sh --generate-ci
+awkit generate --generate-ci
 ```

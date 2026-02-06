@@ -159,9 +159,16 @@ func extractIssueBody(issueJSON string) string {
 	return issue.Body
 }
 
+// reviewConfig represents the review section in workflow.yaml
+type reviewConfig struct {
+	ScoreThreshold int    `yaml:"score_threshold"`
+	MergeStrategy  string `yaml:"merge_strategy"`
+}
+
 // workflowConfig represents the workflow.yaml structure for test command extraction
 type workflowConfig struct {
-	Repos []repoConfig `yaml:"repos"`
+	Repos  []repoConfig `yaml:"repos"`
+	Review reviewConfig `yaml:"review"`
 }
 
 type repoConfig struct {
@@ -174,6 +181,47 @@ type repoConfig struct {
 
 type verifyConfig struct {
 	Test string `yaml:"test"`
+}
+
+// ReviewSettings holds review configuration loaded from workflow.yaml
+type ReviewSettings struct {
+	ScoreThreshold int
+	MergeStrategy  string
+}
+
+// GetReviewSettings loads review config from workflow.yaml and applies defaults.
+// Returns default values (score_threshold=7, merge_strategy="squash") if config cannot be read.
+func GetReviewSettings(stateRoot string) ReviewSettings {
+	defaults := ReviewSettings{
+		ScoreThreshold: 7,
+		MergeStrategy:  "squash",
+	}
+
+	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return defaults
+	}
+
+	var cfg workflowConfig
+	if err := yaml.Unmarshal(content, &cfg); err != nil {
+		return defaults
+	}
+
+	result := defaults
+	if cfg.Review.ScoreThreshold > 0 {
+		result.ScoreThreshold = cfg.Review.ScoreThreshold
+	}
+	if cfg.Review.MergeStrategy != "" {
+		switch cfg.Review.MergeStrategy {
+		case "squash", "merge", "rebase":
+			result.MergeStrategy = cfg.Review.MergeStrategy
+		default:
+			// Invalid strategy, keep default
+		}
+	}
+
+	return result
 }
 
 // repoSettings holds test command and language from workflow.yaml

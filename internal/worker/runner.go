@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
@@ -69,9 +70,11 @@ type workflowEscalation struct {
 }
 
 type workflowTimeouts struct {
-	GitSeconds    int `yaml:"git_seconds"`    // Git operations timeout (default: 120)
-	GHSeconds     int `yaml:"gh_seconds"`     // GitHub CLI operations timeout (default: 60)
-	CodexMinutes  int `yaml:"codex_minutes"`  // Codex execution timeout (default: 30)
+	GitSeconds      int `yaml:"git_seconds"`       // Git operations timeout (default: 120)
+	GHSeconds       int `yaml:"gh_seconds"`        // GitHub CLI operations timeout (default: 60)
+	CodexMinutes    int `yaml:"codex_minutes"`     // Codex execution timeout (default: 30)
+	GHRetryCount    int `yaml:"gh_retry_count"`    // Max retry attempts for gh CLI calls (default: 3)
+	GHRetryBaseDelay int `yaml:"gh_retry_base_delay"` // Base delay in seconds for retry backoff (default: 2)
 }
 
 type attemptInfo struct {
@@ -175,6 +178,9 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 			opts.CodexTimeout = 30 * time.Minute
 		}
 	}
+
+	// Build retry config from workflow.yaml
+	ghRetryConfig := buildRetryConfig(cfg.Timeouts)
 
 	integrationBranch := cfg.Git.IntegrationBranch
 	if integrationBranch == "" {
@@ -428,6 +434,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 
 		// Create ghClient for GetPRBaseBranch
 		ghClient := NewGitHubClient(opts.GHTimeout)
+		ghClient.Retry = ghRetryConfig
 
 		// Get base branch from PR
 		baseBranch, err := ghClient.GetPRBaseBranch(ctx, opts.PRNumber)
@@ -882,7 +889,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if trace != nil {
 		trace.StepStart("create_pr")
 	}
-	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout)
+	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout, ghRetryConfig)
 	if err != nil {
 		runErr = err
 		result.Error = err.Error()
@@ -1387,12 +1394,13 @@ func stageChanges(ctx context.Context, wtDir, repoName string, timeout time.Dura
 	return nil
 }
 
-func createOrFindPR(ctx context.Context, branch, base, title string, issueID int, timeout time.Duration) (string, error) {
+func createOrFindPR(ctx context.Context, branch, base, title string, issueID int, timeout time.Duration, retryCfg ghutil.RetryConfig) (string, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return "", fmt.Errorf("gh CLI not found in PATH")
 	}
 
 	client := NewGitHubClient(timeout)
+	client.Retry = retryCfg
 	prInfo, err := client.GetPRByBranch(ctx, branch)
 	if err != nil {
 		return "", err
@@ -1845,4 +1853,17 @@ func runVerificationCommand(ctx context.Context, workDir, command string, timeou
 	}
 
 	return nil
+}
+
+// buildRetryConfig constructs a ghutil.RetryConfig from workflow.yaml timeout settings.
+// Falls back to DefaultRetryConfig values when config fields are zero.
+func buildRetryConfig(t workflowTimeouts) ghutil.RetryConfig {
+	cfg := ghutil.DefaultRetryConfig()
+	if t.GHRetryCount > 0 {
+		cfg.MaxAttempts = t.GHRetryCount
+	}
+	if t.GHRetryBaseDelay > 0 {
+		cfg.BaseDelay = time.Duration(t.GHRetryBaseDelay) * time.Second
+	}
+	return cfg
 }

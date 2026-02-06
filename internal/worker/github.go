@@ -1,22 +1,22 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // GitHubClient provides GitHub operations via gh CLI
 type GitHubClient struct {
 	Timeout time.Duration
+	Retry   ghutil.RetryConfig
 }
 
 // NewGitHubClient creates a new GitHub client
@@ -24,7 +24,10 @@ func NewGitHubClient(timeout time.Duration) *GitHubClient {
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-	return &GitHubClient{Timeout: timeout}
+	return &GitHubClient{
+		Timeout: timeout,
+		Retry:   ghutil.DefaultRetryConfig(),
+	}
 }
 
 // IssueInfo contains basic issue information
@@ -41,16 +44,12 @@ func (c *GitHubClient) GetIssue(ctx context.Context, number int) (*IssueInfo, er
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "view", fmt.Sprintf("%d", number), "--json", "number,title,body,labels,state")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "view", fmt.Sprintf("%d", number), "--json", "number,title,body,labels,state")
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("timeout fetching issue %d", number)
 		}
-		return nil, fmt.Errorf("gh issue view failed: %s", stderr.String())
+		return nil, fmt.Errorf("gh issue view failed: %s", strings.TrimSpace(string(output)))
 	}
 
 	var result struct {
@@ -63,7 +62,7 @@ func (c *GitHubClient) GetIssue(ctx context.Context, number int) (*IssueInfo, er
 		State string `json:"state"`
 	}
 
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+	if err := json.Unmarshal(output, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse issue JSON: %w", err)
 	}
 
@@ -99,16 +98,13 @@ func (c *GitHubClient) EditIssueLabels(ctx context.Context, number int, add, rem
 		return nil // Nothing to do
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", args...)
+	if err != nil {
 		errMsg := ""
 		if ctx.Err() == context.DeadlineExceeded {
 			errMsg = fmt.Sprintf("timeout editing issue %d labels", number)
 		} else {
-			errMsg = fmt.Sprintf("gh issue edit failed: %s", stderr.String())
+			errMsg = fmt.Sprintf("gh issue edit failed: %s", strings.TrimSpace(string(output)))
 		}
 		// Write label update failure event
 		trace.WriteEvent(trace.ComponentGitHub, trace.TypeLabelUpdate, trace.LevelError,
@@ -141,16 +137,13 @@ func (c *GitHubClient) CommentOnIssue(ctx context.Context, number int, body stri
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "comment", fmt.Sprintf("%d", number), "--body", body)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "comment", fmt.Sprintf("%d", number), "--body", body)
+	if err != nil {
 		errMsg := ""
 		if ctx.Err() == context.DeadlineExceeded {
 			errMsg = fmt.Sprintf("timeout commenting on issue %d", number)
 		} else {
-			errMsg = fmt.Sprintf("gh issue comment failed: %s", stderr.String())
+			errMsg = fmt.Sprintf("gh issue comment failed: %s", strings.TrimSpace(string(output)))
 		}
 		// Write comment failure event - this is critical for tracking
 		trace.WriteEvent(trace.ComponentGitHub, trace.TypeCommentFail, trace.LevelError,
@@ -178,20 +171,16 @@ func (c *GitHubClient) GetPRByBranch(ctx context.Context, branch string) (*PRInf
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "list", "--head", branch, "--json", "number,url,state", "--limit", "1")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "list", "--head", branch, "--json", "number,url,state", "--limit", "1")
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("timeout listing PRs for branch %s", branch)
 		}
-		return nil, fmt.Errorf("gh pr list failed: %s", stderr.String())
+		return nil, fmt.Errorf("gh pr list failed: %s", strings.TrimSpace(string(output)))
 	}
 
 	var prs []PRInfo
-	if err := json.Unmarshal(stdout.Bytes(), &prs); err != nil {
+	if err := json.Unmarshal(output, &prs); err != nil {
 		return nil, fmt.Errorf("failed to parse PR JSON: %w", err)
 	}
 
@@ -207,19 +196,15 @@ func (c *GitHubClient) GetPRBaseBranch(ctx context.Context, prNumber int) (strin
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "baseRefName", "-q", ".baseRefName")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "baseRefName", "-q", ".baseRefName")
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("timeout getting PR #%d base branch", prNumber)
 		}
-		return "", fmt.Errorf("gh pr view failed: %s", stderr.String())
+		return "", fmt.Errorf("gh pr view failed: %s", strings.TrimSpace(string(output)))
 	}
 
-	baseBranch := strings.TrimSpace(stdout.String())
+	baseBranch := strings.TrimSpace(string(output))
 	return baseBranch, nil
 }
 
@@ -228,19 +213,15 @@ func (c *GitHubClient) GetPRState(ctx context.Context, prNumber int) (string, er
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "state", "-q", ".state")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "state", "-q", ".state")
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("timeout getting PR #%d state", prNumber)
 		}
-		return "", fmt.Errorf("gh pr view failed: %s", stderr.String())
+		return "", fmt.Errorf("gh pr view failed: %s", strings.TrimSpace(string(output)))
 	}
 
-	state := strings.TrimSpace(stdout.String())
+	state := strings.TrimSpace(string(output))
 	return state, nil
 }
 
@@ -259,19 +240,15 @@ func (c *GitHubClient) GetPRMergeState(ctx context.Context, prNumber int) (strin
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "mergeStateStatus", "-q", ".mergeStateStatus")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "view", fmt.Sprintf("%d", prNumber), "--json", "mergeStateStatus", "-q", ".mergeStateStatus")
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("timeout getting PR #%d merge state", prNumber)
 		}
-		return "", fmt.Errorf("gh pr view failed: %s", stderr.String())
+		return "", fmt.Errorf("gh pr view failed: %s", strings.TrimSpace(string(output)))
 	}
 
-	mergeState := strings.TrimSpace(stdout.String())
+	mergeState := strings.TrimSpace(string(output))
 	return mergeState, nil
 }
 
@@ -321,15 +298,12 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, number int) error {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "close", strconv.Itoa(number))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "close", strconv.Itoa(number))
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("timeout closing issue %d", number)
 		}
-		return fmt.Errorf("gh issue close failed: %s", stderr.String())
+		return fmt.Errorf("gh issue close failed: %s", strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -367,22 +341,18 @@ func (c *GitHubClient) GetIssueComments(ctx context.Context, number int, limit i
 		limit = 10
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "view", fmt.Sprintf("%d", number),
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "view", fmt.Sprintf("%d", number),
 		"--json", "comments",
 		"--jq", fmt.Sprintf(".comments | .[-%d:]", limit))
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("timeout fetching comments for issue %d", number)
 		}
-		return nil, fmt.Errorf("gh issue view failed: %s", stderr.String())
+		return nil, fmt.Errorf("gh issue view failed: %s", strings.TrimSpace(string(output)))
 	}
 
 	var comments []IssueComment
-	if err := json.Unmarshal(stdout.Bytes(), &comments); err != nil {
+	if err := json.Unmarshal(output, &comments); err != nil {
 		return nil, fmt.Errorf("failed to parse comments JSON: %w", err)
 	}
 

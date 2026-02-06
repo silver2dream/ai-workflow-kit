@@ -33,19 +33,23 @@ Config file not found: .ai/config/workflow.yaml
 
 ---
 
-### 缺少 Python 依賴 (僅 generate.sh)
+### 缺少 Python 依賴 (僅 legacy 腳本)
 
 **症狀：**
 ```
 Please install: pip3 install pyyaml jsonschema jinja2
 ```
 
-**原因：** Python 套件未安裝（僅在執行 `generate.sh` 時需要）
+**原因：** Python 套件未安裝（僅在執行 legacy Python 腳本時需要）
 
-**說明：** Python 依賴為可選，僅用於執行 `bash .ai/scripts/generate.sh`。主要的 AWK 功能透過 `awkit` CLI 執行，不需要 Python。
+**說明：** Python 依賴為可選，僅用於執行 legacy Python 腳本。生成功能已內建於 `awkit generate`，不需要 Python。主要的 AWK 功能透過 `awkit` CLI 執行。
 
 **解決：**
 ```bash
+# 建議使用 awkit generate 取代，不需要 Python
+awkit generate
+
+# 如果仍需要執行 legacy 腳本：
 pip3 install pyyaml jsonschema jinja2
 ```
 
@@ -68,7 +72,7 @@ Schema file not found: .ai/config/workflow.schema.json
 **解決：**
 ```bash
 # 重新生成配置
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 
 ---
@@ -219,7 +223,7 @@ GitHub CLI operations require approval in the current execution context
 
 方法一：重新生成權限設定（推薦）
 ```bash
-bash .ai/scripts/generate.sh
+awkit generate
 ```
 這會生成 `.claude/settings.local.json`，自動批准 `gh`、`git`、`codex` 等命令。
 
@@ -252,7 +256,7 @@ claude --print --dangerously-skip-permissions < .ai/scripts/principal_boot.txt
 
 **解決：**
 1. 使用 `awkit kickoff` 取代 `kickoff.sh`（提供 PTY 即時輸出和 Spinner 動畫）
-2. 或升級到最新版本：`awkit upgrade && bash .ai/scripts/generate.sh`
+2. 或升級到最新版本：`awkit upgrade && awkit generate`
 
 ---
 

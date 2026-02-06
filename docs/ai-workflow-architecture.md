@@ -416,7 +416,7 @@ touch .ai/state/STOP
 ### Phase 3: Integration ✅
 - [x] kickoff.sh - 一鍵啟動腳本
 - [x] stats.sh - 統計報告
-- [x] notify.sh - 通知機制
+- [ ] notify.sh - 通知機制 (planned for future release)
 - [ ] 端到端測試（手動驗證）
 
 ### Manual Utilities (Optional)
@@ -425,10 +425,10 @@ These scripts are not part of the automatic workflow loop, but can be used manua
 - `audit_to_tickets.sh` - convert audit findings into issue tickets
 - `cleanup.sh` - remove old worktrees/branches/results
 - `stats.sh` - generate workflow statistics (text/json/html)
-- `notify.sh` - send system/Slack/Discord notifications
+- `notify.sh` - send system/Slack/Discord notifications (planned for future release)
 
-### Phase 4: Polish ✅
-- [x] 通知機制（系統通知 + Slack/Discord 可選）
+### Phase 4: Polish (in progress)
+- [ ] 通知機制（系統通知 + Slack/Discord 可選）- planned for future release
 - [x] 統計儀表板（text/json/html 格式）
 - [x] 文檔完善
 
@@ -472,22 +472,20 @@ touch .ai/state/STOP
 # 或在 Claude Code 中說 "停止工作流"
 # 或執行 /stop-work
 
-# 5. 手動發送通知
-bash .ai/scripts/notify.sh "標題" "內容"
-bash .ai/scripts/notify.sh --summary   # 發送統計摘要
+# 5. 手動發送通知 (planned for future release)
+# bash .ai/scripts/notify.sh "標題" "內容"
+# bash .ai/scripts/notify.sh --summary   # 發送統計摘要
 ```
 
-### 通知配置（可選）
+### 通知配置（planned for future release）
+
+Slack/Discord webhook 通知尚未在 Go 代碼中實作。以下環境變數保留供未來使用：
 
 ```bash
-# Slack 通知
-export AI_SLACK_WEBHOOK="https://hooks.slack.com/services/xxx/yyy/zzz"
-
-# Discord 通知
-export AI_DISCORD_WEBHOOK="https://discord.com/api/webhooks/xxx/yyy"
-
-# 禁用系統通知
-export AI_SYSTEM_NOTIFY=false
+# (Planned for future release)
+# export AI_SLACK_WEBHOOK="https://hooks.slack.com/services/xxx/yyy/zzz"
+# export AI_DISCORD_WEBHOOK="https://discord.com/api/webhooks/xxx/yyy"
+# export AI_SYSTEM_NOTIFY=false
 ```
 
 ---

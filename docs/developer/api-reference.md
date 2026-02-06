@@ -542,12 +542,12 @@ bash .ai/scripts/write_result.sh <issue_id> <status> <pr_url> <summary_file>
 - `AI_EXEC_DURATION` - 執行時間 (秒)
 - `AI_RETRY_COUNT` - 重試次數
 
-### generate.sh
+### awkit generate
 
 生成設定檔。
 
 ```bash
-bash .ai/scripts/generate.sh [--generate-ci]
+awkit generate [--generate-ci]
 ```
 
 ### evaluate.sh

@@ -21,13 +21,17 @@ Usage:
 Arguments:
   --pr          PR number (required)
   --issue       Issue number (required)
-  --score       Review score 1-10 (required, >= 7 approves)
+  --score       Review score 1-10 (required, threshold configurable via review.score_threshold in workflow.yaml, default: 7)
   --ci-status   CI status: passed or failed (required)
   --body        Review body text (required)
 
 Options:
   --state-root  Override state root (default: git root)
   --help        Show this help
+
+Config (workflow.yaml):
+  review.score_threshold  Minimum score to approve (default: 7)
+  review.merge_strategy   Merge strategy: squash, merge, rebase (default: squash)
 
 Examples:
   awkit submit-review --pr 42 --issue 25 --score 8 --ci-status passed --body "LGTM. EVIDENCE: func NewHandler"
@@ -109,16 +113,21 @@ func cmdSubmitReview(args []string) int {
 		}
 	}
 
+	// Load review settings from workflow.yaml
+	reviewSettings := reviewer.GetReviewSettings(*stateRoot)
+
 	// Run Go implementation
 	ctx := context.Background()
 	result, err := reviewer.SubmitReview(ctx, reviewer.SubmitReviewOptions{
-		PRNumber:    *prNumber,
-		IssueNumber: *issueNumber,
-		Score:       *score,
-		CIStatus:    *ciStatus,
-		ReviewBody:  *body,
-		StateRoot:   *stateRoot,
-		GHTimeout:   60 * time.Second,
+		PRNumber:       *prNumber,
+		IssueNumber:    *issueNumber,
+		Score:          *score,
+		CIStatus:       *ciStatus,
+		ReviewBody:     *body,
+		StateRoot:      *stateRoot,
+		ScoreThreshold: reviewSettings.ScoreThreshold,
+		MergeStrategy:  reviewSettings.MergeStrategy,
+		GHTimeout:      60 * time.Second,
 	})
 
 	if err != nil {

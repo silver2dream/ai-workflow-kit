@@ -20,18 +20,20 @@ import (
 
 // SubmitReviewOptions configures the submit review operation
 type SubmitReviewOptions struct {
-	PRNumber     int
-	IssueNumber  int
-	Score        int    // 1-10
-	CIStatus     string // "passed" | "failed"
-	ReviewBody   string
-	StateRoot    string
-	WorktreePath string        // Path to worktree for test execution
-	TestCommand  string        // Command to run tests
-	Language     string        // Programming language for test name validation
-	Ticket       string        // Issue body with acceptance criteria
-	GHTimeout    time.Duration
-	TestTimeout  time.Duration
+	PRNumber       int
+	IssueNumber    int
+	Score          int    // 1-10
+	CIStatus       string // "passed" | "failed"
+	ReviewBody     string
+	StateRoot      string
+	WorktreePath   string        // Path to worktree for test execution
+	TestCommand    string        // Command to run tests
+	Language       string        // Programming language for test name validation
+	Ticket         string        // Issue body with acceptance criteria
+	ScoreThreshold int           // Minimum score to approve (default: 7, from config)
+	MergeStrategy  string        // Merge strategy: "squash" | "merge" | "rebase" (default: "squash", from config)
+	GHTimeout      time.Duration
+	TestTimeout    time.Duration
 }
 
 // SubmitReviewResult holds the result of submitting a review
@@ -50,6 +52,12 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	}
 	if opts.TestTimeout == 0 {
 		opts.TestTimeout = 5 * time.Minute
+	}
+	if opts.ScoreThreshold <= 0 {
+		opts.ScoreThreshold = 7
+	}
+	if opts.MergeStrategy == "" {
+		opts.MergeStrategy = "squash"
 	}
 
 	// Write review_start event
@@ -200,7 +208,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	}
 
 	// Submit GitHub Review
-	if opts.Score >= 7 {
+	if opts.Score >= opts.ScoreThreshold {
 		// Approve (critical operation - must succeed)
 		if err := approvePR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout); err != nil {
 			return nil, fmt.Errorf("failed to approve PR #%d: %w", opts.PRNumber, err)
@@ -208,7 +216,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 
 		if opts.CIStatus == "passed" {
 			// Try to merge
-			if err := mergePR(ctx, opts.PRNumber, opts.GHTimeout); err != nil {
+			if err := mergePR(ctx, opts.PRNumber, opts.GHTimeout, opts.MergeStrategy); err != nil {
 				return handleMergeFailure(ctx, opts, sessionID, err)
 			}
 
@@ -436,12 +444,27 @@ func requestChangesPR(ctx context.Context, prNumber, score int, timeout time.Dur
 	return cmd.Run()
 }
 
-func mergePR(ctx context.Context, prNumber int, timeout time.Duration) error {
+func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStrategy ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	strategy := "squash"
+	if len(mergeStrategy) > 0 && mergeStrategy[0] != "" {
+		strategy = mergeStrategy[0]
+	}
+
+	var strategyFlag string
+	switch strategy {
+	case "merge":
+		strategyFlag = "--merge"
+	case "rebase":
+		strategyFlag = "--rebase"
+	default:
+		strategyFlag = "--squash"
+	}
+
 	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", strconv.Itoa(prNumber),
-		"--squash", "--delete-branch")
+		strategyFlag, "--delete-branch")
 	if err := cmd.Run(); err != nil {
 		// Write PR merge failure event
 		trace.WriteEvent(trace.ComponentGitHub, trace.TypePRMergeFail, trace.LevelError,

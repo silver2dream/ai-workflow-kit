@@ -157,7 +157,7 @@ from lib.errors import AWKError, ConfigError, ValidationError, ExecutionError, p
 # 配置相關錯誤
 raise ConfigError(
     message="Config file not found",
-    suggestion="Run generate.sh first"
+    suggestion="Run awkit generate first"
 )
 
 # 驗證相關錯誤
@@ -507,7 +507,7 @@ awkit kickoff --dry-run
 bash .ai/scripts/kickoff.sh --dry-run
 
 # 啟用 debug 輸出
-bash -x .ai/scripts/generate.sh
+awkit generate
 ```
 
 ### Q: Windows 上腳本執行失敗？
