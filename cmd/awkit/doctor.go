@@ -149,7 +149,7 @@ func cmdReset(args []string) int {
 	if *all || *orphans || noFlags {
 		allResults = append(allResults, resetter.CleanOrphans()...)
 	}
-	if *all || *sessions {
+	if *all || *sessions || noFlags {
 		allResults = append(allResults, resetter.CleanSessions()...)
 	}
 	if *all || *reports {
@@ -209,7 +209,7 @@ func usageReset() {
 
 This command resets state files to allow a fresh start.
 Without flags, it resets common state (loop_count, consecutive_failures,
-attempts, STOP marker, deprecated files, temp tickets, orphan .tmp files).
+attempts, STOP marker, deprecated files, temp tickets, old sessions, orphan .tmp files).
 
 Usage:
   awkit reset [options]
@@ -232,7 +232,7 @@ Options:
   --orphans     Clean orphaned .tmp files older than 1 hour
 
 Examples:
-  awkit reset              # Reset common state (includes --temp, --orphans)
+  awkit reset              # Reset common state (includes --temp, --sessions, --orphans)
   awkit reset --dry-run    # Preview what would be reset
   awkit reset --all        # Reset everything (including traces, events, sessions, reports)
   awkit reset --traces     # Clean old trace files after upgrade
