@@ -1765,6 +1765,103 @@ func TestIsValidTestNameForLanguage(t *testing.T) {
 	}
 }
 
+// TestParseTestResults_VitestDefaultBaseName verifies that Vitest default mode
+// produces file-level entries and baseName entries (not individual test names).
+func TestParseTestResults_VitestDefaultBaseName(t *testing.T) {
+	output := ` ✓ src/components/GameCanvas.test.ts (4 tests) 306ms
+ ✓ src/components/Lobby.test.ts (2 tests) 150ms
+
+ Test Files  2 passed (2)
+      Tests  6 passed (6)
+   Duration  1.26s`
+
+	passed, failed := ParseTestResults(output)
+
+	// Should have file-level entries
+	if !passed["src/components/GameCanvas.test.ts"] {
+		t.Error("expected file-level entry for GameCanvas.test.ts")
+	}
+	if !passed["src/components/Lobby.test.ts"] {
+		t.Error("expected file-level entry for Lobby.test.ts")
+	}
+
+	// Should NOT have individual test names like "TestRenderDrawsSnake..."
+	if passed["TestRenderDrawsSnakeSegmentsAtExpectedGridPositions"] {
+		t.Error("should not have Go-style individual test name in Vitest default output")
+	}
+
+	if len(failed) != 0 {
+		t.Errorf("expected no failed tests, got %d", len(failed))
+	}
+}
+
+func TestHasIndividualTestNames(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{
+			name: "Go test output",
+			output: `=== RUN   TestFoo
+--- PASS: TestFoo (0.00s)
+PASS
+ok  	example.com/pkg	0.001s`,
+			want: true,
+		},
+		{
+			name: "Vitest verbose output",
+			output: ` ✓ __tests__/math.test.ts > addition > 2 + 2 should equal 4 1ms
+ ✓ __tests__/math.test.ts > addition > 3 + 3 should equal 6 2ms`,
+			want: true,
+		},
+		{
+			name: "Vitest default (file-level only)",
+			output: ` ✓ src/components/GameCanvas.test.ts (4 tests) 306ms
+ ✓ src/components/Lobby.test.ts (2 tests) 150ms
+
+ Test Files  2 passed (2)
+      Tests  6 passed (6)
+   Duration  1.26s`,
+			want: false,
+		},
+		{
+			name: "Jest individual test output",
+			output: `  ✓ should handle empty input (5ms)
+  ✓ should process valid data (10ms)`,
+			want: true,
+		},
+		{
+			name:   "empty output",
+			output: "",
+			want:   false,
+		},
+		{
+			name: "Vitest summary only (no checkmarks)",
+			output: ` Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Duration  0.89s`,
+			want: false,
+		},
+		{
+			name: "Go test failure",
+			output: `=== RUN   TestFoo
+--- FAIL: TestFoo (0.01s)
+FAIL`,
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasIndividualTestNames(tt.output)
+			if got != tt.want {
+				t.Errorf("hasIndividualTestNames() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseTestReviewTable_MultiLanguage(t *testing.T) {
 	tests := []struct {
 		name      string

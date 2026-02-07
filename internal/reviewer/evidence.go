@@ -207,65 +207,72 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	}
 
 	// 6. Verify each mapped test passed (with fuzzy matching fallback)
-	var missingTests []string
-	var expectedTests []string
-	for _, v := range verifications {
-		expectedTests = append(expectedTests, v.TestName)
+	// Skip per-test matching when test runner output is file-level only
+	// (e.g., Vitest default mode: "✓ file.test.ts (4 tests)")
+	if testErr == nil && !hasIndividualTestNames(testOutput) {
+		fmt.Printf("[VERIFY] Test command succeeded but no individual test names parsed; "+
+			"skipping per-test matching (file-level pass)\n")
+	} else {
+		var missingTests []string
+		var expectedTests []string
+		for _, v := range verifications {
+			expectedTests = append(expectedTests, v.TestName)
 
-		// 1. Try exact match first
-		if passedTests[v.TestName] {
-			continue
-		}
-
-		// 2. Exact match failed, try fuzzy matching
-		found := false
-		var matchedName string
-		for passedName := range passedTests {
-			if fuzzyMatchTestName(v.TestName, passedName) {
-				found = true
-				matchedName = passedName
-				break
+			// 1. Try exact match first
+			if passedTests[v.TestName] {
+				continue
 			}
-		}
 
-		if found {
-			fmt.Printf("[VERIFY] Fuzzy matched: %s -> %s\n", v.TestName, matchedName)
-			continue
-		}
+			// 2. Exact match failed, try fuzzy matching
+			found := false
+			var matchedName string
+			for passedName := range passedTests {
+				if fuzzyMatchTestName(v.TestName, passedName) {
+					found = true
+					matchedName = passedName
+					break
+				}
+			}
 
-		// 3. Fuzzy match also failed, check if in failed tests
-		if failedTests[v.TestName] {
-			missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
-		} else {
-			// Provide language-aware diagnostic for why test was not found
-			validator := GetTestNameValidator(opts.Language)
-			if !validator.IsValid(v.TestName) {
-				missingTests = append(missingTests, fmt.Sprintf("%s (invalid format for %s: expected %s)", v.TestName, opts.Language, validator.FormatHint()))
+			if found {
+				fmt.Printf("[VERIFY] Fuzzy matched: %s -> %s\n", v.TestName, matchedName)
+				continue
+			}
+
+			// 3. Fuzzy match also failed, check if in failed tests
+			if failedTests[v.TestName] {
+				missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
 			} else {
-				// Find similar tests to provide better diagnostics
-				similar := findSimilarTests(v.TestName, passedTests, 0.5)
-				if len(similar) > 0 {
-					missingTests = append(missingTests, fmt.Sprintf("%s (not found, similar: %v)", v.TestName, similar))
+				// Provide language-aware diagnostic for why test was not found
+				validator := GetTestNameValidator(opts.Language)
+				if !validator.IsValid(v.TestName) {
+					missingTests = append(missingTests, fmt.Sprintf("%s (invalid format for %s: expected %s)", v.TestName, opts.Language, validator.FormatHint()))
 				} else {
-					missingTests = append(missingTests, fmt.Sprintf("%s (not found in test output)", v.TestName))
+					// Find similar tests to provide better diagnostics
+					similar := findSimilarTests(v.TestName, passedTests, 0.5)
+					if len(similar) > 0 {
+						missingTests = append(missingTests, fmt.Sprintf("%s (not found, similar: %v)", v.TestName, similar))
+					} else {
+						missingTests = append(missingTests, fmt.Sprintf("%s (not found in test output)", v.TestName))
+					}
 				}
 			}
 		}
-	}
 
-	if len(missingTests) > 0 {
-		// Add diagnostic info about what was expected vs found
-		details := missingTests
-		details = append(details, fmt.Sprintf("Expected tests: %v", expectedTests))
-		details = append(details, fmt.Sprintf("Found %d passed tests in output", len(passedTests)))
-		return &EvidenceError{
-			Code:    2,
-			Message: "some tests did not pass",
-			Details: details,
+		if len(missingTests) > 0 {
+			// Add diagnostic info about what was expected vs found
+			details := missingTests
+			details = append(details, fmt.Sprintf("Expected tests: %v", expectedTests))
+			details = append(details, fmt.Sprintf("Found %d passed tests in output", len(passedTests)))
+			return &EvidenceError{
+				Code:    2,
+				Message: "some tests did not pass",
+				Details: details,
+			}
 		}
-	}
 
-	fmt.Printf("[VERIFY] ✓ All mapped tests passed\n")
+		fmt.Printf("[VERIFY] ✓ All mapped tests passed\n")
+	}
 
 	// 7. Verify assertions exist in test files
 	if err := VerifyAssertions(opts.WorktreePath, verifications); err != nil {
@@ -1026,6 +1033,38 @@ func min(a, b, c int) int {
 		return b
 	}
 	return c
+}
+
+// hasIndividualTestNames checks whether the test output contains individual test
+// name results (as opposed to only file-level summaries).
+// Returns false for Vitest default (non-verbose) output like:
+//
+//	✓ GameCanvas.test.ts (4 tests) 306ms
+//
+// Returns true for Go test output, Vitest verbose output, Jest output, etc.
+func hasIndividualTestNames(output string) bool {
+	// Go test format: "--- PASS: TestName" or "--- FAIL: TestName"
+	goRe := regexp.MustCompile(`--- (?:PASS|FAIL): [\w/]+`)
+	if goRe.MatchString(output) {
+		return true
+	}
+
+	// Vitest verbose format: "✓ file.test.ts > describe > test name 1ms"
+	vitestVerboseRe := regexp.MustCompile(`[✓✕]\s+\S+\.test\.[jt]sx?\s*>`)
+	if vitestVerboseRe.MatchString(output) {
+		return true
+	}
+
+	// Jest/Node format: "✓ test name" (without .test.ts pattern on the same line)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if (strings.HasPrefix(line, "✓") || strings.HasPrefix(line, "✕")) &&
+			!strings.Contains(line, ".test.") && !strings.Contains(line, ".spec.") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // findSimilarTests finds test names similar to the expected name from the passed tests
