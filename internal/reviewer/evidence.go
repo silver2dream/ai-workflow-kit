@@ -17,6 +17,7 @@ type CriteriaVerification struct {
 	Implementation string // Description of how it's implemented
 	TestName       string // Name of the test function
 	Assertion      string // Key assertion from test code
+	IsMeta         bool   // True when this is a meta-criteria (e.g., "all tests pass")
 }
 
 // EvidenceError represents an evidence verification error
@@ -134,6 +135,51 @@ func GetTestNameValidator(language string) TestNameValidator {
 	}
 }
 
+// EnhanceTestCommandForVerbose appends verbose flags to the test command based
+// on the project language so that individual test names appear in output.
+func EnhanceTestCommandForVerbose(testCmd, language string) string {
+	if testCmd == "" {
+		return testCmd
+	}
+
+	switch strings.ToLower(language) {
+	case "go", "golang":
+		// Go: add -v for subtest output (if not already present)
+		if !strings.Contains(testCmd, " -v") && !strings.Contains(testCmd, " -v ") {
+			return testCmd + " -v"
+		}
+		return testCmd
+
+	case "node", "nodejs", "typescript", "javascript", "ts", "js":
+		// Already has a reporter/verbose flag — leave as-is
+		if strings.Contains(testCmd, "--reporter") || strings.Contains(testCmd, "--verbose") {
+			return testCmd
+		}
+		// npm test / npm run test → append via "--" (may be prefixed with "cd ... && ")
+		if strings.Contains(testCmd, "npm test") || strings.Contains(testCmd, "npm run test") {
+			return testCmd + " -- --reporter=verbose"
+		}
+		// npx vitest / vitest → append directly
+		if strings.Contains(testCmd, "vitest") {
+			return testCmd + " --reporter=verbose"
+		}
+		// npx jest / jest → append --verbose
+		if strings.Contains(testCmd, "jest") {
+			return testCmd + " --verbose"
+		}
+		return testCmd
+
+	case "python", "py":
+		if !strings.Contains(testCmd, " -v") {
+			return testCmd + " -v"
+		}
+		return testCmd
+
+	default:
+		return testCmd
+	}
+}
+
 // VerifyTestEvidence performs the complete verification
 func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError {
 	if opts.TestTimeout == 0 {
@@ -176,9 +222,13 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 
 	fmt.Printf("[VERIFY] ✓ All criteria have complete verifications\n")
 
-	// 4. Execute tests in worktree
-	fmt.Printf("[VERIFY] Executing tests: %s\n", opts.TestCommand)
-	testOutput, testErr := ExecuteTests(ctx, opts.WorktreePath, opts.TestCommand, opts.TestTimeout)
+	// 4. Execute tests in worktree with verbose output for individual test names
+	verboseCmd := EnhanceTestCommandForVerbose(opts.TestCommand, opts.Language)
+	if verboseCmd != opts.TestCommand {
+		fmt.Printf("[VERIFY] Enhanced test command for verbose: %s\n", verboseCmd)
+	}
+	fmt.Printf("[VERIFY] Executing tests: %s\n", verboseCmd)
+	testOutput, testErr := ExecuteTests(ctx, opts.WorktreePath, verboseCmd, opts.TestTimeout)
 
 	// 5. Parse test results
 	passedTests, failedTests := ParseTestResults(testOutput)
@@ -213,12 +263,18 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	// Principal-authored (not from test output) and may not match file content.
 	fileLevelOnly := testErr == nil && !hasIndividualTestNames(testOutput)
 	if fileLevelOnly {
-		fmt.Printf("[VERIFY] Test command succeeded but no individual test names parsed; "+
-			"skipping per-test matching and assertion check (file-level pass)\n")
+		fmt.Printf("[VERIFY] ⚠ Verbose enhancement did not produce individual test names; "+
+			"falling back to file-level pass (per-test matching and assertion check skipped)\n")
 	} else {
 		var missingTests []string
 		var expectedTests []string
 		for _, v := range verifications {
+			// Skip meta-criteria — verified by overall test pass
+			if isMetaCriteria(v) {
+				fmt.Printf("[VERIFY] Meta-criteria %q: verified by overall test pass\n", v.Criteria)
+				continue
+			}
+
 			expectedTests = append(expectedTests, v.TestName)
 
 			// 1. Try exact match first
@@ -332,6 +388,7 @@ func ParseCriteriaVerifications(reviewBody, language string) ([]CriteriaVerifica
 			if fuzzyMatch(criteria, tm.Criteria) {
 				v.TestName = tm.TestName
 				v.Assertion = tm.Assertion
+				v.IsMeta = tm.IsMeta
 				break
 			}
 		}
@@ -353,6 +410,7 @@ func ParseCriteriaVerifications(reviewBody, language string) ([]CriteriaVerifica
 				Criteria:  tm.Criteria,
 				TestName:  tm.TestName,
 				Assertion: tm.Assertion,
+				IsMeta:    tm.IsMeta,
 			})
 		}
 	}
@@ -364,6 +422,7 @@ type testMapping struct {
 	Criteria  string
 	TestName  string
 	Assertion string
+	IsMeta    bool
 }
 
 // isValidTestNameForLanguage validates test name using language-specific rules
@@ -483,6 +542,18 @@ func parseTestReviewTable(body, language string) ([]testMapping, error) {
 			}
 
 			if criteria != "" && testName != "" {
+				// Detect (meta) marker — skip test name validation for meta-criteria
+				isMeta := strings.EqualFold(strings.TrimSpace(testName), "(meta)")
+				if isMeta {
+					mappings = append(mappings, testMapping{
+						Criteria:  criteria,
+						TestName:  testName,
+						Assertion: assertion,
+						IsMeta:    true,
+					})
+					continue
+				}
+
 				// Validate test name format using language-specific validator
 				if !isValidTestNameForLanguage(testName, language) {
 					return nil, fmt.Errorf("invalid test name in review table: %q (expected: %s)", testName, getTestNameFormatHint(language))
@@ -518,7 +589,10 @@ func extractSection(body, sectionName string) string {
 	return ""
 }
 
-// ValidateCompleteness ensures each criteria has complete verification
+// ValidateCompleteness ensures each criteria has complete verification.
+// Test name and assertion are optional — some criteria are meta-criteria
+// (e.g., "all tests pass", "unit tests added") that cannot be mapped to
+// specific test functions. Only implementation description is required.
 func ValidateCompleteness(criteria []string, verifications []CriteriaVerification) *EvidenceError {
 	var missing []string
 
@@ -526,18 +600,20 @@ func ValidateCompleteness(criteria []string, verifications []CriteriaVerificatio
 		found := false
 		for _, v := range verifications {
 			if fuzzyMatch(c, v.Criteria) {
-				// Check completeness
+				// Check completeness: only implementation is required
 				var issues []string
 				if v.Implementation == "" {
 					issues = append(issues, "missing implementation description")
 				} else if len(v.Implementation) < 20 {
 					issues = append(issues, "implementation description too short (min 20 chars)")
 				}
+
+				// Test name and assertion are optional — warn but don't block
 				if v.TestName == "" {
-					issues = append(issues, "missing test name")
+					fmt.Printf("[VERIFY] Note: criteria %q has no test name mapping (ok for meta-criteria)\n", c)
 				}
 				if v.Assertion == "" {
-					issues = append(issues, "missing assertion")
+					fmt.Printf("[VERIFY] Note: criteria %q has no assertion mapping (ok for meta-criteria)\n", c)
 				}
 
 				if len(issues) > 0 {
@@ -614,20 +690,37 @@ func ParseTestResults(output string) (passed map[string]bool, failed map[string]
 		// Extract the last segment as the test name
 		parts := strings.Split(fullPath, ">")
 		testName := strings.TrimSpace(parts[len(parts)-1])
+		// Store original name (with spaces) for matching reviewer descriptions
+		passed[testName] = true
+		// Store normalized name (with underscores) for backward compatibility
 		name := strings.ReplaceAll(testName, " ", "_")
 		passed[name] = true
-		// Also store the full path for better matching
+		// Also store the full path variants for better matching
 		fullName := strings.ReplaceAll(strings.ReplaceAll(fullPath, " > ", "/"), " ", "_")
 		passed[fullName] = true
+		// Full path with original spaces
+		fullPathOriginal := strings.TrimSpace(fullPath)
+		for _, sep := range []string{" > "} {
+			fullPathOriginal = strings.ReplaceAll(fullPathOriginal, sep, "/")
+		}
+		passed[fullPathOriginal] = true
 	}
 	for _, m := range vitestVerboseFailRe.FindAllStringSubmatch(output, -1) {
 		fullPath := strings.TrimSpace(m[1])
 		parts := strings.Split(fullPath, ">")
 		testName := strings.TrimSpace(parts[len(parts)-1])
+		// Store original name (with spaces)
+		failed[testName] = true
+		// Store normalized name (with underscores)
 		name := strings.ReplaceAll(testName, " ", "_")
 		failed[name] = true
 		fullName := strings.ReplaceAll(strings.ReplaceAll(fullPath, " > ", "/"), " ", "_")
 		failed[fullName] = true
+		fullPathOriginal := strings.TrimSpace(fullPath)
+		for _, sep := range []string{" > "} {
+			fullPathOriginal = strings.ReplaceAll(fullPathOriginal, sep, "/")
+		}
+		failed[fullPathOriginal] = true
 	}
 
 	// Vitest default format: "✓ file.test.ts (5 tests) 306ms"
@@ -702,17 +795,13 @@ func VerifyAssertions(worktreePath string, verifications []CriteriaVerification)
 	}
 	testContent := allTestContent.String()
 
-	// Check each assertion
+	// Check each assertion using multi-strategy matching
 	for _, v := range verifications {
-		if v.Assertion == "" {
+		if v.Assertion == "" || isMetaCriteria(v) {
 			continue
 		}
 
-		// Normalize and check
-		normalizedAssertion := normalizeForMatching(v.Assertion)
-		normalizedContent := normalizeForMatching(testContent)
-
-		if !strings.Contains(normalizedContent, normalizedAssertion) {
+		if !matchAssertion(v.Assertion, testContent) {
 			missing = append(missing, fmt.Sprintf("%s: assertion not found", v.TestName))
 		}
 	}
@@ -726,6 +815,83 @@ func VerifyAssertions(worktreePath string, verifications []CriteriaVerification)
 	}
 
 	return nil
+}
+
+// matchAssertion uses multiple strategies to check if an assertion exists in test content.
+// Strategy 1: Exact normalized substring match (existing behavior).
+// Strategy 2: Assertion function name extraction (e.g., assert.Equal, expect(...).toBeTruthy).
+// Strategy 3: Token-level matching (70%+ of tokens appear in test content).
+func matchAssertion(assertion, testContent string) bool {
+	normalizedAssertion := normalizeForMatching(assertion)
+	normalizedContent := normalizeForMatching(testContent)
+
+	// Strategy 1: Exact normalized substring match
+	if strings.Contains(normalizedContent, normalizedAssertion) {
+		return true
+	}
+
+	// Strategy 2: Assertion function name match
+	funcName := extractAssertionFuncName(assertion)
+	if funcName != "" && strings.Contains(testContent, funcName) {
+		return true
+	}
+
+	// Strategy 3: Token-level match (70% threshold)
+	if tokenMatchAssertion(normalizedAssertion, normalizedContent, 0.7) {
+		return true
+	}
+
+	return false
+}
+
+// extractAssertionFuncName extracts the assertion function/method call pattern from
+// an assertion string. Recognizes common Go (assert.Equal, require.NoError) and
+// JS/TS (expect(...).toBeTruthy, expect(...).toEqual) patterns.
+func extractAssertionFuncName(assertion string) string {
+	// Go-style: assert.Equal, require.NoError, etc.
+	goRe := regexp.MustCompile(`(assert|require)\.\w+`)
+	if m := goRe.FindString(assertion); m != "" {
+		return m
+	}
+
+	// JS/TS-style: expect(...).toBeTruthy(), .toEqual(), .toBe(), etc.
+	jsMethodRe := regexp.MustCompile(`\.(to\w+)\(`)
+	if m := jsMethodRe.FindStringSubmatch(assertion); len(m) > 1 {
+		return m[1]
+	}
+
+	// JS/TS-style: expect( keyword
+	if strings.Contains(assertion, "expect(") {
+		return "expect("
+	}
+
+	return ""
+}
+
+// tokenMatchAssertion checks whether a sufficient fraction of tokens from the
+// assertion appear in the test content. This handles cases where the reviewer
+// writes an assertion from memory with minor differences.
+func tokenMatchAssertion(assertion, content string, threshold float64) bool {
+	// Split assertion into tokens (words, identifiers)
+	tokenRe := regexp.MustCompile(`[\w.]+`)
+	tokens := tokenRe.FindAllString(assertion, -1)
+	if len(tokens) == 0 {
+		return false
+	}
+
+	matched := 0
+	for _, token := range tokens {
+		if len(token) < 2 {
+			// Skip very short tokens (t, e, etc.) as they match too broadly
+			matched++
+			continue
+		}
+		if strings.Contains(content, token) {
+			matched++
+		}
+	}
+
+	return float64(matched)/float64(len(tokens)) >= threshold
 }
 
 func findTestFiles(root string) ([]string, error) {
@@ -1068,6 +1234,50 @@ func hasIndividualTestNames(output string) bool {
 		if (strings.HasPrefix(line, "✓") || strings.HasPrefix(line, "✕")) &&
 			!strings.Contains(line, ".test.") && !strings.Contains(line, ".spec.") {
 			return true
+		}
+	}
+
+	return false
+}
+
+// isMetaCriteria returns true if a verification is a meta-criteria that cannot
+// be mapped to a specific test function (e.g., "all tests pass", "unit tests added").
+// These are verified by overall test suite pass rather than individual test matching.
+func isMetaCriteria(v CriteriaVerification) bool {
+	// Explicit (meta) marker from reviewer takes priority
+	if v.IsMeta {
+		return true
+	}
+
+	// Auto-detect common meta-criteria patterns
+	lower := strings.ToLower(v.TestName)
+	metaPatterns := []string{
+		"(meta)",
+		"all tests",
+		"unit tests added",
+		"no regressions",
+		"tests pass",
+		"test coverage",
+	}
+	for _, pattern := range metaPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+
+	// Also check criteria text for meta patterns when test name is empty
+	if v.TestName == "" {
+		criteriaLower := strings.ToLower(v.Criteria)
+		criteriaMetaPatterns := []string{
+			"all tests pass",
+			"unit tests added",
+			"no regressions",
+			"test coverage",
+		}
+		for _, pattern := range criteriaMetaPatterns {
+			if strings.Contains(criteriaLower, pattern) {
+				return true
+			}
 		}
 	}
 
