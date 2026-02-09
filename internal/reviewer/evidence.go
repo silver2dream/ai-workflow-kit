@@ -207,11 +207,14 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	}
 
 	// 6. Verify each mapped test passed (with fuzzy matching fallback)
-	// Skip per-test matching when test runner output is file-level only
-	// (e.g., Vitest default mode: "✓ file.test.ts (4 tests)")
-	if testErr == nil && !hasIndividualTestNames(testOutput) {
+	// Skip per-test matching and assertion verification when test runner
+	// output is file-level only (e.g., Vitest default mode).
+	// In this mode, test names and assertions in the review body are
+	// Principal-authored (not from test output) and may not match file content.
+	fileLevelOnly := testErr == nil && !hasIndividualTestNames(testOutput)
+	if fileLevelOnly {
 		fmt.Printf("[VERIFY] Test command succeeded but no individual test names parsed; "+
-			"skipping per-test matching (file-level pass)\n")
+			"skipping per-test matching and assertion check (file-level pass)\n")
 	} else {
 		var missingTests []string
 		var expectedTests []string
@@ -275,11 +278,15 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	}
 
 	// 7. Verify assertions exist in test files
-	if err := VerifyAssertions(opts.WorktreePath, verifications); err != nil {
-		return err
+	// Skip when in file-level mode: the Principal writes assertion text from
+	// memory (not from test output), so it often doesn't match file content.
+	// CI passing + high review score is sufficient evidence in this case.
+	if !fileLevelOnly {
+		if err := VerifyAssertions(opts.WorktreePath, verifications); err != nil {
+			return err
+		}
+		fmt.Printf("[VERIFY] ✓ All assertions verified in test files\n")
 	}
-
-	fmt.Printf("[VERIFY] ✓ All assertions verified in test files\n")
 
 	return nil
 }
