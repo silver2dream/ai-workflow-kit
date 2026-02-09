@@ -518,7 +518,10 @@ func extractSection(body, sectionName string) string {
 	return ""
 }
 
-// ValidateCompleteness ensures each criteria has complete verification
+// ValidateCompleteness ensures each criteria has complete verification.
+// Test name and assertion are optional — some criteria are meta-criteria
+// (e.g., "all tests pass", "unit tests added") that cannot be mapped to
+// specific test functions. Only implementation description is required.
 func ValidateCompleteness(criteria []string, verifications []CriteriaVerification) *EvidenceError {
 	var missing []string
 
@@ -526,18 +529,20 @@ func ValidateCompleteness(criteria []string, verifications []CriteriaVerificatio
 		found := false
 		for _, v := range verifications {
 			if fuzzyMatch(c, v.Criteria) {
-				// Check completeness
+				// Check completeness: only implementation is required
 				var issues []string
 				if v.Implementation == "" {
 					issues = append(issues, "missing implementation description")
 				} else if len(v.Implementation) < 20 {
 					issues = append(issues, "implementation description too short (min 20 chars)")
 				}
+
+				// Test name and assertion are optional — warn but don't block
 				if v.TestName == "" {
-					issues = append(issues, "missing test name")
+					fmt.Printf("[VERIFY] Note: criteria %q has no test name mapping (ok for meta-criteria)\n", c)
 				}
 				if v.Assertion == "" {
-					issues = append(issues, "missing assertion")
+					fmt.Printf("[VERIFY] Note: criteria %q has no assertion mapping (ok for meta-criteria)\n", c)
 				}
 
 				if len(issues) > 0 {

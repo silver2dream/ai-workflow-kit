@@ -659,22 +659,20 @@ func TestValidateCompleteness(t *testing.T) {
 			errCode: 1,
 		},
 		{
-			name:     "missing test name",
+			name:     "missing test name (ok for meta-criteria)",
 			criteria: []string{"Feature A"},
 			verifications: []CriteriaVerification{
 				{Criteria: "Feature A", Implementation: "Implemented using X pattern", TestName: "", Assertion: "assert.Equal"},
 			},
-			wantErr: true,
-			errCode: 1,
+			wantErr: false,
 		},
 		{
-			name:     "missing assertion",
+			name:     "missing assertion (ok for meta-criteria)",
 			criteria: []string{"Feature A"},
 			verifications: []CriteriaVerification{
 				{Criteria: "Feature A", Implementation: "Implemented using X pattern", TestName: "TestFeatureA", Assertion: ""},
 			},
-			wantErr: true,
-			errCode: 1,
+			wantErr: false,
 		},
 		{
 			name:          "empty criteria",
