@@ -2026,3 +2026,379 @@ func TestParseTestReviewTable_MultiLanguage(t *testing.T) {
 		})
 	}
 }
+
+func TestEnhanceTestCommandForVerbose(t *testing.T) {
+	tests := []struct {
+		name     string
+		testCmd  string
+		language string
+		want     string
+	}{
+		// Go
+		{"go adds -v", "go test ./...", "go", "go test ./... -v"},
+		{"go already has -v", "go test -v ./...", "go", "go test -v ./..."},
+		{"golang alias", "go test ./...", "golang", "go test ./... -v"},
+
+		// Node - npm test
+		{"npm test adds reporter", "npm test", "node", "npm test -- --reporter=verbose"},
+		{"npm run test adds reporter", "npm run test", "typescript", "npm run test -- --reporter=verbose"},
+		{"npm test already has reporter", "npm test -- --reporter=json", "node", "npm test -- --reporter=json"},
+		{"npm test already has verbose", "npm test -- --verbose", "js", "npm test -- --verbose"},
+
+		// Node - vitest
+		{"vitest adds reporter", "npx vitest run", "node", "npx vitest run --reporter=verbose"},
+		{"vitest already has reporter", "npx vitest run --reporter=verbose", "ts", "npx vitest run --reporter=verbose"},
+
+		// Node - jest
+		{"jest adds verbose", "npx jest", "javascript", "npx jest --verbose"},
+		{"jest already has verbose", "jest --verbose", "node", "jest --verbose"},
+
+		// Python
+		{"python adds -v", "pytest", "python", "pytest -v"},
+		{"python already has -v", "pytest -v", "py", "pytest -v"},
+
+		// Unknown language - no change
+		{"unknown no change", "make test", "rust", "make test"},
+
+		// Empty command
+		{"empty command", "", "go", ""},
+
+		// cd prefix (directory repo)
+		{"cd prefix go", "cd backend && go test ./...", "go", "cd backend && go test ./... -v"},
+		{"cd prefix npm", "cd frontend && npm test", "node", "cd frontend && npm test -- --reporter=verbose"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EnhanceTestCommandForVerbose(tt.testCmd, tt.language)
+			if got != tt.want {
+				t.Errorf("EnhanceTestCommandForVerbose(%q, %q) = %q, want %q", tt.testCmd, tt.language, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsMetaCriteria(t *testing.T) {
+	tests := []struct {
+		name string
+		v    CriteriaVerification
+		want bool
+	}{
+		{
+			name: "explicit IsMeta flag",
+			v:    CriteriaVerification{Criteria: "All tests pass", TestName: "(meta)", IsMeta: true},
+			want: true,
+		},
+		{
+			name: "testName contains (meta)",
+			v:    CriteriaVerification{Criteria: "Something", TestName: "(meta)"},
+			want: true,
+		},
+		{
+			name: "testName all tests",
+			v:    CriteriaVerification{Criteria: "Coverage", TestName: "All tests pass"},
+			want: true,
+		},
+		{
+			name: "testName unit tests added",
+			v:    CriteriaVerification{Criteria: "Has tests", TestName: "unit tests added"},
+			want: true,
+		},
+		{
+			name: "testName no regressions",
+			v:    CriteriaVerification{Criteria: "Stability", TestName: "no regressions"},
+			want: true,
+		},
+		{
+			name: "empty testName + meta criteria text",
+			v:    CriteriaVerification{Criteria: "All tests pass", TestName: ""},
+			want: true,
+		},
+		{
+			name: "empty testName + non-meta criteria",
+			v:    CriteriaVerification{Criteria: "Feature A works", TestName: ""},
+			want: false,
+		},
+		{
+			name: "normal test function",
+			v:    CriteriaVerification{Criteria: "Feature A", TestName: "TestFeatureA"},
+			want: false,
+		},
+		{
+			name: "node test description",
+			v:    CriteriaVerification{Criteria: "Canvas renders", TestName: "renders canvas element"},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isMetaCriteria(tt.v)
+			if got != tt.want {
+				t.Errorf("isMetaCriteria(%+v) = %v, want %v", tt.v, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseTestReviewTable_MetaCriteria(t *testing.T) {
+	body := `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Feature A works | TestFeatureA | assert.Equal(t, expected, actual) |
+| All tests pass | (meta) | (meta) |
+`
+
+	mappings, err := parseTestReviewTable(body, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mappings) != 2 {
+		t.Fatalf("expected 2 mappings, got %d", len(mappings))
+	}
+
+	// First mapping should not be meta
+	if mappings[0].IsMeta {
+		t.Error("first mapping should not be meta")
+	}
+	if mappings[0].TestName != "TestFeatureA" {
+		t.Errorf("first mapping TestName = %q, want TestFeatureA", mappings[0].TestName)
+	}
+
+	// Second mapping should be meta
+	if !mappings[1].IsMeta {
+		t.Error("second mapping should be meta")
+	}
+	if mappings[1].TestName != "(meta)" {
+		t.Errorf("second mapping TestName = %q, want (meta)", mappings[1].TestName)
+	}
+}
+
+func TestParseTestReviewTable_MetaCriteriaNodeLanguage(t *testing.T) {
+	// Meta criteria should work with any language without triggering validation error
+	body := `### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Canvas renders correctly | renders canvas element | expect(canvas).toBeTruthy() |
+| All tests pass | (meta) | (meta) |
+`
+
+	mappings, err := parseTestReviewTable(body, "node")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mappings) != 2 {
+		t.Fatalf("expected 2 mappings, got %d", len(mappings))
+	}
+
+	if !mappings[1].IsMeta {
+		t.Error("second mapping should be meta")
+	}
+}
+
+func TestMatchAssertion_MultiStrategy(t *testing.T) {
+	testContent := `import { describe, it, expect } from 'vitest'
+
+describe('GameCanvas', () => {
+  it('renders canvas element', () => {
+    const { container } = render(<GameCanvas />)
+    expect(container.querySelector('canvas')).toBeTruthy()
+  })
+  it('draws snake segments', () => {
+    const ctx = setupCanvas()
+    expect(ctx.fillRect).toHaveBeenCalledTimes(3)
+  })
+})
+`
+	goTestContent := `package game
+
+import (
+    "testing"
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+)
+
+func TestEngine(t *testing.T) {
+    engine := NewEngine()
+    assert.Equal(t, 0, engine.Score)
+    require.NoError(t, engine.Start())
+    assert.True(t, engine.Running)
+}
+`
+
+	tests := []struct {
+		name        string
+		assertion   string
+		testContent string
+		want        bool
+	}{
+		// Strategy 1: Exact substring
+		{
+			name:        "exact match JS",
+			assertion:   "expect(container.querySelector('canvas')).toBeTruthy()",
+			testContent: testContent,
+			want:        true,
+		},
+		{
+			name:        "exact match Go",
+			assertion:   "assert.Equal(t, 0, engine.Score)",
+			testContent: goTestContent,
+			want:        true,
+		},
+
+		// Strategy 2: Function name extraction
+		{
+			name:        "func name match Go assert.Equal",
+			assertion:   "assert.Equal(t, expected, actual)",
+			testContent: goTestContent,
+			want:        true, // "assert.Equal" found in content
+		},
+		{
+			name:        "func name match Go require.NoError",
+			assertion:   "require.NoError(t, err)",
+			testContent: goTestContent,
+			want:        true, // "require.NoError" found in content
+		},
+		{
+			name:        "func name match JS toBeTruthy",
+			assertion:   "expect(something).toBeTruthy()",
+			testContent: testContent,
+			want:        true, // "toBeTruthy" found in content
+		},
+		{
+			name:        "func name match JS toHaveBeenCalledTimes",
+			assertion:   "expect(mock).toHaveBeenCalledTimes(5)",
+			testContent: testContent,
+			want:        true, // "toHaveBeenCalledTimes" found in content
+		},
+
+		// Strategy 3: Token matching
+		{
+			name:        "token match Go with different args",
+			assertion:   "assert.True(t, game.Running)",
+			testContent: goTestContent,
+			want:        true, // tokens: assert.True, game, Running → mostly found
+		},
+
+		// Negative case
+		{
+			name:        "completely unrelated assertion",
+			assertion:   "assertEqual(response.statusCode, 404)",
+			testContent: testContent,
+			want:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchAssertion(tt.assertion, tt.testContent)
+			if got != tt.want {
+				t.Errorf("matchAssertion(%q, ...) = %v, want %v", tt.assertion, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractAssertionFuncName(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion string
+		want      string
+	}{
+		{"go assert.Equal", "assert.Equal(t, expected, actual)", "assert.Equal"},
+		{"go require.NoError", "require.NoError(t, err)", "require.NoError"},
+		{"go assert.True", "assert.True(t, ok)", "assert.True"},
+		{"js toBeTruthy", "expect(el).toBeTruthy()", "toBeTruthy"},
+		{"js toEqual", "expect(result).toEqual({a: 1})", "toEqual"},
+		{"js toBe", "expect(x).toBe(5)", "toBe"},
+		{"js expect keyword", "expect(container.querySelector('canvas'))", "expect("},
+		{"no match", "if err != nil { t.Fatal(err) }", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractAssertionFuncName(tt.assertion)
+			if got != tt.want {
+				t.Errorf("extractAssertionFuncName(%q) = %q, want %q", tt.assertion, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTokenMatchAssertion(t *testing.T) {
+	content := normalizeForMatching(`
+		assert.Equal(t, expected, actual)
+		require.NoError(t, err)
+		engine.Start()
+	`)
+
+	tests := []struct {
+		name      string
+		assertion string
+		threshold float64
+		want      bool
+	}{
+		{
+			name:      "high overlap",
+			assertion: "assert.Equal expected actual",
+			threshold: 0.7,
+			want:      true,
+		},
+		{
+			name:      "partial overlap below threshold",
+			assertion: "assert.equal foo bar baz qux",
+			threshold: 0.7,
+			want:      false,
+		},
+		{
+			name:      "empty assertion",
+			assertion: "",
+			threshold: 0.7,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tokenMatchAssertion(normalizeForMatching(tt.assertion), content, tt.threshold)
+			if got != tt.want {
+				t.Errorf("tokenMatchAssertion(%q, ..., %v) = %v, want %v", tt.assertion, tt.threshold, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseTestResults_VitestVerbosePreservesSpaces(t *testing.T) {
+	output := ` ✓ __tests__/GameCanvas.test.ts > GameCanvas > renders canvas element 5ms
+ ✓ __tests__/GameCanvas.test.ts > GameCanvas > draws snake segments 3ms`
+
+	passed, _ := ParseTestResults(output)
+
+	// Original names (with spaces) should be present
+	if !passed["renders canvas element"] {
+		t.Error("expected original name 'renders canvas element' in passed tests")
+	}
+	if !passed["draws snake segments"] {
+		t.Error("expected original name 'draws snake segments' in passed tests")
+	}
+
+	// Normalized names (with underscores) should also be present
+	if !passed["renders_canvas_element"] {
+		t.Error("expected normalized name 'renders_canvas_element' in passed tests")
+	}
+	if !passed["draws_snake_segments"] {
+		t.Error("expected normalized name 'draws_snake_segments' in passed tests")
+	}
+
+	// Full path variants
+	if !passed["GameCanvas/renders_canvas_element"] {
+		t.Error("expected full path 'GameCanvas/renders_canvas_element' in passed tests")
+	}
+	if !passed["GameCanvas/renders canvas element"] {
+		t.Error("expected original full path 'GameCanvas/renders canvas element' in passed tests")
+	}
+}

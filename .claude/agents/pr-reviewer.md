@@ -72,19 +72,34 @@ For EACH acceptance criterion:
 2. **Read the test code** - Understand what the test is checking
 3. **Copy key assertion** - Copy an actual assertion line from the test code
 
-**TEST NAME FORMAT (CRITICAL)**:
-- The Test column MUST contain an EXACT Go test function name
-- Use the name that appears after "func " in the test file
-- Example: `func TestMovement(t *testing.T)` → use `TestMovement`
-- For subtests, use format `TestParent/SubTest`
-- NEVER use prose descriptions like "All test functions" or "Tests in xyz_test.go"
+**TEST NAME FORMAT (LANGUAGE-AWARE, CRITICAL)**:
 
-**VALID examples**:
-- `TestNewEngine`
-- `TestCollisionDetection`
-- `TestAdvanceTick/WallCollision`
+The Test column format depends on the project `LANGUAGE`:
 
-**INVALID examples** (will cause verification failure):
+**Go / Golang:**
+- MUST be an exact Go test function name from the test file
+- Use the name after `func ` in the test file: `func TestMovement(t *testing.T)` → `TestMovement`
+- Subtests: `TestParent/SubTest`
+- Valid: `TestNewEngine`, `TestCollisionDetection`, `TestAdvanceTick/WallCollision`
+
+**Node / TypeScript / JavaScript:**
+- MUST be the exact `it()` or `test()` description string from the test file
+- Copy the description verbatim from the test code (do NOT paraphrase or invent)
+- Example: `it('renders canvas element', ...)` → `renders canvas element`
+- Valid: `renders canvas element`, `draws snake segments at expected positions`
+
+**Python:**
+- MUST be the test function name: `test_feature_works` or `TestClass::test_method`
+- Valid: `test_collision_detection`, `TestEngine::test_start`
+
+**META-CRITERIA HANDLING:**
+
+Some acceptance criteria are meta-level (e.g., "all tests pass", "unit tests added", "no regressions") and cannot map to a specific test function. For these:
+- Use `(meta)` in both the Test and Key Assertion columns
+- Example: `| All tests pass | (meta) | (meta) |`
+- The system will verify these by overall test suite pass instead of individual test matching
+
+**INVALID for ALL languages** (will cause verification failure):
 - `All test functions` ❌
 - `Tests in engine_test.go` ❌
 - `N/A` ❌
@@ -94,13 +109,18 @@ For EACH acceptance criterion:
 - Acceptance Criteria describe INTENT, not test function names
 - Find tests that COVER the described behavior
 - A criterion like "Wall collision ends game" should map to whichever test covers that behavior
-- The test may be named `TestCollision`, `TestWallCollisionEndsGame`, or `TestAdvanceTick/WallCollision` - any is valid if it tests the behavior
+- The test may be named differently from the criterion — any valid test name is fine if it tests the behavior
+
+**KEY ASSERTION FORMAT:**
+- MUST be copied from the actual test file (open the file, find the assertion, copy it)
+- Do NOT write assertions from memory — open the test file and copy the exact line
+- The system uses multi-strategy matching but exact content still works best
 
 **PROHIBITIONS:**
 - **DO NOT** invent test function names (must exist in code)
 - **DO NOT** write prose descriptions instead of function names
-- **DO NOT** write "N/A", "None", or "All tests"
-- **DO NOT** assume assertion content
+- **DO NOT** write "N/A", "None", or "All tests" (use `(meta)` for meta-criteria instead)
+- **DO NOT** assume assertion content — copy from the actual test file
 - **DO NOT** copy assertions from other files
 - **DO NOT** fail review just because test name differs from criterion wording
 
@@ -168,6 +188,7 @@ Your review body MUST follow this exact format:
 |----------|------|---------------|
 | [FULL Criterion 1 text from ticket] | `TestFunctionName` | `assert.Equal(t, expected, actual)` |
 | [FULL Criterion 2 text from ticket] | `TestOtherFunction` | `require.NoError(t, err)` |
+| [Meta-criterion like "All tests pass"] | `(meta)` | `(meta)` |
 
 **CRITICAL**: The Criteria column MUST contain the **exact full text** from the ticket's acceptance criteria. Do NOT use shortened or paraphrased versions.
 
