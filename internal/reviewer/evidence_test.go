@@ -1,6 +1,7 @@
 package reviewer
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -1762,6 +1763,71 @@ func TestIsValidTestNameForLanguage(t *testing.T) {
 				t.Errorf("isValidTestNameForLanguage(%q, %q) = %v, want %v", tt.testName, tt.language, got, tt.expected)
 			}
 		})
+	}
+}
+
+// TestVerifyTestEvidence_VitestFileLevelSkipsAssertions verifies that when
+// test output is Vitest file-level only (no individual test names), both
+// per-test matching AND assertion verification are skipped.
+func TestVerifyTestEvidence_VitestFileLevelSkipsAssertions(t *testing.T) {
+	// Create a temp worktree with a test file that does NOT contain
+	// the assertion text from the review body
+	tmpDir := t.TempDir()
+	testContent := `import { describe, it, expect } from 'vitest'
+import { render } from '@testing-library/react'
+
+describe('GameCanvas', () => {
+  it('renders canvas element', () => {
+    const { container } = render(<GameCanvas />)
+    expect(container.querySelector('canvas')).toBeTruthy()
+  })
+})
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "GameCanvas.test.ts"), []byte(testContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// Create a mock test command that produces Vitest file-level output and exits 0
+	scriptPath := filepath.Join(tmpDir, "run-test.sh")
+	scriptContent := `#!/bin/sh
+echo ' ✓ GameCanvas.test.ts (1 test) 50ms'
+echo ''
+echo ' Test Files  1 passed (1)'
+echo '      Tests  1 passed (1)'
+echo '   Duration  0.50s'
+exit 0
+`
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		t.Fatalf("failed to write script: %v", err)
+	}
+
+	opts := VerifyOptions{
+		Ticket: `## Acceptance Criteria
+- [ ] Canvas renders game state`,
+		ReviewBody: `### Implementation Review
+
+#### 1. Canvas renders game state
+**Implementation**: Renders canvas using React component with game snapshot data
+
+### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Canvas renders game state | TestRenderDrawsSnakeSegments | expect(canvas).toMatchSnapshot() |
+`,
+		WorktreePath: tmpDir,
+		TestCommand:  "sh " + scriptPath,
+		Language:     "node",
+	}
+
+	// This should NOT return an error because:
+	// 1. Test command exits 0
+	// 2. No individual test names → file-level fallback
+	// 3. Both per-test matching AND assertion check are skipped
+	err := VerifyTestEvidence(context.Background(), opts)
+	if err != nil {
+		t.Errorf("VerifyTestEvidence should pass in file-level mode, got error: code=%d msg=%s details=%v",
+			err.Code, err.Message, err.Details)
 	}
 }
 
