@@ -3,6 +3,9 @@ package analyzer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,6 +48,8 @@ type GitHubClientInterface interface {
 	IsPRMerged(ctx context.Context, prNumber int) (bool, error)
 	CloseIssue(ctx context.Context, issueNumber int) error
 	FindPRByBranch(ctx context.Context, branchName string) (int, error)
+	GetIssueBody(ctx context.Context, issueNumber int) (string, error)
+	UpdateIssueBody(ctx context.Context, issueNumber int, body string) error
 }
 
 // GitHubClient wraps GitHub CLI operations
@@ -263,5 +268,39 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, issueNumber int) error {
 	defer cancel()
 
 	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "close", strconv.Itoa(issueNumber))
+	return err
+}
+
+// GetIssueBody reads the body of a GitHub issue
+func (c *GitHubClient) GetIssueBody(ctx context.Context, issueNumber int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "view",
+		strconv.Itoa(issueNumber),
+		"--json", "body",
+		"--jq", ".body")
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// UpdateIssueBody updates the body of a GitHub issue using a temp file to avoid shell escaping issues
+func (c *GitHubClient) UpdateIssueBody(ctx context.Context, issueNumber int, body string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	// Write body to temp file to avoid shell escaping issues with large/complex bodies
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("awkit-epic-body-%d.md", issueNumber))
+	if err := os.WriteFile(tmpFile, []byte(body), 0644); err != nil {
+		return fmt.Errorf("failed to write temp body file: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "edit",
+		strconv.Itoa(issueNumber),
+		"--body-file", tmpFile)
 	return err
 }

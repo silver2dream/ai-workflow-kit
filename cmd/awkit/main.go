@@ -135,6 +135,8 @@ func run() int {
 		return cmdSubmitReview(os.Args[2:])
 	case "create-task":
 		return cmdCreateTask(os.Args[2:])
+	case "create-epic":
+		return cmdCreateEpic(os.Args[2:])
 	case "doctor":
 		return cmdDoctor(os.Args[2:])
 	case "reset":
@@ -183,6 +185,7 @@ Commands:
   prepare-review  Prepare PR review context
   submit-review   Submit PR review and handle result
   create-task     Create GitHub Issue from tasks.md entry
+  create-epic     Create GitHub Tracking Issue (Epic) from tasks.md
   doctor          Check project health and identify issues
   reset           Reset project state for fresh start
   generate        Generate helper docs and scaffolding
@@ -267,6 +270,8 @@ func cmdHelp(command string) int {
 		usageSubmitReview()
 	case "create-task":
 		usageCreateTask()
+	case "create-epic":
+		usageCreateEpic()
 	case "doctor":
 		usageDoctor()
 	case "reset":

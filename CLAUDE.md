@@ -118,6 +118,12 @@ awkit reset --all    # full cleanup
 awkit reset --dry-run # preview only
 ```
 
+### Create Epic (migrate to GitHub Tracking Issue)
+```bash
+awkit create-epic --spec my-project          # create + update config
+awkit create-epic --spec my-project --dry-run # preview only
+```
+
 ## File Locations
 
 | What | Where |

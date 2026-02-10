@@ -16,6 +16,8 @@ type Decision struct {
 	TaskLine    int    `json:"task_line"`
 	ExitReason  string `json:"exit_reason"`  // worker_failed | needs_human_review | max_loop_reached | max_consecutive_failures | no_actionable_tasks | config_not_found
 	MergeIssue  string `json:"merge_issue"`  // conflict | rebase - indicates Worker needs to fix merge issues
+	EpicIssue   int    `json:"epic_issue"`   // tracking issue number (epic mode)
+	TaskText    string `json:"task_text"`    // task text from epic body (epic mode)
 }
 
 // Action constants
@@ -57,5 +59,7 @@ SPEC_NAME=%s
 TASK_LINE=%d
 EXIT_REASON=%s
 MERGE_ISSUE=%s
-`, d.NextAction, d.IssueNumber, d.PRNumber, util.ShellSafe(d.SpecName), d.TaskLine, d.ExitReason, d.MergeIssue)
+EPIC_ISSUE=%d
+TASK_TEXT=%s
+`, d.NextAction, d.IssueNumber, d.PRNumber, util.ShellSafe(d.SpecName), d.TaskLine, d.ExitReason, d.MergeIssue, d.EpicIssue, util.ShellSafe(d.TaskText))
 }
