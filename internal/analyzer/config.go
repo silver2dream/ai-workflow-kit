@@ -62,10 +62,36 @@ func (c *Config) GetVerifyCommands(repoName string) []string {
 	return commands
 }
 
+// TrackingMode constants
+const (
+	TrackingModeTasksMd   = "tasks_md"
+	TrackingModeGitHubEpic = "github_epic"
+)
+
+// TrackingConfig represents task tracking configuration
+type TrackingConfig struct {
+	Mode       string         `yaml:"mode"`        // "tasks_md" (default) | "github_epic"
+	EpicIssues map[string]int `yaml:"epic_issues"` // spec_name → tracking issue number
+}
+
 // SpecsConfig represents the specs section
 type SpecsConfig struct {
-	BasePath string   `yaml:"base_path"`
-	Active   []string `yaml:"active"`
+	BasePath string         `yaml:"base_path"`
+	Active   []string       `yaml:"active"`
+	Tracking TrackingConfig `yaml:"tracking"`
+}
+
+// IsEpicMode returns true if the config uses GitHub Epic tracking mode
+func (c *Config) IsEpicMode() bool {
+	return c.Specs.Tracking.Mode == TrackingModeGitHubEpic
+}
+
+// GetEpicIssue returns the tracking issue number for a spec, or 0 if not configured
+func (c *Config) GetEpicIssue(specName string) int {
+	if c.Specs.Tracking.EpicIssues == nil {
+		return 0
+	}
+	return c.Specs.Tracking.EpicIssues[specName]
 }
 
 // GitHubConfig represents the github section
@@ -157,6 +183,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Escalation.MaxReviewAttempts <= 0 {
 		cfg.Escalation.MaxReviewAttempts = 3
+	}
+	if cfg.Specs.Tracking.Mode == "" {
+		cfg.Specs.Tracking.Mode = TrackingModeTasksMd
 	}
 
 	return &cfg, nil

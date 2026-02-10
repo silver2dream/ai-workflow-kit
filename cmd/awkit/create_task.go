@@ -25,6 +25,8 @@ Options:
   --repo        GitHub repo (owner/repo), uses config if not specified
   --state-root  Override state root (default: git root)
   --dry-run     Show gh command without executing
+  --epic-issue  Tracking issue number (epic mode)
+  --task-text   Task text from epic body (epic mode)
   --help        Show this help
 
 Examples:
@@ -46,6 +48,8 @@ func cmdCreateTask(args []string) int {
 	repo := fs.String("repo", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	dryRun := fs.Bool("dry-run", false, "")
+	epicIssue := fs.Int("epic-issue", 0, "")
+	taskText := fs.String("task-text", "", "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
@@ -95,6 +99,8 @@ func cmdCreateTask(args []string) int {
 		Repo:      *repo,
 		StateRoot: root,
 		DryRun:    *dryRun,
+		EpicIssue: *epicIssue,
+		TaskText:  *taskText,
 	})
 	if err != nil {
 		errorf("%v\n", err)

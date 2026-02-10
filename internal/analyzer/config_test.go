@@ -211,3 +211,125 @@ func TestGetVerifyCommands(t *testing.T) {
 		t.Error("GetVerifyCommands() should return nil for nonexistent repo")
 	}
 }
+
+func TestLoadConfig_TrackingDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "workflow.yaml")
+
+	// Config without tracking section
+	configContent := `
+github:
+  repo: owner/repo
+`
+	os.WriteFile(configPath, []byte(configContent), 0644)
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if config.Specs.Tracking.Mode != TrackingModeTasksMd {
+		t.Errorf("Tracking.Mode = %q, want %q", config.Specs.Tracking.Mode, TrackingModeTasksMd)
+	}
+	if config.IsEpicMode() {
+		t.Error("IsEpicMode() should be false for default config")
+	}
+}
+
+func TestLoadConfig_TrackingEpicMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "workflow.yaml")
+
+	configContent := `
+specs:
+  base_path: .ai/specs
+  active:
+    - my-project
+    - other-project
+  tracking:
+    mode: github_epic
+    epic_issues:
+      my-project: 42
+      other-project: 99
+github:
+  repo: owner/repo
+`
+	os.WriteFile(configPath, []byte(configContent), 0644)
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if config.Specs.Tracking.Mode != TrackingModeGitHubEpic {
+		t.Errorf("Tracking.Mode = %q, want %q", config.Specs.Tracking.Mode, TrackingModeGitHubEpic)
+	}
+	if !config.IsEpicMode() {
+		t.Error("IsEpicMode() should be true for github_epic mode")
+	}
+	if config.GetEpicIssue("my-project") != 42 {
+		t.Errorf("GetEpicIssue(my-project) = %d, want 42", config.GetEpicIssue("my-project"))
+	}
+	if config.GetEpicIssue("other-project") != 99 {
+		t.Errorf("GetEpicIssue(other-project) = %d, want 99", config.GetEpicIssue("other-project"))
+	}
+	if config.GetEpicIssue("nonexistent") != 0 {
+		t.Errorf("GetEpicIssue(nonexistent) = %d, want 0", config.GetEpicIssue("nonexistent"))
+	}
+}
+
+func TestIsEpicMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		want bool
+	}{
+		{"empty defaults to tasks_md after LoadConfig", TrackingModeTasksMd, false},
+		{"tasks_md mode", TrackingModeTasksMd, false},
+		{"github_epic mode", TrackingModeGitHubEpic, true},
+		{"unknown mode", "something_else", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				Specs: SpecsConfig{
+					Tracking: TrackingConfig{Mode: tt.mode},
+				},
+			}
+			if got := config.IsEpicMode(); got != tt.want {
+				t.Errorf("IsEpicMode() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetEpicIssue(t *testing.T) {
+	config := &Config{
+		Specs: SpecsConfig{
+			Tracking: TrackingConfig{
+				Mode: TrackingModeGitHubEpic,
+				EpicIssues: map[string]int{
+					"project-a": 10,
+					"project-b": 20,
+				},
+			},
+		},
+	}
+
+	if got := config.GetEpicIssue("project-a"); got != 10 {
+		t.Errorf("GetEpicIssue(project-a) = %d, want 10", got)
+	}
+	if got := config.GetEpicIssue("project-b"); got != 20 {
+		t.Errorf("GetEpicIssue(project-b) = %d, want 20", got)
+	}
+	if got := config.GetEpicIssue("missing"); got != 0 {
+		t.Errorf("GetEpicIssue(missing) = %d, want 0", got)
+	}
+
+	// Nil map
+	configNilMap := &Config{}
+	if got := configNilMap.GetEpicIssue("anything"); got != 0 {
+		t.Errorf("GetEpicIssue on nil map = %d, want 0", got)
+	}
+}

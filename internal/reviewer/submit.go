@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
@@ -228,7 +229,11 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			if err := removeLabel(ctx, opts.IssueNumber, "pr-ready", opts.GHTimeout); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to remove pr-ready label from issue #%d: %v\n", opts.IssueNumber, err)
 			}
-			updateTasksMd(ctx, opts.StateRoot, opts.IssueNumber)
+			if !isEpicMode(opts.StateRoot) {
+				updateTasksMd(ctx, opts.StateRoot, opts.IssueNumber)
+			} else {
+				fmt.Fprintf(os.Stderr, "[REVIEW] epic mode: skipping tasks.md update (GitHub handles checkbox state)\n")
+			}
 			if err := cleanupWorktree(opts.StateRoot, opts.IssueNumber); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: %v\n", err)
 			}
@@ -578,6 +583,17 @@ func updateTasksMd(ctx context.Context, stateRoot string, issueNumber int) {
 			fmt.Fprintf(os.Stderr, "warning: failed to commit tasks.md update: %v\n", err)
 		}
 	}
+}
+
+// isEpicMode checks if the project uses GitHub Epic tracking mode.
+// Returns false on any error (safe default to tasks_md behavior).
+func isEpicMode(stateRoot string) bool {
+	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
+	cfg, err := analyzer.LoadConfig(configPath)
+	if err != nil {
+		return false
+	}
+	return cfg.IsEpicMode()
 }
 
 func cleanupWorktree(stateRoot string, issueNumber int) error {
