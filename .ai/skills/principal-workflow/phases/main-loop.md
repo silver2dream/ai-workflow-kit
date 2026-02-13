@@ -22,8 +22,8 @@ awkit analyze-next --json
 
 | next_action | 動作 |
 |-------------|------|
-| `generate_tasks` | **Read** `tasks/generate-tasks.md`，執行任務生成 |
-| `create_task` | **Read** `tasks/create-task.md`，使用 `spec_name` 和 `task_line`（tasks_md 模式）或 `epic_issue` 和 `task_text`（epic 模式）執行 Issue 創建 |
+| `generate_tasks` | **Read** `tasks/generate-tasks.md`，根據 tracking mode 執行任務生成（推薦 GitHub Epic，或 tasks.md） |
+| `create_task` | **Read** `tasks/create-task.md`，使用 `epic_issue` 和 `task_text`（epic 模式）或 `spec_name` 和 `task_line`（tasks_md 模式）執行 Issue 創建 |
 | `dispatch_worker` | 執行 dispatch（**必須先檢查 merge_issue**）⚠️ **同步等待** |
 | `check_result` | 執行 `awkit check-result --issue <issue_number>` |
 | `review_pr` | 調用 `pr-reviewer` subagent（見下方詳細說明） |

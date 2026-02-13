@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
@@ -22,6 +21,7 @@ type CreateEpicOptions struct {
 	StateRoot string
 	DryRun    bool
 	GHTimeout time.Duration
+	BodyFile  string // required: pre-formatted epic body file
 }
 
 // CreateEpicResult contains the result of creating an epic.
@@ -31,8 +31,11 @@ type CreateEpicResult struct {
 	DryRunBody string // populated if DryRun is true
 }
 
-// CreateEpic creates a GitHub Tracking Issue from a spec's tasks.md and updates the workflow config.
+// CreateEpic creates a GitHub Tracking Issue from a pre-formatted body file and updates the workflow config.
 func CreateEpic(ctx context.Context, opts CreateEpicOptions) (*CreateEpicResult, error) {
+	if opts.BodyFile == "" {
+		return nil, fmt.Errorf("body-file is required")
+	}
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 60 * time.Second
 	}
@@ -50,21 +53,12 @@ func CreateEpic(ctx context.Context, opts CreateEpicOptions) (*CreateEpicResult,
 		return nil, fmt.Errorf("epic already exists for spec %q: issue #%d", opts.SpecName, existing)
 	}
 
-	// 3. Read tasks.md
-	tasksPath := filepath.Join(opts.StateRoot, cfg.Specs.BasePath, opts.SpecName, "tasks.md")
-	tasksData, err := os.ReadFile(tasksPath)
+	// 3. Read body file
+	bodyData, err := os.ReadFile(opts.BodyFile)
 	if err != nil {
-		return nil, fmt.Errorf("tasks.md not found: %s", tasksPath)
+		return nil, fmt.Errorf("failed to read body file: %w", err)
 	}
-
-	// 4. Parse tasks
-	tasks := ParseTasks(string(tasksData))
-	if len(tasks) == 0 {
-		return nil, fmt.Errorf("no tasks found in %s", tasksPath)
-	}
-
-	// 5. Build epic body
-	epicBody := buildEpicBody(opts.SpecName, tasks, string(tasksData))
+	epicBody := string(bodyData)
 
 	// 6. Generate title
 	title := opts.Title
@@ -128,44 +122,6 @@ func CreateEpic(ctx context.Context, opts CreateEpicOptions) (*CreateEpicResult,
 	}, nil
 }
 
-// buildEpicBody creates the epic issue body from parsed tasks.
-func buildEpicBody(specName string, tasks []*Task, rawContent string) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("# %s Task Tracking\n\n", specName))
-	sb.WriteString("## Tasks\n\n")
-
-	for _, t := range tasks {
-		checkbox := "[ ]"
-		if t.Completed {
-			checkbox = "[x]"
-		}
-
-		// Check if title contains an issue ref (e.g., from tasks.md <!-- Issue #N -->)
-		cleanTitle := t.Title
-		if num, found := HasIssueRef(t.Title); found {
-			cleanTitle = issueRefRe.ReplaceAllString(t.Title, "")
-			cleanTitle = strings.TrimSpace(cleanTitle)
-			sb.WriteString(fmt.Sprintf("- [%s] #%d %s\n", checkbox[1:2], num, cleanTitle))
-		} else {
-			sb.WriteString(fmt.Sprintf("- [%s] %s. %s\n", checkbox[1:2], t.ID, cleanTitle))
-		}
-
-		// Add subtasks
-		for _, st := range t.Subtasks {
-			stCheckbox := "[ ]"
-			if st.Completed {
-				stCheckbox = "[x]"
-			}
-			sb.WriteString(fmt.Sprintf("  - [%s] %s %s\n", stCheckbox[1:2], st.ID, st.Title))
-		}
-	}
-
-	sb.WriteString("\n## Progress\n\n")
-	sb.WriteString("This is a GitHub Tracking Issue. Checkboxes update automatically when linked issues are closed.\n")
-
-	return sb.String()
-}
 
 // updateConfigForEpic updates the workflow.yaml to set epic tracking mode and issue number.
 func updateConfigForEpic(configPath string, specName string, epicNumber int) error {

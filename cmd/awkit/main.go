@@ -185,7 +185,7 @@ Commands:
   prepare-review  Prepare PR review context
   submit-review   Submit PR review and handle result
   create-task     Create GitHub Issue from tasks.md entry
-  create-epic     Create GitHub Tracking Issue (Epic) from tasks.md
+  create-epic     Create GitHub Tracking Issue (Epic) from body file
   doctor          Check project health and identify issues
   reset           Reset project state for fresh start
   generate        Generate helper docs and scaffolding
