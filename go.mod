@@ -8,6 +8,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require golang.org/x/sys v0.40.0
+require golang.org/x/sys v0.41.0
 
 require github.com/UserExistsError/conpty v0.1.4

@@ -17,6 +17,11 @@
 - `SPEC_NAME`: Spec 名稱
 - `TASK_LINE`: `tasks.md` 的行號（1-based）
 
+**github_epic 模式**（當 `specs.tracking.mode: github_epic`）:
+- `SPEC_NAME`: Spec 名稱
+- `EPIC_ISSUE`: Tracking Issue 編號
+- `TASK_TEXT`: 任務文字（來自 epic body）
+
 ## Workflow (two-stage)
 
 ### 1) 讀取任務上下文
