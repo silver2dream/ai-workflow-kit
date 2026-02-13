@@ -290,12 +290,22 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}
 	}
 
-	// Step 4: Check tasks.md for uncompleted tasks
+	// Step 4: Check for uncompleted tasks (mode-dependent)
+	if a.Config != nil && a.Config.IsEpicMode() {
+		if decision := a.checkEpicProgress(ctx); decision != nil {
+			return decision, nil
+		}
+		// In epic mode, if checkEpicProgress returned nil, all tasks are done
+		return &Decision{
+			NextAction: ActionAllComplete,
+		}, nil
+	}
+
 	if decision := a.checkTasksFiles(); decision != nil {
 		return decision, nil
 	}
 
-	// Step 5: Check if all complete
+	// Step 5: Check if all complete (tasks_md mode)
 	openCount, err := a.GHClient.CountOpenIssues(ctx, labels.Task)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to count open issues: %v\n", err)
@@ -481,6 +491,57 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 			continue // Skip this spec file on read error
 		}
 		file.Close()
+	}
+
+	return nil
+}
+
+// checkEpicProgress checks GitHub tracking issues for uncompleted tasks.
+// Returns a Decision if there's work to do, or nil if all tasks are complete.
+func (a *Analyzer) checkEpicProgress(ctx context.Context) *Decision {
+	if a.Config == nil || len(a.Config.Specs.Active) == 0 {
+		return nil
+	}
+
+	for _, spec := range a.Config.Specs.Active {
+		spec = strings.TrimSpace(spec)
+		if spec == "" {
+			continue
+		}
+
+		epicIssue := a.Config.GetEpicIssue(spec)
+		if epicIssue == 0 {
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: epic mode but no epic_issue configured for spec %q\n", spec)
+			continue
+		}
+
+		body, err := a.GHClient.GetIssueBody(ctx, epicIssue)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to read epic #%d body: %v\n", epicIssue, err)
+			continue
+		}
+
+		tasks := ParseEpicBody(body)
+		for _, task := range tasks {
+			if task.Completed {
+				continue
+			}
+
+			// Unchecked task with issue ref — check if issue is still open (in-progress)
+			if task.IssueNumber > 0 {
+				// This task has a child issue already; it's being worked on or pending
+				// The standard issue-label checks in Steps 1-3 handle these
+				continue
+			}
+
+			// Unchecked task without issue ref — needs a new child issue
+			return &Decision{
+				NextAction: ActionCreateTask,
+				SpecName:   spec,
+				EpicIssue:  epicIssue,
+				TaskText:   task.Text,
+			}
+		}
 	}
 
 	return nil

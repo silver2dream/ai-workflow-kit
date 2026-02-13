@@ -29,6 +29,10 @@ type MockGitHubClient struct {
 	AddLabelError       error
 	RemoveLabelError    error
 	CloseIssueError     error
+	IssueBodies         map[int]string // issue number -> body
+	GetIssueBodyError   error
+	UpdateIssueBodyError error
+	UpdatedBodies       map[int]string // tracks UpdateIssueBody calls
 }
 
 func NewMockGitHubClient() *MockGitHubClient {
@@ -40,6 +44,8 @@ func NewMockGitHubClient() *MockGitHubClient {
 		PRByBranch:         make(map[string]int),
 		AddedLabels:        make(map[int][]string),
 		RemovedLabels:      make(map[int][]string),
+		IssueBodies:        make(map[int]string),
+		UpdatedBodies:      make(map[int]string),
 	}
 }
 
@@ -107,6 +113,26 @@ func (m *MockGitHubClient) FindPRByBranch(ctx context.Context, branchName string
 		return num, nil
 	}
 	return 0, nil
+}
+
+func (m *MockGitHubClient) GetIssueBody(ctx context.Context, issueNumber int) (string, error) {
+	if m.GetIssueBodyError != nil {
+		return "", m.GetIssueBodyError
+	}
+	body, ok := m.IssueBodies[issueNumber]
+	if !ok {
+		return "", fmt.Errorf("issue #%d not found", issueNumber)
+	}
+	return body, nil
+}
+
+func (m *MockGitHubClient) UpdateIssueBody(ctx context.Context, issueNumber int, body string) error {
+	if m.UpdateIssueBodyError != nil {
+		return m.UpdateIssueBodyError
+	}
+	m.IssueBodies[issueNumber] = body
+	m.UpdatedBodies[issueNumber] = body
+	return nil
 }
 
 // Helper function to create test analyzer with mock client
