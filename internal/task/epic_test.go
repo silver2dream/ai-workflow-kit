@@ -1,73 +1,22 @@
 package task
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
 )
 
-func TestBuildEpicBody(t *testing.T) {
-	tasksContent := `- [ ] 1. Implement login system
-  - [ ] 1.1 Add password hashing
-  - [ ] 1.2 Add session management
-- [x] 2. Design database schema
-- [ ] 3. Add API endpoints _depends_on: 1, 2_
-`
-	tasks := ParseTasks(tasksContent)
-	if len(tasks) != 3 {
-		t.Fatalf("ParseTasks returned %d tasks, want 3", len(tasks))
+func TestCreateEpic_MissingBodyFile(t *testing.T) {
+	_, err := CreateEpic(context.Background(), CreateEpicOptions{
+		SpecName:  "test",
+		StateRoot: t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected error for missing body-file")
 	}
-
-	body := buildEpicBody("my-project", tasks, tasksContent)
-
-	// Check header
-	if !strings.Contains(body, "# my-project Task Tracking") {
-		t.Error("missing epic header")
-	}
-
-	// Check task list
-	if !strings.Contains(body, "- [ ] 1. Implement login system") {
-		t.Error("missing unchecked task 1")
-	}
-	if !strings.Contains(body, "- [x] 2. Design database schema") {
-		t.Error("missing checked task 2")
-	}
-	if !strings.Contains(body, "- [ ] 3. Add API endpoints") {
-		t.Error("missing task 3")
-	}
-
-	// Check subtasks
-	if !strings.Contains(body, "  - [ ] 1.1 Add password hashing") {
-		t.Error("missing subtask 1.1")
-	}
-	if !strings.Contains(body, "  - [ ] 1.2 Add session management") {
-		t.Error("missing subtask 1.2")
-	}
-
-	// Check footer
-	if !strings.Contains(body, "This is a GitHub Tracking Issue") {
-		t.Error("missing tracking issue note")
-	}
-}
-
-func TestBuildEpicBody_WithIssueRefs(t *testing.T) {
-	tasksContent := `- [ ] 1. First task <!-- Issue #10 -->
-- [x] 2. Second task <!-- Issue #11 -->
-- [ ] 3. Third task
-`
-	tasks := ParseTasks(tasksContent)
-	body := buildEpicBody("test-spec", tasks, tasksContent)
-
-	// Tasks with issue refs should show as #N
-	if !strings.Contains(body, "- [ ] #10 First task") {
-		t.Errorf("task with issue ref should be formatted as #10, got:\n%s", body)
-	}
-	if !strings.Contains(body, "- [x] #11 Second task") {
-		t.Errorf("completed task with ref should be formatted as #11, got:\n%s", body)
-	}
-	// Task without ref should use ID
-	if !strings.Contains(body, "- [ ] 3. Third task") {
-		t.Errorf("task without ref should use ID format, got:\n%s", body)
+	if !strings.Contains(err.Error(), "body-file is required") {
+		t.Errorf("error = %q, want 'body-file is required'", err)
 	}
 }
 
@@ -109,6 +58,47 @@ github:
 		t.Errorf("config should contain epic issue number 42, got:\n%s", content)
 	}
 }
+
+func TestCreateEpic_WithBodyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a pre-formatted body file
+	bodyContent := "# My Epic\n\n## Tasks\n\n- [ ] First task\n- [ ] Second task\n"
+	bodyPath := tmpDir + "/epic-body.md"
+	if err := writeTestFile(bodyPath, bodyContent); err != nil {
+		t.Fatalf("failed to write body file: %v", err)
+	}
+
+	// Create minimal config
+	configDir := tmpDir + "/.ai/config"
+	os.MkdirAll(configDir, 0755)
+	configContent := `specs:
+  base_path: .ai/specs
+  active:
+    - test-project
+github:
+  repo: owner/repo
+`
+	configPath := configDir + "/workflow.yaml"
+	if err := writeTestFile(configPath, configContent); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	// Test dry run with body file
+	result, err := CreateEpic(context.Background(), CreateEpicOptions{
+		SpecName:  "test-project",
+		StateRoot: tmpDir,
+		DryRun:    true,
+		BodyFile:  bodyPath,
+	})
+	if err != nil {
+		t.Fatalf("CreateEpic() error = %v", err)
+	}
+	if result.DryRunBody != bodyContent {
+		t.Errorf("DryRunBody = %q, want %q", result.DryRunBody, bodyContent)
+	}
+}
+
 
 // Helper functions for test file operations
 func writeTestFile(path, content string) error {

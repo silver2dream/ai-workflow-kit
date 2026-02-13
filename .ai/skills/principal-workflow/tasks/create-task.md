@@ -1,14 +1,19 @@
 # Create Task
 
-當 `awkit analyze-next` 回傳 `NEXT_ACTION=create_task` 時，代表某個 Spec 的 `tasks.md` 內有一條尚未建立對應 GitHub Issue 的任務（通常是 `- [ ] ...` 且尚未附上 `<!-- Issue #N -->`）。
+當 `awkit analyze-next` 回傳 `NEXT_ACTION=create_task` 時，代表某個 Spec 有一條尚未建立對應 GitHub Issue 的任務。
 
 本步驟採用「兩段式」流程：
 1. Principal 先把 ticket 內容寫完整（包含可驗收的條件與測試要求）
-2. 再用腳本建立 Issue，並把 Issue 編號寫回 `tasks.md`，避免漏欄位/產生空白 ticket
+2. 再用腳本建立 Issue，並把 Issue 編號寫回 tracking source（epic body 或 tasks.md）
 
 ## Inputs
 
-**tasks_md 模式**（預設）:
+**github_epic 模式**（推薦，當 `specs.tracking.mode: github_epic`）:
+- `SPEC_NAME`: Spec 名稱
+- `EPIC_ISSUE`: Tracking Issue 編號
+- `TASK_TEXT`: 任務文字（來自 epic body）
+
+**tasks_md 模式**（可選，當 `specs.tracking.mode: tasks_md`）:
 - `SPEC_NAME`: Spec 名稱
 - `TASK_LINE`: `tasks.md` 的行號（1-based）
 
@@ -21,6 +26,11 @@
 
 ### 1) 讀取任務上下文
 
+**epic 模式**:
+- 任務文字來自 `analyze-next` 輸出的 `task_text` 欄位（從 epic body 解析）
+- 讀取 `"<specs.base_path>/$SPEC_NAME/design.md"` 了解需求與架構脈絡（若存在）
+
+**tasks_md 模式**:
 - 讀取 `"<specs.base_path>/$SPEC_NAME/tasks.md"` 的第 `$TASK_LINE` 行（`specs.base_path` 由 `.ai/config/workflow.yaml` 決定，預設 `.ai/specs`）
 - 讀取 `"<specs.base_path>/$SPEC_NAME/design.md"` 了解需求與架構脈絡（若存在）
 
@@ -65,42 +75,9 @@
 - **Release**: false
 ```
 
-### 3) 建立 Issue 並回寫 `tasks.md`
+### 3) 建立 Issue 並更新 tracking source
 
-執行（建議優先不帶 `--title`，讓腳本從 task line 自動生成，或自行指定）：
-```bash
-awkit create-task \
-  --spec "$SPEC_NAME" \
-  --task-line "$TASK_LINE" \
-  --body-file .ai/temp/create-task-body.md
-```
-
-可選參數：
-- `--title "<title>"`：指定 Issue title
-- `--repo "<owner/repo>"`：指定 GitHub repo（若 `.ai/config/workflow.yaml` 已填 `github.repo` 可省略）
-- `--dry-run`：只輸出將執行的 `gh issue create ...` 命令，不實際建立 Issue
-
-### 4) 驗證並回到 Main Loop
-
-- **tasks_md 模式**: `tasks.md` 第 `$TASK_LINE` 行應該被追加 `<!-- Issue #N -->`
-- **epic 模式**: epic body 應該新增 `- [ ] #N` 條目
-- 回到 `phases/main-loop.md` 的 Step 1，重新 `awkit analyze-next --json`
-
-## Epic 模式
-
-當 `specs.tracking.mode: github_epic` 時，流程略有不同：
-
-### 1) 讀取任務上下文
-
-- 任務文字來自 `analyze-next` 輸出的 `task_text` 欄位（從 epic body 解析）
-- 仍需讀取 design.md 了解需求與架構脈絡
-
-### 2) 撰寫 ticket body 草稿
-
-與 tasks_md 模式相同。
-
-### 3) 建立 Issue 並更新 Epic
-
+**epic 模式** (推薦):
 ```bash
 awkit create-task \
   --spec "$SPEC_NAME" \
@@ -110,11 +87,33 @@ awkit create-task \
   --task-text "$TASK_TEXT"
 ```
 
-`awkit create-task` 會自動偵測 epic 模式（從 config），建立 Issue 後將 `- [ ] #N` 附加到 epic body。不會修改 tasks.md。
+`awkit create-task` 會自動偵測 epic 模式（從 config），建立 Issue 後將 `- [ ] #N` 附加到 epic body。
+
+**tasks_md 模式** (可選):
+```bash
+awkit create-task \
+  --spec "$SPEC_NAME" \
+  --task-line "$TASK_LINE" \
+  --body-file .ai/temp/create-task-body.md
+```
+
+腳本會建立 Issue 並在 `tasks.md` 第 `$TASK_LINE` 行追加 `<!-- Issue #N -->`。
+
+可選參數（兩種模式通用）：
+- `--title "<title>"`：指定 Issue title（否則從 task line/text 自動生成）
+- `--repo "<owner/repo>"`：指定 GitHub repo（若 `.ai/config/workflow.yaml` 已填 `github.repo` 可省略）
+- `--dry-run`：只輸出將執行的 `gh issue create ...` 命令，不實際建立 Issue
+
+### 4) 驗證並回到 Main Loop
+
+- **epic 模式**: epic body 應該新增 `- [ ] #N` 條目
+- **tasks_md 模式**: `tasks.md` 第 `$TASK_LINE` 行應該被追加 `<!-- Issue #N -->`
+- 回到 `phases/main-loop.md` 的 Step 1，重新 `awkit analyze-next --json`
 
 ## Notes / Guardrails
 
 - 這個 step 只負責「建立 Issue」，不要在這裡 dispatch worker 或 review PR。
 - Ticket body 不可空白/模板化；Acceptance Criteria 要可測、可驗收。
 - **Acceptance Criteria 不可預先指定精確的測試函數名稱**（如 `TestFooBar passes`），應描述預期行為（如 `Wall collision correctly ends the game`）。
-- 若 `tasks.md` 該行已存在 `<!-- Issue #N -->`，`awkit create-task` 會直接 no-op（避免重複開 Issue）。
+- **epic 模式**: 若 epic body 中該 checkbox 已經 linked to issue，`awkit create-task` 會跳過避免重複。
+- **tasks_md 模式**: 若 `tasks.md` 該行已存在 `<!-- Issue #N -->`，`awkit create-task` 會直接 no-op（避免重複開 Issue）。

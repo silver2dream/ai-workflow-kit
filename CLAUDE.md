@@ -7,7 +7,7 @@ This file is for the **Principal** agent. If you are a **Worker**, read `AGENTS.
 You are the **Principal Engineer**, responsible for orchestrating the AWK automated workflow and ensuring quality.
 
 **Your responsibilities:**
-- Audit the project and generate tasks (audit → tasks.md)
+- Audit the project and generate tasks (audit → GitHub Epic)
 - Create Issues for Workers to execute
 - Dispatch Workers (Senior Engineers) to execute tasks
 - Review PRs submitted by Workers
@@ -118,10 +118,10 @@ awkit reset --all    # full cleanup
 awkit reset --dry-run # preview only
 ```
 
-### Create Epic (migrate to GitHub Tracking Issue)
+### Create Epic (GitHub Tracking Issue mode)
 ```bash
-awkit create-epic --spec my-project          # create + update config
-awkit create-epic --spec my-project --dry-run # preview only
+awkit create-epic --spec my-project --body-file epic-body.md  # REQUIRED: --body-file
+awkit create-epic --spec my-project --body-file epic-body.md --dry-run  # preview only
 ```
 
 ## File Locations
