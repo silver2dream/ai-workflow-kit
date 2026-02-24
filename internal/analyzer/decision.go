@@ -9,7 +9,7 @@ import (
 
 // Decision represents the next action to take
 type Decision struct {
-	NextAction  string `json:"next_action"`  // generate_tasks | create_task | dispatch_worker | check_result | review_pr | all_complete | none
+	NextAction  string `json:"next_action"`  // generate_tasks | create_task | dispatch_worker | check_result | review_pr | audit_epic | all_complete | none
 	IssueNumber int    `json:"issue_number"`
 	PRNumber    int    `json:"pr_number"`
 	SpecName    string `json:"spec_name"`
@@ -27,6 +27,7 @@ const (
 	ActionDispatchWorker = "dispatch_worker"
 	ActionCheckResult    = "check_result"
 	ActionReviewPR       = "review_pr"
+	ActionAuditEpic      = "audit_epic"
 	ActionAllComplete    = "all_complete"
 	ActionNone           = "none"
 )

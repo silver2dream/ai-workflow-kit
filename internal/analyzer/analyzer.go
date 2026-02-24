@@ -522,6 +522,8 @@ func (a *Analyzer) checkEpicProgress(ctx context.Context) *Decision {
 		}
 
 		tasks := ParseEpicBody(body)
+
+		// First priority: find unchecked tasks that need issue creation
 		for _, task := range tasks {
 			if task.Completed {
 				continue
@@ -542,9 +544,64 @@ func (a *Analyzer) checkEpicProgress(ctx context.Context) *Decision {
 				TaskText:   task.Text,
 			}
 		}
+
+		// Second priority: check if audit should trigger at milestone.
+		// Only triggers when all visible tasks have issue refs (no immediate work)
+		// and not all tasks are complete (audit mid-execution is pointless when done).
+		if a.Config.Specs.Tracking.Audit.IsAuditEnabled() {
+			total, completed := CountEpicProgress(body)
+			if completed < total && a.shouldTriggerAudit(spec, completed, total) {
+				return &Decision{
+					NextAction: ActionAuditEpic,
+					SpecName:   spec,
+					EpicIssue:  epicIssue,
+				}
+			}
+		}
 	}
 
 	return nil
+}
+
+// shouldTriggerAudit determines if an epic audit should be triggered.
+// Triggers at milestone intervals (default 25%) based on completion percentage.
+func (a *Analyzer) shouldTriggerAudit(spec string, completed, total int) bool {
+	if total == 0 {
+		return false
+	}
+
+	interval := a.Config.Specs.Tracking.Audit.MilestoneInterval
+	if interval <= 0 {
+		interval = 25
+	}
+
+	lastMilestone := a.readAuditMilestone(spec)
+	currentPercent := (completed * 100) / total
+	currentMilestone := (currentPercent / interval) * interval
+
+	if currentMilestone > lastMilestone && currentMilestone >= interval {
+		a.writeAuditMilestone(spec, currentMilestone)
+		return true
+	}
+
+	return false
+}
+
+// readAuditMilestone reads the last audit milestone percentage for a spec.
+func (a *Analyzer) readAuditMilestone(spec string) int {
+	path := filepath.Join(a.StateRoot, ".ai", "state", fmt.Sprintf("audit-milestone-%s.txt", spec))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	val, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	return val
+}
+
+// writeAuditMilestone writes the current audit milestone percentage for a spec.
+func (a *Analyzer) writeAuditMilestone(spec string, milestone int) {
+	path := filepath.Join(a.StateRoot, ".ai", "state", fmt.Sprintf("audit-milestone-%s.txt", spec))
+	_ = writeFileAtomic(path, []byte(strconv.Itoa(milestone)), 0644)
 }
 
 // maxReviewAttempts returns the configured max review attempts, falling back to default.
