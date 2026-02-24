@@ -1192,7 +1192,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue list-presets check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets events check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1247,7 +1247,19 @@ _awkit() {
         'check-result:Check worker execution result for an issue'
         'dispatch-worker:Dispatch an issue to a worker'
         'run-issue:Run a worker for a single issue'
+        'session:Manage Principal/Worker sessions'
+        'analyze-next:Analyze and determine next workflow action'
+        'stop-workflow:Stop the workflow and generate a report'
+        'prepare-review:Prepare PR review context'
+        'submit-review:Submit PR review and handle result'
+        'create-task:Create GitHub Issue from task entry'
+        'create-epic:Create GitHub Tracking Issue (Epic)'
+        'audit-epic:Audit Epic coverage against design.md'
+        'doctor:Check project health and identify issues'
+        'reset:Reset project state for fresh start'
+        'generate:Generate helper docs and scaffolding'
         'list-presets:Show available presets'
+        'events:Query unified event stream'
         'check-update:Check for CLI updates'
         'completion:Generate shell completion'
         'version:Show version'
@@ -1324,7 +1336,19 @@ complete -c awkit -n __fish_use_subcommand -a next -d 'Show suggested next actio
 complete -c awkit -n __fish_use_subcommand -a check-result -d 'Check worker execution result for an issue'
 complete -c awkit -n __fish_use_subcommand -a dispatch-worker -d 'Dispatch an issue to a worker'
 complete -c awkit -n __fish_use_subcommand -a run-issue -d 'Run a worker for a single issue'
+complete -c awkit -n __fish_use_subcommand -a session -d 'Manage Principal/Worker sessions'
+complete -c awkit -n __fish_use_subcommand -a analyze-next -d 'Analyze and determine next workflow action'
+complete -c awkit -n __fish_use_subcommand -a stop-workflow -d 'Stop the workflow and generate a report'
+complete -c awkit -n __fish_use_subcommand -a prepare-review -d 'Prepare PR review context'
+complete -c awkit -n __fish_use_subcommand -a submit-review -d 'Submit PR review and handle result'
+complete -c awkit -n __fish_use_subcommand -a create-task -d 'Create GitHub Issue from task entry'
+complete -c awkit -n __fish_use_subcommand -a create-epic -d 'Create GitHub Tracking Issue (Epic)'
+complete -c awkit -n __fish_use_subcommand -a audit-epic -d 'Audit Epic coverage against design.md'
+complete -c awkit -n __fish_use_subcommand -a doctor -d 'Check project health and identify issues'
+complete -c awkit -n __fish_use_subcommand -a reset -d 'Reset project state for fresh start'
+complete -c awkit -n __fish_use_subcommand -a generate -d 'Generate helper docs and scaffolding'
 complete -c awkit -n __fish_use_subcommand -a list-presets -d 'Show available presets'
+complete -c awkit -n __fish_use_subcommand -a events -d 'Query unified event stream'
 complete -c awkit -n __fish_use_subcommand -a check-update -d 'Check for CLI updates'
 complete -c awkit -n __fish_use_subcommand -a completion -d 'Generate shell completion'
 complete -c awkit -n __fish_use_subcommand -a version -d 'Show version'
