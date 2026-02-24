@@ -55,6 +55,7 @@ func (c *Resetter) ResetAll(ctx context.Context) []Result {
 	results = append(results, c.CleanSessions()...)
 	results = append(results, c.CleanReports()...)
 	results = append(results, c.CleanOrphans()...)
+	results = append(results, c.CleanAuditMilestones()...)
 	return results
 }
 
@@ -538,6 +539,12 @@ func (c *Resetter) CleanOrphans() []Result {
 		Success: true,
 		Message: fmt.Sprintf("Deleted %d orphaned .tmp file(s)", removed),
 	}}
+}
+
+// CleanAuditMilestones removes audit milestone state files (.ai/state/audit-milestone-*.txt)
+func (c *Resetter) CleanAuditMilestones() []Result {
+	pattern := filepath.Join(c.StateRoot, ".ai", "state", "audit-milestone-*.txt")
+	return c.cleanGlob(pattern, "audit milestones")
 }
 
 // ResetGitHubLabel resets a label on issues

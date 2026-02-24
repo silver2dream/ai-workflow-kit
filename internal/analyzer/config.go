@@ -72,6 +72,23 @@ const (
 type TrackingConfig struct {
 	Mode       string         `yaml:"mode"`        // "tasks_md" (default) | "github_epic"
 	EpicIssues map[string]int `yaml:"epic_issues"` // spec_name → tracking issue number
+	Audit      EpicAuditConfig `yaml:"audit"`       // epic audit settings
+}
+
+// EpicAuditConfig represents epic audit settings for gap detection.
+// If the audit section is absent from config, audit is enabled by default.
+type EpicAuditConfig struct {
+	Enabled             *bool `yaml:"enabled"`               // nil = true (default enabled)
+	MilestoneInterval   int   `yaml:"milestone_interval"`    // trigger every N% completion (default: 25)
+	MaxAdditionsPerAudit int  `yaml:"max_additions_per_audit"` // max tasks to add per audit (default: 5)
+}
+
+// IsAuditEnabled returns whether epic audit is enabled (default: true)
+func (c *EpicAuditConfig) IsAuditEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
 }
 
 // SpecsConfig represents the specs section
@@ -186,6 +203,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Specs.Tracking.Mode == "" {
 		cfg.Specs.Tracking.Mode = TrackingModeTasksMd
+	}
+	if cfg.Specs.Tracking.Audit.MilestoneInterval <= 0 {
+		cfg.Specs.Tracking.Audit.MilestoneInterval = 25
+	}
+	if cfg.Specs.Tracking.Audit.MaxAdditionsPerAudit <= 0 {
+		cfg.Specs.Tracking.Audit.MaxAdditionsPerAudit = 5
 	}
 
 	return &cfg, nil
