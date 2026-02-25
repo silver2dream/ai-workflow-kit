@@ -24,7 +24,12 @@ func TestPreflightChecker_RunAll(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create valid config
-	configPath := filepath.Join(tmpDir, "workflow.yaml")
+	// configPath must be nested under .ai/config/ so baseDir() resolves to tmpDir
+	aiConfigDir := filepath.Join(tmpDir, ".ai", "config")
+	if err := os.MkdirAll(aiConfigDir, 0755); err != nil {
+		t.Fatalf("Failed to create .ai/config dir: %v", err)
+	}
+	configPath := filepath.Join(aiConfigDir, "workflow.yaml")
 	configContent := `version: "1.0"
 project:
   name: test-project
@@ -36,16 +41,21 @@ repos:
 git:
   integration_branch: feat/test
 specs:
-  path: .ai/specs
+  base_path: ".ai/specs"
+  active:
+    - my-feature
 `
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
-	// Create specs directory
-	specsDir := filepath.Join(tmpDir, ".ai", "specs")
-	if err := os.MkdirAll(specsDir, 0755); err != nil {
-		t.Fatalf("Failed to create specs dir: %v", err)
+	// Create specs directory with a spec that has tasks.md
+	specDir := filepath.Join(tmpDir, ".ai", "specs", "my-feature")
+	if err := os.MkdirAll(specDir, 0755); err != nil {
+		t.Fatalf("Failed to create spec dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte("# Tasks\n- [ ] task 1"), 0644); err != nil {
+		t.Fatalf("Failed to write tasks.md: %v", err)
 	}
 
 	lockFile := filepath.Join(tmpDir, "kickoff.lock")
@@ -61,15 +71,20 @@ specs:
 
 	// Verify expected checks are present
 	expectedChecks := map[string]bool{
-		"gh CLI":      false,
-		"gh Auth":     false,
-		"claude CLI":  false,
-		"codex CLI":   false,
-		"Git Status":  false,
-		"Stop Marker": false,
-		"Lock File":   false,
-		"Config":      false,
-		"PTY":         false,
+		"gh CLI":              false,
+		"gh Auth":             false,
+		"claude CLI":          false,
+		"codex CLI":           false,
+		"Git Status":          false,
+		"Stop Marker":         false,
+		"Lock File":           false,
+		"Config":              false,
+		"Repo Paths":          false,
+		"Active Specs":        false,
+		"Spec Files":          false,
+		"Integration Branch":  false,
+		"GitHub Repo":         false,
+		"PTY":                 false,
 	}
 
 	for _, result := range results {
@@ -384,6 +399,283 @@ func TestPreflightChecker_SetForceDelete(t *testing.T) {
 	if !checker.forceDelete {
 		t.Error("forceDelete should be true after SetForceDelete(true)")
 	}
+}
+
+// TestCheckActiveSpecs tests active specs validation
+func TestCheckActiveSpecs(t *testing.T) {
+	tests := []struct {
+		name       string
+		config     *Config
+		shouldPass bool
+		hasMessage string
+	}{
+		{
+			name:       "nil config",
+			config:     nil,
+			shouldPass: false,
+			hasMessage: "config not loaded",
+		},
+		{
+			name:       "empty active list",
+			config:     &Config{Specs: SpecsConfig{Active: []string{}}},
+			shouldPass: false,
+			hasMessage: "specs.active is empty",
+		},
+		{
+			name:       "nil active list",
+			config:     &Config{},
+			shouldPass: false,
+			hasMessage: "specs.active is empty",
+		},
+		{
+			name:       "has active specs",
+			config:     &Config{Specs: SpecsConfig{Active: []string{"my-feature"}}},
+			shouldPass: true,
+			hasMessage: "1 active spec(s)",
+		},
+		{
+			name:       "multiple active specs",
+			config:     &Config{Specs: SpecsConfig{Active: []string{"feat-a", "feat-b"}}},
+			shouldPass: true,
+			hasMessage: "2 active spec(s)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := NewPreflightChecker("", "")
+			checker.config = tt.config
+
+			result := checker.CheckActiveSpecs()
+			if result.Passed != tt.shouldPass {
+				t.Errorf("CheckActiveSpecs() passed=%v, want %v: %s", result.Passed, tt.shouldPass, result.Message)
+			}
+			if tt.hasMessage != "" && !strings.Contains(result.Message, tt.hasMessage) {
+				t.Errorf("CheckActiveSpecs() message=%q, want containing %q", result.Message, tt.hasMessage)
+			}
+		})
+	}
+}
+
+// TestCheckSpecFiles tests spec file existence validation
+func TestCheckSpecFiles(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "preflight-specfiles-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Setup: create .ai/config/workflow.yaml path so baseDir() works
+	aiConfigDir := filepath.Join(tmpDir, ".ai", "config")
+	os.MkdirAll(aiConfigDir, 0755)
+	configPath := filepath.Join(aiConfigDir, "workflow.yaml")
+
+	specsBase := filepath.Join(tmpDir, ".ai", "specs")
+	os.MkdirAll(specsBase, 0755)
+
+	t.Run("has_tasks_md", func(t *testing.T) {
+		specDir := filepath.Join(specsBase, "feat-tasks")
+		os.MkdirAll(specDir, 0755)
+		os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte("# Tasks"), 0644)
+
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"feat-tasks"}}}
+
+		result := checker.CheckSpecFiles()
+		if !result.Passed {
+			t.Errorf("should pass with tasks.md: %s", result.Message)
+		}
+	})
+
+	t.Run("has_design_md", func(t *testing.T) {
+		specDir := filepath.Join(specsBase, "feat-design")
+		os.MkdirAll(specDir, 0755)
+		os.WriteFile(filepath.Join(specDir, "design.md"), []byte("# Design"), 0644)
+
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"feat-design"}}}
+
+		result := checker.CheckSpecFiles()
+		if !result.Passed {
+			t.Errorf("should pass with design.md: %s", result.Message)
+		}
+	})
+
+	t.Run("empty_dir", func(t *testing.T) {
+		specDir := filepath.Join(specsBase, "feat-empty")
+		os.MkdirAll(specDir, 0755)
+
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"feat-empty"}}}
+
+		result := checker.CheckSpecFiles()
+		if result.Passed {
+			t.Error("should fail with empty spec dir")
+		}
+		if !strings.Contains(result.Message, "feat-empty") {
+			t.Errorf("message should mention missing spec: %s", result.Message)
+		}
+	})
+
+	t.Run("missing_dir", func(t *testing.T) {
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"nonexistent"}}}
+
+		result := checker.CheckSpecFiles()
+		if result.Passed {
+			t.Error("should fail with nonexistent spec dir")
+		}
+	})
+
+	t.Run("nil_config", func(t *testing.T) {
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = nil
+
+		result := checker.CheckSpecFiles()
+		if result.Passed {
+			t.Error("should fail with nil config")
+		}
+	})
+}
+
+// TestCheckRepoPaths tests repo path validation
+func TestCheckRepoPaths(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "preflight-repopaths-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	aiConfigDir := filepath.Join(tmpDir, ".ai", "config")
+	os.MkdirAll(aiConfigDir, 0755)
+	configPath := filepath.Join(aiConfigDir, "workflow.yaml")
+
+	t.Run("valid_paths", func(t *testing.T) {
+		// Create the repo directory
+		os.MkdirAll(filepath.Join(tmpDir, "backend"), 0755)
+
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = &Config{
+			Repos: []RepoConfig{{Name: "backend", Path: "backend/", Type: "directory"}},
+		}
+
+		result := checker.CheckRepoPaths()
+		if !result.Passed {
+			t.Errorf("should pass with valid paths: %s", result.Message)
+		}
+	})
+
+	t.Run("missing_paths", func(t *testing.T) {
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = &Config{
+			Repos: []RepoConfig{{Name: "missing-repo", Path: "does-not-exist/", Type: "directory"}},
+		}
+
+		result := checker.CheckRepoPaths()
+		if result.Passed {
+			t.Error("should fail with missing repo path")
+		}
+		if !strings.Contains(result.Message, "does-not-exist") {
+			t.Errorf("message should mention missing path: %s", result.Message)
+		}
+	})
+
+	t.Run("nil_config", func(t *testing.T) {
+		checker := NewPreflightChecker(configPath, "")
+		checker.config = nil
+
+		result := checker.CheckRepoPaths()
+		if result.Passed {
+			t.Error("should fail with nil config")
+		}
+	})
+}
+
+// TestCheckIntegrationBranch tests integration branch existence check
+func TestCheckIntegrationBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Skipping test: git not installed")
+	}
+
+	t.Run("nil_config", func(t *testing.T) {
+		checker := NewPreflightChecker("", "")
+		checker.config = nil
+
+		result := checker.CheckIntegrationBranch()
+		if !result.Passed {
+			t.Errorf("should pass (warning) with nil config: %s", result.Message)
+		}
+		if !result.Warning {
+			t.Error("should be a warning with nil config")
+		}
+	})
+
+	t.Run("empty_branch", func(t *testing.T) {
+		checker := NewPreflightChecker("", "")
+		checker.config = &Config{Git: GitConfig{IntegrationBranch: ""}}
+
+		result := checker.CheckIntegrationBranch()
+		if !result.Passed {
+			t.Errorf("should pass (warning) with empty branch: %s", result.Message)
+		}
+		if !result.Warning {
+			t.Error("should be a warning with empty branch")
+		}
+	})
+
+	t.Run("nonexistent_branch", func(t *testing.T) {
+		// Create a temp git repo
+		tmpDir, err := os.MkdirTemp("", "preflight-branch-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		cmd := exec.Command("git", "init")
+		cmd.Dir = tmpDir
+		cmd.Run()
+		cmd = exec.Command("git", "config", "user.email", "test@test.com")
+		cmd.Dir = tmpDir
+		cmd.Run()
+		cmd = exec.Command("git", "config", "user.name", "Test")
+		cmd.Dir = tmpDir
+		cmd.Run()
+		os.WriteFile(filepath.Join(tmpDir, "f.txt"), []byte("x"), 0644)
+		cmd = exec.Command("git", "add", ".")
+		cmd.Dir = tmpDir
+		cmd.Run()
+		cmd = exec.Command("git", "commit", "-m", "init")
+		cmd.Dir = tmpDir
+		cmd.Run()
+
+		oldWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(oldWd)
+
+		checker := NewPreflightChecker("", "")
+		checker.config = &Config{Git: GitConfig{IntegrationBranch: "feat/does-not-exist"}}
+
+		result := checker.CheckIntegrationBranch()
+		if !result.Passed {
+			t.Errorf("should pass (warning) for missing branch: %s", result.Message)
+		}
+		if !result.Warning {
+			t.Error("should be a warning for missing branch")
+		}
+	})
+}
+
+// TestCheckGitHubRepo tests GitHub repo accessibility check
+func TestCheckGitHubRepo(t *testing.T) {
+	t.Run("always_passes_or_warns", func(t *testing.T) {
+		checker := NewPreflightChecker("", "")
+
+		result := checker.CheckGitHubRepo()
+		// Should always pass (either with info or warning)
+		if !result.Passed {
+			t.Errorf("CheckGitHubRepo should always pass (warning-only): %s", result.Message)
+		}
+	})
 }
 
 // ============================================================

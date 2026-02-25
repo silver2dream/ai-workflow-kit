@@ -1,5 +1,7 @@
 # Getting Started
 
+> **Looking for the English quick start?** See [Quick Start Guide](quick-start.md) for a streamlined 5-minute setup.
+
 本指南幫助你快速上手 AI Workflow Kit (AWK)。
 
 ---
