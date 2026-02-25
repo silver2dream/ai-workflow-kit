@@ -49,8 +49,14 @@ type GitConfig struct {
 
 // SpecsConfig holds specs directory settings
 type SpecsConfig struct {
-	BasePath string   `yaml:"base_path"`
-	Active   []string `yaml:"active"`
+	BasePath string          `yaml:"base_path"`
+	Active   []string        `yaml:"active"`
+	Tracking TrackingConfig  `yaml:"tracking"`
+}
+
+// TrackingConfig holds task tracking mode settings
+type TrackingConfig struct {
+	Mode string `yaml:"mode"` // "tasks_md" | "github_epic"
 }
 
 // GitHubConfig holds GitHub-related settings

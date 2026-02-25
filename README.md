@@ -146,6 +146,8 @@ Run `awkit list-presets` for details. See [Getting Started](docs/getting-started
 
 Note: `awkit install` is an alias for `awkit init` (backward compatible).
 
+For a complete workflow walkthrough, see the [Quick Start Guide](docs/user/quick-start.md).
+
 ### 0.1) Update `awkit`
 
 Check version and updates:
@@ -299,7 +301,8 @@ It runs:
 
 | Document | Description |
 |----------|-------------|
-| [Getting Started](docs/user/getting-started.md) | Quick start guide |
+| [Quick Start](docs/user/quick-start.md) | 5-minute setup guide |
+| [Getting Started](docs/user/getting-started.md) | Detailed setup guide (zh-TW) |
 | [Configuration](docs/user/configuration.md) | workflow.yaml reference |
 | [Troubleshooting](docs/user/troubleshooting.md) | Error solutions |
 | [FAQ](docs/user/faq.md) | Common questions |

@@ -118,17 +118,46 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 		return results, fmt.Errorf("config check failed: %s", configResult.Message)
 	}
 
-	// 9. Check PTY
+	// 9. Check repo paths (fatal)
+	repoPathsResult := p.CheckRepoPaths()
+	results = append(results, repoPathsResult)
+	if !repoPathsResult.Passed {
+		return results, fmt.Errorf("repo paths check failed: %s", repoPathsResult.Message)
+	}
+
+	// 10. Check active specs (fatal)
+	activeSpecsResult := p.CheckActiveSpecs()
+	results = append(results, activeSpecsResult)
+	if !activeSpecsResult.Passed {
+		return results, fmt.Errorf("active specs check failed: %s", activeSpecsResult.Message)
+	}
+
+	// 11. Check spec files (fatal)
+	specFilesResult := p.CheckSpecFiles()
+	results = append(results, specFilesResult)
+	if !specFilesResult.Passed {
+		return results, fmt.Errorf("spec files check failed: %s", specFilesResult.Message)
+	}
+
+	// 12. Check integration branch (warning only)
+	branchResult := p.CheckIntegrationBranch()
+	results = append(results, branchResult)
+
+	// 13. Check GitHub repo (warning only)
+	ghRepoResult := p.CheckGitHubRepo()
+	results = append(results, ghRepoResult)
+
+	// 14. Check PTY
 	ptyResult := p.CheckPTY()
 	results = append(results, ptyResult)
 	// PTY check is non-fatal (will fallback to standard execution)
 
-	// 10. Check permissions (warning only, non-fatal)
+	// 15. Check permissions (warning only, non-fatal)
 	permResult := p.CheckPermissions()
 	results = append(results, permResult)
 	// Permissions check is non-fatal but important warning
 
-	// 11. Check agents (warning only, non-fatal)
+	// 16. Check agents (warning only, non-fatal)
 	agentsResult := p.CheckAgents()
 	results = append(results, agentsResult)
 	// Agents check is non-fatal but critical for Task tool subagents
@@ -426,6 +455,196 @@ func (p *PreflightChecker) CheckAgents() CheckResult {
 		Passed:  true, // Non-fatal, workflow can continue but Task tool won't work
 		Warning: true,
 		Message: fmt.Sprintf("Missing: %v. Run 'awkit upgrade' to fix.", missing),
+	}
+}
+
+// baseDir returns the project root directory derived from the config path.
+// configPath is typically .ai/config/workflow.yaml, so project root is 3 levels up.
+func (p *PreflightChecker) baseDir() string {
+	d := filepath.Dir(filepath.Dir(filepath.Dir(p.configPath)))
+	if d == "." || d == "" {
+		d, _ = os.Getwd()
+	}
+	return d
+}
+
+// CheckRepoPaths validates that all configured repo paths exist on disk
+func (p *PreflightChecker) CheckRepoPaths() CheckResult {
+	if p.config == nil {
+		return CheckResult{
+			Name:    "Repo Paths",
+			Passed:  false,
+			Message: "config not loaded (run CheckConfig first)",
+		}
+	}
+
+	errs := p.config.ValidatePaths(p.baseDir())
+	if len(errs) > 0 {
+		msgs := make([]string, len(errs))
+		for i, e := range errs {
+			msgs[i] = e.Error()
+		}
+		return CheckResult{
+			Name:    "Repo Paths",
+			Passed:  false,
+			Message: fmt.Sprintf("repo path errors: %s", strings.Join(msgs, "; ")),
+		}
+	}
+
+	return CheckResult{
+		Name:    "Repo Paths",
+		Passed:  true,
+		Message: "all repo paths exist",
+	}
+}
+
+// CheckActiveSpecs validates that specs.active is not empty
+func (p *PreflightChecker) CheckActiveSpecs() CheckResult {
+	if p.config == nil {
+		return CheckResult{
+			Name:    "Active Specs",
+			Passed:  false,
+			Message: "config not loaded (run CheckConfig first)",
+		}
+	}
+
+	if len(p.config.Specs.Active) == 0 {
+		return CheckResult{
+			Name:    "Active Specs",
+			Passed:  false,
+			Message: "specs.active is empty — add at least one spec name to workflow.yaml",
+		}
+	}
+
+	return CheckResult{
+		Name:    "Active Specs",
+		Passed:  true,
+		Message: fmt.Sprintf("%d active spec(s): %s", len(p.config.Specs.Active), strings.Join(p.config.Specs.Active, ", ")),
+	}
+}
+
+// CheckSpecFiles validates that each active spec has a tasks.md or design.md file
+func (p *PreflightChecker) CheckSpecFiles() CheckResult {
+	if p.config == nil {
+		return CheckResult{
+			Name:    "Spec Files",
+			Passed:  false,
+			Message: "config not loaded (run CheckConfig first)",
+		}
+	}
+
+	base := p.baseDir()
+	specsBase := p.config.Specs.BasePath
+	if specsBase == "" {
+		specsBase = ".ai/specs"
+	}
+
+	var missing []string
+	for _, spec := range p.config.Specs.Active {
+		specDir := filepath.Join(base, specsBase, spec)
+		tasksFile := filepath.Join(specDir, "tasks.md")
+		designFile := filepath.Join(specDir, "design.md")
+
+		hasTasksMd := false
+		hasDesignMd := false
+		if _, err := os.Stat(tasksFile); err == nil {
+			hasTasksMd = true
+		}
+		if _, err := os.Stat(designFile); err == nil {
+			hasDesignMd = true
+		}
+
+		if !hasTasksMd && !hasDesignMd {
+			missing = append(missing, spec)
+		}
+	}
+
+	if len(missing) > 0 {
+		return CheckResult{
+			Name:    "Spec Files",
+			Passed:  false,
+			Message: fmt.Sprintf("spec(s) missing tasks.md or design.md: %s", strings.Join(missing, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:    "Spec Files",
+		Passed:  true,
+		Message: "all active specs have tasks.md or design.md",
+	}
+}
+
+// CheckIntegrationBranch checks if the configured integration branch exists in git
+func (p *PreflightChecker) CheckIntegrationBranch() CheckResult {
+	if p.config == nil {
+		return CheckResult{
+			Name:    "Integration Branch",
+			Passed:  true,
+			Warning: true,
+			Message: "config not loaded, skipping branch check",
+		}
+	}
+
+	branch := p.config.Git.IntegrationBranch
+	if branch == "" {
+		return CheckResult{
+			Name:    "Integration Branch",
+			Passed:  true,
+			Warning: true,
+			Message: "no integration branch configured",
+		}
+	}
+
+	// Check if branch exists locally or in remote
+	cmd := exec.Command("git", "rev-parse", "--verify", branch)
+	if err := cmd.Run(); err != nil {
+		// Try remote
+		cmd2 := exec.Command("git", "rev-parse", "--verify", "origin/"+branch)
+		if err2 := cmd2.Run(); err2 != nil {
+			return CheckResult{
+				Name:    "Integration Branch",
+				Passed:  true,
+				Warning: true,
+				Message: fmt.Sprintf("branch %q not found locally or in origin (will be created on first push)", branch),
+			}
+		}
+	}
+
+	return CheckResult{
+		Name:    "Integration Branch",
+		Passed:  true,
+		Message: fmt.Sprintf("integration branch %q exists", branch),
+	}
+}
+
+// CheckGitHubRepo checks if a GitHub remote is accessible
+func (p *PreflightChecker) CheckGitHubRepo() CheckResult {
+	// Check if gh CLI is available (already verified earlier, but be safe)
+	if _, err := exec.LookPath("gh"); err != nil {
+		return CheckResult{
+			Name:    "GitHub Repo",
+			Passed:  true,
+			Warning: true,
+			Message: "gh CLI not available, skipping repo check",
+		}
+	}
+
+	cmd := exec.Command("gh", "repo", "view", "--json", "name", "-q", ".name")
+	output, err := cmd.Output()
+	if err != nil {
+		return CheckResult{
+			Name:    "GitHub Repo",
+			Passed:  true,
+			Warning: true,
+			Message: "could not detect GitHub repo (offline or no remote configured)",
+		}
+	}
+
+	repoName := strings.TrimSpace(string(output))
+	return CheckResult{
+		Name:    "GitHub Repo",
+		Passed:  true,
+		Message: fmt.Sprintf("GitHub repo: %s", repoName),
 	}
 }
 
