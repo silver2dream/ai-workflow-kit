@@ -135,6 +135,54 @@
         "custom": { "type": "array", "items": { "type": "string" } }
       }
     },
+    "agents": {
+      "type": "object",
+      "description": "Agent configuration for custom subagents",
+      "properties": {
+        "builtin": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["pr-reviewer", "conflict-resolver"]
+        },
+        "custom": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "description"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "description": "Unique agent name (lowercase, hyphens allowed)"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What this agent does"
+              },
+              "tools": {
+                "type": "string",
+                "default": "Read, Grep, Glob, Bash",
+                "description": "Comma-separated list of allowed tools"
+              },
+              "model": {
+                "enum": ["haiku", "sonnet", "opus"],
+                "default": "opus",
+                "description": "Model to use for this agent"
+              },
+              "trigger": {
+                "enum": ["review_pr", "check_result", "dispatch_worker", "generate_tasks"],
+                "description": "Workflow event that triggers this agent"
+              },
+              "condition": {
+                "type": "string",
+                "description": "Optional condition expression for when agent should activate"
+              }
+            }
+          }
+        }
+      }
+    },
     "timeouts": {
       "type": "object",
       "description": "Timeout settings for various operations",

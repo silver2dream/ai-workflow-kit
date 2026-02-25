@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	status "github.com/silver2dream/ai-workflow-kit/internal/status"
@@ -78,6 +79,25 @@ func cmdStatus(args []string) int {
 		runLine += fmt.Sprintf("  ended=%s", report.Run.Session.EndedAt)
 	}
 	fmt.Println(runLine)
+
+	// Config (rules/agents)
+	if len(report.Config.RulesKit) > 0 || len(report.Config.RulesCustom) > 0 ||
+		len(report.Config.AgentsBuiltin) > 0 || len(report.Config.AgentsCustom) > 0 {
+		configLine := "Config:"
+		if len(report.Config.RulesKit) > 0 {
+			configLine += fmt.Sprintf("  rules.kit=[%s]", strings.Join(report.Config.RulesKit, ","))
+		}
+		if len(report.Config.RulesCustom) > 0 {
+			configLine += fmt.Sprintf("  rules.custom=[%s]", strings.Join(report.Config.RulesCustom, ","))
+		}
+		if len(report.Config.AgentsBuiltin) > 0 {
+			configLine += fmt.Sprintf("  agents.builtin=[%s]", strings.Join(report.Config.AgentsBuiltin, ","))
+		}
+		if len(report.Config.AgentsCustom) > 0 {
+			configLine += fmt.Sprintf("  agents.custom=[%s]", strings.Join(report.Config.AgentsCustom, ","))
+		}
+		fmt.Println(configLine)
+	}
 
 	// Control
 	controlLine := fmt.Sprintf("Control: STOP=%s", ternary(report.Control.StopPresent, "present", "absent"))

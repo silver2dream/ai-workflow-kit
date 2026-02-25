@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -33,6 +34,7 @@ type Config struct {
 	Git     GitConfig     `yaml:"git"`
 	Repos   []RepoConfig  `yaml:"repos"`
 	Rules   RulesConfig   `yaml:"rules"`
+	Agents  AgentsConfig  `yaml:"agents"`
 	Specs   SpecsConfig   `yaml:"specs"`
 }
 
@@ -159,6 +161,68 @@ func (c *Config) Validate() []ValidationError {
 		})
 	}
 
+	// Validate custom agents
+	agentNamePattern := regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	validModels := map[string]bool{"haiku": true, "sonnet": true, "opus": true}
+	validTriggers := map[string]bool{
+		"review_pr": true, "check_result": true,
+		"dispatch_worker": true, "generate_tasks": true,
+	}
+	builtinAgentNames := make(map[string]bool)
+	for _, name := range c.Agents.Builtin {
+		builtinAgentNames[name] = true
+	}
+	customAgentNames := make(map[string]bool)
+	for i, agent := range c.Agents.Custom {
+		if agent.Name == "" {
+			errors = append(errors, ValidationError{
+				Field:   fmt.Sprintf("agents.custom[%d].name", i),
+				Message: "required field is missing",
+			})
+		} else {
+			if !agentNamePattern.MatchString(agent.Name) {
+				errors = append(errors, ValidationError{
+					Field:    fmt.Sprintf("agents.custom[%d].name", i),
+					Message:  fmt.Sprintf("invalid name: %s", agent.Name),
+					Expected: "lowercase letters, digits, hyphens (must start with letter)",
+				})
+			}
+			if builtinAgentNames[agent.Name] {
+				errors = append(errors, ValidationError{
+					Field:   fmt.Sprintf("agents.custom[%d].name", i),
+					Message: fmt.Sprintf("name '%s' collides with built-in agent", agent.Name),
+				})
+			}
+			if customAgentNames[agent.Name] {
+				errors = append(errors, ValidationError{
+					Field:   fmt.Sprintf("agents.custom[%d].name", i),
+					Message: fmt.Sprintf("duplicate agent name: %s", agent.Name),
+				})
+			}
+			customAgentNames[agent.Name] = true
+		}
+		if agent.Description == "" {
+			errors = append(errors, ValidationError{
+				Field:   fmt.Sprintf("agents.custom[%d].description", i),
+				Message: "required field is missing",
+			})
+		}
+		if agent.Model != "" && !validModels[agent.Model] {
+			errors = append(errors, ValidationError{
+				Field:    fmt.Sprintf("agents.custom[%d].model", i),
+				Message:  fmt.Sprintf("invalid model: %s", agent.Model),
+				Expected: "haiku, sonnet, or opus",
+			})
+		}
+		if agent.Trigger != "" && !validTriggers[agent.Trigger] {
+			errors = append(errors, ValidationError{
+				Field:    fmt.Sprintf("agents.custom[%d].trigger", i),
+				Message:  fmt.Sprintf("invalid trigger: %s", agent.Trigger),
+				Expected: "review_pr, check_result, dispatch_worker, or generate_tasks",
+			})
+		}
+	}
+
 	// Validate repos
 	for i, repo := range c.Repos {
 		if repo.Name == "" {
@@ -213,6 +277,20 @@ type VerifyConfig struct {
 type RulesConfig struct {
 	Kit    []string `yaml:"kit"`
 	Custom []string `yaml:"custom"`
+}
+
+type AgentsConfig struct {
+	Builtin []string         `yaml:"builtin"`
+	Custom  []CustomAgentDef `yaml:"custom"`
+}
+
+type CustomAgentDef struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Tools       string `yaml:"tools"`
+	Model       string `yaml:"model"`
+	Trigger     string `yaml:"trigger"`
+	Condition   string `yaml:"condition"`
 }
 
 type SpecsConfig struct {
@@ -309,14 +387,21 @@ func Generate(opts Options) (*Result, error) {
 	}
 
 	// Generate settings.local.json
-	if err := generateClaudeSettings(settingsPath); err != nil {
+	if err := generateClaudeSettings(settingsPath, config.Agents); err != nil {
 		return nil, fmt.Errorf("failed to generate claude settings: %w", err)
 	}
 	fmt.Printf("[generate] Created: %s\n", settingsPath)
 
+	// Validate custom rules (non-fatal warnings)
+	if ruleWarnings := validateCustomRules(opts.StateRoot, config.Rules); len(ruleWarnings) > 0 {
+		for _, w := range ruleWarnings {
+			fmt.Printf("[generate] WARNING: %s\n", w)
+		}
+	}
+
 	// Install .claude/agents directory (CRITICAL for Task tool subagents)
 	agentsDir := filepath.Join(claudeDir, "agents")
-	if err := installAgentsDir(agentsDir); err != nil {
+	if err := installAgentsDir(agentsDir, config.Agents); err != nil {
 		return nil, fmt.Errorf("failed to install agents: %w", err)
 	}
 
@@ -350,6 +435,9 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if config.Git.CommitFormat == "" {
 		config.Git.CommitFormat = "[type] subject"
+	}
+	if len(config.Agents.Builtin) == 0 {
+		config.Agents.Builtin = []string{"pr-reviewer", "conflict-resolver"}
 	}
 
 	return &config, nil
@@ -682,30 +770,38 @@ func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
 
-func generateClaudeSettings(path string) error {
-	content := `{
-  "permissions": {
-    "allow": [
-      "Skill(principal-workflow)",
-      "Task(pr-reviewer)",
-      "Task(conflict-resolver)",
-      "Bash(gh:*)",
-      "Bash(git:*)",
-      "Bash(awkit:*)",
-      "Bash(bash:*)",
-      "Bash(codex:*)",
-      "Bash(go:*)",
-      "Bash(npm:*)",
-      "Bash(python:*)",
-      "Bash(python3:*)"
-    ]
-  }
-}
-`
+func generateClaudeSettings(path string, agents AgentsConfig) error {
+	allowEntries := []string{
+		`      "Skill(principal-workflow)"`,
+		`      "Task(pr-reviewer)"`,
+		`      "Task(conflict-resolver)"`,
+	}
+
+	// Add custom agent permissions
+	for _, agent := range agents.Custom {
+		allowEntries = append(allowEntries, fmt.Sprintf(`      "Task(%s)"`, agent.Name))
+	}
+
+	allowEntries = append(allowEntries,
+		`      "Bash(gh:*)"`,
+		`      "Bash(git:*)"`,
+		`      "Bash(awkit:*)"`,
+		`      "Bash(bash:*)"`,
+		`      "Bash(codex:*)"`,
+		`      "Bash(go:*)"`,
+		`      "Bash(npm:*)"`,
+		`      "Bash(python:*)"`,
+		`      "Bash(python3:*)"`,
+	)
+
+	content := "{\n  \"permissions\": {\n    \"allow\": [\n" +
+		strings.Join(allowEntries, ",\n") +
+		"\n    ]\n  }\n}\n"
+
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
-func installAgentsDir(agentsDir string) error {
+func installAgentsDir(agentsDir string, agents AgentsConfig) error {
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
 		return err
 	}
@@ -1013,7 +1109,113 @@ Return one of:
 	}
 	fmt.Printf("[generate] Created: %s\n", conflictResolverPath)
 
+	// Generate custom agent definitions
+	for _, agent := range agents.Custom {
+		body := generateCustomAgentBody(agent)
+		agentPath := filepath.Join(agentsDir, agent.Name+".md")
+		if err := os.WriteFile(agentPath, []byte(body), 0644); err != nil {
+			return err
+		}
+		fmt.Printf("[generate] Created: %s\n", agentPath)
+	}
+
+	// Clean stale agent files not in config
+	builtinNames := map[string]bool{"pr-reviewer": true, "conflict-resolver": true}
+	customNames := make(map[string]bool)
+	for _, agent := range agents.Custom {
+		customNames[agent.Name] = true
+	}
+	if err := cleanStaleAgents(agentsDir, builtinNames, customNames); err != nil {
+		fmt.Printf("[generate] WARNING: failed to clean stale agents: %v\n", err)
+	}
+
 	return nil
+}
+
+func generateCustomAgentBody(agent CustomAgentDef) string {
+	var sb strings.Builder
+
+	// YAML frontmatter
+	tools := agent.Tools
+	if tools == "" {
+		tools = "Read, Grep, Glob, Bash"
+	}
+	model := agent.Model
+	if model == "" {
+		model = "opus"
+	}
+
+	sb.WriteString("---\n")
+	sb.WriteString(fmt.Sprintf("name: %s\n", agent.Name))
+	sb.WriteString(fmt.Sprintf("description: %s\n", agent.Description))
+	sb.WriteString(fmt.Sprintf("tools: %s\n", tools))
+	sb.WriteString(fmt.Sprintf("model: %s\n", model))
+	sb.WriteString("---\n\n")
+
+	// Body
+	sb.WriteString(fmt.Sprintf("You are the **%s** agent.\n\n", agent.Name))
+	sb.WriteString(fmt.Sprintf("## Description\n\n%s\n\n", agent.Description))
+
+	if agent.Trigger != "" {
+		sb.WriteString(fmt.Sprintf("## Trigger\n\nThis agent is triggered on: `%s`\n\n", agent.Trigger))
+	}
+	if agent.Condition != "" {
+		sb.WriteString(fmt.Sprintf("## Condition\n\n%s\n\n", agent.Condition))
+	}
+
+	sb.WriteString("## Instructions\n\n")
+	sb.WriteString("Follow the project conventions defined in `CLAUDE.md` and `AGENTS.md`.\n")
+	sb.WriteString("Use the available tools to complete your assigned task.\n")
+
+	return sb.String()
+}
+
+func cleanStaleAgents(agentsDir string, builtinNames, customNames map[string]bool) error {
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		agentName := strings.TrimSuffix(name, ".md")
+		if builtinNames[agentName] || customNames[agentName] {
+			continue
+		}
+		// Stale file — not built-in and not in custom config
+		stalePath := filepath.Join(agentsDir, name)
+		if err := os.Remove(stalePath); err != nil {
+			return err
+		}
+		fmt.Printf("[generate] Removed stale agent: %s\n", stalePath)
+	}
+	return nil
+}
+
+func validateCustomRules(stateRoot string, rules RulesConfig) []string {
+	var warnings []string
+	for _, rule := range rules.Custom {
+		rulePath := filepath.Join(stateRoot, ".ai", "rules", rule+".md")
+		data, err := os.ReadFile(rulePath)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s' not found: %s", rule, rulePath))
+			continue
+		}
+		content := string(data)
+		if !strings.Contains(content, "Role:") {
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is missing 'Role:' directive", rule))
+		}
+		if !strings.Contains(content, "Goal:") {
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is missing 'Goal:' directive", rule))
+		}
+	}
+	return warnings
 }
 
 func setupClaudeSymlinks(aiRoot, claudeDir string) error {

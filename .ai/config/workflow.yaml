@@ -203,6 +203,29 @@ rules:
   custom: []
 
 # ============================================================
+# Agents Configuration
+# ============================================================
+# 內建 Agent（由 awkit generate 管理）：
+#   - pr-reviewer: PR 審查 Agent
+#   - conflict-resolver: 合併衝突解決 Agent
+#
+# 自訂 Agent：定義在 custom 清單中
+# 每個自訂 Agent 會在 awkit generate 時生成到 .claude/agents/
+#
+# 自訂 Agent 欄位：
+#   - name: Agent 名稱（小寫字母、數字、連字號）
+#   - description: Agent 描述（必填）
+#   - tools: 允許使用的工具（預設：Read, Grep, Glob, Bash）
+#   - model: 使用的模型（haiku | sonnet | opus，預設：opus）
+#   - trigger: 觸發時機（review_pr | check_result | dispatch_worker | generate_tasks）
+#   - condition: 觸發條件表達式
+agents:
+  builtin:
+    - pr-reviewer
+    - conflict-resolver
+  custom: []
+
+# ============================================================
 # Timeouts Configuration
 # ============================================================
 # 各項操作的超時設定（秒/分鐘）

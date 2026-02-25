@@ -988,6 +988,361 @@ func TestValidateSubmoduleRemote_MissingActualRemote(t *testing.T) {
 }
 
 // =============================================================================
+// Custom Agents Validation Tests
+// =============================================================================
+
+func TestConfigValidate_CustomAgents_Valid(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Agents: AgentsConfig{
+			Builtin: []string{"pr-reviewer", "conflict-resolver"},
+			Custom: []CustomAgentDef{
+				{Name: "code-analyzer", Description: "Analyzes code quality"},
+				{Name: "doc-generator", Description: "Generates docs", Model: "sonnet", Trigger: "check_result"},
+			},
+		},
+	}
+
+	errors := config.Validate()
+	for _, e := range errors {
+		if strings.Contains(e.Field, "agents.custom") {
+			t.Errorf("unexpected agent validation error: %s", e.Error())
+		}
+	}
+}
+
+func TestConfigValidate_CustomAgents_Duplicate(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Agents: AgentsConfig{
+			Builtin: []string{"pr-reviewer"},
+			Custom: []CustomAgentDef{
+				{Name: "my-agent", Description: "First"},
+				{Name: "my-agent", Description: "Duplicate"},
+			},
+		},
+	}
+
+	errors := config.Validate()
+	hasDuplicate := false
+	for _, e := range errors {
+		if strings.Contains(e.Message, "duplicate") {
+			hasDuplicate = true
+		}
+	}
+	if !hasDuplicate {
+		t.Error("expected duplicate agent name error")
+	}
+}
+
+func TestConfigValidate_CustomAgents_BuiltinCollision(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Agents: AgentsConfig{
+			Builtin: []string{"pr-reviewer", "conflict-resolver"},
+			Custom: []CustomAgentDef{
+				{Name: "pr-reviewer", Description: "Collides with built-in"},
+			},
+		},
+	}
+
+	errors := config.Validate()
+	hasCollision := false
+	for _, e := range errors {
+		if strings.Contains(e.Message, "collides with built-in") {
+			hasCollision = true
+		}
+	}
+	if !hasCollision {
+		t.Error("expected built-in collision error")
+	}
+}
+
+func TestConfigValidate_CustomAgents_InvalidModel(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Agents: AgentsConfig{
+			Custom: []CustomAgentDef{
+				{Name: "my-agent", Description: "Test", Model: "gpt4"},
+			},
+		},
+	}
+
+	errors := config.Validate()
+	hasModelErr := false
+	for _, e := range errors {
+		if strings.Contains(e.Message, "invalid model") {
+			hasModelErr = true
+		}
+	}
+	if !hasModelErr {
+		t.Error("expected invalid model error")
+	}
+}
+
+func TestConfigValidate_CustomAgents_InvalidTrigger(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Agents: AgentsConfig{
+			Custom: []CustomAgentDef{
+				{Name: "my-agent", Description: "Test", Trigger: "on_commit"},
+			},
+		},
+	}
+
+	errors := config.Validate()
+	hasTriggerErr := false
+	for _, e := range errors {
+		if strings.Contains(e.Message, "invalid trigger") {
+			hasTriggerErr = true
+		}
+	}
+	if !hasTriggerErr {
+		t.Error("expected invalid trigger error")
+	}
+}
+
+func TestConfigValidate_CustomAgents_InvalidName(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Agents: AgentsConfig{
+			Custom: []CustomAgentDef{
+				{Name: "My Agent", Description: "Invalid name"},
+			},
+		},
+	}
+
+	errors := config.Validate()
+	hasNameErr := false
+	for _, e := range errors {
+		if strings.Contains(e.Message, "invalid name") {
+			hasNameErr = true
+		}
+	}
+	if !hasNameErr {
+		t.Error("expected invalid name error")
+	}
+}
+
+func TestConfigValidate_CustomAgents_MissingDescription(t *testing.T) {
+	config := Config{
+		Project: ProjectConfig{Name: "test", Type: "monorepo"},
+		Git:     GitConfig{IntegrationBranch: "develop"},
+		Agents: AgentsConfig{
+			Custom: []CustomAgentDef{
+				{Name: "my-agent", Description: ""},
+			},
+		},
+	}
+
+	errors := config.Validate()
+	hasDescErr := false
+	for _, e := range errors {
+		if strings.Contains(e.Field, "description") {
+			hasDescErr = true
+		}
+	}
+	if !hasDescErr {
+		t.Error("expected missing description error")
+	}
+}
+
+// =============================================================================
+// InstallAgentsDir Tests
+// =============================================================================
+
+func TestInstallAgentsDir_WithCustomAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentsDir := filepath.Join(tmpDir, "agents")
+
+	agents := AgentsConfig{
+		Builtin: []string{"pr-reviewer", "conflict-resolver"},
+		Custom: []CustomAgentDef{
+			{Name: "code-analyzer", Description: "Analyzes code quality", Model: "sonnet"},
+		},
+	}
+
+	if err := installAgentsDir(agentsDir, agents); err != nil {
+		t.Fatalf("installAgentsDir() error = %v", err)
+	}
+
+	// Check built-in agents exist
+	for _, name := range []string{"pr-reviewer.md", "conflict-resolver.md"} {
+		path := filepath.Join(agentsDir, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("built-in agent not created: %s", name)
+		}
+	}
+
+	// Check custom agent exists
+	customPath := filepath.Join(agentsDir, "code-analyzer.md")
+	if _, err := os.Stat(customPath); os.IsNotExist(err) {
+		t.Error("custom agent not created: code-analyzer.md")
+	}
+
+	// Check custom agent content
+	data, err := os.ReadFile(customPath)
+	if err != nil {
+		t.Fatalf("failed to read custom agent: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "name: code-analyzer") {
+		t.Error("custom agent should contain name in frontmatter")
+	}
+	if !strings.Contains(content, "model: sonnet") {
+		t.Error("custom agent should contain model in frontmatter")
+	}
+}
+
+func TestInstallAgentsDir_CleanStaleAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentsDir := filepath.Join(tmpDir, "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatalf("mkdir error: %v", err)
+	}
+
+	// Create a stale agent file
+	stalePath := filepath.Join(agentsDir, "old-agent.md")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0644); err != nil {
+		t.Fatalf("write stale file error: %v", err)
+	}
+
+	agents := AgentsConfig{
+		Builtin: []string{"pr-reviewer", "conflict-resolver"},
+		Custom:  []CustomAgentDef{},
+	}
+
+	if err := installAgentsDir(agentsDir, agents); err != nil {
+		t.Fatalf("installAgentsDir() error = %v", err)
+	}
+
+	// Stale file should be removed
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Error("stale agent file should have been removed")
+	}
+
+	// Built-in should still exist
+	if _, err := os.Stat(filepath.Join(agentsDir, "pr-reviewer.md")); os.IsNotExist(err) {
+		t.Error("built-in agent should still exist after cleanup")
+	}
+}
+
+// =============================================================================
+// ValidateCustomRules Tests
+// =============================================================================
+
+func TestValidateCustomRules_FileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	rules := RulesConfig{
+		Custom: []string{"nonexistent-rule"},
+	}
+
+	warnings := validateCustomRules(tmpDir, rules)
+	if len(warnings) == 0 {
+		t.Error("expected warning for missing rule file")
+	}
+	hasNotFound := false
+	for _, w := range warnings {
+		if strings.Contains(w, "not found") {
+			hasNotFound = true
+		}
+	}
+	if !hasNotFound {
+		t.Errorf("expected 'not found' warning, got: %v", warnings)
+	}
+}
+
+func TestValidateCustomRules_MissingRoleGoal(t *testing.T) {
+	tmpDir := t.TempDir()
+	rulesDir := filepath.Join(tmpDir, ".ai", "rules")
+	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+		t.Fatalf("mkdir error: %v", err)
+	}
+
+	// Create rule file missing Role: and Goal:
+	rulePath := filepath.Join(rulesDir, "bad-rule.md")
+	if err := os.WriteFile(rulePath, []byte("# Bad Rule\n\nNo role or goal here.\n"), 0644); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+
+	rules := RulesConfig{
+		Custom: []string{"bad-rule"},
+	}
+
+	warnings := validateCustomRules(tmpDir, rules)
+	if len(warnings) < 2 {
+		t.Errorf("expected at least 2 warnings (missing Role + Goal), got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateCustomRules_Valid(t *testing.T) {
+	tmpDir := t.TempDir()
+	rulesDir := filepath.Join(tmpDir, ".ai", "rules")
+	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+		t.Fatalf("mkdir error: %v", err)
+	}
+
+	rulePath := filepath.Join(rulesDir, "good-rule.md")
+	content := "# Good Rule\n\nRole: Senior Engineer\nGoal: Write good code\n"
+	if err := os.WriteFile(rulePath, []byte(content), 0644); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+
+	rules := RulesConfig{
+		Custom: []string{"good-rule"},
+	}
+
+	warnings := validateCustomRules(tmpDir, rules)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for valid rule, got: %v", warnings)
+	}
+}
+
+// =============================================================================
+// LoadConfig Agents Default Tests
+// =============================================================================
+
+func TestLoadConfig_AgentsDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "workflow.yaml")
+
+	// Config without agents section
+	configContent := `
+project:
+  name: test-project
+  type: single-repo
+git:
+  integration_branch: develop
+repos:
+  - name: root
+    path: ./
+    type: root
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+
+	config, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v", err)
+	}
+
+	if len(config.Agents.Builtin) != 2 {
+		t.Errorf("expected 2 default builtin agents, got %d", len(config.Agents.Builtin))
+	}
+	if config.Agents.Builtin[0] != "pr-reviewer" {
+		t.Errorf("expected first builtin agent to be pr-reviewer, got %s", config.Agents.Builtin[0])
+	}
+}
+
+// =============================================================================
 // Path Validation by Repo Type (Table-Driven Tests)
 // =============================================================================
 
