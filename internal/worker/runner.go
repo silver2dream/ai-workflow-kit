@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
@@ -45,6 +46,26 @@ type workflowConfig struct {
 	Git        workflowGit        `yaml:"git"`
 	Escalation workflowEscalation `yaml:"escalation"`
 	Timeouts   workflowTimeouts   `yaml:"timeouts"`
+	Feedback   workflowFeedback   `yaml:"feedback"`
+}
+
+type workflowFeedback struct {
+	Enabled            *bool `yaml:"enabled"`
+	MaxHistoryInPrompt int   `yaml:"max_history_in_prompt"`
+}
+
+func (f *workflowFeedback) isEnabled() bool {
+	if f.Enabled == nil {
+		return true
+	}
+	return *f.Enabled
+}
+
+func (f *workflowFeedback) maxHistory() int {
+	if f.MaxHistoryInPrompt <= 0 {
+		return 10
+	}
+	return f.MaxHistoryInPrompt
 }
 
 type workflowRepo struct {
@@ -540,7 +561,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 
 	workDirInstruction := buildWorkDirInstruction(repoType, repoPath, workDir, repoName)
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), opts.IssueID, opts.GHTimeout); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, opts.GHTimeout, &cfg.Feedback); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -1057,7 +1078,7 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket string, issueID int, ghTimeout time.Duration) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, ghTimeout time.Duration, feedbackCfg *workflowFeedback) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
 
 	builder := strings.Builder{}
@@ -1098,6 +1119,21 @@ func writePromptFile(path, workDirInstruction, ticket string, issueID int, ghTim
 		builder.WriteString("============================================================\n")
 		builder.WriteString(reviewComments)
 		builder.WriteString("\n============================================================\n")
+	}
+
+	// Inject historical feedback patterns from past rejections
+	maxEntries := 10
+	feedbackEnabled := true
+	if feedbackCfg != nil {
+		feedbackEnabled = feedbackCfg.isEnabled()
+		maxEntries = feedbackCfg.maxHistory()
+	}
+	if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); feedbackEnabled && historicalFeedback != "" {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(historicalFeedback)
+		builder.WriteString("============================================================\n")
 	}
 
 	builder.WriteString("\nAfter making changes:\n")
@@ -1261,6 +1297,17 @@ func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 		result = result[len(result)-4000:]
 	}
 	return result
+}
+
+func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
+	if maxEntries <= 0 {
+		maxEntries = 10
+	}
+	entries, err := reviewer.LoadRecentFeedback(stateRoot, maxEntries)
+	if err != nil || len(entries) == 0 {
+		return ""
+	}
+	return reviewer.FormatFeedbackForPrompt(entries, 2000)
 }
 
 func runAttemptGuard(ctx context.Context, stateRoot string, issueID int, logFile string, opts RunIssueOptions) error {

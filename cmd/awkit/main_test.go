@@ -448,6 +448,42 @@ func TestShellCompletionContainsAllPresets(t *testing.T) {
 	}
 }
 
+func TestShellCompletionContainsNewCommands(t *testing.T) {
+	newCommands := []string{"feedback-stats", "context-snapshot"}
+	for _, cmd := range newCommands {
+		if !strings.Contains(bashCompletion, cmd) {
+			t.Errorf("bash completion should contain %s", cmd)
+		}
+		if !strings.Contains(zshCompletion, cmd) {
+			t.Errorf("zsh completion should contain %s", cmd)
+		}
+		if !strings.Contains(fishCompletion, cmd) {
+			t.Errorf("fish completion should contain %s", cmd)
+		}
+	}
+}
+
+func TestUsageContainsNewCommands(t *testing.T) {
+	var buf bytes.Buffer
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	usage()
+
+	w.Close()
+	os.Stderr = oldStderr
+	buf.ReadFrom(r)
+
+	output := buf.String()
+	newCommands := []string{"feedback-stats", "context-snapshot"}
+	for _, cmd := range newCommands {
+		if !strings.Contains(output, cmd) {
+			t.Errorf("usage should contain %s command", cmd)
+		}
+	}
+}
+
 func TestShellCompletionContainsScaffoldFlag(t *testing.T) {
 	// Verify shell completions include --scaffold flag
 	if !strings.Contains(bashCompletion, "--scaffold") {

@@ -158,6 +158,12 @@ Loop Safety 由 `awkit analyze-next` 自動處理：
 
 無需額外操作。
 
-## Step 4: 回到 Step 1
+## Step 4: Context Management
+
+如果你發現對話變得很長或已經跑了很多輪迭代：
+- 讀取 `.ai/skills/principal-workflow/references/compaction-strategy.md` 了解如何管理 context
+- 執行 `awkit context-snapshot` 取得精簡的狀態摘要，用於 context 壓縮後重建上下文
+
+## Step 5: 回到 Step 1
 
 除非已經結束（`all_complete` 或 `none`）。

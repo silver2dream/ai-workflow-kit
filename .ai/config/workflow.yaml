@@ -288,6 +288,18 @@ review:
   merge_strategy: squash
 
 # ============================================================
+# Feedback Configuration
+# ============================================================
+# Review feedback loop: records rejection patterns and injects
+# historical feedback into Worker prompts to avoid repeat mistakes.
+#
+# enabled: true (default) - set to false to disable feedback recording
+# max_history_in_prompt: 10 (default) - max feedback entries injected into Worker prompt
+feedback:
+  enabled: true
+  max_history_in_prompt: 10
+
+# ============================================================
 # Notification Configuration
 # ============================================================
 # notifications: (planned for future release)

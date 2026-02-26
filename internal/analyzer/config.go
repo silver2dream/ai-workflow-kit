@@ -13,6 +13,22 @@ type Config struct {
 	GitHub     GitHubConfig     `yaml:"github"`
 	Repos      []RepoConfig     `yaml:"repos"`
 	Escalation EscalationConfig `yaml:"escalation"`
+	Feedback   FeedbackConfig   `yaml:"feedback"`
+}
+
+// FeedbackConfig represents review feedback loop settings.
+// If the feedback section is absent from config, feedback is enabled by default.
+type FeedbackConfig struct {
+	Enabled            *bool `yaml:"enabled"`                // nil = true (default enabled)
+	MaxHistoryInPrompt int   `yaml:"max_history_in_prompt"`  // default: 10
+}
+
+// IsEnabled returns whether feedback recording is enabled (default: true).
+func (c *FeedbackConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
 }
 
 // EscalationConfig represents escalation/retry limits
@@ -209,6 +225,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Specs.Tracking.Audit.MaxAdditionsPerAudit <= 0 {
 		cfg.Specs.Tracking.Audit.MaxAdditionsPerAudit = 5
+	}
+	if cfg.Feedback.MaxHistoryInPrompt <= 0 {
+		cfg.Feedback.MaxHistoryInPrompt = 10
 	}
 
 	return &cfg, nil

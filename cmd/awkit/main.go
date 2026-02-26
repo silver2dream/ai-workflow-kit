@@ -151,6 +151,10 @@ func run() int {
 		return cmdCompletion(os.Args[2:])
 	case "events":
 		return cmdEvents(os.Args[2:])
+	case "feedback-stats":
+		return cmdFeedbackStats(os.Args[2:])
+	case "context-snapshot":
+		return cmdContextSnapshot(os.Args[2:])
 	case "help":
 		if len(os.Args) >= 3 {
 			return cmdHelp(os.Args[2])
@@ -194,6 +198,8 @@ Commands:
   generate        Generate helper docs and scaffolding
   list-presets    Show available project presets
   events          Query unified event stream for debugging
+  feedback-stats  Show review feedback statistics
+  context-snapshot Generate compact context snapshot
   check-update  Check for CLI updates
   completion    Generate shell completion script
   version       Show version
@@ -292,6 +298,10 @@ func cmdHelp(command string) int {
 		usageCompletion()
 	case "events":
 		usageEvents()
+	case "feedback-stats":
+		usageFeedbackStats()
+	case "context-snapshot":
+		usageContextSnapshot()
 	case "version":
 		fmt.Println("Show the awkit version.")
 	default:
@@ -1192,7 +1202,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets events check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets events feedback-stats context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1260,6 +1270,8 @@ _awkit() {
         'generate:Generate helper docs and scaffolding'
         'list-presets:Show available presets'
         'events:Query unified event stream'
+        'feedback-stats:Show review feedback statistics'
+        'context-snapshot:Generate compact context snapshot'
         'check-update:Check for CLI updates'
         'completion:Generate shell completion'
         'version:Show version'
@@ -1349,6 +1361,8 @@ complete -c awkit -n __fish_use_subcommand -a reset -d 'Reset project state for 
 complete -c awkit -n __fish_use_subcommand -a generate -d 'Generate helper docs and scaffolding'
 complete -c awkit -n __fish_use_subcommand -a list-presets -d 'Show available presets'
 complete -c awkit -n __fish_use_subcommand -a events -d 'Query unified event stream'
+complete -c awkit -n __fish_use_subcommand -a feedback-stats -d 'Show review feedback statistics'
+complete -c awkit -n __fish_use_subcommand -a context-snapshot -d 'Generate compact context snapshot'
 complete -c awkit -n __fish_use_subcommand -a check-update -d 'Check for CLI updates'
 complete -c awkit -n __fish_use_subcommand -a completion -d 'Generate shell completion'
 complete -c awkit -n __fish_use_subcommand -a version -d 'Show version'

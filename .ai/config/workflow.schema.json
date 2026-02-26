@@ -291,6 +291,23 @@
         }
       }
     },
+    "feedback": {
+      "type": "object",
+      "description": "Review feedback loop settings for learning from past rejections",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable review feedback recording and injection into Worker prompts"
+        },
+        "max_history_in_prompt": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 10,
+          "description": "Maximum number of historical feedback entries to inject into Worker prompts"
+        }
+      }
+    },
     "notifications": {
       "type": "object",
       "description": "PLANNED: Notification support is not yet implemented. This schema is reserved for future use.",

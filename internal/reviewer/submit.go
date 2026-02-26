@@ -268,6 +268,16 @@ PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHT
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 		}
 
+		// Record feedback for CI failure rejection (fire-and-forget)
+		_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+			IssueID:    opts.IssueNumber,
+			PRNumber:   opts.PRNumber,
+			Score:      opts.Score,
+			Categories: []string{"ci-failure"},
+			Summary:    truncateSummary(ciReason, 500),
+		})
+
 		return &SubmitReviewResult{Result: "changes_requested", Reason: ciReason}, nil
 	}
 
@@ -289,6 +299,9 @@ PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != n
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 
+	// Record feedback for score-based rejection (fire-and-forget)
+	_ = RecordFeedback(opts.StateRoot, BuildFeedbackEntry(opts.IssueNumber, opts.PRNumber, opts.Score, opts.ReviewBody))
+
 	return &SubmitReviewResult{Result: "changes_requested"}, nil
 }
 
@@ -296,6 +309,25 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 	if labelErr := editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout); labelErr != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", labelErr)
 	}
+
+	// Record feedback for verification failure (fire-and-forget)
+	verifyCategory := "verification"
+	switch err.Code {
+	case 1:
+		verifyCategory = "criteria-mapping"
+	case 2:
+		verifyCategory = "test-execution"
+	case 3:
+		verifyCategory = "assertion"
+	}
+	_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		IssueID:    opts.IssueNumber,
+		PRNumber:   opts.PRNumber,
+		Score:      opts.Score,
+		Categories: []string{verifyCategory},
+		Summary:    truncateSummary(err.Message, 500),
+	})
 
 	var details string
 	if err.Details != nil {
