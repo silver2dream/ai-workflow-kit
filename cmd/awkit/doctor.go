@@ -87,7 +87,7 @@ func cmdReset(args []string) int {
 	results := fs.Bool("results", false, "Reset result files")
 	traces := fs.Bool("traces", false, "Reset old trace files (deprecated, use events)")
 	events := fs.Bool("events", false, "Reset event stream files")
-	labels := fs.Bool("labels", false, "Reset review-failed labels to pr-ready on GitHub")
+	labels := fs.Bool("labels", false, "Reset blocking labels (worker-failed, review-failed) on GitHub issues")
 	temp := fs.Bool("temp", false, "Clean ticket temp files (.ai/temp/ticket-*.md)")
 	sessions := fs.Bool("sessions", false, "Clean old session files (keep last 5)")
 	reports := fs.Bool("reports", false, "Clean old workflow reports")
@@ -155,8 +155,9 @@ func cmdReset(args []string) int {
 	if *all || *reports {
 		allResults = append(allResults, resetter.CleanReports()...)
 	}
-	if *labels {
+	if *all || *labels {
 		allResults = append(allResults, resetter.ResetGitHubLabel(ctx, "review-failed", "pr-ready")...)
+		allResults = append(allResults, resetter.ResetGitHubLabel(ctx, "worker-failed", "ai-task")...)
 	}
 
 	var success, failed int
@@ -225,7 +226,7 @@ Options:
   --results     Reset result files
   --traces      Reset old trace files (.ai/state/traces/)
   --events      Reset event stream files (.ai/state/events/)
-  --labels      Reset review-failed labels to pr-ready on GitHub
+  --labels      Reset blocking labels (worker-failed, review-failed) on GitHub issues
   --temp        Clean ticket temp files (.ai/temp/ticket-*.md)
   --sessions    Clean old session files (keep last 5)
   --reports     Clean old workflow reports (.ai/state/workflow-report-*.md)
@@ -238,7 +239,7 @@ Examples:
   awkit reset --traces     # Clean old trace files after upgrade
   awkit reset --sessions   # Clean old session files (keep last 5)
   awkit reset --reports    # Clean old workflow reports
-  awkit reset --labels     # Reset stuck review labels on GitHub
+  awkit reset --labels     # Reset stuck labels (worker-failed, review-failed) on GitHub
 
 Note: To fix missing permissions, use 'awkit upgrade' instead.
 `)
