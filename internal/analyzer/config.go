@@ -14,6 +14,74 @@ type Config struct {
 	Repos      []RepoConfig     `yaml:"repos"`
 	Escalation EscalationConfig `yaml:"escalation"`
 	Feedback   FeedbackConfig   `yaml:"feedback"`
+	Hooks      HooksConfig      `yaml:"hooks"`
+	Worker     WorkerConfig     `yaml:"worker"`
+}
+
+// HookDef defines a single hook command.
+type HookDef struct {
+	Command   string            `yaml:"command"`
+	Timeout   string            `yaml:"timeout"`    // e.g. "30s", parsed via time.ParseDuration
+	OnFailure string            `yaml:"on_failure"` // warn | abort | ignore (default: warn)
+	Env       map[string]string `yaml:"env"`
+}
+
+// HooksConfig holds lifecycle hook definitions.
+type HooksConfig struct {
+	PreDispatch  []HookDef `yaml:"pre_dispatch"`
+	PostDispatch []HookDef `yaml:"post_dispatch"`
+	PreReview    []HookDef `yaml:"pre_review"`
+	PostReview   []HookDef `yaml:"post_review"`
+	OnMerge      []HookDef `yaml:"on_merge"`
+	OnFailure    []HookDef `yaml:"on_failure"`
+}
+
+// GetHooks returns hook definitions for a given event name.
+func (c *HooksConfig) GetHooks(event string) []HookDef {
+	switch event {
+	case "pre_dispatch":
+		return c.PreDispatch
+	case "post_dispatch":
+		return c.PostDispatch
+	case "pre_review":
+		return c.PreReview
+	case "post_review":
+		return c.PostReview
+	case "on_merge":
+		return c.OnMerge
+	case "on_failure":
+		return c.OnFailure
+	default:
+		return nil
+	}
+}
+
+// WorkerConfig configures the AI worker backend.
+type WorkerConfig struct {
+	Backend    string           `yaml:"backend"` // "codex" (default) | "claude-code"
+	Codex      CodexConfig      `yaml:"codex"`
+	ClaudeCode ClaudeCodeConfig `yaml:"claude_code"`
+}
+
+// CodexConfig holds codex-specific worker settings.
+type CodexConfig struct {
+	FullAuto    *bool `yaml:"full_auto"`    // nil = true
+	MaxAttempts int   `yaml:"max_attempts"` // default: 1
+}
+
+// IsFullAuto returns whether codex should run in full-auto mode (default: true).
+func (c *CodexConfig) IsFullAuto() bool {
+	if c.FullAuto == nil {
+		return true
+	}
+	return *c.FullAuto
+}
+
+// ClaudeCodeConfig holds claude-code-specific worker settings.
+type ClaudeCodeConfig struct {
+	Model                      string `yaml:"model"`                        // default: "sonnet"
+	MaxTurns                   int    `yaml:"max_turns"`                    // default: 50
+	DangerouslySkipPermissions bool   `yaml:"dangerously_skip_permissions"` // default: false
 }
 
 // FeedbackConfig represents review feedback loop settings.
@@ -228,6 +296,20 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Feedback.MaxHistoryInPrompt <= 0 {
 		cfg.Feedback.MaxHistoryInPrompt = 10
+	}
+
+	// Worker backend defaults
+	if cfg.Worker.Backend == "" {
+		cfg.Worker.Backend = "codex"
+	}
+	if cfg.Worker.Codex.MaxAttempts <= 0 {
+		cfg.Worker.Codex.MaxAttempts = 1
+	}
+	if cfg.Worker.ClaudeCode.Model == "" {
+		cfg.Worker.ClaudeCode.Model = "sonnet"
+	}
+	if cfg.Worker.ClaudeCode.MaxTurns <= 0 {
+		cfg.Worker.ClaudeCode.MaxTurns = 50
 	}
 
 	return &cfg, nil

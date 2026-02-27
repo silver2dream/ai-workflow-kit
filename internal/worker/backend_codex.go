@@ -13,33 +13,31 @@ import (
 	"time"
 )
 
-// CodexOptions controls codex execution attempts.
-type CodexOptions struct {
-	WorkDir     string
-	PromptFile  string
-	SummaryFile string
-	LogBase     string
-	MaxAttempts int
-	RetryDelay  time.Duration
-	Timeout     time.Duration
-	Trace       *TraceRecorder
+// CodexBackend implements WorkerBackend for OpenAI Codex CLI.
+type CodexBackend struct{}
+
+// NewCodexBackend creates a new CodexBackend.
+func NewCodexBackend() *CodexBackend {
+	return &CodexBackend{}
 }
 
-// CodexResult contains codex execution details.
-type CodexResult struct {
-	ExitCode      int
-	Attempts      int
-	RetryCount    int
-	Duration      time.Duration
-	FailureStage  string
-	FailureReason string
-	LastLogFile   string
+// Name returns the backend identifier.
+func (b *CodexBackend) Name() string {
+	return "codex"
 }
 
-// RunCodex executes codex with retries and logs output to summary and per-attempt log.
-func RunCodex(ctx context.Context, opts CodexOptions) CodexResult {
+// Available checks if codex CLI is in PATH.
+func (b *CodexBackend) Available() error {
+	if _, err := exec.LookPath("codex"); err != nil {
+		return fmt.Errorf("codex CLI not found in PATH")
+	}
+	return nil
+}
+
+// Execute runs codex with retries and logs output to summary and per-attempt log.
+func (b *CodexBackend) Execute(ctx context.Context, opts BackendOptions) BackendResult {
 	start := time.Now()
-	result := CodexResult{}
+	result := BackendResult{}
 
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = 1
@@ -161,7 +159,7 @@ func buildCodexCommand(ctx context.Context) ([]string, error) {
 	return args, nil
 }
 
-func runCodexAttempt(ctx context.Context, cmdArgs []string, opts CodexOptions, logFile string) int {
+func runCodexAttempt(ctx context.Context, cmdArgs []string, opts BackendOptions, logFile string) int {
 	_ = os.MkdirAll(filepath.Dir(logFile), 0755)
 
 	prompt, err := os.Open(opts.PromptFile)

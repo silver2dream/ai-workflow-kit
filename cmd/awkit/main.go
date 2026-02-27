@@ -149,6 +149,8 @@ func run() int {
 		return cmdListPresets()
 	case "completion":
 		return cmdCompletion(os.Args[2:])
+	case "hooks":
+		return cmdHooks(os.Args[2:])
 	case "events":
 		return cmdEvents(os.Args[2:])
 	case "feedback-stats":
@@ -197,6 +199,7 @@ Commands:
   reset           Reset project state for fresh start
   generate        Generate helper docs and scaffolding
   list-presets    Show available project presets
+  hooks           Manage lifecycle hooks
   events          Query unified event stream for debugging
   feedback-stats  Show review feedback statistics
   context-snapshot Generate compact context snapshot
@@ -296,6 +299,8 @@ func cmdHelp(command string) int {
 		usageCheckUpdate()
 	case "completion":
 		usageCompletion()
+	case "hooks":
+		usageHooks()
 	case "events":
 		usageEvents()
 	case "feedback-stats":
@@ -1202,7 +1207,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets events feedback-stats context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets hooks events feedback-stats context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1269,6 +1274,7 @@ _awkit() {
         'reset:Reset project state for fresh start'
         'generate:Generate helper docs and scaffolding'
         'list-presets:Show available presets'
+        'hooks:Manage lifecycle hooks'
         'events:Query unified event stream'
         'feedback-stats:Show review feedback statistics'
         'context-snapshot:Generate compact context snapshot'
@@ -1360,6 +1366,7 @@ complete -c awkit -n __fish_use_subcommand -a doctor -d 'Check project health an
 complete -c awkit -n __fish_use_subcommand -a reset -d 'Reset project state for fresh start'
 complete -c awkit -n __fish_use_subcommand -a generate -d 'Generate helper docs and scaffolding'
 complete -c awkit -n __fish_use_subcommand -a list-presets -d 'Show available presets'
+complete -c awkit -n __fish_use_subcommand -a hooks -d 'Manage lifecycle hooks'
 complete -c awkit -n __fish_use_subcommand -a events -d 'Query unified event stream'
 complete -c awkit -n __fish_use_subcommand -a feedback-stats -d 'Show review feedback statistics'
 complete -c awkit -n __fish_use_subcommand -a context-snapshot -d 'Generate compact context snapshot'

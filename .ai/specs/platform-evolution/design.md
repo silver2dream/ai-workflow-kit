@@ -103,7 +103,7 @@ Extend `installAgentsDir()` to:
 
 #### 1.4 Model Tier Validation
 
-Validate `model` field against allowed values: `haiku`, `sonnet`, `opus`. Default to `sonnet` if omitted.
+Validate `model` field against allowed values: `haiku`, `sonnet`, `opus`. Default to `opus` if omitted.
 
 #### 1.5 Trigger/Condition Integration
 

@@ -5,8 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
@@ -116,6 +119,13 @@ func cmdSubmitReview(args []string) int {
 	// Load review settings from workflow.yaml
 	reviewSettings := reviewer.GetReviewSettings(*stateRoot)
 
+	// Load hooks from config
+	var hookRunner *hooks.HookRunner
+	configPath := filepath.Join(*stateRoot, ".ai", "config", "workflow.yaml")
+	if cfg, err := analyzer.LoadConfig(configPath); err == nil {
+		hookRunner = hooks.NewHookRunner(cfg.Hooks, *stateRoot, os.Stderr)
+	}
+
 	// Run Go implementation
 	ctx := context.Background()
 	result, err := reviewer.SubmitReview(ctx, reviewer.SubmitReviewOptions{
@@ -128,6 +138,7 @@ func cmdSubmitReview(args []string) int {
 		ScoreThreshold: reviewSettings.ScoreThreshold,
 		MergeStrategy:  reviewSettings.MergeStrategy,
 		GHTimeout:      60 * time.Second,
+		HookRunner:     hookRunner,
 	})
 
 	if err != nil {

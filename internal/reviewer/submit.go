@@ -20,6 +20,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// HookFirer is the interface for firing lifecycle hooks.
+type HookFirer interface {
+	Fire(ctx context.Context, event string, envVars map[string]string) error
+}
+
 // SubmitReviewOptions configures the submit review operation
 type SubmitReviewOptions struct {
 	PRNumber       int
@@ -36,6 +41,7 @@ type SubmitReviewOptions struct {
 	MergeStrategy  string        // Merge strategy: "squash" | "merge" | "rebase" (default: "squash", from config)
 	GHTimeout      time.Duration
 	TestTimeout    time.Duration
+	HookRunner     HookFirer     // nil = no hooks
 }
 
 // SubmitReviewResult holds the result of submitting a review
@@ -112,7 +118,29 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			trace.WithPR(opts.PRNumber),
 			trace.WithIssue(opts.IssueNumber),
 			trace.WithData(endData))
+
+		// Fire post_review hooks (non-blocking, best-effort)
+		if opts.HookRunner != nil {
+			hookEnv := map[string]string{
+				"AWK_PR":       fmt.Sprintf("%d", opts.PRNumber),
+				"AWK_ISSUE":    fmt.Sprintf("%d", opts.IssueNumber),
+				"AWK_SCORE":    fmt.Sprintf("%d", opts.Score),
+				"AWK_DECISION": decision,
+			}
+			_ = opts.HookRunner.Fire(ctx, "post_review", hookEnv)
+		}
 	}()
+
+	// Fire pre_review hooks
+	if opts.HookRunner != nil {
+		hookEnv := map[string]string{
+			"AWK_PR":    fmt.Sprintf("%d", opts.PRNumber),
+			"AWK_ISSUE": fmt.Sprintf("%d", opts.IssueNumber),
+		}
+		if err := opts.HookRunner.Fire(ctx, "pre_review", hookEnv); err != nil {
+			return nil, fmt.Errorf("pre_review hook aborted: %w", err)
+		}
+	}
 
 	// Get session ID
 	sessionMgr := session.NewManager(opts.StateRoot)
@@ -220,6 +248,15 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			// Try to merge
 			if err := mergePR(ctx, opts.PRNumber, opts.GHTimeout, opts.MergeStrategy); err != nil {
 				return handleMergeFailure(ctx, opts, sessionID, err)
+			}
+
+			// Fire on_merge hooks (non-blocking)
+			if opts.HookRunner != nil {
+				hookEnv := map[string]string{
+					"AWK_PR":    fmt.Sprintf("%d", opts.PRNumber),
+					"AWK_ISSUE": fmt.Sprintf("%d", opts.IssueNumber),
+				}
+				_ = opts.HookRunner.Fire(ctx, "on_merge", hookEnv)
 			}
 
 			// Merge successful - cleanup operations (non-critical, log warnings)

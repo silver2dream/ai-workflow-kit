@@ -10,7 +10,7 @@ Based on ECC (everything-claude-code) competitive analysis, strengthen AWKit's p
 
 - THE system SHALL support custom agent definitions in `workflow.yaml` under an `agents.custom` list.
 - EACH custom agent definition SHALL include: `name`, `description`, `tools`, `model`, `trigger`, and optional `condition`.
-- THE `model` field SHALL accept values `haiku`, `sonnet`, `opus` and default to `sonnet` if omitted.
+- THE `model` field SHALL accept values `haiku`, `sonnet`, `opus` and default to `opus` if omitted.
 - THE `trigger` field SHALL map to `analyze-next` action types: `review_pr`, `check_result`, `dispatch_worker`, `generate_tasks`.
 - THE `condition` field SHALL support simple string matching against issue metadata (labels, status).
 - THE `awkit generate` command SHALL produce `.claude/agents/{name}.md` files for each custom agent with YAML frontmatter.

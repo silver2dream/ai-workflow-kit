@@ -47,6 +47,18 @@ type workflowConfig struct {
 	Escalation workflowEscalation `yaml:"escalation"`
 	Timeouts   workflowTimeouts   `yaml:"timeouts"`
 	Feedback   workflowFeedback   `yaml:"feedback"`
+	Worker     workflowWorker     `yaml:"worker"`
+}
+
+type workflowWorker struct {
+	Backend    string                 `yaml:"backend"`
+	ClaudeCode workflowClaudeCode     `yaml:"claude_code"`
+}
+
+type workflowClaudeCode struct {
+	Model                      string `yaml:"model"`
+	MaxTurns                   int    `yaml:"max_turns"`
+	DangerouslySkipPermissions bool   `yaml:"dangerously_skip_permissions"`
 }
 
 type workflowFeedback struct {
@@ -576,7 +588,23 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		_ = trace.StepEnd("success", "", nil)
 	}
 
-	codex := RunCodex(ctx, CodexOptions{
+	// Select and run AI worker backend
+	backendName := cfg.Worker.Backend
+	if backendName == "" {
+		backendName = "codex"
+	}
+	registry := DefaultRegistry(
+		cfg.Worker.ClaudeCode.Model,
+		cfg.Worker.ClaudeCode.MaxTurns,
+		cfg.Worker.ClaudeCode.DangerouslySkipPermissions,
+	)
+	backend, backendErr := registry.Get(backendName)
+	if backendErr != nil {
+		// Fallback to codex if unknown backend
+		fmt.Fprintf(os.Stderr, "[worker] warning: %v, falling back to codex\n", backendErr)
+		backend = NewCodexBackend()
+	}
+	codex := backend.Execute(ctx, BackendOptions{
 		WorkDir:     wtDir,
 		PromptFile:  promptFile,
 		SummaryFile: summaryFile,

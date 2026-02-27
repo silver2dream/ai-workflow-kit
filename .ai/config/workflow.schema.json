@@ -2,6 +2,32 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AI Workflow Kit Configuration",
   "type": "object",
+  "$defs": {
+    "hookDef": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute"
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Timeout duration (e.g. '30s', '5m')"
+        },
+        "on_failure": {
+          "enum": ["warn", "abort", "ignore"],
+          "default": "warn",
+          "description": "Behavior when hook fails: warn (log + continue), abort (stop workflow), ignore (silent)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Extra environment variables for the hook"
+        }
+      }
+    }
+  },
   "required": ["version", "project", "repos", "git"],
   "properties": {
     "version": {
@@ -305,6 +331,84 @@
           "minimum": 0,
           "default": 10,
           "description": "Maximum number of historical feedback entries to inject into Worker prompts"
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Lifecycle hooks: run custom shell commands at workflow events",
+      "properties": {
+        "pre_dispatch": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookDef" }
+        },
+        "post_dispatch": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookDef" }
+        },
+        "pre_review": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookDef" }
+        },
+        "post_review": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookDef" }
+        },
+        "on_merge": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookDef" }
+        },
+        "on_failure": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookDef" }
+        }
+      }
+    },
+    "worker": {
+      "type": "object",
+      "description": "AI Worker backend configuration",
+      "properties": {
+        "backend": {
+          "enum": ["codex", "claude-code"],
+          "default": "codex",
+          "description": "AI worker backend to use"
+        },
+        "codex": {
+          "type": "object",
+          "properties": {
+            "full_auto": {
+              "type": "boolean",
+              "default": true,
+              "description": "Use --full-auto flag for codex"
+            },
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "Codex-level retry count"
+            }
+          }
+        },
+        "claude_code": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "default": "sonnet",
+              "description": "Claude model to use (e.g. sonnet, opus, haiku)"
+            },
+            "max_turns": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 50,
+              "description": "Maximum agentic turns for Claude Code"
+            },
+            "dangerously_skip_permissions": {
+              "type": "boolean",
+              "default": false,
+              "description": "Skip permission prompts (use with caution)"
+            }
+          }
         }
       }
     },

@@ -300,6 +300,44 @@ feedback:
   max_history_in_prompt: 10
 
 # ============================================================
+# Hooks Configuration
+# ============================================================
+# Lifecycle hooks: run custom shell commands at workflow events.
+# Each event supports a list of commands with timeout and failure policy.
+#
+# Events: pre_dispatch, post_dispatch, pre_review, post_review, on_merge, on_failure
+# on_failure options: warn (default) | abort | ignore
+#
+# Example:
+#   hooks:
+#     pre_dispatch:
+#       - command: "echo dispatching issue $AWK_ISSUE"
+#         timeout: "30s"
+#         on_failure: warn
+#     on_merge:
+#       - command: "curl -X POST $SLACK_WEBHOOK -d '{\"text\": \"PR merged\"}'"
+#         timeout: "10s"
+#         on_failure: ignore
+hooks: {}
+
+# ============================================================
+# Worker Configuration
+# ============================================================
+# AI Worker backend selection.
+# backend: codex (default) | claude-code
+#
+# codex settings:
+#   full_auto: true (default) — use --full-auto flag
+#   max_attempts: 1 (default) — codex-level retry count
+#
+# claude_code settings:
+#   model: sonnet (default)
+#   max_turns: 50 (default)
+#   dangerously_skip_permissions: false (default)
+worker:
+  backend: codex
+
+# ============================================================
 # Notification Configuration
 # ============================================================
 # notifications: (planned for future release)
