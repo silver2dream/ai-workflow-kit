@@ -81,13 +81,16 @@ func (f *workflowFeedback) maxHistory() int {
 }
 
 type workflowRepo struct {
-	Name   string             `yaml:"name"`
-	Path   string             `yaml:"path"`
-	Type   string             `yaml:"type"`
-	Verify workflowRepoVerify `yaml:"verify"`
+	Name           string             `yaml:"name"`
+	Path           string             `yaml:"path"`
+	Type           string             `yaml:"type"`
+	Language       string             `yaml:"language"`
+	PackageManager string             `yaml:"package_manager"`
+	Verify         workflowRepoVerify `yaml:"verify"`
 }
 
 type workflowRepoVerify struct {
+	Setup string `yaml:"setup"`
 	Build string `yaml:"build"`
 	Test  string `yaml:"test"`
 }
@@ -722,6 +725,24 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		trace.StepStart("run_tests")
 	}
 
+	// Run setup command (dependency install) before verification
+	setupCmd := getSetupCommand(cfg, repoName)
+	if setupCmd != "" {
+		logger.Log("執行驗證前置設定...")
+		logger.Log("  運行: %s", setupCmd)
+		if setupErr := runVerificationCommand(ctx, workDir, setupCmd, opts.GitTimeout); setupErr != nil {
+			runErr = fmt.Errorf("verification setup failed: %s: %w", setupCmd, setupErr)
+			result.Error = runErr.Error()
+			result.Status = "failed"
+			if trace != nil {
+				_ = trace.StepEnd("failed", fmt.Sprintf("setup failed: %s: %v", setupCmd, setupErr), nil)
+			}
+			logger.Log("  ✗ 設定失敗: %v", setupErr)
+			return result, runErr
+		}
+		logger.Log("  ✓ 設定完成")
+	}
+
 	// Try to get verification commands from ticket first, fallback to config
 	verifyCommands := GetVerificationCommandsForRepo(string(ticketBody), repoName)
 	if len(verifyCommands) == 0 {
@@ -1090,6 +1111,47 @@ func getConfigVerifyCommands(cfg *workflowConfig, repoName string) []string {
 		}
 	}
 	return nil
+}
+
+// getSetupCommand returns the setup command for a repo.
+// Explicit verify.setup takes priority; otherwise auto-detect from language/package_manager.
+func getSetupCommand(cfg *workflowConfig, repoName string) string {
+	if cfg == nil {
+		return ""
+	}
+	for _, repo := range cfg.Repos {
+		if repo.Name == repoName {
+			if repo.Verify.Setup != "" {
+				return repo.Verify.Setup
+			}
+			return inferSetupCommand(repo.Language, repo.PackageManager)
+		}
+	}
+	return ""
+}
+
+// inferSetupCommand returns a dependency install command based on language and package manager.
+func inferSetupCommand(language, packageManager string) string {
+	switch strings.ToLower(language) {
+	case "node", "nodejs", "typescript", "javascript",
+		"react", "vue", "angular", "nextjs", "nuxt", "svelte",
+		"express", "nestjs":
+		switch strings.ToLower(packageManager) {
+		case "yarn":
+			return "yarn install --frozen-lockfile 2>/dev/null || yarn install"
+		case "pnpm":
+			return "pnpm install --frozen-lockfile 2>/dev/null || pnpm install"
+		default:
+			return "npm ci 2>/dev/null || npm install"
+		}
+	case "python", "django", "flask", "fastapi":
+		return "pip install -r requirements.txt 2>/dev/null || true"
+	case "dotnet", "csharp", "aspnet", "blazor":
+		return "dotnet restore"
+	default:
+		// go, rust, unity, unreal, godot, generic — no setup needed
+		return ""
+	}
 }
 
 func extractTitleLine(content string) string {

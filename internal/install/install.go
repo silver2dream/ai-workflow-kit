@@ -695,6 +695,7 @@ repos:
     node_version: "20"
     package_manager: "npm"
     verify:
+      setup: "npm ci 2>/dev/null || npm install"
       build: "npm run build"
       test: "npm run test -- --run"
 
@@ -911,6 +912,7 @@ repos:
     type: root
     language: python
     verify:
+      setup: "pip install -r requirements.txt 2>/dev/null || true"
       build: "echo 'No build step'"
       test: "python -m pytest tests/ -v --tb=short 2>/dev/null || echo 'No tests yet'"
 
@@ -1047,6 +1049,7 @@ repos:
     type: root
     language: dotnet
     verify:
+      setup: "dotnet restore"
       build: "dotnet build"
       test: "dotnet test"
 
@@ -1115,6 +1118,7 @@ repos:
     type: root
     language: typescript
     verify:
+      setup: "npm ci 2>/dev/null || npm install"
       build: "npm run build"
       test: "npm run test -- --run"
 
@@ -1183,6 +1187,7 @@ repos:
     type: directory
     language: python
     verify:
+      setup: "pip install -r requirements.txt 2>/dev/null || true"
       build: "echo 'No build step'"
       test: "python -m pytest tests/ -v --tb=short 2>/dev/null || echo 'No tests yet'"
 
@@ -1193,6 +1198,7 @@ repos:
     node_version: "20"
     package_manager: "npm"
     verify:
+      setup: "npm ci 2>/dev/null || npm install"
       build: "npm run build"
       test: "npm run test -- --run"
 
@@ -2083,11 +2089,16 @@ func npmInstall(dir string) error {
 	if err != nil {
 		return fmt.Errorf("npm not found in PATH")
 	}
+	fmt.Printf("  Installing npm dependencies in %s ...\n", filepath.Base(dir))
 	cmd := exec.Command(npmPath, "install")
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	fmt.Println("  npm install done.")
+	return nil
 }
 
 // cleanupDeprecatedFiles removes files listed in deprecated.txt

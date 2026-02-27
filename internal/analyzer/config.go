@@ -115,6 +115,7 @@ type RepoConfig struct {
 
 // VerifyConfig represents verification commands for a repo
 type VerifyConfig struct {
+	Setup string `yaml:"setup"`
 	Build string `yaml:"build"`
 	Test  string `yaml:"test"`
 }
