@@ -951,23 +951,8 @@ func cmdUpgrade(args []string) int {
 		}
 	}
 
-	// Auto-commit upgrade changes (unless --no-commit)
-	if !*noCommit && !*dryRun {
-		if err := autoCommitUpgrade(targetDir); err != nil {
-			fmt.Println("")
-			warn("Failed to auto-commit changes: %v\n", err)
-			fmt.Println("")
-			fmt.Println("Please commit manually:")
-			fmt.Printf("  %s\n", cyan("git add .ai/ .claude/ CLAUDE.md AGENTS.md"))
-			fmt.Printf("  %s\n", cyan(`git commit -m "[chore] upgrade awkit"`))
-		} else {
-			fmt.Println("")
-			success("Changes committed automatically\n")
-			fmt.Printf("  Commit message: %s\n", cyan("[chore] upgrade awkit"))
-		}
-	}
-
-	// Handle scaffold for upgrade
+	// Handle scaffold for upgrade (BEFORE auto-commit so scaffold files are included)
+	var extraCommitPaths []string
 	if *scaffold {
 		projectName := filepath.Base(displayTarget)
 		scaffoldResult, scaffoldErr := install.Scaffold(displayTarget, install.ScaffoldOptions{
@@ -984,6 +969,12 @@ func cmdUpgrade(args []string) int {
 				fmt.Println(bold("Scaffold files created:"))
 				for _, f := range scaffoldResult.Created {
 					fmt.Printf("  %s\n", f)
+				}
+				// Collect relative paths for auto-commit
+				for _, f := range scaffoldResult.Created {
+					if rel, err := filepath.Rel(displayTarget, f); err == nil {
+						extraCommitPaths = append(extraCommitPaths, rel)
+					}
 				}
 			}
 			if len(scaffoldResult.Skipped) > 0 {
@@ -1008,6 +999,22 @@ func cmdUpgrade(args []string) int {
 		}
 	}
 
+	// Auto-commit upgrade changes (unless --no-commit)
+	if !*noCommit && !*dryRun {
+		if err := autoCommitUpgrade(targetDir, extraCommitPaths); err != nil {
+			fmt.Println("")
+			warn("Failed to auto-commit changes: %v\n", err)
+			fmt.Println("")
+			fmt.Println("Please commit manually:")
+			fmt.Printf("  %s\n", cyan("git add .ai/ .claude/ CLAUDE.md AGENTS.md"))
+			fmt.Printf("  %s\n", cyan(`git commit -m "[chore] upgrade awkit"`))
+		} else {
+			fmt.Println("")
+			success("Changes committed automatically\n")
+			fmt.Printf("  Commit message: %s\n", cyan("[chore] upgrade awkit"))
+		}
+	}
+
 	fmt.Println("")
 	fmt.Println(bold("Next steps:"))
 	fmt.Printf("  %s\n", cyan("awkit kickoff"))
@@ -1017,8 +1024,9 @@ func cmdUpgrade(args []string) int {
 	return 0
 }
 
-// autoCommitUpgrade attempts to automatically commit upgrade changes
-func autoCommitUpgrade(targetDir string) error {
+// autoCommitUpgrade attempts to automatically commit upgrade changes.
+// extraPaths are additional paths (e.g. scaffold files) to include in the commit.
+func autoCommitUpgrade(targetDir string, extraPaths []string) error {
 	// Check if git is available
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
@@ -1032,8 +1040,10 @@ func autoCommitUpgrade(targetDir string) error {
 		return fmt.Errorf("not a git repository")
 	}
 
-	// Add awkit-related files
-	addCmd := exec.Command(gitPath, "add", ".ai/", ".claude/", "CLAUDE.md", "AGENTS.md")
+	// Add awkit-related files + any extra paths (e.g. scaffold files)
+	addArgs := []string{"add", ".ai/", ".claude/", "CLAUDE.md", "AGENTS.md"}
+	addArgs = append(addArgs, extraPaths...)
+	addCmd := exec.Command(gitPath, addArgs...)
 	addCmd.Dir = targetDir
 	if err := addCmd.Run(); err != nil {
 		return fmt.Errorf("git add failed: %w", err)

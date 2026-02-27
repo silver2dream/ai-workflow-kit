@@ -9,7 +9,7 @@ import (
 )
 
 // LatestVersion is the most recent config version.
-const LatestVersion = "1.1"
+const LatestVersion = "1.2"
 
 // Migration represents a single config migration step.
 type Migration struct {
@@ -29,6 +29,7 @@ type AppliedMigration struct {
 // registry holds all known migrations in order.
 var registry = []Migration{
 	migrationV1_0ToV1_1,
+	migrationV1_1ToV1_2,
 }
 
 // NeedsMigration checks if a config file needs migration and returns
