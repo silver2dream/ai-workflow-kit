@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -1742,7 +1743,17 @@ describe("smoke", () => {
 		},
 	}
 
-	return scaffoldFiles(files, force, dryRun, result)
+	res, err := scaffoldFiles(files, force, dryRun, result)
+	if err != nil || dryRun {
+		return res, err
+	}
+
+	// Install npm dependencies if package.json was created
+	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil {
+		_ = npmInstall(targetDir)
+	}
+
+	return res, nil
 }
 
 func scaffoldMonorepo(targetDir, projectName, backend, frontend string, force, dryRun bool) (*ScaffoldResult, error) {
@@ -1913,7 +1924,17 @@ describe('smoke', () => {
 		},
 	}
 
-	return scaffoldFiles(files, force, dryRun, result)
+	res, err := scaffoldFiles(files, force, dryRun, result)
+	if err != nil || dryRun {
+		return res, err
+	}
+
+	// Install npm dependencies if package.json was created
+	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil {
+		_ = npmInstall(targetDir)
+	}
+
+	return res, nil
 }
 
 func scaffoldUnityFrontend(targetDir string, force, dryRun bool) (*ScaffoldResult, error) {
@@ -2053,6 +2074,20 @@ func scaffoldFiles(files []struct {
 		return result, ErrScaffoldFailed
 	}
 	return result, nil
+}
+
+// npmInstall runs "npm install" in the given directory.
+// Errors are non-fatal — scaffold succeeds even if npm install fails.
+func npmInstall(dir string) error {
+	npmPath, err := exec.LookPath("npm")
+	if err != nil {
+		return fmt.Errorf("npm not found in PATH")
+	}
+	cmd := exec.Command(npmPath, "install")
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // cleanupDeprecatedFiles removes files listed in deprecated.txt
