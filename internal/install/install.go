@@ -631,9 +631,47 @@ func tryGenerate(targetDir string) error {
 	return err
 }
 
+// commonConfigSuffix contains the common config sections appended to all presets.
+// These sections were introduced in config v1.2.
+const commonConfigSuffix = `
+agents:
+  builtin:
+    - pr-reviewer
+    - conflict-resolver
+  custom: []
+
+timeouts:
+  git_seconds: 120
+  gh_seconds: 60
+  codex_minutes: 30
+  gh_retry_count: 3
+  gh_retry_base_delay: 2
+
+review:
+  score_threshold: 7
+  merge_strategy: squash
+
+escalation:
+  triggers: []
+  max_consecutive_failures: 3
+  retry_count: 2
+  retry_delay_seconds: 5
+  max_single_pr_files: 50
+  max_single_pr_lines: 500
+
+feedback:
+  enabled: true
+  max_history_in_prompt: 10
+
+hooks: {}
+
+worker:
+  backend: codex
+`
+
 var presetReactGo = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (React + Go)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -709,7 +747,7 @@ rules:
     - backend-go
     - frontend-react
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 const ciWorkflowYAML = `
@@ -791,7 +829,7 @@ func writeFileIfNotExists(path string, content []byte, force bool) (created bool
 
 var presetGo = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (Go)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -854,12 +892,12 @@ rules:
     - git-workflow
   custom: []
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetPython = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (Python)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -922,12 +960,12 @@ rules:
     - git-workflow
   custom: []
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetRust = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (Rust)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -990,12 +1028,12 @@ rules:
     - git-workflow
   custom: []
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetDotnet = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (.NET)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -1058,12 +1096,12 @@ rules:
     - git-workflow
   custom: []
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetNode = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (Node.js/TypeScript)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -1126,12 +1164,12 @@ rules:
     - git-workflow
   custom: []
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetReactPython = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (React + Python)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -1207,12 +1245,12 @@ rules:
     - backend-python
     - frontend-react
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetUnityGo = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (Unity + Go)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -1286,12 +1324,12 @@ rules:
     - backend-go
     - frontend-unity
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetGodotGo = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (Godot + Go)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -1365,12 +1403,12 @@ rules:
     - backend-go
     - frontend-godot
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 var presetUnrealGo = func(projectName string) []byte {
 	content := fmt.Sprintf(`# AWK Configuration (Unreal + Go)
-version: "1.0"
+version: "1.2"
 
 project:
   name: %q
@@ -1444,7 +1482,7 @@ rules:
     - backend-go
     - frontend-unreal
 `, projectName)
-	return []byte(content)
+	return []byte(content + commonConfigSuffix)
 }
 
 // Scaffold creates project structure based on preset
