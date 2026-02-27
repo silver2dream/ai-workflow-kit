@@ -71,6 +71,7 @@
             "type": "object",
             "required": ["build", "test"],
             "properties": {
+              "setup": { "type": "string", "description": "Command to install dependencies before build/test (e.g. npm install)" },
               "build": { "type": "string" },
               "test": { "type": "string" }
             }

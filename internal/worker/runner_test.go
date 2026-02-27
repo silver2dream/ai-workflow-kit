@@ -156,3 +156,98 @@ func TestGetConfigVerifyCommands(t *testing.T) {
 		t.Errorf("expected nil for nil config, got %v", result)
 	}
 }
+
+func TestGetSetupCommand(t *testing.T) {
+	cfg := &workflowConfig{
+		Repos: []workflowRepo{
+			{
+				Name:     "frontend",
+				Language: "typescript",
+				Verify: workflowRepoVerify{
+					Setup: "yarn install",
+					Build: "npm run build",
+					Test:  "npm run test",
+				},
+			},
+			{
+				Name:     "backend",
+				Language: "go",
+				Verify: workflowRepoVerify{
+					Build: "go build ./...",
+					Test:  "go test ./...",
+				},
+			},
+			{
+				Name:           "api",
+				Language:       "typescript",
+				PackageManager: "pnpm",
+				Verify: workflowRepoVerify{
+					Build: "pnpm build",
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		repo     string
+		expected string
+	}{
+		{"explicit setup overrides auto-detect", "frontend", "yarn install"},
+		{"go needs no setup", "backend", ""},
+		{"auto-detect pnpm from package_manager", "api", "pnpm install --frozen-lockfile 2>/dev/null || pnpm install"},
+		{"unknown repo returns empty", "unknown", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getSetupCommand(cfg, tt.repo)
+			if got != tt.expected {
+				t.Errorf("getSetupCommand(%q) = %q, want %q", tt.repo, got, tt.expected)
+			}
+		})
+	}
+
+	// nil config
+	if got := getSetupCommand(nil, "frontend"); got != "" {
+		t.Errorf("expected empty for nil config, got %q", got)
+	}
+}
+
+func TestInferSetupCommand(t *testing.T) {
+	tests := []struct {
+		language       string
+		packageManager string
+		expected       string
+	}{
+		{"typescript", "", "npm ci 2>/dev/null || npm install"},
+		{"node", "npm", "npm ci 2>/dev/null || npm install"},
+		{"react", "yarn", "yarn install --frozen-lockfile 2>/dev/null || yarn install"},
+		{"vue", "pnpm", "pnpm install --frozen-lockfile 2>/dev/null || pnpm install"},
+		{"javascript", "", "npm ci 2>/dev/null || npm install"},
+		{"nextjs", "", "npm ci 2>/dev/null || npm install"},
+		{"python", "", "pip install -r requirements.txt 2>/dev/null || true"},
+		{"fastapi", "", "pip install -r requirements.txt 2>/dev/null || true"},
+		{"django", "", "pip install -r requirements.txt 2>/dev/null || true"},
+		{"dotnet", "", "dotnet restore"},
+		{"csharp", "", "dotnet restore"},
+		{"go", "", ""},
+		{"rust", "", ""},
+		{"unity", "", ""},
+		{"generic", "", ""},
+	}
+
+	for _, tt := range tests {
+		name := tt.language
+		if tt.packageManager != "" {
+			name += "+" + tt.packageManager
+		}
+		t.Run(name, func(t *testing.T) {
+			got := inferSetupCommand(tt.language, tt.packageManager)
+			if got != tt.expected {
+				t.Errorf("inferSetupCommand(%q, %q) = %q, want %q",
+					tt.language, tt.packageManager, got, tt.expected)
+			}
+		})
+	}
+}

@@ -270,6 +270,7 @@ type RepoConfig struct {
 }
 
 type VerifyConfig struct {
+	Setup string `yaml:"setup"`
 	Build string `yaml:"build"`
 	Test  string `yaml:"test"`
 }
