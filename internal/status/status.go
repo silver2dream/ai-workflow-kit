@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"gopkg.in/yaml.v3"
 )
 
 type Options struct {
@@ -22,12 +23,20 @@ type Options struct {
 type Report struct {
 	TimestampUTC string       `json:"timestamp_utc"`
 	Root         string       `json:"root"`
+	Config       ConfigInfo   `json:"config"`
 	Run          RunInfo      `json:"run"`
 	Control      ControlInfo  `json:"control"`
 	Target       TargetInfo   `json:"target"`
 	Artifacts    IssueDetails `json:"artifacts"`
 	Suggestions  []string     `json:"suggestions,omitempty"`
 	Warnings     []string     `json:"warnings,omitempty"`
+}
+
+type ConfigInfo struct {
+	RulesKit      []string `json:"rules_kit,omitempty"`
+	RulesCustom   []string `json:"rules_custom,omitempty"`
+	AgentsBuiltin []string `json:"agents_builtin,omitempty"`
+	AgentsCustom  []string `json:"agents_custom,omitempty"`
 }
 
 type RunInfo struct {
@@ -226,6 +235,11 @@ func Collect(root string, opts Options) (Report, error) {
 	if consecutiveFailures, err := readIntFile(filepath.Join(root, ".ai", "state", "consecutive_failures")); err == nil {
 		report.Control.ConsecutiveFailures = &consecutiveFailures
 	}
+
+	// -------------------------
+	// Config info (rules/agents)
+	// -------------------------
+	report.Config = collectConfigInfo(root)
 
 	// -------------------------
 	// Principal session
@@ -546,6 +560,45 @@ func parseIssueIDFromFilename(name string) int {
 		return 0
 	}
 	return i
+}
+
+// partialConfig is a lightweight struct for reading only rules/agents from workflow.yaml
+type partialConfig struct {
+	Rules struct {
+		Kit    []string `yaml:"kit"`
+		Custom []string `yaml:"custom"`
+	} `yaml:"rules"`
+	Agents struct {
+		Builtin []string `yaml:"builtin"`
+		Custom  []struct {
+			Name string `yaml:"name"`
+		} `yaml:"custom"`
+	} `yaml:"agents"`
+}
+
+func collectConfigInfo(root string) ConfigInfo {
+	configPath := filepath.Join(root, ".ai", "config", "workflow.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ConfigInfo{}
+	}
+
+	var pc partialConfig
+	if err := yaml.Unmarshal(data, &pc); err != nil {
+		return ConfigInfo{}
+	}
+
+	info := ConfigInfo{
+		RulesKit:      pc.Rules.Kit,
+		RulesCustom:   pc.Rules.Custom,
+		AgentsBuiltin: pc.Agents.Builtin,
+	}
+	for _, agent := range pc.Agents.Custom {
+		if agent.Name != "" {
+			info.AgentsCustom = append(info.AgentsCustom, agent.Name)
+		}
+	}
+	return info
 }
 
 func listCodexLogs(exeLogsDir string, issueID int) []Artifact {

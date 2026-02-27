@@ -47,6 +47,10 @@ func TestKitFSContainsRequiredDirectories(t *testing.T) {
 		".ai/skills/principal-workflow/phases",
 		".ai/skills/principal-workflow/tasks",
 		".ai/skills/principal-workflow/references",
+		".ai/skills/post-mortem",
+		".ai/skills/post-mortem/phases",
+		".ai/skills/release-checklist",
+		".ai/skills/release-checklist/phases",
 		// Subagents
 		".claude/agents",
 	}

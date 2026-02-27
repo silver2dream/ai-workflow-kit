@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
@@ -17,13 +18,14 @@ import (
 // DispatchOptions contains options for DispatchWorker
 type DispatchOptions struct {
 	IssueNumber        int
-	PRNumber           int           // PR number (used when MergeIssue is set to get base branch)
+	PRNumber           int                // PR number (used when MergeIssue is set to get base branch)
 	PrincipalSessionID string
-	StateRoot          string        // defaults to git root
-	GHTimeout          time.Duration // GitHub API timeout (default: 30s)
-	WorkerTimeout      time.Duration // Worker execution timeout (default: 60m)
-	MaxRetries         int           // Max retry count (default: 3)
-	MergeIssue         string        // "conflict" or "rebase" - indicates Worker needs to fix merge issues
+	StateRoot          string             // defaults to git root
+	GHTimeout          time.Duration      // GitHub API timeout (default: 30s)
+	WorkerTimeout      time.Duration      // Worker execution timeout (default: 60m)
+	MaxRetries         int                // Max retry count (default: 3)
+	MergeIssue         string             // "conflict" or "rebase" - indicates Worker needs to fix merge issues
+	HookRunner         *hooks.HookRunner  // nil = no hooks
 }
 
 // DispatchOutput is the output for bash eval compatibility
@@ -331,6 +333,22 @@ PR 分支落後 base branch，請執行以下步驟：
 		fmt.Sprintf(`{"issue_id":"%d","repo":"%s"}`, opts.IssueNumber, meta.Repo))
 	logger.Log("✓ 已記錄 worker_dispatched")
 
+	// Fire pre_dispatch hooks
+	if opts.HookRunner != nil {
+		hookEnv := map[string]string{
+			"AWK_ISSUE": fmt.Sprintf("%d", opts.IssueNumber),
+			"AWK_REPO":  meta.Repo,
+		}
+		if err := opts.HookRunner.Fire(ctx, "pre_dispatch", hookEnv); err != nil {
+			logger.Log("✗ pre_dispatch hook aborted: %v", err)
+			_ = ghClient.RemoveLabel(ctx, opts.IssueNumber, "in-progress")
+			return &DispatchOutput{
+				Status: "failed",
+				Error:  fmt.Sprintf("pre_dispatch hook aborted: %v", err),
+			}, nil
+		}
+	}
+
 	// Step 6: Execute worker with timeout (S4 fix)
 	logger.Log("執行 Worker...")
 	workerCtx, workerCancel := context.WithTimeout(ctx, opts.WorkerTimeout)
@@ -392,7 +410,22 @@ PR 分支落後 base branch，請執行以下步驟：
 		return handleWorkerSuccessNoChanges(ctx, opts, logger, ghClient, result)
 	}
 
-	return handleWorkerFailure(ctx, opts, logger, ghClient, meta, result.Status)
+	failOutput, failErr := handleWorkerFailure(ctx, opts, logger, ghClient, meta, result.Status)
+
+	// Fire post_dispatch hooks (non-blocking)
+	if opts.HookRunner != nil {
+		status := "failed"
+		if failOutput != nil {
+			status = failOutput.Status
+		}
+		hookEnv := map[string]string{
+			"AWK_ISSUE":  fmt.Sprintf("%d", opts.IssueNumber),
+			"AWK_STATUS": status,
+		}
+		_ = opts.HookRunner.Fire(ctx, "post_dispatch", hookEnv)
+	}
+
+	return failOutput, failErr
 }
 
 // handleWorkerSuccess handles successful worker execution
@@ -479,6 +512,16 @@ func handleWorkerSuccess(ctx context.Context, opts DispatchOptions, logger *Disp
 	// Reset consecutive failures
 	_ = ResetConsecutiveFailures(opts.StateRoot)
 
+	// Fire post_dispatch hooks (non-blocking)
+	if opts.HookRunner != nil {
+		hookEnv := map[string]string{
+			"AWK_ISSUE":  fmt.Sprintf("%d", opts.IssueNumber),
+			"AWK_STATUS": "success",
+			"AWK_PR_URL": result.PRURL,
+		}
+		_ = opts.HookRunner.Fire(ctx, "post_dispatch", hookEnv)
+	}
+
 	return &DispatchOutput{
 		Status: "success",
 		PRURL:  result.PRURL,
@@ -557,6 +600,16 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 		_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber, comment)
 
 		logger.Log("✓ 已標記為 worker-failed")
+
+		// Fire on_failure hooks (non-blocking)
+		if opts.HookRunner != nil {
+			hookEnv := map[string]string{
+				"AWK_ISSUE":          fmt.Sprintf("%d", opts.IssueNumber),
+				"AWK_FAILURE_REASON": failReason,
+				"AWK_ATTEMPTS":       fmt.Sprintf("%d", failCount),
+			}
+			_ = opts.HookRunner.Fire(ctx, "on_failure", hookEnv)
+		}
 
 		// Record worker_failed
 		recordSessionAction(opts.StateRoot, opts.PrincipalSessionID, "worker_failed",

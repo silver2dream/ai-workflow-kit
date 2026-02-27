@@ -7,5 +7,5 @@ import "embed"
 // NOTE: This embeds only tracked files. Runtime state under `.ai/state/` is ignored by git
 // and should not be embedded into release binaries.
 //
-//go:embed .ai/config/* .ai/rules/_kit/*.md .ai/rules/_examples/*.md .ai/skills/principal-workflow/*.md .ai/skills/principal-workflow/*/*.md .ai/specs/*/*.md .ai/templates/* .claude/agents/*.md
+//go:embed .ai/config/* .ai/rules/_kit/*.md .ai/rules/_examples/*.md .ai/skills/principal-workflow/*.md .ai/skills/principal-workflow/*/*.md .ai/skills/post-mortem/*.md .ai/skills/post-mortem/*/*.md .ai/skills/release-checklist/*.md .ai/skills/release-checklist/*/*.md .ai/specs/*/*.md .ai/templates/* .claude/agents/*.md
 var KitFS embed.FS

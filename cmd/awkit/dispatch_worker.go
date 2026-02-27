@@ -5,8 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
@@ -120,6 +123,13 @@ func cmdDispatchWorker(args []string) int {
 	dispatchCleanup := worker.NewDispatchCleanup(*issueNumber, *stateRoot, ghClient)
 	cleanupMgr.Register(dispatchCleanup.Run)
 
+	// Load hooks from config
+	var hookRunner *hooks.HookRunner
+	configPath := filepath.Join(*stateRoot, ".ai", "config", "workflow.yaml")
+	if cfg, err := analyzer.LoadConfig(configPath); err == nil {
+		hookRunner = hooks.NewHookRunner(cfg.Hooks, *stateRoot, os.Stderr)
+	}
+
 	// Run the dispatch
 	ctx := cleanupMgr.Context()
 	opts := worker.DispatchOptions{
@@ -131,6 +141,7 @@ func cmdDispatchWorker(args []string) int {
 		WorkerTimeout:      *workerTimeout,
 		MaxRetries:         *maxRetries,
 		MergeIssue:         *mergeIssue,
+		HookRunner:         hookRunner,
 	}
 
 	result, err := worker.DispatchWorker(ctx, opts)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
+	"gopkg.in/yaml.v3"
 )
 
 // PreflightChecker performs pre-flight checks before starting the workflow
@@ -216,21 +217,49 @@ func (p *PreflightChecker) CheckClaudeCLI() CheckResult {
 	}
 }
 
-// CheckCodexCLI checks if codex CLI is installed (warning only)
+// CheckCodexCLI checks if the configured worker backend CLI is installed (warning only).
+// It reads worker.backend from config and checks the corresponding binary.
 func (p *PreflightChecker) CheckCodexCLI() CheckResult {
-	_, err := exec.LookPath("codex")
+	backend := "codex"
+	if p.config != nil {
+		configPath := filepath.Join(p.baseDir(), ".ai", "config", "workflow.yaml")
+		if data, err := os.ReadFile(configPath); err == nil {
+			// Quick parse to get worker.backend without importing analyzer
+			type workerCfg struct {
+				Worker struct {
+					Backend string `yaml:"backend"`
+				} `yaml:"worker"`
+			}
+			var wc workerCfg
+			if parseErr := parseYAMLWorkerBackend(data, &wc); parseErr == nil && wc.Worker.Backend != "" {
+				backend = wc.Worker.Backend
+			}
+		}
+	}
+
+	var binaryName, displayName string
+	switch backend {
+	case "claude-code":
+		binaryName = "claude"
+		displayName = "claude CLI (worker backend: claude-code)"
+	default:
+		binaryName = "codex"
+		displayName = "codex CLI (worker backend: codex)"
+	}
+
+	_, err := exec.LookPath(binaryName)
 	if err != nil {
 		return CheckResult{
-			Name:    "codex CLI",
+			Name:    displayName,
 			Passed:  true, // Non-fatal
-			Message: "codex CLI not installed (worker execution may fail)",
+			Message: fmt.Sprintf("%s not installed (worker execution may fail)", binaryName),
 			Warning: true,
 		}
 	}
 	return CheckResult{
-		Name:    "codex CLI",
+		Name:    displayName,
 		Passed:  true,
-		Message: "codex CLI installed",
+		Message: fmt.Sprintf("%s installed", binaryName),
 	}
 }
 
@@ -651,4 +680,9 @@ func (p *PreflightChecker) CheckGitHubRepo() CheckResult {
 // Config returns the loaded configuration
 func (p *PreflightChecker) Config() *Config {
 	return p.config
+}
+
+// parseYAMLWorkerBackend is a lightweight YAML parser just for worker.backend field.
+func parseYAMLWorkerBackend(data []byte, out interface{}) error {
+	return yaml.Unmarshal(data, out)
 }

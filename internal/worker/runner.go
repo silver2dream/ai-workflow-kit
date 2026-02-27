@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
@@ -45,6 +46,38 @@ type workflowConfig struct {
 	Git        workflowGit        `yaml:"git"`
 	Escalation workflowEscalation `yaml:"escalation"`
 	Timeouts   workflowTimeouts   `yaml:"timeouts"`
+	Feedback   workflowFeedback   `yaml:"feedback"`
+	Worker     workflowWorker     `yaml:"worker"`
+}
+
+type workflowWorker struct {
+	Backend    string                 `yaml:"backend"`
+	ClaudeCode workflowClaudeCode     `yaml:"claude_code"`
+}
+
+type workflowClaudeCode struct {
+	Model                      string `yaml:"model"`
+	MaxTurns                   int    `yaml:"max_turns"`
+	DangerouslySkipPermissions bool   `yaml:"dangerously_skip_permissions"`
+}
+
+type workflowFeedback struct {
+	Enabled            *bool `yaml:"enabled"`
+	MaxHistoryInPrompt int   `yaml:"max_history_in_prompt"`
+}
+
+func (f *workflowFeedback) isEnabled() bool {
+	if f.Enabled == nil {
+		return true
+	}
+	return *f.Enabled
+}
+
+func (f *workflowFeedback) maxHistory() int {
+	if f.MaxHistoryInPrompt <= 0 {
+		return 10
+	}
+	return f.MaxHistoryInPrompt
 }
 
 type workflowRepo struct {
@@ -540,7 +573,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 
 	workDirInstruction := buildWorkDirInstruction(repoType, repoPath, workDir, repoName)
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), opts.IssueID, opts.GHTimeout); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, opts.GHTimeout, &cfg.Feedback); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -555,7 +588,23 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		_ = trace.StepEnd("success", "", nil)
 	}
 
-	codex := RunCodex(ctx, CodexOptions{
+	// Select and run AI worker backend
+	backendName := cfg.Worker.Backend
+	if backendName == "" {
+		backendName = "codex"
+	}
+	registry := DefaultRegistry(
+		cfg.Worker.ClaudeCode.Model,
+		cfg.Worker.ClaudeCode.MaxTurns,
+		cfg.Worker.ClaudeCode.DangerouslySkipPermissions,
+	)
+	backend, backendErr := registry.Get(backendName)
+	if backendErr != nil {
+		// Fallback to codex if unknown backend
+		fmt.Fprintf(os.Stderr, "[worker] warning: %v, falling back to codex\n", backendErr)
+		backend = NewCodexBackend()
+	}
+	codex := backend.Execute(ctx, BackendOptions{
 		WorkDir:     wtDir,
 		PromptFile:  promptFile,
 		SummaryFile: summaryFile,
@@ -1057,7 +1106,7 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket string, issueID int, ghTimeout time.Duration) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, ghTimeout time.Duration, feedbackCfg *workflowFeedback) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
 
 	builder := strings.Builder{}
@@ -1098,6 +1147,21 @@ func writePromptFile(path, workDirInstruction, ticket string, issueID int, ghTim
 		builder.WriteString("============================================================\n")
 		builder.WriteString(reviewComments)
 		builder.WriteString("\n============================================================\n")
+	}
+
+	// Inject historical feedback patterns from past rejections
+	maxEntries := 10
+	feedbackEnabled := true
+	if feedbackCfg != nil {
+		feedbackEnabled = feedbackCfg.isEnabled()
+		maxEntries = feedbackCfg.maxHistory()
+	}
+	if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); feedbackEnabled && historicalFeedback != "" {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(historicalFeedback)
+		builder.WriteString("============================================================\n")
 	}
 
 	builder.WriteString("\nAfter making changes:\n")
@@ -1261,6 +1325,17 @@ func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 		result = result[len(result)-4000:]
 	}
 	return result
+}
+
+func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
+	if maxEntries <= 0 {
+		maxEntries = 10
+	}
+	entries, err := reviewer.LoadRecentFeedback(stateRoot, maxEntries)
+	if err != nil || len(entries) == 0 {
+		return ""
+	}
+	return reviewer.FormatFeedbackForPrompt(entries, 2000)
 }
 
 func runAttemptGuard(ctx context.Context, stateRoot string, issueID int, logFile string, opts RunIssueOptions) error {
