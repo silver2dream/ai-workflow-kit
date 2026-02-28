@@ -641,10 +641,11 @@ func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, tic
 
 // runWorkerCommand runs the worker using awkit run-issue command
 func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo, mergeIssue string, prNumber int) (int, bool) {
-	// Check if awkit binary exists
-	awkitPath, err := exec.LookPath("awkit")
+	// Use the same binary as the current process to avoid PATH mismatches
+	// (e.g. ~/.local/bin/awkit vs $GOPATH/bin/awkit)
+	awkitPath, err := os.Executable()
 	if err != nil {
-		return 1, false // awkit not found
+		return 1, false
 	}
 
 	args := []string{"run-issue",
