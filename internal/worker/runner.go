@@ -568,6 +568,23 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		_ = runGit(ctx, wtDir, opts.GitTimeout, "rebase", "--abort")
 	}
 
+	// Run setup command (dependency install) before AI worker starts.
+	// This must happen before Codex because the AI worker will run
+	// verification commands from the ticket, which require dependencies.
+	setupCmd := getSetupCommand(cfg, repoName)
+	if setupCmd != "" {
+		logger.Log("執行依賴安裝 (verify.setup)...")
+		logger.Log("  運行: %s", setupCmd)
+		if setupErr := runVerificationCommand(ctx, workDir, setupCmd, opts.GitTimeout); setupErr != nil {
+			runErr = fmt.Errorf("verify.setup failed: %s: %w", setupCmd, setupErr)
+			logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "verify_setup", runErr.Error())
+			result.Error = runErr.Error()
+			result.Status = "failed"
+			return result, runErr
+		}
+		logger.Log("  ✓ 依賴安裝完成")
+	}
+
 	titleLine := extractTitleLine(string(ticketBody))
 	if titleLine == "" {
 		titleLine = fmt.Sprintf("issue-%d", opts.IssueID)
@@ -723,24 +740,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	// Run verification tests before commit
 	if trace != nil {
 		trace.StepStart("run_tests")
-	}
-
-	// Run setup command (dependency install) before verification
-	setupCmd := getSetupCommand(cfg, repoName)
-	if setupCmd != "" {
-		logger.Log("執行驗證前置設定...")
-		logger.Log("  運行: %s", setupCmd)
-		if setupErr := runVerificationCommand(ctx, workDir, setupCmd, opts.GitTimeout); setupErr != nil {
-			runErr = fmt.Errorf("verification setup failed: %s: %w", setupCmd, setupErr)
-			result.Error = runErr.Error()
-			result.Status = "failed"
-			if trace != nil {
-				_ = trace.StepEnd("failed", fmt.Sprintf("setup failed: %s: %v", setupCmd, setupErr), nil)
-			}
-			logger.Log("  ✗ 設定失敗: %v", setupErr)
-			return result, runErr
-		}
-		logger.Log("  ✓ 設定完成")
 	}
 
 	// Try to get verification commands from ticket first, fallback to config
