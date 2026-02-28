@@ -297,7 +297,11 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}()
 
 	workerSessionID := generateSessionID("worker")
-	logger.Log("worker_session_id=%s", workerSessionID)
+	logger.Log("worker_session_id=%s issue=#%d repo=%s attempt=%d", workerSessionID, opts.IssueID, repoName, loadAttemptInfo(stateRoot, opts.IssueID).AttemptNumber)
+	logger.Log("config=%s repos=%d", configPath, len(cfg.Repos))
+	if cfgErr != nil {
+		logger.Log("config_warning: %v (using defaults)", cfgErr)
+	}
 	_ = os.Setenv("WORKER_SESSION_ID", workerSessionID)
 	_ = os.Setenv("WORKER_LOG_FILE", workerLogFile)
 
@@ -573,8 +577,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	// verification commands from the ticket, which require dependencies.
 	setupCmd := getSetupCommand(cfg, repoName)
 	if setupCmd != "" {
-		logger.Log("執行依賴安裝 (verify.setup)...")
-		logger.Log("  運行: %s", setupCmd)
+		logger.Log("verify.setup: %s", setupCmd)
 		if setupErr := runVerificationCommand(ctx, workDir, setupCmd, opts.GitTimeout); setupErr != nil {
 			runErr = fmt.Errorf("verify.setup failed: %s: %w", setupCmd, setupErr)
 			logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "verify_setup", runErr.Error())
@@ -624,6 +627,8 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		fmt.Fprintf(os.Stderr, "[worker] warning: %v, falling back to codex\n", backendErr)
 		backend = NewCodexBackend()
 	}
+	logger.Log("AI worker 開始 (backend=%s, timeout=%s)", backendName, resolveTimeout("AI_CODEX_TIMEOUT", opts.CodexTimeout))
+	codexStart := time.Now()
 	codex := backend.Execute(ctx, BackendOptions{
 		WorkDir:     wtDir,
 		PromptFile:  promptFile,
@@ -634,10 +639,13 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		Timeout:     resolveTimeout("AI_CODEX_TIMEOUT", opts.CodexTimeout),
 		Trace:       trace,
 	})
+	codexDuration := time.Since(codexStart)
+	logger.Log("AI worker 結束 (exit=%d, duration=%s, retries=%d)", codex.ExitCode, codexDuration.Truncate(time.Second), codex.RetryCount)
 
 	appendGitStatusDiff(ctx, wtDir, summaryFile)
 
 	if codex.ExitCode != 0 {
+		logger.Log("✗ AI worker 失敗: %s (stage=%s)", codex.FailureReason, codex.FailureStage)
 		runErr = fmt.Errorf("%s", codex.FailureReason)
 		result.ExitCode = codex.ExitCode
 		result.Error = codex.FailureReason
