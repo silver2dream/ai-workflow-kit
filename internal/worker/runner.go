@@ -750,6 +750,24 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		trace.StepStart("run_tests")
 	}
 
+	// Run setup command (dependency install) before verification
+	setupCmd := getSetupCommand(cfg, repoName)
+	if setupCmd != "" {
+		logger.Log("執行驗證前置設定...")
+		logger.Log("  運行: %s", setupCmd)
+		if setupErr := runVerificationCommand(ctx, workDir, setupCmd, opts.GitTimeout); setupErr != nil {
+			runErr = fmt.Errorf("verification setup failed: %s: %w", setupCmd, setupErr)
+			result.Error = runErr.Error()
+			result.Status = "failed"
+			if trace != nil {
+				_ = trace.StepEnd("failed", fmt.Sprintf("setup failed: %s: %v", setupCmd, setupErr), nil)
+			}
+			logger.Log("  ✗ 設定失敗: %v", setupErr)
+			return result, runErr
+		}
+		logger.Log("  ✓ 設定完成")
+	}
+
 	// Try to get verification commands from ticket first, fallback to config
 	verifyCommands := GetVerificationCommandsForRepo(string(ticketBody), repoName)
 	if len(verifyCommands) == 0 {
