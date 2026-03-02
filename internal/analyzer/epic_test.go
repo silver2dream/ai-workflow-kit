@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -345,6 +346,88 @@ func TestDecide_EpicMode_AllComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decide() error = %v", err)
 	}
+	if decision.NextAction != ActionAllComplete {
+		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionAllComplete)
+	}
+
+	// Verify epic issue was closed
+	found := false
+	for _, n := range mockClient.ClosedIssues {
+		if n == 100 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected epic issue #100 to be closed, ClosedIssues = %v", mockClient.ClosedIssues)
+	}
+}
+
+func TestCloseEpicIssues_MultipleSpecs(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := &Config{
+		Specs: SpecsConfig{
+			Active: []string{"project-a", "project-b"},
+			Tracking: TrackingConfig{
+				Mode: TrackingModeGitHubEpic,
+				EpicIssues: map[string]int{
+					"project-a": 100,
+					"project-b": 200,
+				},
+			},
+		},
+		GitHub: GitHubConfig{Labels: DefaultLabels()},
+	}
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+
+	// Both epics all complete
+	mockClient.IssueBodies[100] = "- [x] #10 Done\n"
+	mockClient.IssueBodies[200] = "- [x] #20 Done\n"
+	mockClient.OpenIssueCount = 0
+
+	decision, err := a.Decide(context.Background())
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+	if decision.NextAction != ActionAllComplete {
+		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionAllComplete)
+	}
+
+	// Verify both epic issues were closed
+	closedSet := make(map[int]bool)
+	for _, n := range mockClient.ClosedIssues {
+		closedSet[n] = true
+	}
+	if !closedSet[100] {
+		t.Errorf("Expected epic issue #100 to be closed, ClosedIssues = %v", mockClient.ClosedIssues)
+	}
+	if !closedSet[200] {
+		t.Errorf("Expected epic issue #200 to be closed, ClosedIssues = %v", mockClient.ClosedIssues)
+	}
+}
+
+func TestCloseEpicIssues_ErrorDoesNotBlock(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := &Config{
+		Specs: SpecsConfig{
+			Active:   []string{"my-project"},
+			Tracking: TrackingConfig{Mode: TrackingModeGitHubEpic, EpicIssues: map[string]int{"my-project": 100}},
+		},
+		GitHub: GitHubConfig{Labels: DefaultLabels()},
+	}
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+
+	mockClient.IssueBodies[100] = "- [x] #10 Done\n"
+	mockClient.OpenIssueCount = 0
+	mockClient.CloseIssueError = fmt.Errorf("API rate limit")
+
+	decision, err := a.Decide(context.Background())
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+	// Should still return all_complete even though close failed
 	if decision.NextAction != ActionAllComplete {
 		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionAllComplete)
 	}

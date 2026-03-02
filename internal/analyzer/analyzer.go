@@ -296,6 +296,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 			return decision, nil
 		}
 		// In epic mode, if checkEpicProgress returned nil, all tasks are done
+		a.closeEpicIssues(ctx)
 		return &Decision{
 			NextAction: ActionAllComplete,
 		}, nil
@@ -494,6 +495,27 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 	}
 
 	return nil
+}
+
+// closeEpicIssues closes all epic tracking issues for active specs.
+// Errors are logged as warnings and do not interrupt the workflow.
+func (a *Analyzer) closeEpicIssues(ctx context.Context) {
+	if a.Config == nil {
+		return
+	}
+	for _, spec := range a.Config.Specs.Active {
+		spec = strings.TrimSpace(spec)
+		if spec == "" {
+			continue
+		}
+		epicIssue := a.Config.GetEpicIssue(spec)
+		if epicIssue == 0 {
+			continue
+		}
+		if err := a.GHClient.CloseIssue(ctx, epicIssue); err != nil {
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to close epic #%d for spec %q: %v\n", epicIssue, spec, err)
+		}
+	}
 }
 
 // checkEpicProgress checks GitHub tracking issues for uncompleted tasks.
