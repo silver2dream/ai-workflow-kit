@@ -9,6 +9,11 @@ import (
 	"testing/fstest"
 )
 
+func init() {
+	// Stub out npm install in tests to avoid slow real invocations.
+	npmInstallFunc = func(dir string) error { return nil }
+}
+
 // createMinimalMockFS creates a mock FS with minimal required files
 func createMinimalMockFS() fstest.MapFS {
 	return fstest.MapFS{
