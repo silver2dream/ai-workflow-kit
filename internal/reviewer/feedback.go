@@ -99,14 +99,15 @@ func readFeedbackFile(path string) ([]FeedbackEntry, error) {
 
 // rejectionCategories maps keywords to category names.
 var rejectionCategories = map[string][]string{
-	"test":          {"test", "testing", "unit test", "integration test", "test coverage"},
+	"test":           {"test", "testing", "unit test", "integration test", "test coverage"},
 	"error-handling": {"error handling", "error", "panic", "recover", "exception"},
-	"naming":        {"naming", "variable name", "function name", "rename"},
-	"architecture":  {"architecture", "structure", "layer", "separation of concerns", "dependency"},
-	"security":      {"security", "vulnerability", "injection", "auth", "credential"},
-	"performance":   {"performance", "slow", "optimize", "memory", "cpu", "latency"},
-	"scope":         {"scope", "out of scope", "non-goal", "beyond scope"},
-	"style":         {"style", "formatting", "lint", "convention"},
+	"naming":         {"naming", "variable name", "function name", "rename"},
+	"architecture":   {"architecture", "structure", "layer", "separation of concerns", "dependency"},
+	"security":       {"security", "vulnerability", "injection", "auth", "credential"},
+	"performance":    {"performance", "slow", "optimize", "memory", "cpu", "latency"},
+	"scope":          {"scope", "out of scope", "non-goal", "beyond scope"},
+	"style":          {"style", "formatting", "lint", "convention"},
+	"jittest":        {"jit test", "jittest", "jit-test", "independent test"},
 }
 
 // ExtractCategories scans a review body for common rejection patterns.
