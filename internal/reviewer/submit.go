@@ -194,6 +194,11 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		if jitResult.Error != "" {
 			fmt.Printf("[REVIEW] JiT Test note: %s\n", jitResult.Error)
 		}
+
+		// Record stats (non-blocking)
+		if err := jittest.RecordRun(opts.StateRoot, opts.Language, jitResult); err != nil {
+			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to record JiT stats: %v\n", err)
+		}
 	}
 
 	// Verify evidence using new test-based verification
