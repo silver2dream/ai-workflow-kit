@@ -28,7 +28,7 @@ func TestRun_NilEnabled(t *testing.T) {
 	}
 }
 
-func TestRun_EnabledReturnsStub(t *testing.T) {
+func TestRun_EnabledNoWorkDir(t *testing.T) {
 	cfg := analyzer.JiTTestConfig{
 		Enabled:        boolPtr(true),
 		MaxTests:       5,
@@ -36,18 +36,67 @@ func TestRun_EnabledReturnsStub(t *testing.T) {
 		FailurePolicy:  "warn",
 		Model:          "claude-sonnet-4-6",
 	}
-	result, err := Run(context.Background(), Input{}, cfg)
+	// No WorkDir → git diff will fail → result with error
+	result, err := Run(context.Background(), Input{WorkDir: "/nonexistent", BaseBranch: "main", HeadBranch: "HEAD"}, cfg)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error (Run should return Result, not error): %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
-	if result.Skipped != 5 {
-		t.Errorf("expected 5 skipped, got %d", result.Skipped)
+	if result.Error == "" {
+		t.Error("expected error in result for invalid workdir")
 	}
-	if result.Error != "jittest not yet implemented" {
-		t.Errorf("expected stub error message, got: %s", result.Error)
+}
+
+func TestRun_EnabledFullPipeline(t *testing.T) {
+	origClaude := claudeRunner
+	origExec := executeTests
+	defer func() {
+		claudeRunner = origClaude
+		executeTests = origExec
+	}()
+
+	claudeRunner = func(ctx context.Context, prompt, model, workDir string) (string, error) {
+		return "```go filename: pkg/foo_jittest_test.go\npackage pkg\nfunc TestFoo(t *testing.T) {}\n```\n", nil
+	}
+	executeTests = func(ctx context.Context, workDir, testCommand string, testFiles []string) testExecOutcome {
+		return testExecOutcome{exitCode: 0}
+	}
+
+	dir := t.TempDir()
+
+	cfg := analyzer.JiTTestConfig{
+		Enabled:        boolPtr(true),
+		MaxTests:       3,
+		TimeoutSeconds: 60,
+		FailurePolicy:  "warn",
+		Model:          "test",
+	}
+
+	// Create a fake diff scenario
+	origGetDiff := getDiffFunc
+	defer func() { getDiffFunc = origGetDiff }()
+	getDiffFunc = func(ctx context.Context, workDir, base, head string) (string, error) {
+		return "+++ b/pkg/foo.go\n+func Foo() {}", nil
+	}
+
+	result, err := Run(context.Background(), Input{
+		WorkDir:     dir,
+		BaseBranch:  "main",
+		HeadBranch:  "HEAD",
+		Language:    "go",
+		TestCommand: "echo ok",
+	}, cfg)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Generated != 1 {
+		t.Errorf("expected 1 generated, got %d", result.Generated)
+	}
+	if result.Passed != 1 {
+		t.Errorf("expected 1 passed, got %d", result.Passed)
 	}
 }
 

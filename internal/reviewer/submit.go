@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
@@ -184,6 +185,17 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		}
 	}
 
+	// JiTTest: run independent tests generated from PR diff (if enabled)
+	jitResult := runJiTTestIfEnabled(ctx, opts)
+	if jitResult != nil {
+		fmt.Printf("[REVIEW] JiT Tests — Generated: %d, Passed: %d, Failed: %d, Skipped: %d\n",
+			jitResult.Generated, jitResult.Passed, jitResult.Failed, jitResult.Skipped)
+
+		if jitResult.Error != "" {
+			fmt.Printf("[REVIEW] JiT Test note: %s\n", jitResult.Error)
+		}
+	}
+
 	// Verify evidence using new test-based verification
 	fmt.Printf("[REVIEW] Starting verification...\n")
 	fmt.Printf("[REVIEW] Worktree: %s\n", opts.WorktreePath)
@@ -232,9 +244,20 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 
 %s`, sessionID, sessionID, timestamp, opts.CIStatus, criteriaCount, opts.Score, opts.ReviewBody)
 
+	// Append JiT test results if available
+	if jitResult != nil && jitResult.Generated > 0 {
+		commentBody += "\n\n" + jitResult.FormatComment()
+	}
+
 	// Post PR comment (non-critical, log warning if failed)
 	if err := postPRComment(ctx, opts.PRNumber, commentBody, opts.GHTimeout); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post PR comment: %v\n", err)
+	}
+
+	// Check if JiT test failure should block merge
+	if jitResult != nil && jitResult.IsBlocking(jitFailurePolicy(opts.StateRoot)) {
+		fmt.Printf("[REVIEW] ❌ JiT tests failed with block policy — requesting changes\n")
+		return handleJiTTestBlock(ctx, opts, sessionID, jitResult)
 	}
 
 	// Submit GitHub Review
@@ -674,4 +697,89 @@ func cleanupWorktree(stateRoot string, issueNumber int) error {
 		}
 	}
 	return nil
+}
+
+// runJiTTestIfEnabled runs JiT tests if enabled in config.
+// Returns nil if disabled or config cannot be loaded (graceful skip).
+func runJiTTestIfEnabled(ctx context.Context, opts SubmitReviewOptions) *jittest.Result {
+	cfg, err := analyzer.LoadConfig(filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml"))
+	if err != nil {
+		return nil
+	}
+	jitCfg := cfg.Review.JiTTest
+	if !jitCfg.IsEnabled() {
+		return nil
+	}
+
+	fmt.Printf("[REVIEW] Running JiT tests...\n")
+
+	// Determine base branch from config
+	baseBranch := "main"
+	if len(cfg.Repos) > 0 {
+		// Use the integration branch from git-workflow rules if available
+		// For now, detect from PR
+	}
+
+	input := jittest.Input{
+		PRNumber:    opts.PRNumber,
+		IssueNumber: opts.IssueNumber,
+		WorkDir:     opts.WorktreePath,
+		BaseBranch:  baseBranch,
+		HeadBranch:  "HEAD",
+		Language:    opts.Language,
+		TestCommand: opts.TestCommand,
+	}
+
+	jitCtx, cancel := context.WithTimeout(ctx, time.Duration(jitCfg.TimeoutSeconds)*time.Second)
+	defer cancel()
+
+	result, err := jittest.Run(jitCtx, input, jitCfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] JiT test skipped: %v\n", err)
+		return nil
+	}
+
+	return result
+}
+
+// jitFailurePolicy loads the JiTTest failure policy from config.
+func jitFailurePolicy(stateRoot string) string {
+	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	if err != nil {
+		return "warn"
+	}
+	return cfg.Review.JiTTest.FailurePolicy
+}
+
+// handleJiTTestBlock handles JiT test failure in block mode.
+func handleJiTTestBlock(ctx context.Context, opts SubmitReviewOptions, sessionID string, result *jittest.Result) (*SubmitReviewResult, error) {
+	// Record feedback for re-dispatch
+	_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		IssueID:    opts.IssueNumber,
+		PRNumber:   opts.PRNumber,
+		Score:      opts.Score,
+		Categories: []string{"jittest"},
+		Summary:    truncateSummary(result.FormatFeedback(), 500),
+	})
+
+	// Post comment on issue
+	comment := fmt.Sprintf("## AWK Review blocked (JiT Test)\n\nJiT tests failed with block policy.\n\nPR: #%d\n\n%s\n\nMarked review-failed. Worker will be re-dispatched.",
+		opts.PRNumber, result.FormatComment())
+	if err := postIssueComment(ctx, opts.IssueNumber, comment, opts.GHTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
+	}
+
+	// Label issue as review-failed
+	cfg, _ := analyzer.LoadConfig(filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml"))
+	reviewFailedLabel := "review-failed"
+	if cfg != nil && cfg.GitHub.Labels.ReviewFailed != "" {
+		reviewFailedLabel = cfg.GitHub.Labels.ReviewFailed
+	}
+	_ = editIssueLabels(ctx, opts.IssueNumber, []string{reviewFailedLabel}, nil, opts.GHTimeout)
+
+	return &SubmitReviewResult{
+		Result: "review_blocked",
+		Reason: fmt.Sprintf("JiT test failed: %d/%d tests failed", result.Failed, result.Generated),
+	}, nil
 }

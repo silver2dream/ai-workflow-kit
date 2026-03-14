@@ -53,10 +53,41 @@ func Run(ctx context.Context, input Input, cfg analyzer.JiTTestConfig) (*Result,
 		return nil, fmt.Errorf("jittest is not enabled")
 	}
 
-	// TODO(#164): implement generator
-	// TODO(#165): implement runner
-	return &Result{
-		Skipped: cfg.MaxTests,
-		Error:   "jittest not yet implemented",
-	}, nil
+	start := time.Now()
+
+	// Step 1: Get diff
+	diff, err := getDiffFunc(ctx, input.WorkDir, input.BaseBranch, input.HeadBranch)
+	if err != nil {
+		return &Result{Error: fmt.Sprintf("failed to get diff: %v", err), Duration: time.Since(start)}, nil
+	}
+	if diff == "" {
+		return &Result{Error: "empty diff", Duration: time.Since(start)}, nil
+	}
+
+	// Step 2: Read source files referenced in diff
+	sourceFiles := ReadSourceFiles(input.WorkDir, diff)
+
+	// Step 3: Generate tests via LLM
+	genInput := GenerateInput{
+		Diff:        diff,
+		SourceFiles: sourceFiles,
+		Language:    input.Language,
+		MaxTests:    cfg.MaxTests,
+		Model:       cfg.Model,
+		WorkDir:     input.WorkDir,
+	}
+
+	tests, err := GenerateTests(ctx, genInput)
+	if err != nil {
+		return &Result{
+			Error:    fmt.Sprintf("generation failed: %v", err),
+			Duration: time.Since(start),
+		}, nil
+	}
+
+	// Step 4: Execute tests in worktree (cleanup is handled by RunTests)
+	result := RunTests(ctx, input.WorkDir, tests, input.TestCommand)
+	result.Duration = time.Since(start)
+
+	return result, nil
 }

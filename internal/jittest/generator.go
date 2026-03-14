@@ -20,6 +20,9 @@ type GenerateInput struct {
 	WorkDir     string            // worktree root
 }
 
+// getDiffFunc is a function variable for getting PR diffs. Replaceable in tests.
+var getDiffFunc = GetDiff
+
 // claudeRunner is a function variable for invoking the Claude CLI.
 // Replaced in tests to avoid real LLM calls.
 var claudeRunner = runClaude
