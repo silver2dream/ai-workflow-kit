@@ -139,6 +139,8 @@ func run() int {
 		return cmdCreateEpic(os.Args[2:])
 	case "audit-epic":
 		return cmdAuditEpic(os.Args[2:])
+	case "jittest":
+		return cmdJiTTest(os.Args[2:])
 	case "doctor":
 		return cmdDoctor(os.Args[2:])
 	case "reset":
@@ -195,6 +197,7 @@ Commands:
   create-task     Create GitHub Issue from tasks.md entry
   create-epic     Create GitHub Tracking Issue (Epic) from body file
   audit-epic      Audit Epic coverage against design.md
+  jittest         Run JiT (Just-in-Time) tests for a PR
   doctor          Check project health and identify issues
   reset           Reset project state for fresh start
   generate        Generate helper docs and scaffolding
@@ -286,6 +289,8 @@ func cmdHelp(command string) int {
 		usageCreateEpic()
 	case "audit-epic":
 		usageAuditEpic()
+	case "jittest":
+		usageJiTTest()
 	case "doctor":
 		usageDoctor()
 	case "reset":

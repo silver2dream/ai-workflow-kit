@@ -20,7 +20,7 @@ type PIDFile struct {
 // WritePIDFile writes worker PID info for crash recovery
 func WritePIDFile(stateRoot string, issueNumber int, info *PIDFile) error {
 	pidDir := filepath.Join(stateRoot, ".ai", "state", "pids")
-	if err := os.MkdirAll(pidDir, 0755); err != nil {
+	if err := os.MkdirAll(pidDir, 0700); err != nil {
 		return fmt.Errorf("failed to create pids directory: %w", err)
 	}
 
@@ -30,7 +30,7 @@ func WritePIDFile(stateRoot string, issueNumber int, info *PIDFile) error {
 		return fmt.Errorf("failed to marshal PID info: %w", err)
 	}
 
-	return os.WriteFile(pidPath, data, 0644)
+	return os.WriteFile(pidPath, data, 0600)
 }
 
 // ReadPIDFile reads worker PID info

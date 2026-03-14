@@ -3,6 +3,7 @@ package install
 import (
 	"bufio"
 	"bytes"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 )
@@ -1756,7 +1758,7 @@ describe("smoke", () => {
 
 	// Install npm dependencies if package.json was created
 	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil {
-		_ = npmInstall(targetDir)
+		_ = npmInstallFunc(targetDir)
 	}
 
 	return res, nil
@@ -1937,7 +1939,7 @@ describe('smoke', () => {
 
 	// Install npm dependencies if package.json was created
 	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil {
-		_ = npmInstall(targetDir)
+		_ = npmInstallFunc(targetDir)
 	}
 
 	return res, nil
@@ -2082,6 +2084,10 @@ func scaffoldFiles(files []struct {
 	return result, nil
 }
 
+// npmInstallFunc is the function used to run npm install. It can be
+// replaced in tests to avoid slow real npm invocations.
+var npmInstallFunc = npmInstall
+
 // npmInstall runs "npm install" in the given directory.
 // Errors are non-fatal — scaffold succeeds even if npm install fails.
 func npmInstall(dir string) error {
@@ -2090,11 +2096,16 @@ func npmInstall(dir string) error {
 		return fmt.Errorf("npm not found in PATH")
 	}
 	fmt.Printf("  Installing npm dependencies in %s ...\n", filepath.Base(dir))
-	cmd := exec.Command(npmPath, "install")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, npmPath, "install")
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("npm install timed out after 2 minutes")
+		}
 		return err
 	}
 	fmt.Println("  npm install done.")
