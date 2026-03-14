@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
@@ -74,6 +75,9 @@ func (d *Doctor) RunAll(ctx context.Context) []CheckResult {
 
 	// 6. Check Claude settings permissions
 	results = append(results, d.CheckClaudeSettings()...)
+
+	// 7. Check JiTTest calibration suggestion
+	results = append(results, d.CheckJiTTestCalibration()...)
 
 	return results
 }
@@ -410,6 +414,26 @@ func (d *Doctor) CheckClaudeSettings() []CheckResult {
 		}}
 	}
 
+	return nil
+}
+
+// CheckJiTTestCalibration checks if JiTTest stats suggest upgrading failure_policy to "block"
+func (d *Doctor) CheckJiTTestCalibration() []CheckResult {
+	stats, err := jittest.LoadStats(d.StateRoot)
+	if err != nil || stats.TotalRuns == 0 {
+		return nil
+	}
+
+	if stats.ShouldSuggestBlock() {
+		return []CheckResult{{
+			Name:   "JiTTest Calibration",
+			Status: "warning",
+			Message: fmt.Sprintf(
+				"JiTTest FP rate %.1f%% across %d runs. Consider upgrading failure_policy to \"block\" in workflow.yaml.",
+				stats.FalsePositiveRate(), stats.TotalRuns,
+			),
+		}}
+	}
 	return nil
 }
 

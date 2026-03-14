@@ -20,14 +20,18 @@ They provide an independent verification layer beyond Worker-written tests.
 
 Usage:
   awkit jittest --pr <N> --issue <N> [options]
+  awkit jittest --stats
+  awkit jittest --mark-fp
 
-Required:
+Required (for test execution):
   --pr          PR number
   --issue       Issue number
 
 Options:
   --state-root  Override state root (default: git root)
   --dry-run     Show what would be done without executing
+  --stats       Show cumulative JiTTest statistics
+  --mark-fp     Mark a false positive (increment counter)
   --help        Show this help
 
 Output:
@@ -36,6 +40,8 @@ Output:
 Examples:
   awkit jittest --pr 42 --issue 10
   awkit jittest --pr 42 --issue 10 --dry-run
+  awkit jittest --stats
+  awkit jittest --mark-fp
 `)
 }
 
@@ -48,6 +54,8 @@ func cmdJiTTest(args []string) int {
 	issue := fs.Int("issue", 0, "")
 	stateRoot := fs.String("state-root", "", "")
 	dryRun := fs.Bool("dry-run", false, "")
+	showStats := fs.Bool("stats", false, "")
+	markFP := fs.Bool("mark-fp", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
@@ -60,6 +68,38 @@ func cmdJiTTest(args []string) int {
 		return 0
 	}
 
+	root := *stateRoot
+	if root == "" {
+		var err error
+		root, err = resolveGitRoot()
+		if err != nil {
+			errorf("failed to resolve git root: %v\n", err)
+			return 1
+		}
+	}
+
+	// Handle --stats subcommand
+	if *showStats {
+		stats, err := jittest.LoadStats(root)
+		if err != nil {
+			errorf("failed to load stats: %v\n", err)
+			return 1
+		}
+		fmt.Print(jittest.FormatStats(stats))
+		return 0
+	}
+
+	// Handle --mark-fp subcommand
+	if *markFP {
+		if err := jittest.MarkFalsePositive(root); err != nil {
+			errorf("failed to mark false positive: %v\n", err)
+			return 1
+		}
+		fmt.Println("False positive marked.")
+		return 0
+	}
+
+	// Normal execution requires --pr and --issue
 	if *pr == 0 {
 		errorf("--pr is required\n")
 		usageJiTTest()
@@ -69,16 +109,6 @@ func cmdJiTTest(args []string) int {
 		errorf("--issue is required\n")
 		usageJiTTest()
 		return 2
-	}
-
-	root := *stateRoot
-	if root == "" {
-		var err error
-		root, err = resolveGitRoot()
-		if err != nil {
-			errorf("failed to resolve git root: %v\n", err)
-			return 1
-		}
 	}
 
 	// Load config
@@ -118,6 +148,11 @@ func cmdJiTTest(args []string) int {
 	if err != nil {
 		errorf("jittest: %v\n", err)
 		return 1
+	}
+
+	// Record stats
+	if recordErr := jittest.RecordRun(root, cfg.Repos[0].Language, result); recordErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to record stats: %v\n", recordErr)
 	}
 
 	enc := json.NewEncoder(os.Stdout)
