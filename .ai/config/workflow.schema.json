@@ -261,6 +261,41 @@
           "enum": ["squash", "merge", "rebase"],
           "default": "squash",
           "description": "Git merge strategy used when merging approved PRs"
+        },
+        "jittest": {
+          "type": "object",
+          "description": "JiT (Just-in-Time) test generation and execution at review time",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable JiT test generation from PR diffs during review"
+            },
+            "max_tests": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5,
+              "description": "Maximum number of tests to generate per PR"
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 600,
+              "default": 120,
+              "description": "Total timeout for JiT test generation and execution"
+            },
+            "failure_policy": {
+              "enum": ["warn", "block"],
+              "default": "warn",
+              "description": "Action on JiT test failure: warn (comment only) or block (fail review)"
+            },
+            "model": {
+              "type": "string",
+              "default": "claude-sonnet-4-6",
+              "description": "LLM model used for test generation"
+            }
+          }
         }
       }
     },

@@ -12,6 +12,7 @@ type Config struct {
 	Specs      SpecsConfig      `yaml:"specs"`
 	GitHub     GitHubConfig     `yaml:"github"`
 	Repos      []RepoConfig     `yaml:"repos"`
+	Review     ReviewConfig     `yaml:"review"`
 	Escalation EscalationConfig `yaml:"escalation"`
 	Feedback   FeedbackConfig   `yaml:"feedback"`
 	Hooks      HooksConfig      `yaml:"hooks"`
@@ -82,6 +83,31 @@ type ClaudeCodeConfig struct {
 	Model                      string `yaml:"model"`                        // default: "sonnet"
 	MaxTurns                   int    `yaml:"max_turns"`                    // default: 50
 	DangerouslySkipPermissions bool   `yaml:"dangerously_skip_permissions"` // default: false
+}
+
+// ReviewConfig represents the review section in workflow.yaml
+type ReviewConfig struct {
+	ScoreThreshold int           `yaml:"score_threshold"`
+	MergeStrategy  string        `yaml:"merge_strategy"`
+	JiTTest        JiTTestConfig `yaml:"jittest"`
+}
+
+// JiTTestConfig configures Just-in-Time Test generation and execution.
+// JiT tests are generated from PR diffs at review time, run once, then discarded.
+type JiTTestConfig struct {
+	Enabled        *bool  `yaml:"enabled"`         // nil = false (default disabled)
+	MaxTests       int    `yaml:"max_tests"`       // max tests to generate (default: 5)
+	TimeoutSeconds int    `yaml:"timeout_seconds"` // total timeout in seconds (default: 120)
+	FailurePolicy  string `yaml:"failure_policy"`  // "warn" (default) | "block"
+	Model          string `yaml:"model"`           // LLM model for generation (default: "claude-sonnet-4-6")
+}
+
+// IsEnabled returns whether JiTTest is enabled (default: false).
+func (c *JiTTestConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return false
+	}
+	return *c.Enabled
 }
 
 // FeedbackConfig represents review feedback loop settings.
@@ -297,6 +323,26 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Feedback.MaxHistoryInPrompt <= 0 {
 		cfg.Feedback.MaxHistoryInPrompt = 10
+	}
+
+	// Review defaults
+	if cfg.Review.ScoreThreshold <= 0 {
+		cfg.Review.ScoreThreshold = 7
+	}
+	if cfg.Review.MergeStrategy == "" {
+		cfg.Review.MergeStrategy = "squash"
+	}
+	if cfg.Review.JiTTest.MaxTests <= 0 {
+		cfg.Review.JiTTest.MaxTests = 5
+	}
+	if cfg.Review.JiTTest.TimeoutSeconds <= 0 {
+		cfg.Review.JiTTest.TimeoutSeconds = 120
+	}
+	if cfg.Review.JiTTest.FailurePolicy == "" {
+		cfg.Review.JiTTest.FailurePolicy = "warn"
+	}
+	if cfg.Review.JiTTest.Model == "" {
+		cfg.Review.JiTTest.Model = "claude-sonnet-4-6"
 	}
 
 	// Worker backend defaults

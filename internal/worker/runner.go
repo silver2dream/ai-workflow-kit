@@ -271,10 +271,10 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(stateRoot, ".ai", "results"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(stateRoot, ".ai", "results"), 0700); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(stateRoot, ".ai", "state"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(stateRoot, ".ai", "state"), 0700); err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Join(stateRoot, ".worktrees"), 0755); err != nil {
@@ -300,7 +300,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	logger.Log("worker_session_id=%s issue=#%d repo=%s attempt=%d", workerSessionID, opts.IssueID, repoName, loadAttemptInfo(stateRoot, opts.IssueID).AttemptNumber)
 	logger.Log("config=%s repos=%d", configPath, len(cfg.Repos))
 	if cfgErr != nil {
-		logger.Log("config_warning: %v (using defaults)", cfgErr)
+		logger.Log("[ERROR] config_load_failed: %v (using defaults)", cfgErr)
 	}
 	_ = os.Setenv("WORKER_SESSION_ID", workerSessionID)
 	_ = os.Setenv("WORKER_LOG_FILE", workerLogFile)
@@ -315,7 +315,9 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		SessionID:   workerSessionID,
 		StartedAt:   startTime,
 	}
-	_ = WritePIDFile(stateRoot, opts.IssueID, pidInfo)
+	if err := WritePIDFile(stateRoot, opts.IssueID, pidInfo); err != nil {
+		logger.Log("[ERROR] WritePIDFile: %v", err)
+	}
 
 	trace, _ := NewTraceRecorder(stateRoot, opts.IssueID, repoName, branch, prBase, pidInfo.PID, startTime)
 
@@ -1614,7 +1616,9 @@ func postIssueComment(ctx context.Context, issueID int, sessionID, commentType, 
 		}
 	}
 
-	_, _ = ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "comment", fmt.Sprintf("%d", issueID), "--body", body.String())
+	if _, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "comment", fmt.Sprintf("%d", issueID), "--body", body.String()); err != nil {
+		fmt.Fprintf(os.Stderr, "[ERROR] postIssueComment: issue #%d type=%s: %v\n", issueID, commentType, err)
+	}
 }
 
 func buildWorkerStartExtra(attempt int) string {

@@ -213,7 +213,7 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 // Worker retries fail.
 func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) error {
 	resultDir := filepath.Join(stateRoot, ".ai", "results")
-	if err := os.MkdirAll(resultDir, 0755); err != nil {
+	if err := os.MkdirAll(resultDir, 0700); err != nil {
 		return fmt.Errorf("failed to create results directory: %w", err)
 	}
 
@@ -231,7 +231,7 @@ func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) e
 		return fmt.Errorf("failed to marshal result: %w", err)
 	}
 
-	return WriteFileAtomic(resultPath, data, 0644)
+	return WriteFileAtomic(resultPath, data, 0600)
 }
 
 // ReadFailCount reads the fail count for an issue from the runs directory

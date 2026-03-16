@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,7 @@ const (
 
 // RotatingLogger handles log file rotation
 type RotatingLogger struct {
+	mu       sync.Mutex
 	dir      string
 	maxSize  int64
 	maxFiles int
@@ -52,6 +54,9 @@ func NewRotatingLogger(dir string) (*RotatingLogger, error) {
 
 // Write implements io.Writer
 func (l *RotatingLogger) Write(p []byte) (n int, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if l.current == nil {
 		if err := l.createNewFile(); err != nil {
 			return 0, err
@@ -71,7 +76,7 @@ func (l *RotatingLogger) Write(p []byte) (n int, err error) {
 
 	// Check if rotation is needed
 	if l.written >= l.maxSize {
-		if err := l.Rotate(); err != nil {
+		if err := l.rotate(); err != nil {
 			return n, err
 		}
 	}
@@ -81,6 +86,13 @@ func (l *RotatingLogger) Write(p []byte) (n int, err error) {
 
 // Rotate closes the current log file and creates a new one
 func (l *RotatingLogger) Rotate() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rotate()
+}
+
+// rotate is the internal (unlocked) rotation implementation
+func (l *RotatingLogger) rotate() error {
 	if l.current != nil {
 		if err := l.current.Close(); err != nil {
 			return fmt.Errorf("failed to close current log file: %w", err)
@@ -94,6 +106,8 @@ func (l *RotatingLogger) Rotate() error {
 
 // Close closes the logger
 func (l *RotatingLogger) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.current != nil {
 		err := l.current.Close()
 		l.current = nil
@@ -114,6 +128,8 @@ func (l *RotatingLogger) SetAsStdout() {
 
 // FilePath returns the current log file path
 func (l *RotatingLogger) FilePath() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.current != nil {
 		return l.current.Name()
 	}
