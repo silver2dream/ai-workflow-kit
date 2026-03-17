@@ -21,6 +21,7 @@ type LockInfo struct {
 type LockManager struct {
 	lockFile string
 	acquired bool
+	stopChan chan struct{}
 }
 
 // ProcessAlive reports whether a process with the given PID is still running.
@@ -40,12 +41,12 @@ func NewLockManager(lockFile string) *LockManager {
 func (l *LockManager) Acquire() error {
 	// Ensure directory exists
 	dir := filepath.Dir(l.lockFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create lock directory: %w", err)
 	}
 
 	// Try to create lock file atomically with O_EXCL
-	f, err := os.OpenFile(l.lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(l.lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		if os.IsExist(err) {
 			// Lock file exists - check if stale
@@ -90,7 +91,7 @@ func (l *LockManager) Acquire() error {
 
 // acquireOnce attempts to acquire the lock without retry (to prevent infinite recursion)
 func (l *LockManager) acquireOnce() error {
-	f, err := os.OpenFile(l.lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(l.lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		if os.IsExist(err) {
 			info, _ := l.readLockInfo()
@@ -121,7 +122,7 @@ func (l *LockManager) acquireOnce() error {
 	return nil
 }
 
-// Release removes the lock file
+// Release removes the lock file and stops the signal-handler goroutine (if any).
 func (l *LockManager) Release() error {
 	if !l.acquired {
 		return nil
@@ -132,6 +133,7 @@ func (l *LockManager) Release() error {
 	}
 
 	l.acquired = false
+	l.StopSignalHandler()
 	return nil
 }
 
@@ -145,16 +147,35 @@ func (l *LockManager) IsStale() bool {
 	return !processAlive(info.PID)
 }
 
-// SetupSignalHandler registers signal handlers to release lock on termination
+// SetupSignalHandler registers signal handlers to release lock on termination.
+// The goroutine is stopped when Release() is called or StopSignalHandler() is invoked.
+// The handler releases the lock and returns; it does NOT call os.Exit so the caller
+// retains control over the exit path.
 func (l *LockManager) SetupSignalHandler() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	stopChan := make(chan struct{})
+	l.stopChan = stopChan
+
 	go func() {
-		<-sigChan
-		l.Release()
-		os.Exit(1)
+		defer signal.Stop(sigChan)
+		select {
+		case <-sigChan:
+			l.Release() //nolint:errcheck
+		case <-stopChan:
+			// clean shutdown: lock already released by caller
+		}
 	}()
+}
+
+// StopSignalHandler stops the signal-handler goroutine started by SetupSignalHandler.
+// It is safe to call even if SetupSignalHandler was never called.
+func (l *LockManager) StopSignalHandler() {
+	if l.stopChan != nil {
+		close(l.stopChan)
+		l.stopChan = nil
+	}
 }
 
 // readLockInfo reads the lock file and returns the lock info
@@ -207,7 +228,7 @@ func (l *LockManager) writeLockInfo() error {
 		return fmt.Errorf("failed to marshal lock info: %w", err)
 	}
 
-	if err := os.WriteFile(l.lockFile, data, 0644); err != nil {
+	if err := os.WriteFile(l.lockFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write lock file: %w", err)
 	}
 

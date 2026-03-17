@@ -25,7 +25,23 @@ jobs:
         run: go vet ./...
 
       - name: Go test (awkit)
-        run: go test -race ./...
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Check coverage threshold
+        run: |
+          total=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          echo "Total coverage: ${total}%"
+          if (( $(echo "$total < 60" | bc -l) )); then
+            echo "::error::Coverage ${total}% is below 60% threshold"
+            exit 1
+          fi
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
 
   backend:
     runs-on: ubuntu-latest
@@ -65,4 +81,3 @@ jobs:
             sys.exit(2)
           print("ok: Packages/manifest.json valid json")
           PY
-
