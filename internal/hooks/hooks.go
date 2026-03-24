@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // HookRunner executes lifecycle hooks.
@@ -42,6 +43,17 @@ func (r *HookRunner) Fire(ctx context.Context, event string, envVars map[string]
 			if policy == "" {
 				policy = "warn"
 			}
+
+			// Emit hook_failed trace event
+			trace.WriteEvent(trace.ComponentHooks, trace.TypeHookFailed, trace.LevelWarn,
+				trace.WithData(map[string]any{
+					"event":   event,
+					"index":   i,
+					"command": h.Command,
+					"policy":  policy,
+				}),
+				trace.WithErrorString(err.Error()))
+
 			switch policy {
 			case "abort":
 				return fmt.Errorf("hook %s[%d] aborted: %w", event, i, err)
@@ -52,6 +64,14 @@ func (r *HookRunner) Fire(ctx context.Context, event string, envVars map[string]
 			default:
 				fmt.Fprintf(r.logOut, "[hooks] warning: %s[%d] failed (unknown policy %q): %v\n", event, i, policy, err)
 			}
+		} else {
+			// Emit hook_fired trace event
+			trace.WriteEvent(trace.ComponentHooks, trace.TypeHookFired, trace.LevelInfo,
+				trace.WithData(map[string]any{
+					"event":   event,
+					"index":   i,
+					"command": h.Command,
+				}))
 		}
 	}
 

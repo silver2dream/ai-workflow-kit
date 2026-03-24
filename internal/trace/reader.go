@@ -94,6 +94,39 @@ func (r *EventReader) ListSessions() ([]string, error) {
 	return sessions, nil
 }
 
+// ReadAllSessions reads all events across all sessions.
+func (r *EventReader) ReadAllSessions() ([]Event, error) {
+	sessions, err := r.ListSessions()
+	if err != nil {
+		return nil, err
+	}
+
+	var allEvents []Event
+	for _, sessionID := range sessions {
+		events, err := r.ReadSession(sessionID)
+		if err != nil {
+			continue
+		}
+		allEvents = append(allEvents, events...)
+	}
+
+	sort.Slice(allEvents, func(i, j int) bool {
+		return allEvents[i].Timestamp.Before(allEvents[j].Timestamp)
+	})
+
+	return allEvents, nil
+}
+
+// ReadAllSessionsFiltered reads all events across all sessions with filtering.
+func (r *EventReader) ReadAllSessionsFiltered(filter EventFilter) ([]Event, error) {
+	events, err := r.ReadAllSessions()
+	if err != nil {
+		return nil, err
+	}
+
+	return r.applyFilter(events, filter), nil
+}
+
 // ReadByIssue reads all events related to a specific issue across all sessions.
 func (r *EventReader) ReadByIssue(issueID int) ([]Event, error) {
 	sessions, err := r.ListSessions()
