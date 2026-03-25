@@ -11,6 +11,8 @@ const (
 	ComponentWorker    = "worker"
 	ComponentReviewer  = "reviewer"
 	ComponentGitHub    = "github"
+	ComponentHooks     = "hooks"
+	ComponentAudit     = "audit"
 )
 
 // Level represents the severity/type of an event.
@@ -49,6 +51,19 @@ const (
 	TypeReviewStart    = "review_start"
 	TypeReviewDecision = "review_decision"
 	TypeReviewEnd      = "review_end"
+
+	// Hook events
+	TypeHookFired  = "hook_fired"
+	TypeHookFailed = "hook_failed"
+
+	// Audit events
+	TypeAuditTriggered = "audit_triggered"
+
+	// Workflow events
+	TypeWorkflowStop = "workflow_stop"
+
+	// Worker retry
+	TypeWorkerRetry = "worker_retry"
 )
 
 // Event represents a single trace event in the unified event stream.

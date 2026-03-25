@@ -623,6 +623,15 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 
 	logger.Log("將在下一輪重試 (attempt %d/%d)", failCount, opts.MaxRetries)
 
+	// Emit worker_retry trace event
+	trace.WriteEvent(trace.ComponentWorker, trace.TypeWorkerRetry, trace.LevelWarn,
+		trace.WithIssue(opts.IssueNumber),
+		trace.WithData(map[string]any{
+			"attempt":     failCount,
+			"max_retries": opts.MaxRetries,
+			"reason":      failReason,
+		}))
+
 	// Remove in-progress label for retry
 	_ = ghClient.RemoveLabel(ctx, opts.IssueNumber, "in-progress")
 	logger.Log("✓ 已移除 in-progress 標籤")

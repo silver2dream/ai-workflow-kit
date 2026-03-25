@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // StopWorkflowOptions configures the stop workflow operation
@@ -44,6 +45,17 @@ func StopWorkflow(ctx context.Context, opts StopWorkflowOptions) (*StopWorkflowR
 	// 2. Get session information
 	sessionMgr := session.NewManager(opts.StateRoot)
 	sessionID := sessionMgr.GetCurrentSessionID()
+
+	// 2b. Emit workflow_stop trace event
+	trace.WriteEvent(trace.ComponentPrincipal, trace.TypeWorkflowStop, trace.LevelInfo,
+		trace.WithData(map[string]any{
+			"reason":         opts.Reason,
+			"total_issues":   stats.TotalIssues,
+			"closed_issues":  stats.ClosedIssues,
+			"open_issues":    stats.OpenIssues,
+			"worker_failed":  stats.WorkerFailed,
+			"needs_review":   stats.NeedsReview,
+		}))
 
 	// 3. Generate report
 	report := GenerateReport(opts.Reason, stats, sessionID)
