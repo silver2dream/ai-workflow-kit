@@ -382,3 +382,114 @@ func TestEventWriter_FilePath(t *testing.T) {
 		t.Errorf("expected path %s, got %s", expected, writer.FilePath())
 	}
 }
+
+func TestNewEventTypes(t *testing.T) {
+	// Verify new event type constants exist and are non-empty
+	types := []string{
+		TypeHookFired, TypeHookFailed,
+		TypeAuditTriggered, TypeWorkflowStop, TypeWorkerRetry,
+	}
+	for _, typ := range types {
+		if typ == "" {
+			t.Error("event type constant is empty")
+		}
+	}
+
+	// Verify new component constants
+	components := []string{ComponentHooks, ComponentAudit}
+	for _, comp := range components {
+		if comp == "" {
+			t.Error("component constant is empty")
+		}
+	}
+}
+
+func TestReadAllSessions(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "trace-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create 2 sessions with different events
+	w1, _ := NewEventWriter(tmpDir, "session-001")
+	w1.Write(ComponentPrincipal, TypeSessionStart, LevelInfo)
+	w1.Write(ComponentWorker, TypeWorkerStart, LevelInfo, WithIssue(10))
+	w1.Close()
+
+	w2, _ := NewEventWriter(tmpDir, "session-002")
+	w2.Write(ComponentPrincipal, TypeSessionStart, LevelInfo)
+	w2.Write(ComponentHooks, TypeHookFired, LevelInfo, WithData(map[string]any{"event": "on_merge"}))
+	w2.Write(ComponentWorker, TypeWorkerRetry, LevelWarn, WithIssue(10))
+	w2.Close()
+
+	reader := NewEventReader(tmpDir)
+
+	// ReadAllSessions should return all 5 events
+	all, err := reader.ReadAllSessions()
+	if err != nil {
+		t.Fatalf("failed to read all sessions: %v", err)
+	}
+	if len(all) != 5 {
+		t.Errorf("expected 5 events across sessions, got %d", len(all))
+	}
+}
+
+func TestReadAllSessionsFiltered(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "trace-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	w1, _ := NewEventWriter(tmpDir, "session-a")
+	w1.Write(ComponentHooks, TypeHookFired, LevelInfo)
+	w1.Write(ComponentHooks, TypeHookFailed, LevelWarn, WithErrorString("timeout"))
+	w1.Write(ComponentWorker, TypeWorkerStart, LevelInfo, WithIssue(5))
+	w1.Close()
+
+	w2, _ := NewEventWriter(tmpDir, "session-b")
+	w2.Write(ComponentWorker, TypeWorkerRetry, LevelWarn, WithIssue(5))
+	w2.Write(ComponentAudit, TypeAuditTriggered, LevelInfo)
+	w2.Close()
+
+	reader := NewEventReader(tmpDir)
+
+	// Filter by component=hooks across all sessions
+	hookEvents, err := reader.ReadAllSessionsFiltered(EventFilter{Component: ComponentHooks})
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if len(hookEvents) != 2 {
+		t.Errorf("expected 2 hook events, got %d", len(hookEvents))
+	}
+
+	// Filter by type
+	retryEvents, err := reader.ReadAllSessionsFiltered(EventFilter{Types: []string{TypeWorkerRetry}})
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if len(retryEvents) != 1 {
+		t.Errorf("expected 1 worker_retry event, got %d", len(retryEvents))
+	}
+
+	// Filter by issue across sessions
+	issueEvents, err := reader.ReadAllSessionsFiltered(EventFilter{IssueID: 5})
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if len(issueEvents) != 2 {
+		t.Errorf("expected 2 events for issue 5, got %d", len(issueEvents))
+	}
+
+	// Filter by multiple types
+	multiTypeEvents, err := reader.ReadAllSessionsFiltered(EventFilter{
+		Types: []string{TypeHookFired, TypeAuditTriggered},
+	})
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if len(multiTypeEvents) != 2 {
+		t.Errorf("expected 2 events for hook_fired+audit_triggered, got %d", len(multiTypeEvents))
+	}
+}
