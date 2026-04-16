@@ -63,6 +63,13 @@ If you see a `PREVIOUS REVIEW FEEDBACK` section in your prompt:
   - Suggested Improvements (what to fix)
   - CI failures (if mentioned)
 
+### 5. Design document context
+If you see a `DESIGN CONTEXT` section in your prompt:
+- This contains the relevant design document (design.md) for the current task
+- You SHOULD reference this design document to understand architectural decisions, data models, and intended behavior
+- Ensure your implementation aligns with the design specifications
+- If the design and ticket conflict, follow the ticket (it may represent a deliberate deviation)
+
 ---
 
 ## REPO TYPE SUPPORT

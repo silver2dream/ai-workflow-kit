@@ -48,6 +48,16 @@ type workflowConfig struct {
 	Timeouts   workflowTimeouts   `yaml:"timeouts"`
 	Feedback   workflowFeedback   `yaml:"feedback"`
 	Worker     workflowWorker     `yaml:"worker"`
+	Specs      workflowSpecs      `yaml:"specs"`
+}
+
+type workflowSpecs struct {
+	BasePath string            `yaml:"base_path"`
+	Files    workflowSpecFiles `yaml:"files"`
+}
+
+type workflowSpecFiles struct {
+	Design string `yaml:"design"`
 }
 
 type workflowWorker struct {
@@ -598,7 +608,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 
 	workDirInstruction := buildWorkDirInstruction(repoType, repoPath, workDir, repoName)
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, opts.GHTimeout, &cfg.Feedback); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, opts.GHTimeout, &cfg.Feedback, &cfg.Specs); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -1177,7 +1187,7 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, ghTimeout time.Duration, feedbackCfg *workflowFeedback) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
 
 	builder := strings.Builder{}
@@ -1208,6 +1218,17 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	builder.WriteString("These paths are reserved for the Principal agent and are protected.\n")
 	builder.WriteString("Attempting to access them will result in task failure.\n")
 	builder.WriteString("============================================================\n\n")
+
+	// Inject design document context before the ticket
+	if designContent := resolveDesignDoc(stateRoot, ticket, specsCfg); designContent != "" {
+		builder.WriteString("============================================================\n")
+		builder.WriteString("DESIGN CONTEXT\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString("The following design document provides context for this task:\n\n")
+		builder.WriteString(designContent)
+		builder.WriteString("\n============================================================\n\n")
+	}
+
 	builder.WriteString("Ticket:\n")
 	builder.WriteString(ticket)
 	builder.WriteString("\n")
@@ -1242,6 +1263,94 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
 
 	return os.WriteFile(path, []byte(builder.String()), 0644)
+}
+
+// maxDesignDocChars is the maximum number of characters to inject from a design document.
+const maxDesignDocChars = 4000
+
+// resolveDesignDoc attempts to find and read a design.md for the task's spec.
+// It first checks the ticket's Spec field, then falls back to extracting a spec
+// name from the Source field (e.g., "audit:finding-1" maps to spec name before the colon part).
+// Returns the design doc content (capped at maxDesignDocChars) or empty string.
+func resolveDesignDoc(stateRoot, ticket string, specsCfg *workflowSpecs) string {
+	meta := ParseTicketMetadata(ticket)
+
+	// Determine spec name: prefer explicit SpecName, fall back to env, then Source-based heuristic
+	specName := resolveSpecName(meta)
+
+	if specName == "" {
+		// Try to extract spec name from Source field
+		// Source format: "audit:<finding-id>" or just a spec name
+		specName = extractSpecFromSource(meta.Source)
+	}
+
+	if specName == "" {
+		return ""
+	}
+
+	// Determine base path and design filename
+	basePath := ".ai/specs"
+	designFile := "design.md"
+	if specsCfg != nil {
+		if specsCfg.BasePath != "" {
+			basePath = specsCfg.BasePath
+		}
+		if specsCfg.Files.Design != "" {
+			designFile = specsCfg.Files.Design
+		}
+	}
+
+	// Construct the design doc path
+	designPath := filepath.Join(stateRoot, basePath, specName, designFile)
+
+	// Validate the resolved path doesn't escape the specs directory
+	absBase, err := filepath.Abs(filepath.Join(stateRoot, basePath))
+	if err != nil {
+		return ""
+	}
+	absDesign, err := filepath.Abs(designPath)
+	if err != nil {
+		return ""
+	}
+	if !strings.HasPrefix(absDesign, absBase+string(filepath.Separator)) {
+		return ""
+	}
+
+	data, err := os.ReadFile(designPath)
+	if err != nil {
+		return "" // File not found or unreadable — skip gracefully
+	}
+
+	content := string(data)
+	if len(content) > maxDesignDocChars {
+		content = content[:maxDesignDocChars] + "\n\n[... truncated at 4000 characters ...]"
+	}
+
+	return content
+}
+
+// extractSpecFromSource tries to derive a spec name from the Source metadata field.
+// Known formats:
+//   - "audit:<finding-id>" — not directly a spec, return empty
+//   - "tasks.md #<n>" — not a spec name, return empty
+//   - plain string that could be a spec name
+func extractSpecFromSource(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return ""
+	}
+
+	// "audit:..." and "tasks.md ..." are not spec names
+	if strings.HasPrefix(source, "audit:") || strings.HasPrefix(source, "tasks.md") {
+		return ""
+	}
+
+	// Validate: no path separators, no dots (except in simple names)
+	if strings.ContainsAny(source, "/\\..") {
+		return ""
+	}
+
+	return source
 }
 
 func buildWorkDirInstruction(repoType, repoPath, workDir, repoName string) string {
