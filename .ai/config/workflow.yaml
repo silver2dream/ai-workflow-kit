@@ -286,6 +286,10 @@ review:
   score_threshold: 7
   # Merge strategy: squash | merge | rebase (default: squash)
   merge_strategy: squash
+  # Multi-model cross review: enable a second architecture-focused reviewer (model: opus)
+  # When true, pr-reviewer (sonnet) + architecture-reviewer (opus) both review each PR.
+  # Final score = pr-reviewer × 0.7 + architecture-reviewer × 0.3
+  # multi_model: false
 
 # ============================================================
 # Feedback Configuration
