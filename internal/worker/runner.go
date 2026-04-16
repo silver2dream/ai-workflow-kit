@@ -1009,6 +1009,11 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		_ = trace.StepEnd("success", "", nil)
 	}
 
+	// On retry attempts, reply to previous review comments to signal fixes
+	if attemptInfo.AttemptNumber > 1 {
+		replyToReviewComments(ctx, prURL, opts.GHTimeout)
+	}
+
 	if err := writeIssueResult(ctx, stateRoot, issueResultContext{
 		IssueID:               opts.IssueID,
 		Status:                "success",
@@ -1405,6 +1410,74 @@ func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 		result = result[len(result)-4000:]
 	}
 	return result
+}
+
+// replyToReviewComments fetches PR review comments and posts a reply to each
+// indicating the issues have been addressed. This is called on retry attempts
+// (attempt > 1) after the worker pushes fixes.
+// Failures are logged but do not block the workflow.
+func replyToReviewComments(ctx context.Context, prURL string, ghTimeout time.Duration) {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return
+	}
+
+	prNumber := ExtractPRNumber(prURL)
+	if prNumber == 0 {
+		return
+	}
+
+	if ghTimeout <= 0 {
+		ghTimeout = 60 * time.Second
+	}
+
+	ctx, cancel := withOptionalTimeout(ctx, ghTimeout)
+	defer cancel()
+
+	// Fetch PR review comments
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(),
+		"gh", "api",
+		fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", prNumber),
+		"--paginate",
+		"--jq", ".[].id",
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] replyToReviewComments: failed to fetch comments for PR #%d: %v\n", prNumber, err)
+		return
+	}
+
+	commentIDs := parseCommentIDs(string(output))
+	if len(commentIDs) == 0 {
+		return
+	}
+
+	for _, commentID := range commentIDs {
+		if _, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(),
+			"gh", "api",
+			"--method", "POST",
+			fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments/%d/replies", prNumber, commentID),
+			"-f", "body=Addressed in the latest push. Please re-review.",
+		); err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] replyToReviewComments: failed to reply to comment %d on PR #%d: %v\n", commentID, prNumber, err)
+			// Continue to next comment; don't block on individual failures
+		}
+	}
+}
+
+// parseCommentIDs parses newline-separated comment IDs from gh api output.
+func parseCommentIDs(output string) []int {
+	var ids []int
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		id, err := strconv.Atoi(line)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
