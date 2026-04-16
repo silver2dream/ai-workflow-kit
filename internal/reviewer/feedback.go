@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -95,6 +96,175 @@ func readFeedbackFile(path string) ([]FeedbackEntry, error) {
 		return entries, err
 	}
 	return entries, nil
+}
+
+// CategoryCount holds a category name and its occurrence count.
+type CategoryCount struct {
+	Name  string
+	Count int
+}
+
+// TopCategories returns the top N most frequent rejection categories sorted by count descending.
+func TopCategories(entries []FeedbackEntry, n int) []CategoryCount {
+	if len(entries) == 0 || n <= 0 {
+		return nil
+	}
+
+	counts := make(map[string]int)
+	for _, e := range entries {
+		for _, c := range e.Categories {
+			counts[c]++
+		}
+	}
+
+	sorted := make([]CategoryCount, 0, len(counts))
+	for name, count := range counts {
+		sorted = append(sorted, CategoryCount{Name: name, Count: count})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Count != sorted[j].Count {
+			return sorted[i].Count > sorted[j].Count
+		}
+		return sorted[i].Name < sorted[j].Name
+	})
+
+	if n > len(sorted) {
+		n = len(sorted)
+	}
+	return sorted[:n]
+}
+
+// CategoryTrend represents how a category's frequency has changed between recent and overall entries.
+type CategoryTrend struct {
+	Name       string
+	RecentPct  float64 // percentage in recent entries
+	OverallPct float64 // percentage in all entries
+	Direction  string  // "increasing", "decreasing", or "stable"
+}
+
+// AnalyzeTrends compares category distribution of the last recentN entries vs all entries.
+// Returns trends sorted by absolute change descending, only including categories that changed.
+func AnalyzeTrends(entries []FeedbackEntry, recentN int) []CategoryTrend {
+	if len(entries) == 0 || recentN <= 0 {
+		return nil
+	}
+
+	// Build category counts for all entries
+	allCounts := make(map[string]int)
+	for _, e := range entries {
+		for _, c := range e.Categories {
+			allCounts[c]++
+		}
+	}
+
+	// Build category counts for recent entries
+	recentStart := len(entries) - recentN
+	if recentStart < 0 {
+		recentStart = 0
+	}
+	recent := entries[recentStart:]
+	recentCounts := make(map[string]int)
+	for _, e := range recent {
+		for _, c := range e.Categories {
+			recentCounts[c]++
+		}
+	}
+
+	// Calculate percentages and detect direction
+	allTotal := 0
+	for _, v := range allCounts {
+		allTotal += v
+	}
+	recentTotal := 0
+	for _, v := range recentCounts {
+		recentTotal += v
+	}
+
+	if allTotal == 0 {
+		return nil
+	}
+
+	// Collect all category names
+	allNames := make(map[string]bool)
+	for k := range allCounts {
+		allNames[k] = true
+	}
+	for k := range recentCounts {
+		allNames[k] = true
+	}
+
+	const threshold = 5.0 // minimum percentage point change to report
+	var trends []CategoryTrend
+	for name := range allNames {
+		overallPct := float64(allCounts[name]) / float64(allTotal) * 100
+		recentPct := 0.0
+		if recentTotal > 0 {
+			recentPct = float64(recentCounts[name]) / float64(recentTotal) * 100
+		}
+
+		diff := recentPct - overallPct
+		direction := "stable"
+		if diff > threshold {
+			direction = "increasing"
+		} else if diff < -threshold {
+			direction = "decreasing"
+		} else {
+			continue // skip stable categories
+		}
+
+		trends = append(trends, CategoryTrend{
+			Name:       name,
+			RecentPct:  recentPct,
+			OverallPct: overallPct,
+			Direction:  direction,
+		})
+	}
+
+	// Sort by absolute change descending
+	sort.Slice(trends, func(i, j int) bool {
+		absI := trends[i].RecentPct - trends[i].OverallPct
+		if absI < 0 {
+			absI = -absI
+		}
+		absJ := trends[j].RecentPct - trends[j].OverallPct
+		if absJ < 0 {
+			absJ = -absJ
+		}
+		return absI > absJ
+	})
+
+	return trends
+}
+
+// FormatTopCategoriesForPrompt formats the top categories as a prompt injection section.
+func FormatTopCategoriesForPrompt(entries []FeedbackEntry, n int) string {
+	top := TopCategories(entries, n)
+	if len(top) == 0 {
+		return ""
+	}
+
+	descriptions := map[string]string{
+		"test":           "ensure adequate test coverage",
+		"error-handling": "handle all error paths",
+		"naming":         "use descriptive names",
+		"architecture":   "follow layered architecture patterns",
+		"security":       "address security concerns",
+		"performance":    "optimize for performance",
+		"scope":          "stay within ticket scope",
+		"style":          "follow code style conventions",
+		"jittest":        "write independent, non-flaky tests",
+	}
+
+	var b strings.Builder
+	b.WriteString("COMMON REJECTION PATTERNS (avoid these mistakes):\n")
+	for i, c := range top {
+		desc := descriptions[c.Name]
+		if desc == "" {
+			desc = "pay attention to " + c.Name
+		}
+		b.WriteString(fmt.Sprintf("%d. %s (seen %d times) — %s\n", i+1, c.Name, c.Count, desc))
+	}
+	return b.String()
 }
 
 // rejectionCategories maps keywords to category names.
