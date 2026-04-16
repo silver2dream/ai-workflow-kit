@@ -25,25 +25,68 @@
 
 1. 讀取 `<base_path>/<spec>/design.md`
 2. 生成任務分解（draft）
-3. **Gap Verification（必須在 create-epic 前執行）**— 見下方 Section A.1
-4. 將驗證通過的 epic body 寫入 `.ai/temp/create-epic-body.md`，格式：
+3. **Step Dependency Extraction（若存在）**— 見下方 Section A.0
+4. **Gap Verification（必須在 create-epic 前執行）**— 見下方 Section A.1
+5. 將驗證通過的 epic body 寫入 `.ai/temp/create-epic-body.md`，格式：
    ```markdown
    # <spec-name> Task Tracking
 
    ## Tasks
 
    - [ ] Task 1 description
-   - [ ] Task 2 description
-   - [ ] Task 3 description
+   - [ ] Task 2 description (depends on: Task 1)
+   - [ ] Task 3 description (depends on: Tasks 1,2)
 
    ## Progress
 
    This is a GitHub Tracking Issue. Checkboxes update automatically when linked issues are closed.
    ```
-5. 執行：`awkit create-epic --spec "<SPEC_NAME>" --body-file .ai/temp/create-epic-body.md`
+6. 執行：`awkit create-epic --spec "<SPEC_NAME>" --body-file .ai/temp/create-epic-body.md`
    - **REQUIRED**: `--body-file` 參數必填
    - 此命令會創建 GitHub Tracking Issue 並更新 `workflow.yaml` 的 tracking mode
-6. 回到 main-loop
+7. 回到 main-loop
+
+---
+
+### Section A.0: Step Dependency Extraction
+
+Before generating the task list draft, check design.md for a `## Step Dependencies` section.
+
+#### A.0.1 Parse the dependency table
+
+If design.md contains a `## Step Dependencies` section with a markdown table, extract:
+
+| Column | Usage |
+|--------|-------|
+| **Step** | Step number (integer identifier) |
+| **Description** | Task description text |
+| **Depends On** | Dependency references: `-` (none), `Step N` (single), `Steps N,M` (multiple) |
+| **Acceptance Criteria** | Per-step acceptance criteria to include in the generated issue |
+
+#### A.0.2 Build dependency graph
+
+From the parsed table, construct an ordered task list:
+
+1. **Topological order**: Tasks with no dependencies (`-`) come first. Tasks depending on earlier steps come after their prerequisites.
+2. **Cycle detection**: If the dependency graph contains a cycle, log a warning and fall back to the table order as-is.
+3. **Parallel grouping**: Tasks whose dependencies are all satisfied at the same point may be dispatched in parallel (informational; actual dispatch is sequential per `awkit analyze-next`).
+
+#### A.0.3 Annotate task list draft
+
+When writing the epic body (step 5), include dependency information in each task line:
+
+- Tasks with no dependencies: plain text, no annotation.
+- Tasks with dependencies: append `(depends on: Step N)` or `(depends on: Steps N,M)` to the task description.
+
+This annotation is used by the Principal during `create_task` to include
+`Depends on: #<issue-number>` in the generated issue body, linking to the
+GitHub Issues of prerequisite tasks.
+
+#### A.0.4 No dependency table
+
+If design.md does not contain a `## Step Dependencies` section, skip this
+extraction and generate the task list in the order they appear in design.md
+(backward-compatible behavior).
 
 ---
 
@@ -76,6 +119,7 @@
 | 5 | **Entry point / wiring task 存在** | 新 module 需要 registration，新 route 需要 wiring |
 | 6 | Testing task 存在 | 每個 repo 至少有測試（可合併在功能 task 的 AC 中） |
 | 7 | Task 順序合理 | 基礎建設 → 核心功能 → 整合串接 → 測試驗證 |
+| 8 | **Step dependencies respected** | If a Step Dependencies table exists, task order matches topological sort of the dependency graph |
 
 #### A.1.3 輸出 Gap Report
 
@@ -91,6 +135,7 @@
 - GAP: Integration — <repo_A>/<repo_B> 串接缺少 wiring task
 - GAP: Entry point — <module> 缺少 registration/bootstrap task
 - GAP: Repo — <repo> 在 design.md 中被提及但 task list 沒有覆蓋
+- GAP: Dependency — Step <N> depends on Step <M> but is ordered before it
 ```
 
 #### A.1.4 修正流程
@@ -118,6 +163,7 @@
    ```markdown
    - [ ] 1. 任務標題
      - 描述
+     - Depends on: Step N (if dependencies exist in design.md)
      - 驗收標準
    ```
 3. 創建或更新 `<base_path>/<spec>/tasks.md`
