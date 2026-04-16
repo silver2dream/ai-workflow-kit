@@ -968,7 +968,8 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if trace != nil {
 		trace.StepStart("create_pr")
 	}
-	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout, ghRetryConfig)
+	planContent := readPlanFile(runDir)
+	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout, ghRetryConfig, planContent)
 	if err != nil {
 		runErr = err
 		result.Error = err.Error()
@@ -1234,6 +1235,14 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		builder.WriteString(historicalFeedback)
 		builder.WriteString("============================================================\n")
 	}
+
+	builder.WriteString(fmt.Sprintf("\nBEFORE making code changes, create an implementation plan file at:\n"))
+	builder.WriteString(fmt.Sprintf(".ai/runs/issue-%d/plan.md\n\n", issueID))
+	builder.WriteString("The plan file MUST contain:\n")
+	builder.WriteString("- ## Summary — brief description of the approach (1-3 sentences)\n")
+	builder.WriteString("- ## Files to modify — list of files and what changes\n")
+	builder.WriteString("- ## Key decisions — important implementation decisions and rationale\n")
+	builder.WriteString("Keep the plan concise. This will be included in the PR description for reviewers.\n")
 
 	builder.WriteString("\nAfter making changes:\n")
 	builder.WriteString("- Print: git status --porcelain\n")
@@ -1539,7 +1548,40 @@ func stageChanges(ctx context.Context, wtDir, repoName string, timeout time.Dura
 	return nil
 }
 
-func createOrFindPR(ctx context.Context, branch, base, title string, issueID int, timeout time.Duration, retryCfg ghutil.RetryConfig) (string, error) {
+// readPlanFile reads the implementation plan file created by the Worker.
+// Returns empty string if the file does not exist or cannot be read.
+func readPlanFile(runDir string) string {
+	planPath := filepath.Join(runDir, "plan.md")
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		return ""
+	}
+	plan := strings.TrimSpace(string(data))
+	if plan == "" {
+		return ""
+	}
+	return plan
+}
+
+// buildPRBody constructs the PR body with optional implementation plan.
+func buildPRBody(issueID int, title, plan string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Closes #%d\n", issueID))
+
+	if plan != "" {
+		b.WriteString("\n## Implementation Plan\n\n")
+		b.WriteString(plan)
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n## Changes\n\n")
+	b.WriteString(title)
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+func createOrFindPR(ctx context.Context, branch, base, title string, issueID int, timeout time.Duration, retryCfg ghutil.RetryConfig, planContent string) (string, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return "", fmt.Errorf("gh CLI not found in PATH")
 	}
@@ -1554,7 +1596,7 @@ func createOrFindPR(ctx context.Context, branch, base, title string, issueID int
 		return prInfo.URL, nil
 	}
 
-	body := fmt.Sprintf("Closes #%d\n\n%s", issueID, title)
+	body := buildPRBody(issueID, title, planContent)
 	prCtx, cancel := withOptionalTimeout(ctx, timeout)
 	defer cancel()
 
