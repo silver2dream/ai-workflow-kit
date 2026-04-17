@@ -607,8 +607,19 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	commitMsg := BuildCommitMessage(titleLine)
 
 	workDirInstruction := buildWorkDirInstruction(repoType, repoPath, workDir, repoName)
+
+	// Detect existing PR for this branch (retry case) to fetch file-level review comments
+	existingPRNumber := 0
+	if attemptInfo.AttemptNumber > 1 {
+		ghClient := NewGitHubClient(opts.GHTimeout)
+		if prInfo, err := ghClient.GetPRByBranch(ctx, branch); err == nil && prInfo != nil && prInfo.Number > 0 {
+			existingPRNumber = prInfo.Number
+			logger.Log("found existing PR #%d for branch %s (retry attempt %d)", existingPRNumber, branch, attemptInfo.AttemptNumber)
+		}
+	}
+
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, opts.GHTimeout, &cfg.Feedback, &cfg.Specs); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -1193,8 +1204,9 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
+	prReviewComments := fetchPRReviewComments(prNumber, ghTimeout)
 
 	builder := strings.Builder{}
 	builder.WriteString("You are an automated coding agent running inside a git worktree.\n\n")
@@ -1245,6 +1257,14 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		builder.WriteString("============================================================\n")
 		builder.WriteString(reviewComments)
 		builder.WriteString("\n============================================================\n")
+	}
+
+	if prReviewComments != "" {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("FILE-LEVEL REVIEW COMMENTS (from previous review):\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(prReviewComments)
+		builder.WriteString("============================================================\n")
 	}
 
 	// Inject historical feedback patterns from past rejections
@@ -1587,6 +1607,79 @@ func parseCommentIDs(output string) []int {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+func fetchPRReviewComments(prNumber int, ghTimeout time.Duration) string {
+	if prNumber <= 0 {
+		return ""
+	}
+	if _, err := exec.LookPath("gh"); err != nil {
+		return ""
+	}
+
+	if ghTimeout <= 0 {
+		ghTimeout = 60 * time.Second
+	}
+
+	ctx, cancel := withOptionalTimeout(context.Background(), ghTimeout)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "api",
+		fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", prNumber),
+		"--jq", `.[] | "\(.path)\t\(.original_line // .line // 0)\t\(.body)"`,
+	)
+	if err != nil {
+		return ""
+	}
+
+	return formatPRReviewComments(string(output))
+}
+
+// formatPRReviewComments parses raw tab-delimited PR review comment lines
+// and formats them into structured feedback. Each input line has the format:
+// path\tline\tbody
+func formatPRReviewComments(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	lines := strings.Split(raw, "\n")
+	builder := strings.Builder{}
+	totalLen := 0
+	const maxTotal = 4000
+	const maxBodyLen = 200
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		path := strings.TrimSpace(parts[0])
+		lineNum := strings.TrimSpace(parts[1])
+		body := strings.TrimSpace(parts[2])
+
+		if path == "" || body == "" {
+			continue
+		}
+
+		// Collapse newlines in body to spaces
+		body = strings.Join(strings.Fields(body), " ")
+
+		if len(body) > maxBodyLen {
+			body = body[:maxBodyLen] + "..."
+		}
+
+		entry := fmt.Sprintf("- **%s:%s** → %s\n", path, lineNum, body)
+
+		if totalLen+len(entry) > maxTotal {
+			break
+		}
+		builder.WriteString(entry)
+		totalLen += len(entry)
+	}
+
+	return builder.String()
 }
 
 func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
