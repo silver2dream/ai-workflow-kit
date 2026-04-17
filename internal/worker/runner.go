@@ -1274,12 +1274,19 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		feedbackEnabled = feedbackCfg.isEnabled()
 		maxEntries = feedbackCfg.maxHistory()
 	}
-	if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); feedbackEnabled && historicalFeedback != "" {
-		builder.WriteString("\n============================================================\n")
-		builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
-		builder.WriteString("============================================================\n")
-		builder.WriteString(historicalFeedback)
-		builder.WriteString("============================================================\n")
+	if feedbackEnabled {
+		if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); historicalFeedback != "" {
+			builder.WriteString("\n============================================================\n")
+			builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
+			builder.WriteString("============================================================\n")
+			builder.WriteString(historicalFeedback)
+			builder.WriteString("============================================================\n")
+		}
+		if topCatSection := loadTopCategorySummary(stateRoot); topCatSection != "" {
+			builder.WriteString("\n============================================================\n")
+			builder.WriteString(topCatSection)
+			builder.WriteString("============================================================\n")
+		}
 	}
 
 	builder.WriteString(fmt.Sprintf("\nBEFORE making code changes, create an implementation plan file at:\n"))
@@ -1691,6 +1698,14 @@ func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
 		return ""
 	}
 	return reviewer.FormatFeedbackForPrompt(entries, 2000)
+}
+
+func loadTopCategorySummary(stateRoot string) string {
+	entries, err := reviewer.LoadFeedback(stateRoot)
+	if err != nil || len(entries) == 0 {
+		return ""
+	}
+	return reviewer.FormatTopCategoriesForPrompt(entries, 3)
 }
 
 func runAttemptGuard(ctx context.Context, stateRoot string, issueID int, logFile string, opts RunIssueOptions) error {
