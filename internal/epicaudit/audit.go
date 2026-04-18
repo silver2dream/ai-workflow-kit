@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
 // AuditOptions holds options for running an epic audit.
@@ -71,6 +72,13 @@ func RunAudit(ctx context.Context, opts AuditOptions, ghClient analyzer.GitHubCl
 	if epicIssue == 0 {
 		return nil, fmt.Errorf("no epic issue configured for spec %q", opts.SpecName)
 	}
+
+	// Emit audit_triggered trace event
+	trace.WriteEvent(trace.ComponentAudit, trace.TypeAuditTriggered, trace.LevelInfo,
+		trace.WithData(map[string]any{
+			"spec":       opts.SpecName,
+			"epic_issue": epicIssue,
+		}))
 
 	report := &AuditReport{
 		SpecName:  opts.SpecName,

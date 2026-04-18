@@ -18,19 +18,24 @@ Usage:
 
 Options:
   --session <id>    Query specific session (default: current session)
+  --all             Query all sessions (not just current)
   --level <level>   Filter by level: info, warn, error, decision
-  --issue <n>       Filter by issue number
+  --issue <n>       Filter by issue number (searches across all sessions)
   --pr <n>          Filter by PR number
-  --component <c>   Filter by component: principal, worker, reviewer, github
+  --component <c>   Filter by component: principal, worker, reviewer, github, hooks, audit
+  --type <t>        Filter by event type (comma-separated, e.g. hook_fired,worker_retry)
   --last <n>        Show only last N events (default: all)
   --json            Output raw JSON (for AI analysis)
   --list            List available sessions
 
 Examples:
   awkit events                              # Show current session events
+  awkit events --all                        # Show events from all sessions
   awkit events --level decision             # Show only decision points
   awkit events --level error                # Show only errors
   awkit events --issue 25                   # Show events for issue #25
+  awkit events --type hook_fired,hook_failed  # Show only hook events
+  awkit events --type worker_retry          # Show worker retries
   awkit events --last 50                    # Show last 50 events
   awkit events --session principal-xxx      # Query specific session
   awkit events --list                       # List available sessions
@@ -44,10 +49,12 @@ func cmdEvents(args []string) int {
 	fs.Usage = usageEvents
 
 	sessionID := fs.String("session", "", "")
+	allSessions := fs.Bool("all", false, "")
 	level := fs.String("level", "", "")
 	issueNum := fs.Int("issue", 0, "")
 	prNum := fs.Int("pr", 0, "")
 	component := fs.String("component", "", "")
+	eventType := fs.String("type", "", "")
 	last := fs.Int("last", 0, "")
 	jsonOutput := fs.Bool("json", false, "")
 	listSessions := fs.Bool("list", false, "")
@@ -92,13 +99,21 @@ func cmdEvents(args []string) int {
 		Last:      *last,
 	}
 
+	// Parse --type flag (comma-separated)
+	if *eventType != "" {
+		filter.Types = strings.Split(*eventType, ",")
+	}
+
 	// Read events
 	var events []trace.Event
 	var err error
 
-	if *sessionID != "" {
+	switch {
+	case *sessionID != "":
 		events, err = reader.ReadSessionFiltered(*sessionID, filter)
-	} else {
+	case *allSessions || *issueNum > 0:
+		events, err = reader.ReadAllSessionsFiltered(filter)
+	default:
 		events, err = reader.ReadCurrentSessionFiltered(filter)
 	}
 
@@ -191,6 +206,10 @@ func colorizeComponent(component string) string {
 		return "\033[33mreviewer\033[0m"
 	case "github":
 		return "\033[35mgithub\033[0m"
+	case "hooks":
+		return "\033[90mhooks\033[0m"
+	case "audit":
+		return "\033[36;1maudit\033[0m"
 	default:
 		return component
 	}
