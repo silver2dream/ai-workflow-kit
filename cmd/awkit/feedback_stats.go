@@ -70,6 +70,23 @@ func cmdFeedbackStats(args []string) int {
 		fmt.Println("")
 	}
 
+	// Trend analysis
+	if len(entries) > 5 {
+		trends := reviewer.AnalyzeTrends(entries, 5)
+		if len(trends) > 0 {
+			fmt.Println(bold("Category Trends (last 5 vs all)"))
+			fmt.Println(strings.Repeat("─", 40))
+			for _, t := range trends {
+				arrow := "↑ getting worse"
+				if t.Direction == "decreasing" {
+					arrow = "↓ improving"
+				}
+				fmt.Printf("  %-18s %s (%.0f%% → %.0f%%)\n", t.Name, arrow, t.OverallPct, t.RecentPct)
+			}
+			fmt.Println("")
+		}
+	}
+
 	// Recent rejections
 	recentCount := 5
 	if recentCount > len(entries) {

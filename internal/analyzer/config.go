@@ -87,9 +87,18 @@ type ClaudeCodeConfig struct {
 
 // ReviewConfig represents the review section in workflow.yaml
 type ReviewConfig struct {
-	ScoreThreshold int           `yaml:"score_threshold"`
-	MergeStrategy  string        `yaml:"merge_strategy"`
-	JiTTest        JiTTestConfig `yaml:"jittest"`
+	ScoreThreshold     int                       `yaml:"score_threshold"`
+	MergeStrategy      string                    `yaml:"merge_strategy"`
+	MultiModel         bool                      `yaml:"multi_model"`
+	SecondaryReviewers []SecondaryReviewerConfig  `yaml:"secondary_reviewers"`
+	JiTTest            JiTTestConfig              `yaml:"jittest"`
+}
+
+// SecondaryReviewerConfig configures a secondary AI reviewer for multi-model consensus.
+type SecondaryReviewerConfig struct {
+	Backend   string `yaml:"backend"`    // "claude" or "codex"
+	Model     string `yaml:"model"`      // e.g., "opus", "sonnet"
+	FocusArea string `yaml:"focus_area"` // e.g., "architecture", "security"
 }
 
 // JiTTestConfig configures Just-in-Time Test generation and execution.

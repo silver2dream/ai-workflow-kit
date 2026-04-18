@@ -304,6 +304,81 @@ func TestIsEpicMode(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_SecondaryReviewers(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "workflow.yaml")
+
+	configContent := `
+github:
+  repo: owner/repo
+review:
+  score_threshold: 7
+  merge_strategy: squash
+  multi_model: true
+  secondary_reviewers:
+    - backend: claude
+      model: opus
+      focus_area: architecture
+    - backend: claude
+      model: sonnet
+      focus_area: security
+`
+	os.WriteFile(configPath, []byte(configContent), 0644)
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if !config.Review.MultiModel {
+		t.Error("MultiModel should be true")
+	}
+	if len(config.Review.SecondaryReviewers) != 2 {
+		t.Fatalf("expected 2 secondary reviewers, got %d", len(config.Review.SecondaryReviewers))
+	}
+
+	r0 := config.Review.SecondaryReviewers[0]
+	if r0.Backend != "claude" {
+		t.Errorf("expected backend 'claude', got %q", r0.Backend)
+	}
+	if r0.Model != "opus" {
+		t.Errorf("expected model 'opus', got %q", r0.Model)
+	}
+	if r0.FocusArea != "architecture" {
+		t.Errorf("expected focus_area 'architecture', got %q", r0.FocusArea)
+	}
+
+	r1 := config.Review.SecondaryReviewers[1]
+	if r1.FocusArea != "security" {
+		t.Errorf("expected focus_area 'security', got %q", r1.FocusArea)
+	}
+}
+
+func TestLoadConfig_NoSecondaryReviewers(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "workflow.yaml")
+
+	configContent := `
+github:
+  repo: owner/repo
+review:
+  score_threshold: 8
+`
+	os.WriteFile(configPath, []byte(configContent), 0644)
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if config.Review.MultiModel {
+		t.Error("MultiModel should default to false")
+	}
+	if len(config.Review.SecondaryReviewers) != 0 {
+		t.Errorf("expected 0 secondary reviewers, got %d", len(config.Review.SecondaryReviewers))
+	}
+}
+
 func TestGetEpicIssue(t *testing.T) {
 	config := &Config{
 		Specs: SpecsConfig{

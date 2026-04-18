@@ -48,6 +48,16 @@ type workflowConfig struct {
 	Timeouts   workflowTimeouts   `yaml:"timeouts"`
 	Feedback   workflowFeedback   `yaml:"feedback"`
 	Worker     workflowWorker     `yaml:"worker"`
+	Specs      workflowSpecs      `yaml:"specs"`
+}
+
+type workflowSpecs struct {
+	BasePath string            `yaml:"base_path"`
+	Files    workflowSpecFiles `yaml:"files"`
+}
+
+type workflowSpecFiles struct {
+	Design string `yaml:"design"`
 }
 
 type workflowWorker struct {
@@ -597,8 +607,19 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	commitMsg := BuildCommitMessage(titleLine)
 
 	workDirInstruction := buildWorkDirInstruction(repoType, repoPath, workDir, repoName)
+
+	// Detect existing PR for this branch (retry case) to fetch file-level review comments
+	existingPRNumber := 0
+	if attemptInfo.AttemptNumber > 1 {
+		ghClient := NewGitHubClient(opts.GHTimeout)
+		if prInfo, err := ghClient.GetPRByBranch(ctx, branch); err == nil && prInfo != nil && prInfo.Number > 0 {
+			existingPRNumber = prInfo.Number
+			logger.Log("found existing PR #%d for branch %s (retry attempt %d)", existingPRNumber, branch, attemptInfo.AttemptNumber)
+		}
+	}
+
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, opts.GHTimeout, &cfg.Feedback); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -968,7 +989,8 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if trace != nil {
 		trace.StepStart("create_pr")
 	}
-	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout, ghRetryConfig)
+	planContent := readPlanFile(runDir)
+	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout, ghRetryConfig, planContent)
 	if err != nil {
 		runErr = err
 		result.Error = err.Error()
@@ -1006,6 +1028,11 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 	if trace != nil {
 		_ = trace.StepEnd("success", "", nil)
+	}
+
+	// On retry attempts, reply to previous review comments to signal fixes
+	if attemptInfo.AttemptNumber > 1 {
+		replyToReviewComments(ctx, prURL, opts.GHTimeout)
 	}
 
 	if err := writeIssueResult(ctx, stateRoot, issueResultContext{
@@ -1177,8 +1204,9 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, ghTimeout time.Duration, feedbackCfg *workflowFeedback) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
+	prReviewComments := fetchPRReviewComments(prNumber, ghTimeout)
 
 	builder := strings.Builder{}
 	builder.WriteString("You are an automated coding agent running inside a git worktree.\n\n")
@@ -1208,6 +1236,17 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	builder.WriteString("These paths are reserved for the Principal agent and are protected.\n")
 	builder.WriteString("Attempting to access them will result in task failure.\n")
 	builder.WriteString("============================================================\n\n")
+
+	// Inject design document context before the ticket
+	if designContent := resolveDesignDoc(stateRoot, ticket, specsCfg); designContent != "" {
+		builder.WriteString("============================================================\n")
+		builder.WriteString("DESIGN CONTEXT\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString("The following design document provides context for this task:\n\n")
+		builder.WriteString(designContent)
+		builder.WriteString("\n============================================================\n\n")
+	}
+
 	builder.WriteString("Ticket:\n")
 	builder.WriteString(ticket)
 	builder.WriteString("\n")
@@ -1220,6 +1259,14 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		builder.WriteString("\n============================================================\n")
 	}
 
+	if prReviewComments != "" {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("FILE-LEVEL REVIEW COMMENTS (from previous review):\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(prReviewComments)
+		builder.WriteString("============================================================\n")
+	}
+
 	// Inject historical feedback patterns from past rejections
 	maxEntries := 10
 	feedbackEnabled := true
@@ -1227,13 +1274,28 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		feedbackEnabled = feedbackCfg.isEnabled()
 		maxEntries = feedbackCfg.maxHistory()
 	}
-	if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); feedbackEnabled && historicalFeedback != "" {
-		builder.WriteString("\n============================================================\n")
-		builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
-		builder.WriteString("============================================================\n")
-		builder.WriteString(historicalFeedback)
-		builder.WriteString("============================================================\n")
+	if feedbackEnabled {
+		if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); historicalFeedback != "" {
+			builder.WriteString("\n============================================================\n")
+			builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
+			builder.WriteString("============================================================\n")
+			builder.WriteString(historicalFeedback)
+			builder.WriteString("============================================================\n")
+		}
+		if topCatSection := loadTopCategorySummary(stateRoot); topCatSection != "" {
+			builder.WriteString("\n============================================================\n")
+			builder.WriteString(topCatSection)
+			builder.WriteString("============================================================\n")
+		}
 	}
+
+	builder.WriteString(fmt.Sprintf("\nBEFORE making code changes, create an implementation plan file at:\n"))
+	builder.WriteString(fmt.Sprintf(".ai/runs/issue-%d/plan.md\n\n", issueID))
+	builder.WriteString("The plan file MUST contain:\n")
+	builder.WriteString("- ## Summary — brief description of the approach (1-3 sentences)\n")
+	builder.WriteString("- ## Files to modify — list of files and what changes\n")
+	builder.WriteString("- ## Key decisions — important implementation decisions and rationale\n")
+	builder.WriteString("Keep the plan concise. This will be included in the PR description for reviewers.\n")
 
 	builder.WriteString("\nAfter making changes:\n")
 	builder.WriteString("- Print: git status --porcelain\n")
@@ -1242,6 +1304,94 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
 
 	return os.WriteFile(path, []byte(builder.String()), 0644)
+}
+
+// maxDesignDocChars is the maximum number of characters to inject from a design document.
+const maxDesignDocChars = 4000
+
+// resolveDesignDoc attempts to find and read a design.md for the task's spec.
+// It first checks the ticket's Spec field, then falls back to extracting a spec
+// name from the Source field (e.g., "audit:finding-1" maps to spec name before the colon part).
+// Returns the design doc content (capped at maxDesignDocChars) or empty string.
+func resolveDesignDoc(stateRoot, ticket string, specsCfg *workflowSpecs) string {
+	meta := ParseTicketMetadata(ticket)
+
+	// Determine spec name: prefer explicit SpecName, fall back to env, then Source-based heuristic
+	specName := resolveSpecName(meta)
+
+	if specName == "" {
+		// Try to extract spec name from Source field
+		// Source format: "audit:<finding-id>" or just a spec name
+		specName = extractSpecFromSource(meta.Source)
+	}
+
+	if specName == "" {
+		return ""
+	}
+
+	// Determine base path and design filename
+	basePath := ".ai/specs"
+	designFile := "design.md"
+	if specsCfg != nil {
+		if specsCfg.BasePath != "" {
+			basePath = specsCfg.BasePath
+		}
+		if specsCfg.Files.Design != "" {
+			designFile = specsCfg.Files.Design
+		}
+	}
+
+	// Construct the design doc path
+	designPath := filepath.Join(stateRoot, basePath, specName, designFile)
+
+	// Validate the resolved path doesn't escape the specs directory
+	absBase, err := filepath.Abs(filepath.Join(stateRoot, basePath))
+	if err != nil {
+		return ""
+	}
+	absDesign, err := filepath.Abs(designPath)
+	if err != nil {
+		return ""
+	}
+	if !strings.HasPrefix(absDesign, absBase+string(filepath.Separator)) {
+		return ""
+	}
+
+	data, err := os.ReadFile(designPath)
+	if err != nil {
+		return "" // File not found or unreadable — skip gracefully
+	}
+
+	content := string(data)
+	if len(content) > maxDesignDocChars {
+		content = content[:maxDesignDocChars] + "\n\n[... truncated at 4000 characters ...]"
+	}
+
+	return content
+}
+
+// extractSpecFromSource tries to derive a spec name from the Source metadata field.
+// Known formats:
+//   - "audit:<finding-id>" — not directly a spec, return empty
+//   - "tasks.md #<n>" — not a spec name, return empty
+//   - plain string that could be a spec name
+func extractSpecFromSource(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return ""
+	}
+
+	// "audit:..." and "tasks.md ..." are not spec names
+	if strings.HasPrefix(source, "audit:") || strings.HasPrefix(source, "tasks.md") {
+		return ""
+	}
+
+	// Validate: no path separators, no dots (except in simple names)
+	if strings.ContainsAny(source, "/\\..") {
+		return ""
+	}
+
+	return source
 }
 
 func buildWorkDirInstruction(repoType, repoPath, workDir, repoName string) string {
@@ -1398,6 +1548,147 @@ func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 	return result
 }
 
+// replyToReviewComments fetches PR review comments and posts a reply to each
+// indicating the issues have been addressed. This is called on retry attempts
+// (attempt > 1) after the worker pushes fixes.
+// Failures are logged but do not block the workflow.
+func replyToReviewComments(ctx context.Context, prURL string, ghTimeout time.Duration) {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return
+	}
+
+	prNumber := ExtractPRNumber(prURL)
+	if prNumber == 0 {
+		return
+	}
+
+	if ghTimeout <= 0 {
+		ghTimeout = 60 * time.Second
+	}
+
+	ctx, cancel := withOptionalTimeout(ctx, ghTimeout)
+	defer cancel()
+
+	// Fetch PR review comments
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(),
+		"gh", "api",
+		fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", prNumber),
+		"--paginate",
+		"--jq", ".[].id",
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] replyToReviewComments: failed to fetch comments for PR #%d: %v\n", prNumber, err)
+		return
+	}
+
+	commentIDs := parseCommentIDs(string(output))
+	if len(commentIDs) == 0 {
+		return
+	}
+
+	for _, commentID := range commentIDs {
+		if _, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(),
+			"gh", "api",
+			"--method", "POST",
+			fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments/%d/replies", prNumber, commentID),
+			"-f", "body=Addressed in the latest push. Please re-review.",
+		); err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] replyToReviewComments: failed to reply to comment %d on PR #%d: %v\n", commentID, prNumber, err)
+			// Continue to next comment; don't block on individual failures
+		}
+	}
+}
+
+// parseCommentIDs parses newline-separated comment IDs from gh api output.
+func parseCommentIDs(output string) []int {
+	var ids []int
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		id, err := strconv.Atoi(line)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func fetchPRReviewComments(prNumber int, ghTimeout time.Duration) string {
+	if prNumber <= 0 {
+		return ""
+	}
+	if _, err := exec.LookPath("gh"); err != nil {
+		return ""
+	}
+
+	if ghTimeout <= 0 {
+		ghTimeout = 60 * time.Second
+	}
+
+	ctx, cancel := withOptionalTimeout(context.Background(), ghTimeout)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "api",
+		fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", prNumber),
+		"--jq", `.[] | "\(.path)\t\(.original_line // .line // 0)\t\(.body)"`,
+	)
+	if err != nil {
+		return ""
+	}
+
+	return formatPRReviewComments(string(output))
+}
+
+// formatPRReviewComments parses raw tab-delimited PR review comment lines
+// and formats them into structured feedback. Each input line has the format:
+// path\tline\tbody
+func formatPRReviewComments(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	lines := strings.Split(raw, "\n")
+	builder := strings.Builder{}
+	totalLen := 0
+	const maxTotal = 4000
+	const maxBodyLen = 200
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		path := strings.TrimSpace(parts[0])
+		lineNum := strings.TrimSpace(parts[1])
+		body := strings.TrimSpace(parts[2])
+
+		if path == "" || body == "" {
+			continue
+		}
+
+		// Collapse newlines in body to spaces
+		body = strings.Join(strings.Fields(body), " ")
+
+		if len(body) > maxBodyLen {
+			body = body[:maxBodyLen] + "..."
+		}
+
+		entry := fmt.Sprintf("- **%s:%s** → %s\n", path, lineNum, body)
+
+		if totalLen+len(entry) > maxTotal {
+			break
+		}
+		builder.WriteString(entry)
+		totalLen += len(entry)
+	}
+
+	return builder.String()
+}
+
 func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
 	if maxEntries <= 0 {
 		maxEntries = 10
@@ -1407,6 +1698,14 @@ func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
 		return ""
 	}
 	return reviewer.FormatFeedbackForPrompt(entries, 2000)
+}
+
+func loadTopCategorySummary(stateRoot string) string {
+	entries, err := reviewer.LoadFeedback(stateRoot)
+	if err != nil || len(entries) == 0 {
+		return ""
+	}
+	return reviewer.FormatTopCategoriesForPrompt(entries, 3)
 }
 
 func runAttemptGuard(ctx context.Context, stateRoot string, issueID int, logFile string, opts RunIssueOptions) error {
@@ -1539,7 +1838,40 @@ func stageChanges(ctx context.Context, wtDir, repoName string, timeout time.Dura
 	return nil
 }
 
-func createOrFindPR(ctx context.Context, branch, base, title string, issueID int, timeout time.Duration, retryCfg ghutil.RetryConfig) (string, error) {
+// readPlanFile reads the implementation plan file created by the Worker.
+// Returns empty string if the file does not exist or cannot be read.
+func readPlanFile(runDir string) string {
+	planPath := filepath.Join(runDir, "plan.md")
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		return ""
+	}
+	plan := strings.TrimSpace(string(data))
+	if plan == "" {
+		return ""
+	}
+	return plan
+}
+
+// buildPRBody constructs the PR body with optional implementation plan.
+func buildPRBody(issueID int, title, plan string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Closes #%d\n", issueID))
+
+	if plan != "" {
+		b.WriteString("\n## Implementation Plan\n\n")
+		b.WriteString(plan)
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n## Changes\n\n")
+	b.WriteString(title)
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+func createOrFindPR(ctx context.Context, branch, base, title string, issueID int, timeout time.Duration, retryCfg ghutil.RetryConfig, planContent string) (string, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return "", fmt.Errorf("gh CLI not found in PATH")
 	}
@@ -1554,7 +1886,7 @@ func createOrFindPR(ctx context.Context, branch, base, title string, issueID int
 		return prInfo.URL, nil
 	}
 
-	body := fmt.Sprintf("Closes #%d\n\n%s", issueID, title)
+	body := buildPRBody(issueID, title, planContent)
 	prCtx, cancel := withOptionalTimeout(ctx, timeout)
 	defer cancel()
 

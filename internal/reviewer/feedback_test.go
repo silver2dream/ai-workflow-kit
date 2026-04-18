@@ -287,3 +287,154 @@ func TestBuildFeedbackEntry(t *testing.T) {
 		t.Error("Categories should not be empty for review body with known patterns")
 	}
 }
+
+func TestTopCategories(t *testing.T) {
+	entries := []FeedbackEntry{
+		{Categories: []string{"test", "naming"}},
+		{Categories: []string{"test", "error-handling"}},
+		{Categories: []string{"test", "naming", "security"}},
+		{Categories: []string{"error-handling"}},
+		{Categories: []string{"naming"}},
+	}
+
+	top := TopCategories(entries, 3)
+	if len(top) != 3 {
+		t.Fatalf("expected 3 categories, got %d", len(top))
+	}
+
+	// naming and test both have 3 occurrences; alphabetical tiebreaker puts naming first
+	if top[0].Name != "naming" || top[0].Count != 3 {
+		t.Errorf("top[0] = %v, want {naming, 3}", top[0])
+	}
+	if top[1].Name != "test" || top[1].Count != 3 {
+		t.Errorf("top[1] = %v, want {test, 3}", top[1])
+	}
+	if top[2].Name != "error-handling" || top[2].Count != 2 {
+		t.Errorf("top[2] = %v, want {error-handling, 2}", top[2])
+	}
+}
+
+func TestTopCategories_Empty(t *testing.T) {
+	result := TopCategories(nil, 5)
+	if result != nil {
+		t.Errorf("expected nil for empty entries, got %v", result)
+	}
+
+	result = TopCategories([]FeedbackEntry{{Categories: []string{"test"}}}, 0)
+	if result != nil {
+		t.Errorf("expected nil for n=0, got %v", result)
+	}
+}
+
+func TestTopCategories_LessThanN(t *testing.T) {
+	entries := []FeedbackEntry{
+		{Categories: []string{"test"}},
+	}
+	top := TopCategories(entries, 5)
+	if len(top) != 1 {
+		t.Fatalf("expected 1 category, got %d", len(top))
+	}
+	if top[0].Name != "test" || top[0].Count != 1 {
+		t.Errorf("top[0] = %v, want {test, 1}", top[0])
+	}
+}
+
+func TestAnalyzeTrends(t *testing.T) {
+	// Create entries where recent ones have different distribution
+	entries := []FeedbackEntry{
+		// Older entries: mostly "test"
+		{Categories: []string{"test"}},
+		{Categories: []string{"test"}},
+		{Categories: []string{"test"}},
+		{Categories: []string{"test"}},
+		{Categories: []string{"test"}},
+		{Categories: []string{"naming"}},
+		{Categories: []string{"naming"}},
+		{Categories: []string{"error-handling"}},
+		{Categories: []string{"error-handling"}},
+		{Categories: []string{"error-handling"}},
+		// Recent 5: mostly "security" (new pattern)
+		{Categories: []string{"security"}},
+		{Categories: []string{"security"}},
+		{Categories: []string{"security"}},
+		{Categories: []string{"security"}},
+		{Categories: []string{"test"}},
+	}
+
+	trends := AnalyzeTrends(entries, 5)
+	if len(trends) == 0 {
+		t.Fatal("expected at least one trend")
+	}
+
+	// security should be increasing (80% recent vs ~25% overall)
+	found := false
+	for _, tr := range trends {
+		if tr.Name == "security" {
+			found = true
+			if tr.Direction != "increasing" {
+				t.Errorf("security should be increasing, got %s", tr.Direction)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected security in trends")
+	}
+}
+
+func TestAnalyzeTrends_Empty(t *testing.T) {
+	result := AnalyzeTrends(nil, 5)
+	if result != nil {
+		t.Errorf("expected nil for empty entries, got %v", result)
+	}
+}
+
+func TestAnalyzeTrends_TooFewEntries(t *testing.T) {
+	// When all entries are "recent", trends should be empty (no difference)
+	entries := []FeedbackEntry{
+		{Categories: []string{"test"}},
+		{Categories: []string{"test"}},
+	}
+	trends := AnalyzeTrends(entries, 5)
+	if len(trends) != 0 {
+		t.Errorf("expected no trends when recent window covers all entries, got %v", trends)
+	}
+}
+
+func TestFormatTopCategoriesForPrompt(t *testing.T) {
+	entries := []FeedbackEntry{
+		{Categories: []string{"test", "naming"}},
+		{Categories: []string{"test", "error-handling"}},
+		{Categories: []string{"test"}},
+	}
+
+	result := FormatTopCategoriesForPrompt(entries, 3)
+	if result == "" {
+		t.Fatal("expected non-empty result")
+	}
+	if !strings.Contains(result, "COMMON REJECTION PATTERNS") {
+		t.Error("should contain header")
+	}
+	if !strings.Contains(result, "test (seen 3 times)") {
+		t.Error("should contain test category with count")
+	}
+	if !strings.Contains(result, "ensure adequate test coverage") {
+		t.Error("should contain description for test category")
+	}
+}
+
+func TestFormatTopCategoriesForPrompt_Empty(t *testing.T) {
+	result := FormatTopCategoriesForPrompt(nil, 3)
+	if result != "" {
+		t.Errorf("expected empty for nil entries, got %q", result)
+	}
+}
+
+func TestFormatTopCategoriesForPrompt_UnknownCategory(t *testing.T) {
+	entries := []FeedbackEntry{
+		{Categories: []string{"unknown-cat"}},
+	}
+	result := FormatTopCategoriesForPrompt(entries, 3)
+	if !strings.Contains(result, "pay attention to unknown-cat") {
+		t.Errorf("should use fallback description for unknown category, got %q", result)
+	}
+}
