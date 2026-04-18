@@ -48,9 +48,7 @@ func TestMultiReviewOrchestrator_RunAll_Parallel(t *testing.T) {
 
 func TestMultiReviewOrchestrator_RunAll_SingleFailure(t *testing.T) {
 	origRunner := claudeRunnerFunc
-	callCount := 0
 	claudeRunnerFunc = func(ctx context.Context, prompt, model string) (string, error) {
-		callCount++
 		if model == "fail-model" {
 			return "", fmt.Errorf("backend unavailable")
 		}
