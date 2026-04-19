@@ -675,6 +675,31 @@ func TestValidateCompleteness(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:     "meta-criteria skips implementation requirement",
+			criteria: []string{"go build ./... passes"},
+			verifications: []CriteriaVerification{
+				{Criteria: "go build ./... passes", Implementation: "", TestName: "(meta)", Assertion: "(meta)", IsMeta: true},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "meta-criteria without IsMeta flag but with (meta) test name",
+			criteria: []string{"npm run build succeeds"},
+			verifications: []CriteriaVerification{
+				{Criteria: "npm run build succeeds", Implementation: "", TestName: "(meta)", Assertion: "(meta)"},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "mixed meta and non-meta criteria",
+			criteria: []string{"Feature A", "build passes"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "Implemented using X pattern", TestName: "TestFeatureA", Assertion: "assert.Equal"},
+				{Criteria: "build passes", Implementation: "", TestName: "(meta)", Assertion: "(meta)", IsMeta: true},
+			},
+			wantErr: false,
+		},
+		{
 			name:          "empty criteria",
 			criteria:      []string{},
 			verifications: []CriteriaVerification{},

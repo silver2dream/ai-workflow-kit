@@ -600,6 +600,14 @@ func ValidateCompleteness(criteria []string, verifications []CriteriaVerificatio
 		found := false
 		for _, v := range verifications {
 			if fuzzyMatch(c, v.Criteria) {
+				// Meta-criteria (e.g., "build passes", "file exists", "(meta)" test name)
+				// skip implementation description requirement — these criteria verify
+				// build/setup outcomes, not code logic, and have no test to describe.
+				if isMetaCriteria(v) {
+					found = true
+					break
+				}
+
 				// Check completeness: only implementation is required
 				var issues []string
 				if v.Implementation == "" {
