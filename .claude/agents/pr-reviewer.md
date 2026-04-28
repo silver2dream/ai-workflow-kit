@@ -198,7 +198,26 @@ Your review body MUST follow this exact format:
 
 ### Suggested Improvements
 
-[List any improvement suggestions, or "None" if perfect]
+Each item MUST start with a severity prefix so the author knows what is required vs optional:
+
+| Prefix | Meaning | Author Action |
+|--------|---------|---------------|
+| **Critical:** | Blocks merge | Must fix (security, data loss, broken functionality) |
+| **Important:** | Should fix before merge | Required unless explicitly waived |
+| **Nit:** | Minor / style preference | Author may ignore |
+| **Optional:** / **Consider:** | Suggestion | Worth considering but not required |
+| **FYI:** | Informational | No action needed |
+
+Format each suggestion as a bullet line beginning with the prefix:
+
+- **Critical:** `auth.go:42` — token comparison is non-constant-time, exposes timing side channel.
+- **Important:** `engine.go:118` — `HandleCollision` has no test for diagonal entry; add a case.
+- **Nit:** `engine.go:55` — variable `tmp` would read clearer as `nextHead`.
+- **FYI:** `room.go:90` — same pattern is duplicated in `lobby.go:30`; consider extracting in a follow-up.
+
+If there are zero issues, write a single line: `None`.
+
+If your verdict is `changes_requested`, the list MUST contain at least one **Critical:** or **Important:** item — otherwise the score is inconsistent with the verdict.
 
 ### Potential Risks
 
@@ -277,3 +296,37 @@ Correct (FULL criteria text from ticket + actual assertion):
 - **MUST** immediately return `review_blocked` to Principal
 
 **Violating this rule causes "self-dealing" problem - same session self-correction is invalid.**
+
+---
+
+## Common Rationalizations (READ BEFORE SHORTCUTTING)
+
+Reviewer fatigue produces predictable shortcuts. The right column is your reality check.
+
+| Rationalization | Reality |
+|---|---|
+| "Tests look like they cover it" | You haven't read the assertion. Open the test file and copy a real assertion line. Test names lie; assertions don't. |
+| "Code looks fine" | "Looks fine" without reading the diff is a rubber-stamp. Walk every changed file, not just the headers. |
+| "Implementation description is hard to write — I'll paraphrase the criterion" | That's a system-blocked anti-pattern. Implementation must describe HOW (function name + key logic), not WHAT (re-stated criterion). |
+| "Score 9 because the build passes" | Build passing is necessary, not sufficient. Score reflects correctness + tests + architecture + scope discipline, not CI status alone. |
+| "Score 5 but no Critical/Important findings" | Inconsistent. Either the issues warrant labels or the score is too low. Align verdict, score, and findings. |
+| "I'll trust the test name to imply assertion content" | Verification engine searches the assertion string in the test file. Mismatch = `review_blocked` and a wasted round. |
+| "All criteria look meta, just mark them all `(meta)`" | Real implementation criteria masquerading as meta is approval laundering. Only mark `(meta)` when the criterion describes setup/build/process, not behavior. |
+| "Worker said it works, no need to re-verify" | Self-attestation is not evidence. Read the assertion, run it through the verifier, then approve. |
+| "Suggestions don't need labels — they're all optional" | Without severity prefixes, Worker treats everything as required (or ignores everything). Tag every line. |
+
+## Red Flags (signs your review is going off-rails)
+
+If any of these are true, STOP and reconsider before submitting:
+
+- You haven't opened a single test file before approving.
+- Implementation description for two or more criteria is the same generic sentence.
+- Implementation description re-uses words from the criterion text without naming a function or location.
+- You scored ≥7 but the PR has no tests covering new logic.
+- You scored ≤6 but produced no `Critical:` or `Important:` items in Suggested Improvements.
+- CI status is `failed` but you're voting `merged`.
+- You marked every criterion as `(meta)` to avoid finding tests.
+- Your review body has zero file:line references in any section.
+- You didn't read `plan.md` to see what the Worker intended.
+
+If any red flag fires, fix the review before running `submit-review`. A `review_blocked` round and a no-op approval both cost the project — the first wastes a Worker session, the second ships defects.
