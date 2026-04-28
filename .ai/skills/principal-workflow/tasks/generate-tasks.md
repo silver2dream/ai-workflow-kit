@@ -26,8 +26,9 @@
 1. 讀取 `<base_path>/<spec>/design.md`
 2. 生成任務分解（draft）
 3. **Step Dependency Extraction（若存在）**— 見下方 Section A.0
-4. **Gap Verification（必須在 create-epic 前執行）**— 見下方 Section A.1
-5. 將驗證通過的 epic body 寫入 `.ai/temp/create-epic-body.md`，格式：
+4. **Assumption Surfacing（必須在 Gap Verification 前執行）**— 見下方 Section A.0.5
+5. **Gap Verification（必須在 create-epic 前執行）**— 見下方 Section A.1
+6. 將驗證通過的 epic body 寫入 `.ai/temp/create-epic-body.md`，格式：
    ```markdown
    # <spec-name> Task Tracking
 
@@ -41,10 +42,10 @@
 
    This is a GitHub Tracking Issue. Checkboxes update automatically when linked issues are closed.
    ```
-6. 執行：`awkit create-epic --spec "<SPEC_NAME>" --body-file .ai/temp/create-epic-body.md`
+7. 執行：`awkit create-epic --spec "<SPEC_NAME>" --body-file .ai/temp/create-epic-body.md`
    - **REQUIRED**: `--body-file` 參數必填
    - 此命令會創建 GitHub Tracking Issue 並更新 `workflow.yaml` 的 tracking mode
-7. 回到 main-loop
+8. 回到 main-loop
 
 ---
 
@@ -87,6 +88,90 @@ GitHub Issues of prerequisite tasks.
 If design.md does not contain a `## Step Dependencies` section, skip this
 extraction and generate the task list in the order they appear in design.md
 (backward-compatible behavior).
+
+---
+
+### Section A.0.5: Assumption Surfacing (MANDATORY)
+
+**Purpose**: prevent silent default propagation. The Tennis project failure
+(scaffold defaulted to React when the user wanted Phaser) shows that any
+ambiguity in design.md becomes a permanent assumption baked into every
+downstream task. Surface assumptions BEFORE the gap check so the user can
+correct them before a 15-issue Epic is created.
+
+This step runs after Section A.0 (Step Dependency Extraction) and before
+Section A.1 (Gap Verification).
+
+#### A.0.5.1 Identify assumptions across required axes
+
+Inspect design.md and the existing `.ai/config/workflow.yaml`. For each axis
+below, write either the value found in design.md/config, or "ASSUMING: <value>"
+when design.md is silent or ambiguous:
+
+| Axis | What to record |
+|------|----------------|
+| **Tech stack — frontend** | Framework + language (e.g., "Phaser 3 + TypeScript", "React + TS", "Unity") |
+| **Tech stack — backend** | Language + framework (e.g., "Go + net/http", "Python + FastAPI") |
+| **Datastore** | Primary store + cache (e.g., "PostgreSQL only", "Mongo + Redis") |
+| **Repo layout** | `root` / `directory` / `submodule` and which dirs (e.g., `backend/`, `frontend/`) |
+| **Target platforms** | Where the product runs (e.g., "Web only", "iOS + Android + PC") |
+| **Auth model** | Session/JWT/none, who issues tokens |
+| **Real-time transport** | WebSocket/HTTP polling/none |
+| **Testing/CI** | Frameworks + coverage expectations |
+| **Deployment** | Where it ships (e.g., "self-hosted Linux", "AWS ECS", "Cloudflare Workers") |
+
+If an axis is irrelevant for the spec (e.g., no backend, no real-time), record
+"N/A — <reason>" rather than skipping the row.
+
+#### A.0.5.2 Flag risky assumptions
+
+Mark an assumption as **RISKY** if any of these are true:
+
+- The default contradicts a user statement earlier in conversation.
+- The default is a tech-stack choice not present in the existing rule pack
+  (e.g., adding Phaser when only `frontend-react.md` is enabled).
+- The default would create a new rule pack, new dependency, or new repo dir.
+- The choice locks out platforms the user has explicitly mentioned.
+
+#### A.0.5.3 Save and surface
+
+1. Write `.ai/temp/assumptions-<spec>.md` with the full table.
+2. Print to context (NOT a file) a compact summary using this exact format:
+
+   ```
+   ASSUMPTIONS I'M MAKING for spec "<spec-name>":
+   1. Frontend: <value>
+   2. Backend: <value>
+   3. Datastore: <value>
+   4. Repo layout: <value>
+   5. Target platforms: <value>
+   6. Auth: <value>
+   7. Real-time transport: <value>
+   8. Testing/CI: <value>
+   9. Deployment: <value>
+
+   RISKY ASSUMPTIONS (need confirmation):
+   - <axis>: <value> — <why risky>
+
+   → Correct any of these now or I'll proceed with these assumptions.
+   ```
+
+3. **If RISKY ASSUMPTIONS list is non-empty**, STOP and wait for user response
+   in this turn. Do NOT proceed to Section A.1 until the user confirms or
+   corrects.
+
+4. **If RISKY ASSUMPTIONS list is empty**, you may proceed directly to
+   Section A.1 in the same turn (no user pause needed).
+
+#### A.0.5.4 After user response
+
+- User confirms: continue to Section A.1.
+- User corrects: update `.ai/temp/assumptions-<spec>.md` and the design.md if
+  the correction is substantive (e.g., framework swap), then re-run A.0.5
+  before proceeding.
+- User silent or ambiguous: re-ask once with the specific axis, then proceed
+  with the original assumption and embed a `<!-- ASSUMPTION_UNCONFIRMED: <axis> -->`
+  marker in the epic body so reviewer can surface it later.
 
 ---
 
