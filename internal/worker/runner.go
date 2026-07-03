@@ -63,6 +63,10 @@ type workflowSpecFiles struct {
 type workflowWorker struct {
 	Backend    string                 `yaml:"backend"`
 	ClaudeCode workflowClaudeCode     `yaml:"claude_code"`
+	// KnowledgeGraph controls injection of a ticket-relevant slice of
+	// .understand-anything/knowledge-graph.json into the Worker prompt.
+	// "auto" (default, inject when the file exists) | "off".
+	KnowledgeGraph string `yaml:"knowledge_graph"`
 }
 
 type workflowClaudeCode struct {
@@ -619,7 +623,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs, &cfg.Worker); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -1204,7 +1208,7 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs, workerCfg *workflowWorker) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
 	prReviewComments := fetchPRReviewComments(prNumber, ghTimeout)
 
@@ -1245,6 +1249,16 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		builder.WriteString("The following design document provides context for this task:\n\n")
 		builder.WriteString(designContent)
 		builder.WriteString("\n============================================================\n\n")
+	}
+
+	// Inject a ticket-relevant slice of the codebase knowledge graph, when
+	// one is present (best-effort grounding; see knowledgegraph.go).
+	if graphSection := loadKnowledgeGraphContext(stateRoot, issueID, ticket, workerCfg); graphSection != "" {
+		builder.WriteString("============================================================\n")
+		builder.WriteString("CODEBASE MAP\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(graphSection)
+		builder.WriteString("============================================================\n\n")
 	}
 
 	builder.WriteString("Ticket:\n")
