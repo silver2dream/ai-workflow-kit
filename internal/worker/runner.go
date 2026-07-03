@@ -1474,7 +1474,13 @@ func isValidRepoPath(repoPath string) bool {
 	}
 
 	// Check for absolute paths (Unix and Windows)
+	// filepath.IsAbs is platform-dependent: on Windows "/x" and "\x" are
+	// drive-relative (not absolute) yet still rooted, so reject any leading
+	// separator explicitly to keep behavior identical across platforms.
 	if filepath.IsAbs(repoPath) {
+		return false
+	}
+	if repoPath[0] == '/' || repoPath[0] == '\\' {
 		return false
 	}
 	if len(repoPath) >= 2 && repoPath[1] == ':' {

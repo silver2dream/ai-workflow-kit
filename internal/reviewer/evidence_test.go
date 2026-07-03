@@ -1839,7 +1839,9 @@ exit 0
 | Canvas renders game state | TestRenderDrawsSnakeSegments | expect(canvas).toMatchSnapshot() |
 `,
 		WorktreePath: tmpDir,
-		TestCommand:  "sh " + scriptPath,
+		// ToSlash keeps the path intact inside `sh -c` on Windows, where
+		// backslashes would otherwise be consumed as escape characters.
+		TestCommand:  "sh " + filepath.ToSlash(scriptPath),
 		Language:     "node",
 	}
 
