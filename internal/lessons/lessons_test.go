@@ -516,3 +516,27 @@ func TestDistill_ApprovedEntriesNotDistilled(t *testing.T) {
 		t.Errorf("watermark must still advance, got %d", s.Watermark.FeedbackLine)
 	}
 }
+
+func TestDistill_AllRunnerFailuresPreserveWatermark(t *testing.T) {
+	root := t.TempDir()
+	writeFeedback(t, root,
+		`{"timestamp":"2026-07-01T00:00:00Z","issue_id":70,"pr_number":14,"score":4,"categories":["test"],"summary":"missing tests"}`)
+
+	orig := distillRunnerFunc
+	distillRunnerFunc = func(ctx context.Context, prompt, model string) (string, error) {
+		return "", fmt.Errorf("claude CLI not found in PATH")
+	}
+	defer func() { distillRunnerFunc = orig }()
+
+	report, err := Distill(context.Background(), root, DistillOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.RunnerErrors != 1 {
+		t.Errorf("RunnerErrors = %d, want 1", report.RunnerErrors)
+	}
+	s, _ := Load(root)
+	if s.Watermark.FeedbackLine != 0 {
+		t.Errorf("watermark must be preserved when every LLM call failed, got %d", s.Watermark.FeedbackLine)
+	}
+}

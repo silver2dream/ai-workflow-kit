@@ -88,10 +88,11 @@ type DistillOptions struct {
 
 // DistillReport summarizes what a distillation run did.
 type DistillReport struct {
-	Processed int
-	Created   []string // new lesson IDs
-	Matched   []string // upvoted lesson IDs
-	Skipped   int      // NOOP or unparseable
+	Processed    int
+	Created      []string // new lesson IDs
+	Matched      []string // upvoted lesson IDs
+	Skipped      int      // NOOP or unparseable
+	RunnerErrors int      // LLM invocation failures (CLI missing, timeout)
 }
 
 // distillRunnerFunc invokes the distiller LLM; replaced in tests.
@@ -162,6 +163,7 @@ func Distill(ctx context.Context, stateRoot string, opts DistillOptions) (*Disti
 		cancel()
 		if err != nil {
 			report.Skipped++
+			report.RunnerErrors++
 			continue
 		}
 
@@ -173,7 +175,14 @@ func Distill(ctx context.Context, stateRoot string, opts DistillOptions) (*Disti
 		applyDecision(s, decision, rec, stateRoot, report)
 	}
 
-	if processedAll {
+	// If every LLM call failed (claude missing, backend down), nothing was
+	// actually judged — keep the watermark so the entries are retried on the
+	// next run instead of being silently consumed. Parse failures DO advance
+	// (the model ran; garbled output is dropped by design, not retried).
+	allRunsFailed := report.Processed > 0 && report.RunnerErrors == report.Processed
+	if allRunsFailed {
+		// leave watermark unchanged
+	} else if processedAll {
 		s.Watermark.FeedbackLine = newWatermark
 	} else {
 		s.Watermark.FeedbackLine = consumedThrough
