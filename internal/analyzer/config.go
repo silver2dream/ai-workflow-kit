@@ -92,6 +92,20 @@ type ReviewConfig struct {
 	MultiModel         bool                      `yaml:"multi_model"`
 	SecondaryReviewers []SecondaryReviewerConfig  `yaml:"secondary_reviewers"`
 	JiTTest            JiTTestConfig              `yaml:"jittest"`
+	// SeverityConsistency gates the severity/verdict consistency check:
+	// a below-threshold score must list at least one Critical/Important
+	// finding, and a passing score must not carry Critical findings.
+	// nil = enabled (default).
+	SeverityConsistency *bool `yaml:"severity_consistency"`
+}
+
+// SeverityCheckEnabled returns whether the severity/verdict consistency
+// check is enabled (default: true).
+func (c *ReviewConfig) SeverityCheckEnabled() bool {
+	if c.SeverityConsistency == nil {
+		return true
+	}
+	return *c.SeverityConsistency
 }
 
 // SecondaryReviewerConfig configures a secondary AI reviewer for multi-model consensus.

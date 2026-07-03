@@ -226,6 +226,19 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		return handleVerificationFailure(ctx, opts, sessionID, verifyErr)
 	}
 
+	// Severity/verdict consistency gate: the numeric score and the
+	// severity-tagged findings must tell the same story (system-enforced
+	// counterpart of the pr-reviewer prompt contract).
+	if severityCheckEnabled(opts.StateRoot) {
+		if sevErr := ValidateSeverityConsistency(opts.Score, opts.ScoreThreshold, opts.ReviewBody); sevErr != nil {
+			fmt.Printf("[REVIEW] ❌ Severity consistency check failed: %s\n", sevErr.Message)
+			for _, d := range sevErr.Details {
+				fmt.Printf("[REVIEW]   - %s\n", d)
+			}
+			return handleVerificationFailure(ctx, opts, sessionID, sevErr)
+		}
+	}
+
 	fmt.Printf("[REVIEW] ✅ All verifications passed\n")
 
 	// Count criteria for reporting
@@ -384,6 +397,8 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 		verifyCategory = "test-execution"
 	case 3:
 		verifyCategory = "assertion"
+	case 4:
+		verifyCategory = "severity-consistency"
 	}
 	_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
@@ -411,6 +426,8 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 		failureType = "test execution"
 	case 3:
 		failureType = "assertion"
+	case 4:
+		failureType = "severity consistency"
 	}
 
 	if commentErr := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
@@ -754,6 +771,16 @@ func jitFailurePolicy(stateRoot string) string {
 		return "warn"
 	}
 	return cfg.Review.JiTTest.FailurePolicy
+}
+
+// severityCheckEnabled reports whether the severity/verdict consistency gate
+// is enabled (review.severity_consistency, default: true).
+func severityCheckEnabled(stateRoot string) bool {
+	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	if err != nil {
+		return true
+	}
+	return cfg.Review.SeverityCheckEnabled()
 }
 
 // handleJiTTestBlock handles JiT test failure in block mode.
