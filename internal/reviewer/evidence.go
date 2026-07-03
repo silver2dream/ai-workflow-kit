@@ -39,6 +39,10 @@ type VerifyOptions struct {
 	TestCommand  string        // Command to run tests
 	TestTimeout  time.Duration // Timeout for test execution
 	Language     string        // Programming language for test name validation
+	// Verifications, when non-nil, are used directly (structured submission
+	// path) and ReviewBody is NOT parsed — the lossy markdown/regex path is
+	// bypassed entirely.
+	Verifications []CriteriaVerification
 }
 
 // TestNameValidator defines interface for language-specific test name validation
@@ -218,12 +222,17 @@ func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*Ver
 
 	fmt.Printf("[VERIFY] Found %d acceptance criteria in ticket\n", len(criteria))
 
-	// 2. Parse criteria verifications from review body (with language-aware validation)
-	verifications, err := ParseCriteriaVerifications(opts.ReviewBody, opts.Language)
-	if err != nil {
-		return nil, &EvidenceError{
-			Code:    1,
-			Message: fmt.Sprintf("failed to parse review body: %v", err),
+	// 2. Obtain criteria verifications: directly from a structured
+	// submission when provided, else parse the review body markdown.
+	verifications := opts.Verifications
+	if verifications == nil {
+		var err error
+		verifications, err = ParseCriteriaVerifications(opts.ReviewBody, opts.Language)
+		if err != nil {
+			return nil, &EvidenceError{
+				Code:    1,
+				Message: fmt.Sprintf("failed to parse review body: %v", err),
+			}
 		}
 	}
 
@@ -234,7 +243,7 @@ func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*Ver
 		}
 	}
 
-	fmt.Printf("[VERIFY] Found %d verifications in review body\n", len(verifications))
+	fmt.Printf("[VERIFY] Found %d verifications\n", len(verifications))
 
 	// 3. Validate completeness - each criteria has verification
 	if err := ValidateCompleteness(criteria, verifications); err != nil {

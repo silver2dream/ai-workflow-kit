@@ -110,8 +110,12 @@ func severityOfLine(line string) (string, bool) {
 //
 // Returns nil when consistent.
 func ValidateSeverityConsistency(score, threshold int, reviewBody string) *EvidenceError {
-	counts := ParseSeverityCounts(reviewBody)
+	return ValidateSeverityCounts(score, threshold, ParseSeverityCounts(reviewBody))
+}
 
+// ValidateSeverityCounts is the counts-based core of the severity gate,
+// used directly by the structured submission path (no prose parsing).
+func ValidateSeverityCounts(score, threshold int, counts SeverityCounts) *EvidenceError {
 	if score < threshold && counts.Critical == 0 && counts.Important == 0 {
 		return &EvidenceError{
 			Code: 4,
