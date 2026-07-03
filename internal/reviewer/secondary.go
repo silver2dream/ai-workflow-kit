@@ -46,7 +46,10 @@ func RunSecondaryReview(cfg analyzer.SecondaryReviewerConfig, diff string, timeo
 		return 0, "", fmt.Errorf("secondary review failed (model=%s, focus=%s): %w", cfg.Model, cfg.FocusArea, err)
 	}
 
-	score, findings = parseSecondaryReviewOutput(output)
+	score, findings, err = parseSecondaryReviewOutput(output)
+	if err != nil {
+		return 0, "", fmt.Errorf("secondary review unparseable (model=%s, focus=%s): %w", cfg.Model, cfg.FocusArea, err)
+	}
 	return score, findings, nil
 }
 
@@ -76,28 +79,31 @@ Diff:
 }
 
 // parseSecondaryReviewOutput extracts score and findings from the LLM output.
-func parseSecondaryReviewOutput(output string) (int, string) {
-	score := 5 // default if parsing fails
-
-	// Extract score
+// A missing or out-of-range SCORE line is an error, not a default: a garbled
+// reviewer must be excluded from consensus rather than contribute a
+// fabricated middle score.
+func parseSecondaryReviewOutput(output string) (int, string, error) {
 	scoreRe := regexp.MustCompile(`(?im)^SCORE:\s*(\d+)`)
-	if m := scoreRe.FindStringSubmatch(output); len(m) > 1 {
-		if parsed, err := strconv.Atoi(m[1]); err == nil && parsed >= 1 && parsed <= 10 {
-			score = parsed
-		}
+	m := scoreRe.FindStringSubmatch(output)
+	if len(m) < 2 {
+		return 0, "", fmt.Errorf("no SCORE line in reviewer output")
+	}
+	score, err := strconv.Atoi(m[1])
+	if err != nil || score < 1 || score > 10 {
+		return 0, "", fmt.Errorf("SCORE %q out of range 1-10", m[1])
 	}
 
 	// Extract findings
 	findings := ""
 	findingsRe := regexp.MustCompile(`(?ims)^FINDINGS:\s*\n(.+)`)
-	if m := findingsRe.FindStringSubmatch(output); len(m) > 1 {
-		findings = strings.TrimSpace(m[1])
+	if fm := findingsRe.FindStringSubmatch(output); len(fm) > 1 {
+		findings = strings.TrimSpace(fm[1])
 	} else {
 		// Fallback: use the whole output minus the score line as findings
 		findings = strings.TrimSpace(scoreRe.ReplaceAllString(output, ""))
 	}
 
-	return score, findings
+	return score, findings, nil
 }
 
 // HasErrorFindings returns true if the findings contain any [ERROR] tagged items.

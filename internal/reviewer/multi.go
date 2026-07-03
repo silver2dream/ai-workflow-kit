@@ -3,11 +3,15 @@ package reviewer
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
 // ReviewResult holds the output of a single reviewer execution.
@@ -142,4 +146,86 @@ func (o *MultiReviewOrchestrator) BuildConsensusReport(results []ReviewResult) (
 	sb.WriteString(fmt.Sprintf("- **Final consensus**: %d/10\n", finalScore))
 
 	return finalScore, sb.String()
+}
+
+// MultiModelSettings holds the resolved multi-model review configuration.
+type MultiModelSettings struct {
+	Reviewers []analyzer.SecondaryReviewerConfig
+	Timeout   time.Duration
+}
+
+// LoadMultiModelSettings reads workflow.yaml and returns the multi-model
+// review settings, or nil when multi-model review is disabled. When enabled
+// without explicit secondary_reviewers, it defaults to the single
+// architecture-focused opus reviewer documented in workflow.yaml.
+func LoadMultiModelSettings(stateRoot string) *MultiModelSettings {
+	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	if err != nil || !cfg.Review.MultiModel {
+		return nil
+	}
+	reviewers := cfg.Review.SecondaryReviewers
+	if len(reviewers) == 0 {
+		reviewers = []analyzer.SecondaryReviewerConfig{
+			{Backend: "claude", Model: "opus", FocusArea: "architecture"},
+		}
+	}
+	return &MultiModelSettings{Reviewers: reviewers, Timeout: 5 * time.Minute}
+}
+
+// maxSecondaryDiffChars caps the diff passed to secondary reviewer prompts.
+const maxSecondaryDiffChars = 80000
+
+// fetchPRDiffFunc fetches a PR's unified diff; replaced in tests.
+var fetchPRDiffFunc = fetchPRDiff
+
+func fetchPRDiff(ctx context.Context, prNumber int, timeout time.Duration) (string, error) {
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	out, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "diff", strconv.Itoa(prNumber))
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// ApplyMultiModelConsensus runs the configured secondary reviewers on the PR
+// diff and merges their scores with the primary score (weighted 0.7/0.3,
+// capped at 6 when any reviewer reports [ERROR] findings — see
+// CalculateConsensusScore). It returns the consensus score and a markdown
+// section describing every reviewer's verdict.
+//
+// applied=false means consensus could not run at all (PR diff unavailable);
+// callers should proceed with the primary score. Individual secondary
+// failures do NOT prevent consensus: failed reviewers are reported in the
+// section and excluded from scoring, so an all-failed run degrades to the
+// primary score with the failures visible.
+func ApplyMultiModelConsensus(ctx context.Context, prNumber, primaryScore int, primaryBody string, settings *MultiModelSettings, ghTimeout time.Duration) (finalScore int, section string, applied bool) {
+	if settings == nil || len(settings.Reviewers) == 0 {
+		return 0, "", false
+	}
+
+	diff, err := fetchPRDiffFunc(ctx, prNumber, ghTimeout)
+	if err != nil || strings.TrimSpace(diff) == "" {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: multi-model review skipped, PR diff unavailable: %v\n", err)
+		return 0, "", false
+	}
+	if len(diff) > maxSecondaryDiffChars {
+		diff = diff[:maxSecondaryDiffChars] + "\n... (diff truncated for secondary review)\n"
+	}
+
+	orch := &MultiReviewOrchestrator{
+		PrimaryScore: primaryScore,
+		// The consensus section is appended to the primary review body, so
+		// reference it instead of duplicating it inside the report.
+		PrimaryFindings: "_(see primary review above)_",
+		Configs:         settings.Reviewers,
+		Timeout:         settings.Timeout,
+	}
+	results := orch.RunAll(diff)
+	finalScore, section = orch.BuildConsensusReport(results)
+	return finalScore, section, true
 }

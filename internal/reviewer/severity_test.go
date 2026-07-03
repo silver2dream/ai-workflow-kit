@@ -99,3 +99,4 @@ func TestValidateSeverityConsistency_ApproveWithImportantOK(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+

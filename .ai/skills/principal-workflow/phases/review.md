@@ -25,23 +25,13 @@ Subagent 會獨立執行完整審查流程並返回結果：
 
 ## 可選：Multi-Model 交叉審查
 
-當 `workflow.yaml` 中設定 `review.multi_model: true` 時，在 pr-reviewer 完成後，額外調用 architecture-reviewer 進行架構層面審查。
+當 `workflow.yaml` 中設定 `review.multi_model: true` 時，**`awkit submit-review` 會自動執行**多模型共識審查，Principal 與 pr-reviewer 不需要做任何額外操作。
 
-**執行條件**：讀取 `.ai/config/workflow.yaml`，檢查 `review.multi_model` 是否為 `true`。如果未設定或為 `false`，跳過此步驟。
+系統行為（由 Go 程式碼強制執行，非 agent 計算）：
 
-**執行步驟**：
+1. `submit-review` 取得 PR diff，平行調用 `review.secondary_reviewers` 設定的次要審查者（未設定時預設為一個 architecture-focused 的 opus 審查者，透過 `claude --print` 執行）。
+2. 共識分數 = `primary × 0.7 + secondaries 均分 × 0.3`（四捨五入）；任一審查者回報 `[ERROR]` 發現時，共識分數上限為 6。
+3. 共識報告（每位審查者的分數與 findings）自動附加到 review body，approve 與 changes_requested 的留言都會帶上。
+4. 次要審查者失敗或超時不會阻塞審查：失敗會記載於報告中並排除於計分外（graceful degradation）。
 
-1. 在 pr-reviewer 返回結果後（且結果不是 `review_blocked`），調用 architecture-reviewer：
-   - `subagent_type`: `"architecture-reviewer"`
-   - `description`: `"Architecture review PR #<pr_number>"`
-   - `prompt`: `"Architecture review PR #<pr_number> for Issue #<issue_number>"`
-
-2. 合併分數：
-   - 最終分數 = `pr-reviewer score × 0.7 + architecture-reviewer score × 0.3`（四捨五入取整）
-   - 如果 architecture-reviewer 發現 severity=error 的問題，最終分數上限為 6
-
-3. 合併 review body：將 architecture-reviewer 的 findings 附加到 pr-reviewer 的 review body 末尾
-
-4. 如果合併後分數低於 `score_threshold`，使用合併後的 body 執行 `awkit submit-review` 提交 `changes_requested`
-
-**注意**：architecture-reviewer 失敗或超時時，忽略其結果，僅使用 pr-reviewer 的結果（graceful degradation）。
+**Principal 不要自行調用 architecture-reviewer、不要自行計算加權分數** —— 這些已由 `awkit submit-review` 處理。

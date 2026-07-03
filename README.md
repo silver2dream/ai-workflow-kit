@@ -291,7 +291,7 @@ It runs:
 
 - For kit maintainers/CI only; regular users can skip.
 - Standard: `.ai/docs/evaluate.md`
-- Executor: `awkit evaluate`
+- Executor: `awkit evaluate --offline` (report-only) and `awkit evaluate --offline --strict` (fails on any gate failure, e.g. P0 audit findings — used by CI/release checks)
 
 ---
 

@@ -207,7 +207,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	fmt.Printf("[REVIEW] Test Command: %s\n", opts.TestCommand)
 	fmt.Printf("[REVIEW] Language: %s\n", opts.Language)
 
-	verifyErr := VerifyTestEvidence(ctx, VerifyOptions{
+	verifyReport, verifyErr := VerifyTestEvidenceWithReport(ctx, VerifyOptions{
 		Ticket:       opts.Ticket,
 		ReviewBody:   opts.ReviewBody,
 		WorktreePath: opts.WorktreePath,
@@ -241,11 +241,38 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 
 	fmt.Printf("[REVIEW] ✅ All verifications passed\n")
 
+	// Multi-model consensus (review.multi_model): run secondary reviewers on
+	// the PR diff and let the weighted consensus replace the primary score
+	// for every decision below. The consensus section rides on ReviewBody so
+	// approval and rejection comments both carry it.
+	if settings := LoadMultiModelSettings(opts.StateRoot); settings != nil {
+		fmt.Printf("[REVIEW] Multi-model review: running %d secondary reviewer(s)...\n", len(settings.Reviewers))
+		if consensus, section, applied := ApplyMultiModelConsensus(ctx, opts.PRNumber, opts.Score, opts.ReviewBody, settings, opts.GHTimeout); applied {
+			fmt.Printf("[REVIEW] Consensus score: %d/10 (primary: %d/10)\n", consensus, opts.Score)
+			opts.ReviewBody += "\n\n" + section
+			opts.Score = consensus
+		}
+	}
+
 	// Count criteria for reporting
 	criteria := ParseAcceptanceCriteria(opts.Ticket)
 	criteriaCount := len(criteria)
 
-	// Post AWK Review Comment
+	// Post AWK Review Comment. Degraded verification modes are surfaced
+	// honestly instead of implying every check ran.
+	testsCell := "✅ Passed"
+	assertionsCell := "✅ Found"
+	metaRow := ""
+	if verifyReport != nil {
+		if verifyReport.FileLevelOnly {
+			testsCell = "✅ Passed (file-level output only)"
+			assertionsCell = "⚠️ Skipped — test runner produced no per-test names"
+		}
+		if n := len(verifyReport.MetaCriteria); n > 0 {
+			metaRow = fmt.Sprintf("\n| Meta Criteria | %d (verified by overall test pass only) |", n)
+		}
+	}
+
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	commentBody := fmt.Sprintf(`<!-- AWK:session:%s -->
 🤖 **AWK Review**
@@ -256,11 +283,11 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 | Review Timestamp | %s |
 | CI Status | %s |
 | Criteria Verified | %d |
-| Tests Executed | ✅ Passed |
-| Assertions Verified | ✅ Found |
+| Tests Executed | %s |
+| Assertions Verified | %s |%s
 | Score | %d/10 |
 
-%s`, sessionID, sessionID, timestamp, opts.CIStatus, criteriaCount, opts.Score, opts.ReviewBody)
+%s`, sessionID, sessionID, timestamp, opts.CIStatus, criteriaCount, testsCell, assertionsCell, metaRow, opts.Score, opts.ReviewBody)
 
 	// Append JiT test results if available
 	if jitResult != nil && jitResult.Generated > 0 {

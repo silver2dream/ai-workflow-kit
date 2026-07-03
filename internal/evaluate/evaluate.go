@@ -67,7 +67,7 @@ func (e *Evaluator) RunOffline() OfflineGateResults {
 	return OfflineGateResults{
 		O0:  CheckO0GitIgnore(e.RootPath),
 		O1:  Skip("scan repo not implemented"),
-		O3:  Skip("audit project not implemented"),
+		O3:  CheckO3Audit(e.RootPath),
 		O5:  CheckO5ConfigValidation(e.RootPath),
 		O7:  CheckO7VersionSync(e.RootPath),
 		O8:  CheckO8FileEncoding(e.RootPath),

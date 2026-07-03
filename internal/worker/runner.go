@@ -2133,6 +2133,12 @@ func writeIssueResult(ctx context.Context, stateRoot string, info issueResultCon
 		},
 	}
 
+	// Best-effort LLM usage from the worker log (zeros for text-only backends).
+	logUsage := ScanUsageFromLog(filepath.Join(stateRoot, ".ai", "exe-logs", fmt.Sprintf("issue-%d.worker.log", info.IssueID)))
+	result.Metrics.TokensIn = logUsage.TokensIn
+	result.Metrics.TokensOut = logUsage.TokensOut
+	result.Metrics.CostUSD = logUsage.CostUSD
+
 	return WriteResultAtomic(stateRoot, info.IssueID, result)
 }
 
