@@ -180,8 +180,29 @@ func EnhanceTestCommandForVerbose(testCmd, language string) string {
 	}
 }
 
-// VerifyTestEvidence performs the complete verification
+// VerifyReport describes how verification actually ran — in particular which
+// checks were skipped — so callers can surface degradation instead of
+// implying full verification.
+type VerifyReport struct {
+	// FileLevelOnly is true when the test runner produced no individual test
+	// names, so per-test matching and assertion verification were skipped.
+	FileLevelOnly bool
+	// MetaCriteria lists criteria verified only by the overall test pass.
+	MetaCriteria []string
+}
+
+// VerifyTestEvidence runs evidence verification and returns only the error.
+// Callers that need to know about skipped checks should use
+// VerifyTestEvidenceWithReport.
 func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError {
+	_, err := VerifyTestEvidenceWithReport(ctx, opts)
+	return err
+}
+
+// VerifyTestEvidenceWithReport runs evidence verification and additionally
+// reports which checks were skipped or relaxed.
+func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*VerifyReport, *EvidenceError) {
+	report := &VerifyReport{}
 	if opts.TestTimeout == 0 {
 		opts.TestTimeout = 5 * time.Minute
 	}
@@ -189,7 +210,7 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	// 1. Parse acceptance criteria from ticket
 	criteria := ParseAcceptanceCriteria(opts.Ticket)
 	if len(criteria) == 0 {
-		return &EvidenceError{
+		return nil, &EvidenceError{
 			Code:    1,
 			Message: "no acceptance criteria found in ticket",
 		}
@@ -200,14 +221,14 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	// 2. Parse criteria verifications from review body (with language-aware validation)
 	verifications, err := ParseCriteriaVerifications(opts.ReviewBody, opts.Language)
 	if err != nil {
-		return &EvidenceError{
+		return nil, &EvidenceError{
 			Code:    1,
 			Message: fmt.Sprintf("failed to parse review body: %v", err),
 		}
 	}
 
 	if len(verifications) == 0 {
-		return &EvidenceError{
+		return nil, &EvidenceError{
 			Code:    1,
 			Message: "no criteria verifications found in review body",
 		}
@@ -217,7 +238,7 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 
 	// 3. Validate completeness - each criteria has verification
 	if err := ValidateCompleteness(criteria, verifications); err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Printf("[VERIFY] ✓ All criteria have complete verifications\n")
@@ -249,7 +270,7 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 		if len(truncatedOutput) > 500 {
 			truncatedOutput = truncatedOutput[:500] + "... (truncated)"
 		}
-		return &EvidenceError{
+		return nil, &EvidenceError{
 			Code:    2,
 			Message: fmt.Sprintf("test execution failed: %v", testErr),
 			Details: []string{truncatedOutput},
@@ -262,6 +283,7 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	// In this mode, test names and assertions in the review body are
 	// Principal-authored (not from test output) and may not match file content.
 	fileLevelOnly := testErr == nil && !hasIndividualTestNames(testOutput)
+	report.FileLevelOnly = fileLevelOnly
 	if fileLevelOnly {
 		fmt.Printf("[VERIFY] ⚠ Verbose enhancement did not produce individual test names; "+
 			"falling back to file-level pass (per-test matching and assertion check skipped)\n")
@@ -272,6 +294,7 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 			// Skip meta-criteria — verified by overall test pass
 			if isMetaCriteria(v) {
 				fmt.Printf("[VERIFY] Meta-criteria %q: verified by overall test pass\n", v.Criteria)
+				report.MetaCriteria = append(report.MetaCriteria, v.Criteria)
 				continue
 			}
 
@@ -323,7 +346,7 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 			details := missingTests
 			details = append(details, fmt.Sprintf("Expected tests: %v", expectedTests))
 			details = append(details, fmt.Sprintf("Found %d passed tests in output", len(passedTests)))
-			return &EvidenceError{
+			return nil, &EvidenceError{
 				Code:    2,
 				Message: "some tests did not pass",
 				Details: details,
@@ -339,12 +362,12 @@ func VerifyTestEvidence(ctx context.Context, opts VerifyOptions) *EvidenceError 
 	// CI passing + high review score is sufficient evidence in this case.
 	if !fileLevelOnly {
 		if err := VerifyAssertions(opts.WorktreePath, verifications); err != nil {
-			return err
+			return nil, err
 		}
 		fmt.Printf("[VERIFY] ✓ All assertions verified in test files\n")
 	}
 
-	return nil
+	return report, nil
 }
 
 // ParseAcceptanceCriteria extracts acceptance criteria from ticket
