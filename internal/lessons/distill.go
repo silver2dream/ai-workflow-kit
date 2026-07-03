@@ -284,7 +284,7 @@ func parseDistillOutput(output string) (*DistillDecision, error) {
 	}
 	for _, p := range strings.Split(captureLine(output, "SCOPE"), ",") {
 		if p = strings.TrimSpace(p); p != "" {
-			d.Scope = append(d.Scope, filepath.ToSlash(p))
+			d.Scope = append(d.Scope, normPath(p))
 		}
 	}
 
@@ -398,7 +398,7 @@ func applyDecision(s *Store, d *DistillDecision, rec FeedbackRecord, repoRoot st
 func validateScope(repoRoot string, scope, evidencePaths []string) []string {
 	var out []string
 	for _, p := range scope {
-		p = strings.TrimSpace(filepath.ToSlash(p))
+		p = strings.TrimSpace(normPath(p))
 		if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
 			continue
 		}
@@ -407,7 +407,7 @@ func validateScope(repoRoot string, scope, evidencePaths []string) []string {
 			ok = true
 		} else {
 			for _, ep := range evidencePaths {
-				if strings.HasPrefix(strings.ToLower(filepath.ToSlash(ep)), strings.ToLower(p)) {
+				if strings.HasPrefix(strings.ToLower(normPath(ep)), strings.ToLower(p)) {
 					ok = true
 					break
 				}

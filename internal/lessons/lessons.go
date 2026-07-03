@@ -149,6 +149,14 @@ func (s *Store) NextID() string {
 // nonWordRe strips non-alphanumeric runes for fingerprint normalization.
 var nonWordRe = regexp.MustCompile(`[^a-z0-9]+`)
 
+// normPath converts backslash separators to forward slashes on EVERY
+// platform. filepath.ToSlash is a no-op on Unix, but scope strings may be
+// authored on Windows (backslash paths in feedback/tickets) and consumed on
+// Linux — fingerprints and matching must agree across platforms.
+func normPath(p string) string {
+	return strings.ReplaceAll(p, `\`, "/")
+}
+
 // FingerprintOf computes a stable fingerprint from categories, scope, and
 // title keywords. Used for dedup at distill time and recurrence matching at
 // settlement time.
@@ -164,7 +172,7 @@ func FingerprintOf(title string, categories, scope []string) string {
 		tokens["c:"+strings.ToLower(strings.TrimSpace(c))] = true
 	}
 	for _, p := range scope {
-		tokens["s:"+strings.ToLower(filepath.ToSlash(strings.TrimSpace(p)))] = true
+		tokens["s:"+strings.ToLower(normPath(strings.TrimSpace(p)))] = true
 	}
 	sorted := make([]string, 0, len(tokens))
 	for t := range tokens {

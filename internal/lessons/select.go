@@ -3,7 +3,6 @@ package lessons
 import (
 	"fmt"
 	"math"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -25,7 +24,7 @@ func QueryFromText(text string) Query {
 	var paths []string
 	seen := make(map[string]bool)
 	for _, f := range strings.Fields(text) {
-		f = strings.Trim(strings.ToLower(filepath.ToSlash(f)), "`\"'().,;: ")
+		f = strings.Trim(strings.ToLower(normPath(f)), "`\"'().,;: ")
 		if len(f) >= 4 && strings.ContainsAny(f, "/.") && !strings.HasPrefix(f, "http") {
 			if !seen[f] {
 				seen[f] = true
@@ -112,7 +111,7 @@ func relevance(l Lesson, q Query, now time.Time) float64 {
 
 	scopeHit := false
 	for _, s := range l.Scope {
-		sNorm := strings.ToLower(filepath.ToSlash(s))
+		sNorm := strings.ToLower(normPath(s))
 		for _, tok := range q.PathTokens {
 			if strings.Contains(tok, sNorm) || strings.Contains(sNorm, tok) {
 				scopeHit = true
