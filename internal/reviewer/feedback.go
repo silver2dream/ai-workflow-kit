@@ -20,6 +20,13 @@ type FeedbackEntry struct {
 	Categories []string `json:"categories"`
 	Summary    string   `json:"summary"`
 	Attempt    int      `json:"attempt"`
+	// Paths anchors the entry to the PR's changed files so distilled
+	// lessons can carry a scope.
+	Paths []string `json:"paths,omitempty"`
+	// Outcome distinguishes approvals ("approved") from rejections (empty
+	// or the rejection kind). Approved entries feed settlement denominators
+	// and are never distilled into pitfalls.
+	Outcome string `json:"outcome,omitempty"`
 }
 
 // feedbackFile is the JSONL file path relative to state root.
@@ -356,4 +363,30 @@ func BuildFeedbackEntry(issueID, prNumber, score int, reviewBody string) Feedbac
 		Categories: ExtractCategories(reviewBody),
 		Summary:    truncateSummary(reviewBody, 500),
 	}
+}
+
+// maxFeedbackPaths caps how many changed-file paths a feedback entry keeps.
+const maxFeedbackPaths = 10
+
+// DiffPaths extracts changed-file paths from a unified diff ("+++ b/" lines),
+// capped at maxFeedbackPaths.
+func DiffPaths(diff string) []string {
+	var paths []string
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(diff, "\n") {
+		path, ok := strings.CutPrefix(line, "+++ b/")
+		if !ok || path == "/dev/null" {
+			continue
+		}
+		path = strings.TrimSpace(path)
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		paths = append(paths, path)
+		if len(paths) >= maxFeedbackPaths {
+			break
+		}
+	}
+	return paths
 }

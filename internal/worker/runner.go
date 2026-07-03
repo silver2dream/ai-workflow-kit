@@ -46,6 +46,7 @@ type workflowConfig struct {
 	Git        workflowGit        `yaml:"git"`
 	Escalation workflowEscalation `yaml:"escalation"`
 	Timeouts   workflowTimeouts   `yaml:"timeouts"`
+	Lessons    workflowLessons    `yaml:"lessons"`
 	Feedback   workflowFeedback   `yaml:"feedback"`
 	Worker     workflowWorker     `yaml:"worker"`
 	Specs      workflowSpecs      `yaml:"specs"`
@@ -623,7 +624,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs, &cfg.Worker); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs, &cfg.Worker, &cfg.Lessons); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -1208,7 +1209,7 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs, workerCfg *workflowWorker) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs, workerCfg *workflowWorker, lessonsCfg *workflowLessons) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
 	prReviewComments := fetchPRReviewComments(prNumber, ghTimeout)
 
@@ -1281,21 +1282,19 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		builder.WriteString("============================================================\n")
 	}
 
-	// Inject historical feedback patterns from past rejections
-	maxEntries := 10
+	// Inject distilled lessons relevant to this ticket (learning loop;
+	// replaces the old raw replay of recent rejections) plus the cheap
+	// top-category one-liners.
 	feedbackEnabled := true
 	if feedbackCfg != nil {
 		feedbackEnabled = feedbackCfg.isEnabled()
-		maxEntries = feedbackCfg.maxHistory()
+	}
+	if lessonsSection := loadLessonsSection(stateRoot, issueID, ticket, lessonsCfg); lessonsSection != "" {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString(lessonsSection)
+		builder.WriteString("============================================================\n")
 	}
 	if feedbackEnabled {
-		if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); historicalFeedback != "" {
-			builder.WriteString("\n============================================================\n")
-			builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
-			builder.WriteString("============================================================\n")
-			builder.WriteString(historicalFeedback)
-			builder.WriteString("============================================================\n")
-		}
 		if topCatSection := loadTopCategorySummary(stateRoot); topCatSection != "" {
 			builder.WriteString("\n============================================================\n")
 			builder.WriteString(topCatSection)
@@ -1707,17 +1706,6 @@ func formatPRReviewComments(raw string) string {
 	}
 
 	return builder.String()
-}
-
-func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
-	if maxEntries <= 0 {
-		maxEntries = 10
-	}
-	entries, err := reviewer.LoadRecentFeedback(stateRoot, maxEntries)
-	if err != nil || len(entries) == 0 {
-		return ""
-	}
-	return reviewer.FormatFeedbackForPrompt(entries, 2000)
 }
 
 func loadTopCategorySummary(stateRoot string) string {

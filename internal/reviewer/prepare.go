@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
@@ -39,6 +40,7 @@ type ReviewContext struct {
 	IssueJSON          string `json:"issue_json,omitempty"`
 	TaskContent        string `json:"task_content,omitempty"`
 	CommitsJSON        string `json:"commits_json,omitempty"`
+	LessonsSection     string `json:"lessons_section,omitempty"` // reviewer-facing lessons
 }
 
 // CommitInfo represents a single commit
@@ -107,6 +109,10 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 	settings := getRepoSettingsFromConfig(opts.StateRoot, rc.WorktreePath)
 	rc.TestCommand = settings.TestCommand
 	rc.Language = settings.Language
+
+	// 9. Reviewer-facing lessons: past review-process failures (blocked
+	// verifications, severity inconsistencies) distilled into checks.
+	rc.LessonsSection = loadReviewerLessons(opts.StateRoot)
 
 	return rc, nil
 }
@@ -364,6 +370,21 @@ func fetchPRCommits(ctx context.Context, prNumber int, timeout time.Duration) st
 }
 
 
+// reviewerLessonCategories are the categories describing review-process
+// failures (as opposed to code failures) — the mistakes the REVIEWER makes.
+var reviewerLessonCategories = []string{"severity-consistency", "criteria-mapping", "assertion", "jittest"}
+
+// loadReviewerLessons selects lessons about the review process itself for
+// injection into the review context. Best-effort; "" on any failure.
+func loadReviewerLessons(stateRoot string) string {
+	store, err := lessons.Load(stateRoot)
+	if err != nil || len(store.Lessons) == 0 {
+		return ""
+	}
+	selected := lessons.Select(store, lessons.Query{Categories: reviewerLessonCategories}, 2, 400, time.Now().UTC())
+	return lessons.FormatForPrompt(selected)
+}
+
 // FormatOutput generates the standardized output format
 func (rc *ReviewContext) FormatOutput() string {
 	var sb strings.Builder
@@ -403,6 +424,14 @@ func (rc *ReviewContext) FormatOutput() string {
 	sb.WriteString("============================================================\n\n")
 	sb.WriteString(rc.CommitsJSON)
 	sb.WriteString("\n")
+
+	// Reviewer-facing lessons (past review-process mistakes to avoid)
+	if rc.LessonsSection != "" {
+		sb.WriteString("\n============================================================\n")
+		sb.WriteString("## REVIEW LESSONS (past review-process mistakes — avoid repeating)\n")
+		sb.WriteString("============================================================\n\n")
+		sb.WriteString(rc.LessonsSection)
+	}
 
 	sb.WriteString("============================================================\n")
 	sb.WriteString("END OF REVIEW CONTEXT\n")

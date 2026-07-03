@@ -3,7 +3,10 @@ package reviewer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
 
 func TestGetTestCommandFromConfig(t *testing.T) {
@@ -386,5 +389,48 @@ func TestWorkflowConfigParsing(t *testing.T) {
 	cmd = getTestCommandFromConfig(tmpDir, "/path/with/frontend")
 	if cmd != "cd frontend && npm test" {
 		t.Errorf("frontend match failed: got %q", cmd)
+	}
+}
+
+func TestLoadReviewerLessons_SelectsReviewProcessCategories(t *testing.T) {
+	root := t.TempDir()
+	s := &lessons.Store{Version: 1}
+	s.Lessons = append(s.Lessons,
+		lessons.Lesson{
+			ID: "L-001", Title: "quote assertions verbatim from test files",
+			Content: "- copy the assertion line exactly; paraphrases fail verification",
+			Kind:    lessons.KindPitfall, Categories: []string{"assertion"},
+			Fingerprint: "aaaa1111", Status: lessons.StatusActive,
+			CreatedAt: "2026-06-01T00:00:00Z",
+		},
+		lessons.Lesson{
+			ID: "L-002", Title: "code-side lesson about config",
+			Content: "- irrelevant to reviewer",
+			Kind:    lessons.KindPitfall, Categories: []string{"config"},
+			Fingerprint: "bbbb2222", Status: lessons.StatusActive,
+			CreatedAt: "2026-06-01T00:00:00Z",
+		})
+	if err := lessons.Save(root, s); err != nil {
+		t.Fatal(err)
+	}
+
+	got := loadReviewerLessons(root)
+	if !strings.Contains(got, "[L-001]") {
+		t.Errorf("expected reviewer-category lesson injected, got:\n%s", got)
+	}
+	if strings.Contains(got, "[L-002]") {
+		t.Errorf("code-side lesson must not appear in review context:\n%s", got)
+	}
+}
+
+func TestFormatOutput_IncludesLessonsSection(t *testing.T) {
+	rc := &ReviewContext{PRNumber: 1, IssueNumber: 2, LessonsSection: "LESSONS...\n1. [L-001] x — y\n"}
+	out := rc.FormatOutput()
+	if !strings.Contains(out, "REVIEW LESSONS") || !strings.Contains(out, "[L-001]") {
+		t.Errorf("FormatOutput missing lessons section:\n%s", out)
+	}
+	empty := &ReviewContext{PRNumber: 1, IssueNumber: 2}
+	if strings.Contains(empty.FormatOutput(), "REVIEW LESSONS") {
+		t.Error("empty lessons must not render a section")
 	}
 }
