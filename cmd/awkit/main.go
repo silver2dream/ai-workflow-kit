@@ -159,6 +159,8 @@ func run() int {
 		return cmdFeedbackStats(os.Args[2:])
 	case "evaluate":
 		return cmdEvaluate(os.Args[2:])
+	case "lessons":
+		return cmdLessons(os.Args[2:])
 	case "context-snapshot":
 		return cmdContextSnapshot(os.Args[2:])
 	case "help":
@@ -208,6 +210,7 @@ Commands:
   events          Query unified event stream for debugging
   feedback-stats  Show review feedback statistics
   evaluate        Run evaluation gates (--offline, --strict)
+  lessons         Manage the learning loop (list/stats/add/distill/promote)
   context-snapshot Generate compact context snapshot
   check-update  Check for CLI updates
   completion    Generate shell completion script
@@ -300,6 +303,8 @@ func cmdHelp(command string) int {
 		usageReset()
 	case "evaluate":
 		usageEvaluate()
+	case "lessons":
+		usageLessons()
 	case "generate":
 		usageGenerate()
 	case "list-presets":
@@ -1227,7 +1232,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets hooks events feedback-stats evaluate context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1298,6 +1303,7 @@ _awkit() {
         'events:Query unified event stream'
         'feedback-stats:Show review feedback statistics'
         'evaluate:Run evaluation gates'
+        'lessons:Manage the learning loop'
         'context-snapshot:Generate compact context snapshot'
         'check-update:Check for CLI updates'
         'completion:Generate shell completion'
