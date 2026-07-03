@@ -99,8 +99,9 @@ func (c *PushPermissionCache) Get(remoteURL string) *bool {
 		return nil
 	}
 
-	// Check TTL
-	if time.Since(entry.Timestamp) > time.Duration(c.TTLSeconds)*time.Second {
+	// Check TTL. >= makes TTLSeconds=0 mean "no caching" even on platforms
+	// whose clock granularity can report zero elapsed time between calls.
+	if time.Since(entry.Timestamp) >= time.Duration(c.TTLSeconds)*time.Second {
 		return nil
 	}
 

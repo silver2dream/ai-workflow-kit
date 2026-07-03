@@ -17,7 +17,7 @@ type CheckResultOptions struct {
 	StateRoot          string        // defaults to git root
 	MaxRetries         int           // defaults to 3
 	GHTimeout          time.Duration // defaults to 30s
-	WorkerTimeout      time.Duration // max worker runtime before timeout (defaults to 30m)
+	WorkerTimeout      time.Duration // max worker runtime before timeout (defaults to 60m, matching DispatchWorker)
 	WaitDuration       time.Duration // how long to wait when worker is running (defaults to 30s)
 }
 
@@ -38,8 +38,11 @@ func CheckResult(ctx context.Context, opts CheckResultOptions) (output *CheckRes
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 30 * time.Second
 	}
+	// Must not be shorter than DispatchWorker's execution budget (60m),
+	// or a legitimately running worker gets declared timed out and the
+	// issue can be double-dispatched.
 	if opts.WorkerTimeout == 0 {
-		opts.WorkerTimeout = 30 * time.Minute
+		opts.WorkerTimeout = 60 * time.Minute
 	}
 	if opts.WaitDuration == 0 {
 		opts.WaitDuration = 30 * time.Second

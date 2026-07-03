@@ -338,6 +338,67 @@ func TestGenerateRequiresStateRoot(t *testing.T) {
 	}
 }
 
+// TestGenerateAgentsMdIncludesGuardrails verifies that installed projects
+// receive the Worker guardrail sections (anti-rationalization table, red
+// flags, severity-tagged feedback) and the plan.md requirement.
+func TestGenerateAgentsMdIncludesGuardrails(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	configDir := filepath.Join(tmpDir, ".ai", "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	configContent := `
+version: "1.2"
+project:
+  name: test-project
+  type: single-repo
+git:
+  integration_branch: develop
+  release_branch: main
+repos:
+  - name: root
+    path: ./
+    type: root
+    language: go
+    verify:
+      build: go build ./...
+      test: go test ./...
+rules:
+  kit:
+    - git-workflow
+`
+	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	if _, err := Generate(Options{StateRoot: tmpDir}); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("failed to read generated AGENTS.md: %v", err)
+	}
+	content := string(data)
+
+	wantSections := []string{
+		"## Common Rationalizations (READ BEFORE SHORTCUTTING)",
+		"## Red Flags (signs your work is going off-rails)",
+		"## Responding to severity-tagged feedback",
+		"### 4. Implementation plan (REQUIRED before coding)",
+		"### 6. Design document context",
+		"**Critical:**",
+		"**Important:**",
+	}
+	for _, want := range wantSections {
+		if !strings.Contains(content, want) {
+			t.Errorf("generated AGENTS.md missing section: %q", want)
+		}
+	}
+}
+
 func TestGenerateValidationFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -80,15 +80,9 @@ func (m *IssueMonitor) Start() {
 // Stop stops the monitor with the given reason.
 // It waits up to 10 seconds for the poll loop to exit gracefully.
 func (m *IssueMonitor) Stop(reason string) {
-	m.mu.Lock()
-	if m.stopReason != "" {
-		m.mu.Unlock()
+	if !m.requestStop(reason) {
 		return // Already stopped
 	}
-	m.stopReason = reason
-	m.mu.Unlock()
-
-	close(m.stopChan)
 	// Wait for poll loop to exit with timeout to prevent indefinite blocking
 	select {
 	case <-m.doneChan:
@@ -97,6 +91,22 @@ func (m *IssueMonitor) Stop(reason string) {
 		// Timeout waiting for poll loop - it may be stuck in a GitHub API call
 		// The poll loop will eventually exit when its current operation completes
 	}
+}
+
+// requestStop records the stop reason and signals the poll loop without
+// waiting for it to exit. Safe to call from the poll loop itself, where
+// waiting on doneChan would self-deadlock. Returns false if already stopped.
+func (m *IssueMonitor) requestStop(reason string) bool {
+	m.mu.Lock()
+	if m.stopReason != "" {
+		m.mu.Unlock()
+		return false
+	}
+	m.stopReason = reason
+	m.mu.Unlock()
+
+	close(m.stopChan)
+	return true
 }
 
 // StopReason returns the reason the monitor stopped
@@ -118,7 +128,11 @@ func (m *IssueMonitor) pollLoop() {
 		case <-m.stopChan:
 			return
 		case <-ticker.C:
-			if err := m.poll(); err != nil {
+			stop, err := m.poll()
+			if stop {
+				return
+			}
+			if err != nil {
 				// Exponential backoff on error
 				m.backoff = min(m.backoff*2, 60*time.Second)
 				ticker.Reset(m.backoff)
@@ -134,17 +148,18 @@ func (m *IssueMonitor) pollLoop() {
 	}
 }
 
-// poll fetches and processes new comments
-func (m *IssueMonitor) poll() error {
+// poll fetches and processes new comments. It returns stop=true when the
+// monitor should shut down (issue closed or worker complete).
+func (m *IssueMonitor) poll() (stop bool, err error) {
 	resp, err := m.fetchComments()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Check if issue is closed
 	if resp.State == "closed" {
-		m.Stop("issue_closed")
-		return nil
+		m.requestStop("issue_closed")
+		return true, nil
 	}
 
 	// Process new comments (G4 fix: use map instead of string comparison)
@@ -161,13 +176,14 @@ func (m *IssueMonitor) poll() error {
 		// Check for AWK marker
 		if strings.Contains(comment.Body, AWKCommentPrefix) {
 			commentType, prURL := m.parseAWKComment(comment.Body)
-			m.lastActivity = time.Now()
 
-			// Check for recovery after timeout
-			if m.timedOut {
-				m.timedOut = false
-				// Recovery notification will be handled by caller
-			}
+			// lastActivity and timedOut are read by IsTimedOut/checkTimeout
+			// from other goroutines, so writes must hold the lock.
+			m.mu.Lock()
+			m.lastActivity = time.Now()
+			// Recovery after timeout; notification is handled by caller.
+			m.timedOut = false
+			m.mu.Unlock()
 
 			if m.onComment != nil {
 				m.onComment(commentType, prURL)
@@ -175,13 +191,13 @@ func (m *IssueMonitor) poll() error {
 
 			// Check for worker_complete
 			if commentType == "worker_complete" {
-				m.Stop("worker_complete")
-				return nil
+				m.requestStop("worker_complete")
+				return true, nil
 			}
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // fetchComments calls gh issue view to get comments

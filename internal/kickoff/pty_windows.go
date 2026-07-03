@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/UserExistsError/conpty"
+	"golang.org/x/sys/windows"
 )
 
 // conptyWrapper wraps conpty.ConPty to implement io.ReadWriteCloser
@@ -145,11 +146,33 @@ func (p *PTYExecutor) waitPlatform() error {
 	return p.cmd.Wait()
 }
 
+// stillActive is the Windows exit code of a process that has not exited
+// (STILL_ACTIVE / STATUS_PENDING).
+const stillActive = 259
+
 // killPlatform terminates the command on Windows
 func (p *PTYExecutor) killPlatform() error {
-	// If using ConPTY, close the conpty (which terminates the process)
+	// If using ConPTY, terminate the child process but keep the ConPty open.
+	// Closing the ConPty here would free its process and pipe handles while
+	// Wait/Read may still be using them, corrupting the heap (exit code
+	// 0xc0000374); the handles are released by the later Close call instead.
 	if wrapper, ok := p.pty.(*conptyWrapper); ok && wrapper != nil {
-		return wrapper.cpty.Close()
+		h, err := windows.OpenProcess(
+			windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION,
+			false, uint32(wrapper.cpty.Pid()))
+		if err != nil {
+			return fmt.Errorf("open pty process: %w", err)
+		}
+		defer windows.CloseHandle(h)
+		if err := windows.TerminateProcess(h, 1); err != nil {
+			// Treat an already-exited process as success.
+			var code uint32
+			if qerr := windows.GetExitCodeProcess(h, &code); qerr == nil && code != stillActive {
+				return nil
+			}
+			return fmt.Errorf("terminate pty process: %w", err)
+		}
+		return nil
 	}
 
 	// Fallback mode: kill the exec.Cmd process

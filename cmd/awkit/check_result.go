@@ -27,7 +27,7 @@ Options:
   --state-root    Optional: Override state root (default: git root)
   --max-retries   Optional: Max retry count (default: 3)
   --timeout       Optional: GitHub API timeout (default: 30s)
-  --worker-timeout Optional: Max worker runtime (default: 30m)
+  --worker-timeout Optional: Max worker runtime (default: 60m)
   --wait          Optional: Wait duration when worker running (default: 30s)
   --json          Optional: Output as JSON instead of bash vars
   --help          Show this help
@@ -62,7 +62,7 @@ func cmdCheckResult(args []string) int {
 	stateRoot := fs.String("state-root", "", "")
 	maxRetries := fs.Int("max-retries", 3, "")
 	timeout := fs.Duration("timeout", 30*time.Second, "")
-	workerTimeout := fs.Duration("worker-timeout", 30*time.Minute, "")
+	workerTimeout := fs.Duration("worker-timeout", 60*time.Minute, "")
 	waitDuration := fs.Duration("wait", 30*time.Second, "")
 	jsonOutput := fs.Bool("json", false, "")
 	showHelp := fs.Bool("help", false, "")

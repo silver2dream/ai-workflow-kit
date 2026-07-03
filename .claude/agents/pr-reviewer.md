@@ -243,6 +243,10 @@ The system will verify your submission:
    - Your quoted assertions must actually exist in test code
    - Non-existent assertions will block the review
 
+4. **Severity Consistency**: System cross-checks score vs findings
+   - Score below threshold (changes_requested) requires at least one **Critical:** or **Important:** item
+   - Score at/above threshold (approve) must not contain any **Critical:** item
+
 **If verification fails, the review is blocked. A NEW session will retry.**
 
 ---

@@ -10,9 +10,12 @@ import (
 )
 
 func TestMultiReviewOrchestrator_RunAll_Parallel(t *testing.T) {
-	// Replace claude runner with a fake that returns quickly
+	// Replace claude runner with a fake that returns quickly.
+	// The short sleep keeps Duration measurable on Windows, where the
+	// clock granularity would otherwise round an instant return to 0.
 	origRunner := claudeRunnerFunc
 	claudeRunnerFunc = func(ctx context.Context, prompt, model string) (string, error) {
+		time.Sleep(2 * time.Millisecond)
 		return fmt.Sprintf("SCORE: 8\nFINDINGS:\nLooks good from %s", model), nil
 	}
 	defer func() { claudeRunnerFunc = origRunner }()

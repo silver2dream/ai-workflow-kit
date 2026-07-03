@@ -133,7 +133,9 @@ func jitTestFilename(sourcePath, language string) string {
 		filename = name + langInfo.FileSuffix
 	}
 
-	return filepath.Join(dir, filename)
+	// Source paths come from git diffs and stay repo-relative with forward
+	// slashes; keep the output that way on Windows too.
+	return filepath.ToSlash(filepath.Join(dir, filename))
 }
 
 // parseDiffFiles extracts file paths from a unified diff, excluding test files.
