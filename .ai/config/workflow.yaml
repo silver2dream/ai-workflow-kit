@@ -321,6 +321,28 @@ feedback:
   max_history_in_prompt: 10
 
 # ============================================================
+# Lessons Configuration (Learning Loop)
+# ============================================================
+# Record -> distill -> inject -> verify: review rejections are distilled
+# into compact lessons (.ai/state/lessons.json, committable) that are
+# injected into future Worker/Reviewer prompts and settled hit/miss
+# against outcomes. Proven lessons can be promoted to hard gates via
+# `awkit lessons promote <id>` (opens a human-gated issue).
+# Design: .ai/specs/learning-loop/design.md
+#
+# enabled: true (default) — set false to disable injection + distillation
+#   (feedback recording continues regardless).
+# max_active: 30 (default) — active+proven cap; lowest-scoring retire first
+# inject_top_k: 3 (default) — max lessons injected per prompt (small k wins)
+# inject_max_chars: 800 (default) — hard character budget for the section
+# distiller:
+#   backend: claude (default; uses `claude --print --max-turns 1`)
+#   model: sonnet (default)
+#   timeout_seconds: 60 (default)
+lessons:
+  enabled: true
+
+# ============================================================
 # Hooks Configuration
 # ============================================================
 # Lifecycle hooks: run custom shell commands at workflow events.
