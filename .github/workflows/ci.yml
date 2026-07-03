@@ -43,6 +43,32 @@ jobs:
           name: coverage-report
           path: coverage.out
 
+  awkit_cli_windows:
+    runs-on: windows-latest
+    steps:
+      # Keep LF endings: go:embed and content-comparing tests break when
+      # autocrlf rewrites the checkout.
+      - name: Disable autocrlf
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+
+      # Several tests shell out to `sh` (evidence verification, retry tests);
+      # Git Bash ships on the runner but its bin dir is not on PATH.
+      - name: Add Git Bash to PATH
+        run: Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files\Git\bin"
+
+      # Race detector runs on the Linux job; this job guards Windows-specific
+      # behavior (paths, ConPTY, process handling).
+      - name: Go test (awkit, windows)
+        run: go test ./...
+
   backend:
     runs-on: ubuntu-latest
     steps:
