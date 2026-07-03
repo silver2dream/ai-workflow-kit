@@ -28,6 +28,7 @@ const (
 	// Principal events
 	TypeSessionStart  = "session_start"
 	TypeSessionEnd    = "session_end"
+	TypeSessionUsage  = "session_usage"
 	TypeLoopStart     = "loop_start"
 	TypeLoopDecision  = "loop_decision"
 	TypeDispatchStart = "dispatch_start"

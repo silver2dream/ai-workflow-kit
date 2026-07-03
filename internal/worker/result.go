@@ -58,10 +58,16 @@ type ReviewAudit struct {
 	MergeTimestamp    string `json:"merge_timestamp,omitempty"`
 }
 
-// ResultMetrics contains execution metrics
+// ResultMetrics contains execution metrics.
+// Token/cost fields are best-effort, parsed from the worker log when the
+// backend emits JSON usage events (codex --json, claude JSON output); plain
+// text backends leave them zero. See ScanUsageFromLog.
 type ResultMetrics struct {
-	DurationSeconds int `json:"duration_seconds,omitempty"`
-	RetryCount      int `json:"retry_count,omitempty"`
+	DurationSeconds int     `json:"duration_seconds,omitempty"`
+	RetryCount      int     `json:"retry_count,omitempty"`
+	TokensIn        int64   `json:"tokens_in,omitempty"`
+	TokensOut       int64   `json:"tokens_out,omitempty"`
+	CostUSD         float64 `json:"cost_usd,omitempty"`
 }
 
 // ExecutionTrace represents the trace JSON file structure (.ai/state/traces/issue-{N}.json)
