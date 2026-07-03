@@ -291,10 +291,14 @@ review:
   # score < threshold requires >=1 Critical/Important item; score >= threshold
   # must not list any Critical item. Set false to disable.
   # severity_consistency: true
-  # Multi-model cross review: enable a second architecture-focused reviewer (model: opus)
-  # When true, pr-reviewer (sonnet) + architecture-reviewer (opus) both review each PR.
-  # Final score = pr-reviewer × 0.7 + architecture-reviewer × 0.3
-  # If any secondary finds [ERROR] severity issues, the final score is capped at 6.
+  # Multi-model cross review (enforced by `awkit submit-review` in Go).
+  # When true, submit-review fetches the PR diff and runs each secondary
+  # reviewer via `claude --print` in parallel, then applies the weighted
+  # consensus: final score = primary × 0.7 + secondaries (split 0.3 evenly).
+  # If any reviewer reports [ERROR] findings, the final score is capped at 6.
+  # Failed secondaries are reported in the consensus section and excluded
+  # from scoring. When secondary_reviewers is omitted, one architecture-
+  # focused opus reviewer is used.
   # multi_model: false
   # secondary_reviewers:
   #   - backend: claude

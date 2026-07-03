@@ -241,6 +241,19 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 
 	fmt.Printf("[REVIEW] ✅ All verifications passed\n")
 
+	// Multi-model consensus (review.multi_model): run secondary reviewers on
+	// the PR diff and let the weighted consensus replace the primary score
+	// for every decision below. The consensus section rides on ReviewBody so
+	// approval and rejection comments both carry it.
+	if settings := LoadMultiModelSettings(opts.StateRoot); settings != nil {
+		fmt.Printf("[REVIEW] Multi-model review: running %d secondary reviewer(s)...\n", len(settings.Reviewers))
+		if consensus, section, applied := ApplyMultiModelConsensus(ctx, opts.PRNumber, opts.Score, opts.ReviewBody, settings, opts.GHTimeout); applied {
+			fmt.Printf("[REVIEW] Consensus score: %d/10 (primary: %d/10)\n", consensus, opts.Score)
+			opts.ReviewBody += "\n\n" + section
+			opts.Score = consensus
+		}
+	}
+
 	// Count criteria for reporting
 	criteria := ParseAcceptanceCriteria(opts.Ticket)
 	criteriaCount := len(criteria)
