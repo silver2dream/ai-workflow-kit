@@ -1,6 +1,7 @@
 package install
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -1038,6 +1039,43 @@ func TestValidateProjectName(t *testing.T) {
 				t.Errorf("unexpected error for input %q: %v", tc.input, err)
 			}
 		})
+	}
+}
+
+// TestScaffoldReactFrontendTsconfigSkipsLibCheck guards that a freshly
+// scaffolded frontend carries skipLibCheck, so its `tsc` (npm run build) passes
+// on the .d.ts of build tooling (vite/rollup) instead of being red out of the
+// box and blocking every PR's CI. Regression for the tennis-arena scaffold.
+func TestScaffoldReactFrontendTsconfigSkipsLibCheck(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "awkit-scaffold-tsconfig-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if _, err := Scaffold(tmpDir, ScaffoldOptions{
+		Preset:      "react-go",
+		TargetDir:   tmpDir,
+		ProjectName: "test-project",
+	}); err != nil {
+		t.Fatalf("Scaffold(react-go) failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "frontend", "tsconfig.json"))
+	if err != nil {
+		t.Fatalf("read frontend tsconfig: %v", err)
+	}
+
+	var cfg struct {
+		CompilerOptions struct {
+			SkipLibCheck bool `json:"skipLibCheck"`
+		} `json:"compilerOptions"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("generated frontend tsconfig is not valid JSON: %v", err)
+	}
+	if !cfg.CompilerOptions.SkipLibCheck {
+		t.Error("frontend tsconfig must set skipLibCheck:true so a fresh scaffold's tsc passes on vite/rollup .d.ts")
 	}
 }
 

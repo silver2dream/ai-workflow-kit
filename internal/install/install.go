@@ -1849,6 +1849,12 @@ func scaffoldReactFrontend(targetDir string, force, dryRun bool) (*ScaffoldResul
 		},
 		{
 			path: filepath.Join(targetDir, "tsconfig.json"),
+			// skipLibCheck is required (and is the Vite/TS official-template
+			// default): tsc type-checks the .d.ts of build tooling like vite and
+			// rollup, whose type defs legitimately use Node types and ES2023
+			// (Symbol.asyncDispose). Without it a brand-new scaffold fails `tsc`
+			// on third-party .d.ts — code the app never wrote — so `npm run build`
+			// (tsc && vite build) is red out of the box and blocks every PR.
 			content: []byte(`{
   "compilerOptions": {
     "target": "ES2022",
@@ -1857,6 +1863,7 @@ func scaffoldReactFrontend(targetDir string, force, dryRun bool) (*ScaffoldResul
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,
+    "skipLibCheck": true,
     "noEmit": true
   },
   "include": ["src"]
