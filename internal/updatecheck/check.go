@@ -136,7 +136,16 @@ func writeCache(entry cacheEntry) {
 	_ = os.WriteFile(path, data, 0o644)
 }
 
+// cacheDirEnv lets callers relocate the update-check cache. When set, the
+// cache file is <AWKIT_CACHE_DIR>/update.json. Tests set it to a temp dir so
+// they never write to the real user cache (which previously leaked a fake
+// "v1.0.0" into every developer's machine).
+const cacheDirEnv = "AWKIT_CACHE_DIR"
+
 func cachePath() (string, error) {
+	if override := os.Getenv(cacheDirEnv); override != "" {
+		return filepath.Join(override, "update.json"), nil
+	}
 	dir, err := os.UserCacheDir()
 	if err != nil || dir == "" {
 		home, err := os.UserHomeDir()

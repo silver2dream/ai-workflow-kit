@@ -11,6 +11,12 @@ import (
 
 // startPlatform starts the command with PTY on Unix systems
 func (p *PTYExecutor) startPlatform() error {
+	// Headless children opt out of the PTY entirely (no TTY -> no interactive
+	// permission prompts, no ANSI injection).
+	if p.standard {
+		return p.startStandard()
+	}
+
 	// Try to start with PTY
 	ptmx, err := pty.Start(p.cmd)
 	if err != nil {
@@ -38,7 +44,11 @@ func (p *PTYExecutor) killPlatform() error {
 
 // startStandard starts the command without PTY (fallback mode)
 func (p *PTYExecutor) startStandard() error {
-	p.fallback = true
+	// Only a PTY that failed unexpectedly counts as a fallback; a deliberate
+	// standard-mode child is not a degraded state and must not warn.
+	if !p.standard {
+		p.fallback = true
+	}
 
 	// Create pipes for stdout and stderr
 	stdout, err := p.cmd.StdoutPipe()

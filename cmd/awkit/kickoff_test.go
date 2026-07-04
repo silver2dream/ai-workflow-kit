@@ -90,6 +90,24 @@ func TestExtractTextFromStreamJSON(t *testing.T) {
 			input:    `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"path":"test.txt"}}]}}`,
 			expected: "",
 		},
+		{
+			// A PTY (Windows ConPTY) injects ANSI escapes around/into the
+			// stream; without stripping, json.Unmarshal fails and the event is
+			// lost. With stripping, the command still extracts.
+			name:     "ANSI-wrapped tool_use Bash still extracts EXEC",
+			input:    "\x1b[1m{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"awkit analyze-next --json\"}}]}}\x1b[0m",
+			expected: "[EXEC] awkit analyze-next --json",
+		},
+		{
+			name:     "ANSI-only control line is skipped, not dumped",
+			input:    "\x1b[2K\x1b[1G",
+			expected: "",
+		},
+		{
+			name:     "JSON with a trailing carriage return is parsed",
+			input:    "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"bash\",\"input\":{\"command\":\"go build ./...\"}}]}}\r",
+			expected: "[EXEC] go build ./...",
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,6 +117,50 @@ func TestExtractTextFromStreamJSON(t *testing.T) {
 				t.Errorf("extractTextFromStreamJSON(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestSanitizeStreamLine(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain json untouched", `{"a":1}`, `{"a":1}`},
+		{"strips SGR color", "\x1b[1mhello\x1b[0m", "hello"},
+		{"strips cursor moves", "\x1b[2K\x1b[1Gtext", "text"},
+		{"strips carriage return", "line\r", "line"},
+		{"strips NUL bytes", "a\x00b", "ab"},
+		{"trims surrounding space", "  {\"x\":1}  ", `{"x":1}`},
+		{"ansi-only becomes empty", "\x1b[2K\x1b[1G", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sanitizeStreamLine(tt.input); got != tt.want {
+				t.Errorf("sanitizeStreamLine(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetEnvString(t *testing.T) {
+	const key = "AWKIT_TEST_PERMISSION_MODE"
+
+	// Empty value falls back to the default.
+	t.Setenv(key, "")
+	if got := getEnvString(key, "auto"); got != "auto" {
+		t.Errorf("empty env: got %q, want auto", got)
+	}
+
+	// Surrounding whitespace is trimmed.
+	t.Setenv(key, "  bypassPermissions  ")
+	if got := getEnvString(key, "auto"); got != "bypassPermissions" {
+		t.Errorf("override: got %q, want bypassPermissions", got)
+	}
+
+	// An unset variable returns the default.
+	if got := getEnvString("AWKIT_DEFINITELY_UNSET_KEY", "auto"); got != "auto" {
+		t.Errorf("unset env: got %q, want auto", got)
 	}
 }
 
