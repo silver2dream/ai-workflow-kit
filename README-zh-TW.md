@@ -7,7 +7,7 @@
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
-> 「睡前啟動，早上收割」的 AI 開發工作流 Kit：以 **Spec → 實作 → PR → 合併** 為主線，搭配 **Claude Code (Principal)** + **Codex (Worker)** 完成閉環；Spec 格式與 **Kiro** 相容。
+> 「睡前啟動，早上收割」的 AI 開發工作流 Kit：以 **Spec → 實作 → PR → 合併** 為主線，搭配會**自我改進**的審查閉環。由 **Principal**（Claude Code）協調 **Worker**（Codex 或 Claude Code），品質由確定性的 Go 閘門把關 —— 而非盲信 LLM 輸出。Spec 格式與 **Kiro** 相容。
 
 [![下載](https://img.shields.io/badge/下載-最新版本-brightgreen?style=for-the-badge&logo=github)](https://github.com/silver2dream/ai-workflow-kit/releases/latest)
 
@@ -15,8 +15,34 @@
 
 ---
 
+## 🌟 AWK 的獨特之處
+
+多數 AI 工作流工具只是「盲信模型輸出的派工迴圈」。AWK 建立在兩個讓它與眾不同的核心理念上：
+
+### 🧠 會自我改進的學習迴圈
+
+AWK 會**從自己的審查歷史中學習**。每次拒絕都走一條四步迴圈 —— **記錄 → 蒸餾 → 注入 → 驗證**：
+
+- 被拒絕的 PR 由 LLM **蒸餾**成精簡、**可提交的教訓**（`.ai/state/lessons.json`）—— 是一條耐久的檢查,而非原始 log。
+- 相關教訓會**注入**後續 Worker/Reviewer prompt（依你正在動的檔案精準比對,重用與 knowledge-graph 接地相同的相關性引擎）。
+- 每條教訓依真實結果**結算命中/落空**,並經 `candidate → active → proven` 晉升 —— 無效的教訓自動退役。
+- **已驗證（proven）**的教訓可用 `awkit lessons promote` 經人審 issue **升級為硬閘門**（rule / audit 檢查）。
+
+成果:**犯過一次的錯,會變成阻止它再犯的護欄。** 系統隨時間越來越難被騙 —— 而且因為教訓是可提交的 JSON,整個團隊共享這份學習(不像鎖在私有 runtime 裡的 agent 記憶)。
+
+### 🤝 Agent 友善的介面（ACI）
+
+AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / regex 出」:
+
+- Reviewer 提交**結構化的 `review.json`**,由 AWK *渲染*成人類可讀的審查 —— 不再從手排的 markdown 反解析。
+- **格式錯誤在同一 session 修正**(退出碼 2,秒級)—— 只有真正的**證據失敗**才需要重審一輪。介面會明確告訴 agent 該修哪個欄位。
+- 品質由**確定性的 Go 閘門**把關:證據驗證(重跑測試、檢查每條標準對應到真實通過的斷言)、severity/verdict 一致性、multi-model 共識 —— 全在程式碼裡,非 agent 心算。
+
+---
+
 ## 📋 目錄
 
+- [AWK 的獨特之處](#-awk-的獨特之處)
 - [特色](#-特色)
 - [架構概覽](#-架構概覽)
 - [技術棧](#-技術棧)
