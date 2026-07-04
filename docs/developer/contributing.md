@@ -15,22 +15,26 @@
 
 ### 安裝開發依賴
 
-```bash
-# (選用) 安裝 Python 依賴 - 僅供維護 Legacy 腳本時使用
-# pip3 install pyyaml jsonschema jinja2
+AWK 是純 Go 專案,不需要額外的執行期依賴:
 
-# (已棄用) Python 測試依賴 - 測試已遷移到 Go
-# pip3 install pytest pytest-cov
+```bash
+go build ./...
+go test ./...
 ```
 
 ### 專案結構
 
 ```
-.ai/
-├── config/           # 配置檔與 Schema
-├── templates/        # Jinja2 模板
-├── rules/            # 規則檔案
-├── tests/            # 測試套件
+.
+├── cmd/awkit/        # CLI 進入點
+├── internal/         # 核心套件（analyzer, reviewer, worker, lessons, kickoff, ...）
+├── .ai/
+│   ├── config/       # 配置檔與 Schema
+│   ├── templates/    # 範例模板（design.md.example）
+│   ├── rules/        # 規則檔案（_kit / _examples）
+│   ├── skills/       # Principal/post-mortem/release-checklist 技能
+│   └── specs/        # Kiro-style specs
+├── .claude/agents/   # 內建 subagents（pr-reviewer, conflict-resolver）
 └── docs/             # 文件 (你正在讀的)
 ```
 
@@ -116,7 +120,7 @@ body (optional)
 
 - Add retry_count and retry_delay_seconds to config
 - Implement exponential backoff
-- Update write_result.sh to record retry count
+- Record retry count in the issue result
 ```
 
 ### 5. 推送與建立 PR
@@ -133,160 +137,14 @@ gh pr create --base main --title "[feat] add GitLab support" --body "..."
 
 ## 程式碼規範
 
-### Python
+AWK 是純 Go 專案,遵循標準 Go 慣例:
 
-> **⚠️ DEPRECATED**: 以下 Python 規範僅供參考，AWK 已遷移至 Go。新功能請遵循 Go 規範。
-
-#### 風格指南
-
-- 遵循 PEP 8
-- 使用 4 空格縮排
-- 行長度最大 100 字元
-- 使用 type hints
-
-#### 錯誤處理
-
-使用統一的錯誤框架：
-
-```python
-from lib.errors import AWKError, ConfigError, ValidationError, ExecutionError, print_error
-
-# 配置相關錯誤
-raise ConfigError(
-    message="Config file not found",
-    suggestion="Run awkit generate first"
-)
-
-# 驗證相關錯誤
-raise ValidationError(
-    message="Invalid repo type",
-    details={"type": "foo", "allowed": ["root", "directory", "submodule"]}
-)
-
-# 執行相關錯誤
-raise ExecutionError(
-    message="Command failed",
-    reason="git push failed",
-    impact="Changes not uploaded to remote"
-)
-```
-
-#### 日誌記錄
-
-使用結構化日誌：
-
-```python
-from lib.logger import Logger
-
-logger = Logger("my_script", ai_root / "logs", level="info")
-
-# 正確：包含結構化 context
-logger.info("Processing file", {"file": "data.txt", "size": 1024})
-
-# 錯誤：使用 f-string
-logger.info(f"Processing {filename}")  # 不推薦
-```
-
-#### 主程式結構
-
-```python
-#!/usr/bin/env python3
-"""Script description."""
-
-import sys
-from pathlib import Path
-from lib.errors import AWKError, print_error, handle_unexpected_error
-from lib.logger import Logger, split_log_level
-
-def main(argv: list[str]) -> int:
-    """Main entry point."""
-    level, remaining_args, err = split_log_level(argv)
-    if err:
-        print(f"Warning: {err}", file=sys.stderr)
-
-    ai_root = Path(__file__).parent.parent
-    logger = Logger("script_name", ai_root / "logs", level=level)
-
-    try:
-        # 主要邏輯
-        result = do_work()
-        print(json.dumps(result))
-        return 0
-
-    except AWKError as e:
-        print_error(e)
-        return e.exit_code
-
-    except Exception as e:
-        err = handle_unexpected_error(e)
-        print_error(err)
-        return err.exit_code
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
-```
-
-### Shell Scripts
-
-#### 風格指南
-
-- 使用 `#!/usr/bin/env bash`
-- 開頭加入 `set -euo pipefail`
-- 使用函數組織程式碼
-- 變數使用雙引號包裹
-
-#### 範例結構
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AI_ROOT="$(dirname "$SCRIPT_DIR")"
-
-# Functions
-log_info() {
-    echo "[INFO] $*" >&2
-}
-
-log_error() {
-    echo "[ERROR] $*" >&2
-}
-
-main() {
-    local arg1="${1:-}"
-
-    if [[ -z "$arg1" ]]; then
-        log_error "Missing required argument"
-        exit 1
-    fi
-
-    # 主要邏輯
-}
-
-main "$@"
-```
-
-#### JSON 處理
-
-使用 `json_escape` 函數處理特殊字元：
-
-```bash
-json_escape() {
-    local input
-    input="$(cat)"
-
-    if [[ -z "$input" ]]; then
-        printf '""'
-        return
-    fi
-
-    printf '%s' "$input" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()), end="")'
-}
-
-# 使用
-MESSAGE=$(echo "$raw_message" | json_escape)
-```
+- 提交前跑 `gofmt`(或 `goimports`)與 `go vet ./...`
+- 命名依 [Effective Go](https://go.dev/doc/effective_go):exported 用 `CamelCase`、unexported 用 `camelCase`,縮寫維持大小寫一致(`URL`、`ID`、`PR`)
+- 錯誤處理:回傳 `error` 而非 panic;用 `fmt.Errorf("...: %w", err)` 包裝以保留 error chain
+- 每個 exported 型別/函式都要有以名稱開頭的 doc comment
+- 平台特定程式碼用 `//go:build` 標籤分檔(如 `*_windows.go` / `*_unix.go`)
+- 對 agent/LLM 輸出的解析一律 **fail-closed**:格式不符即明確錯誤,不要用寬鬆預設值掩蓋(參見 `internal/reviewer` 的結構化 review 契約)
 
 ---
 
@@ -307,14 +165,9 @@ internal/
 ├── evaluate/evaluate_test.go
 ├── generate/generator_test.go
 ├── git/operations_test.go
+├── lessons/lessons_test.go
+├── reviewer/structured_test.go
 └── ...
-
-# Shell/Fixture 測試資料
-.ai/tests/
-└── fixtures/
-    ├── valid_workflow.yaml
-    ├── invalid_workflow.yaml
-    └── sample_tasks.md
 ```
 
 ### 撰寫測試 (Go)
@@ -386,30 +239,16 @@ go test ./internal/errors -run TestAWKError -v
 
 ### API 文件格式
 
-> **⚠️ DEPRECATED**: 以下 Python docstring 範例僅供參考，AWK 已遷移至 Go。新程式碼請使用 Go doc 註解風格。
+Go doc comment 以符號名稱開頭,說明用途、參數語義與回傳/錯誤條件:
 
-```python
-def function_name(param1: str, param2: int = 10) -> dict:
-    """簡短描述。
-
-    詳細說明 (可選)。
-
-    Args:
-        param1: 參數 1 說明
-        param2: 參數 2 說明，預設值 10
-
-    Returns:
-        回傳值說明
-
-    Raises:
-        ValidationError: 驗證失敗時
-        ConfigError: 配置錯誤時
-
-    Example:
-        >>> result = function_name("test")
-        >>> print(result)
-        {'status': 'success'}
-    """
+```go
+// SubmitReview submits a PR review and handles the outcome (merge,
+// changes_requested, review_blocked, ...). A structured submission
+// (opts.Structured) bypasses markdown parsing; ctx bounds all GitHub calls.
+// Returns the verdict, or an error on an operational failure.
+func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewResult, error) {
+    // ...
+}
 ```
 
 ---
@@ -425,8 +264,6 @@ def function_name(param1: str, param2: int = 10) -> dict:
 - [ ] 新功能有對應測試
 - [ ] 文件已更新 (如適用)
 - [ ] Commit 格式正確
-
-> ⚠️ **已棄用**: `pytest .ai/tests/unit -v` 已棄用。請使用 `go test ./...` 執行測試。
 
 ### PR 描述模板
 
@@ -488,15 +325,12 @@ go test ./... -v
 
 # 執行特定套件測試
 go test ./internal/errors/... -v
+
+# 跑單一測試
+go test ./internal/reviewer/ -run TestParseStructuredReview -v
 ```
 
-> ⚠️ **已棄用**: 以下 pytest 命令已棄用，僅供歷史參考：
-> ```bash
-> # python3 -m pytest .ai/tests/unit -v --tb=long
-> # python3 -m pytest .ai/tests/unit/test_errors.py::TestAWKError::test_to_dict -v
-> ```
-
-### Q: 如何在本地測試 Shell 腳本？
+### Q: 如何在本地端到端試跑工作流?
 
 ```bash
 # 使用 awkit CLI

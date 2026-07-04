@@ -5,6 +5,14 @@
 .ai/exe-logs/
 .ai/logs/
 
+# Same runtime dirs when created under a package dir by tests running there
+# (the patterns above are root-anchored due to their internal slash)
+**/.ai/state/
+**/.ai/results/
+**/.ai/runs/
+**/.ai/exe-logs/
+**/.ai/logs/
+
 # Worktrees
 .worktrees/
 
@@ -12,6 +20,7 @@
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
 
 # OS
 .DS_Store

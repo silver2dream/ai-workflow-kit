@@ -4,7 +4,6 @@ package worker
 
 import (
 	"syscall"
-	"time"
 	"unsafe"
 )
 
@@ -69,11 +68,4 @@ func isProcessRunningOS(pid int, expectedStartTime int64) bool {
 	}
 
 	return diff <= 2
-}
-
-// filetimeToTime converts Windows FILETIME to Go time.Time
-func filetimeToTime(ft syscall.Filetime) time.Time {
-	const epochDiff = 116444736000000000
-	ns := (int64(ft.HighDateTime)<<32 | int64(ft.LowDateTime)) - epochDiff
-	return time.Unix(0, ns*100)
 }

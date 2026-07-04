@@ -164,10 +164,7 @@ rules:
 
 ### Q: 如何加入新的語言支援？
 
-**A:**
-1. 在 `.ai/templates/` 建立 CI 模板 (如 `ci-kotlin.yml.j2`)
-2. 在 workflow.yaml 中使用新語言
-3. (可選) 在 `failure_patterns.json` 加入錯誤模式
+**A:** 先用 `language: generic` 搭配自訂的 `verify.build` / `verify.test` 命令即可支援任何語言。若要內建 CI 生成,則需在 `internal/generate` 加入該語言的處理(送 PR)。可選地在 `failure_patterns.json` 加入錯誤模式以改善失敗分類。
 
 ---
 

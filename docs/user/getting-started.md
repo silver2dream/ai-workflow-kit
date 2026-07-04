@@ -15,16 +15,7 @@
 | Bash | 4.0+ | Shell 腳本 (Windows 可用 Git Bash 或 WSL) |
 | Git | 2.20+ | 版本控制 |
 
-### 可選條件 (legacy 腳本)
-
-| 工具 | 版本 | 說明 |
-|------|------|------|
-| Python | 3.8+ | 僅用於 legacy 腳本（生成功能已內建於 `awkit`） |
-
-```bash
-# 僅在需要執行 legacy Python 腳本時安裝
-pip3 install pyyaml jsonschema jinja2
-```
+`awkit` 是單一靜態 Go binary,不需要 Python 或其他執行期依賴。
 
 ### 可選條件 (完整工作流程)
 
@@ -219,15 +210,6 @@ touch .ai/state/STOP
 ---
 
 ## 常見安裝問題
-
-### Python 套件安裝失敗
-
-**問題：** `pip3 install` 時出現權限錯誤
-
-**解決：**
-```bash
-pip3 install --user pyyaml jsonschema jinja2
-```
 
 ### Bash 版本過舊 (macOS)
 

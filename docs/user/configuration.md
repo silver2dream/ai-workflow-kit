@@ -81,15 +81,19 @@ repos:
 
 ### language 支援的語言
 
-| 語言 | 值 | CI 模板 |
-|------|-----|---------|
-| Go | `go` | ci-go.yml.j2 |
-| Node.js | `node` / `typescript` / `javascript` | ci-node.yml.j2 |
-| Python | `python` | ci-python.yml.j2 |
-| Rust | `rust` | ci-rust.yml.j2 |
-| .NET | `dotnet` / `csharp` | ci-dotnet.yml.j2 |
-| Unity | `unity` | ci-unity.yml.j2 |
-| 其他 | `generic` | ci-generic.yml.j2 |
+CI 內容由 `awkit init` / `awkit generate` 依 `language` 產生（內建於 Go,不需外部模板）。
+
+| 語言 | 值 |
+|------|-----|
+| Go | `go` |
+| Node.js | `node` / `typescript` / `javascript`（含 react/vue/svelte 等框架） |
+| Python | `python`（含 django/flask/fastapi） |
+| Rust | `rust` |
+| .NET | `dotnet` / `csharp` |
+| Unity | `unity` |
+| Godot | `godot` |
+| Unreal | `unreal` |
+| 其他 | `generic` |
 
 ### 語言版本設定
 

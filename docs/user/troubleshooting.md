@@ -159,33 +159,6 @@ Config file not found: .ai/config/workflow.yaml
 
 ---
 
-### 缺少 Python 依賴 (僅 legacy 腳本)
-
-**症狀：**
-```
-Please install: pip3 install pyyaml jsonschema jinja2
-```
-
-**原因：** Python 套件未安裝（僅在執行 legacy Python 腳本時需要）
-
-**說明：** Python 依賴為可選，僅用於執行 legacy Python 腳本。生成功能已內建於 `awkit generate`，不需要 Python。主要的 AWK 功能透過 `awkit` CLI 執行。
-
-**解決：**
-```bash
-# 建議使用 awkit generate 取代，不需要 Python
-awkit generate
-
-# 如果仍需要執行 legacy 腳本：
-pip3 install pyyaml jsonschema jinja2
-```
-
-如果權限不足：
-```bash
-pip3 install --user pyyaml jsonschema jinja2
-```
-
----
-
 ### 找不到 Schema 檔
 
 **症狀：**
