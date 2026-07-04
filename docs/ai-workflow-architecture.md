@@ -1,8 +1,9 @@
 # AI Autonomous Workflow Architecture
 
-> Version: 1.3
-> Last Updated: 2026-01-14
+> Version: 1.4
 > Status: Implementation Complete
+
+> **注意**：本文件為高層概念架構,部分圖表與檔案清單早於 v0.14.0 的子系統(學習迴圈 `internal/lessons`、結構化 review + multi-model 共識、knowledge-graph 注入、token/成本觀測、原生 Windows/ConPTY 支援)。整體 Principal→Worker→Reviewer 骨架仍準確;各子系統的權威說明見 [API Reference](developer/api-reference.md#主要子系統internal) 與 [Configuration](user/configuration.md)。本文件中提及的 `.ai/commands/`、`.ai/scripts/*.sh`、`repo_scan.json`/`audit.json` 等為已移除的舊實作,現以 `.ai/skills/` 與內建 Go 命令取代。
 
 ---
 

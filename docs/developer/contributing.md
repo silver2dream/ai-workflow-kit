@@ -362,7 +362,7 @@ go test ./internal/errors -run TestAWKError -v
 ### 測試覆蓋率要求
 
 - 新增的程式碼應有對應的測試
-- 核心套件 (`internal/errors`, `internal/config`) 覆蓋率應 > 70%
+- 核心套件 (`internal/errors`, `internal/analyzer`, `internal/reviewer`, `internal/worker`) 覆蓋率應 > 70%
 - PR 不應降低整體覆蓋率
 
 ---

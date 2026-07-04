@@ -7,7 +7,7 @@
 ## 配置檔結構
 
 ```yaml
-version: "1.1"
+version: "1.2"
 project: { ... }
 repos: [ ... ]
 git: { ... }
@@ -16,9 +16,14 @@ tasks: { ... }
 audit: { ... }
 github: { ... }
 rules: { ... }
-escalation: { ... }
+agents: { ... }
 timeouts: { ... }
+escalation: { ... }
 review: { ... }
+feedback: { ... }
+lessons: { ... }
+hooks: { ... }
+worker: { ... }
 # notifications: (planned for future release)
 ```
 
@@ -62,6 +67,7 @@ repos:
 | `path` | 是 | 相對於專案根目錄的路徑 |
 | `type` | 是 | `root` / `directory` / `submodule` |
 | `language` | 是 | 程式語言 (影響 CI 模板) |
+| `verify.setup` | 否 | 建置/測試前的依賴安裝指令（未設定時依 language/package_manager 自動推斷,如 `npm ci`、`pip install -r requirements.txt`） |
 | `verify.build` | 是 | 建置指令 |
 | `verify.test` | 是 | 測試指令 |
 
@@ -209,12 +215,24 @@ github:
     pr_ready: "pr-ready"
     review_failed: "review-failed"
     worker_failed: "worker-failed"
+    needs_human_review: "needs-human-review"
+    merge_conflict: "merge-conflict"
+    needs_rebase: "needs-rebase"
+    completed: "completed"
 ```
 
 | 欄位 | 說明 |
 |------|------|
 | `repo` | GitHub repo (owner/name)，空白則自動偵測 |
-| `labels` | Issue/PR 使用的標籤 |
+| `labels.task` | 待處理任務 |
+| `labels.in_progress` | 已派工執行中 |
+| `labels.pr_ready` | Worker 完成、PR 待審 |
+| `labels.review_failed` | 審查/驗證失敗,待重審 |
+| `labels.worker_failed` | Worker 失敗,需人工介入 |
+| `labels.needs_human_review` | 超過重試上限,需人工審查 |
+| `labels.merge_conflict` | PR 有合併衝突 |
+| `labels.needs_rebase` | PR 落後 base,需 rebase |
+| `labels.completed` | 完成（success_no_changes） |
 
 ---
 
@@ -245,6 +263,31 @@ rules:
   custom:
     - backend-go
 ```
+
+---
+
+## agents - Agent 設定
+
+```yaml
+agents:
+  builtin:
+    - pr-reviewer           # PR 審查 agent
+    - conflict-resolver     # 合併衝突解決 agent
+  custom: []                # 自訂 subagent
+```
+
+`builtin` 為 kit 內建 agent（由 `awkit generate` 管理）。`custom` 可定義額外 subagent,每個會在 `awkit generate` 時生成到 `.claude/agents/`。
+
+自訂 agent 欄位：
+
+| 欄位 | 說明 |
+|------|------|
+| `name` | Agent 名稱（小寫字母、數字、連字號） |
+| `description` | 描述（必填） |
+| `tools` | 允許的工具（預設 `Read, Grep, Glob, Bash`） |
+| `model` | `haiku` \| `sonnet` \| `opus`（預設 `opus`） |
+| `trigger` | `review_pr` \| `check_result` \| `dispatch_worker` \| `generate_tasks` |
+| `condition` | 觸發條件表達式 |
 
 ---
 
@@ -304,16 +347,130 @@ timeouts:
 
 ```yaml
 review:
-  score_threshold: 7       # PR 審核通過的最低分數（1-10）
-  merge_strategy: squash   # 合併策略：squash | merge | rebase
+  score_threshold: 7           # PR 審核通過的最低分數（1-10）
+  merge_strategy: squash       # 合併策略：squash | merge | rebase
+  severity_consistency: true   # severity/verdict 一致性閘門（預設開）
+  multi_model: false           # multi-model 共識審查
+  # secondary_reviewers:
+  #   - backend: claude
+  #     model: opus
+  #     focus_area: architecture
+  # jittest:
+  #   enabled: false
+  #   max_tests: 5
+  #   timeout_seconds: 120
+  #   failure_policy: warn      # warn | block
 ```
 
 Principal 審查 Worker 提交的 PR 時使用的設定。
 
 | 欄位 | 預設值 | 說明 |
 |------|--------|------|
-| `score_threshold` | `7` | PR 審核通過的最低分數（範圍 1-10）。Reviewer 給予的分數必須 >= 此值才會 approve PR |
-| `merge_strategy` | `squash` | PR 通過審核後的合併方式。可選值：`squash`（壓縮合併）、`merge`（一般合併）、`rebase`（變基合併） |
+| `score_threshold` | `7` | 審核通過的最低分數（1-10）。分數必須 >= 此值才 approve |
+| `merge_strategy` | `squash` | 合併方式：`squash` / `merge` / `rebase` |
+| `severity_consistency` | `true` | 一致性閘門：低於門檻的分數必須列出 >=1 個 Critical/Important 發現;達門檻的分數不得有 Critical 發現。不符則 `review_blocked` |
+| `multi_model` | `false` | 開啟後,`submit-review` 取 PR diff、平行執行次要審查者,套用加權共識（primary×0.7 + secondaries 均分 0.3），任一審查者回報 `[ERROR]` 時共識分數上限 6 |
+| `secondary_reviewers[]` | — | 次要審查者清單,每項 `{backend, model, focus_area}`。省略時預設一個 architecture-focused opus 審查者 |
+| `jittest` | 停用 | 審查時從 PR diff 生成獨立測試（`awkit jittest`）。`failure_policy: block` 時失敗會 `review_blocked` |
+
+---
+
+## feedback - 審查回饋設定
+
+```yaml
+feedback:
+  enabled: true               # 記錄審查拒絕並注入 Worker prompt
+  max_history_in_prompt: 10   # 注入 Worker prompt 的最大歷史筆數
+```
+
+Review 拒絕會被記錄到 `.ai/state/review_feedback.jsonl`,並將 top rejection categories 注入後續 Worker prompt。此系統也是[學習迴圈](#lessons---學習迴圈設定)的資料來源。
+
+| 欄位 | 預設值 | 說明 |
+|------|--------|------|
+| `enabled` | `true` | 是否記錄與注入 feedback |
+| `max_history_in_prompt` | `10` | 注入 prompt 的最大歷史筆數 |
+
+---
+
+## lessons - 學習迴圈設定
+
+```yaml
+lessons:
+  enabled: true               # 學習迴圈總開關
+  max_active: 30              # active+proven 教訓上限
+  inject_top_k: 3             # 每個 prompt 注入的教訓數上限
+  inject_max_chars: 800       # 注入區段的字元上限
+  distiller:
+    backend: claude           # 蒸餾器後端（claude --print）
+    model: sonnet
+    timeout_seconds: 60
+```
+
+學習迴圈:審查拒絕經 LLM 蒸餾成精簡教訓（存於可提交的 `.ai/state/lessons.json`），注入後續 Worker/Reviewer prompt,並依 PR 結果結算命中/落空。已驗證（proven）的教訓可用 `awkit lessons promote <id>` 開一個人審 issue,固化成硬閘門。
+
+指令:`awkit lessons list | stats | add | distill | promote`。
+
+| 欄位 | 預設值 | 說明 |
+|------|--------|------|
+| `enabled` | `true` | 關閉後仍會記錄 feedback,但不注入/蒸餾教訓 |
+| `max_active` | `30` | active+proven 教訓上限,超過時淘汰分數最低者 |
+| `inject_top_k` | `3` | 每個 prompt 注入的教訓數上限（小 k 較佳） |
+| `inject_max_chars` | `800` | 注入區段的硬字元上限 |
+| `distiller.backend` | `claude` | 蒸餾器後端 |
+| `distiller.model` | `sonnet` | 蒸餾器模型 |
+| `distiller.timeout_seconds` | `60` | 蒸餾單筆的逾時 |
+
+---
+
+## hooks - 生命週期 Hook
+
+```yaml
+hooks:
+  pre_dispatch:
+    - command: "echo dispatching issue $AWK_ISSUE"
+      timeout: "30s"
+      on_failure: warn        # warn（預設）| abort | ignore
+  on_merge:
+    - command: "curl -X POST $SLACK_WEBHOOK -d '{\"text\": \"PR merged\"}'"
+      timeout: "10s"
+      on_failure: ignore
+```
+
+在工作流事件執行自訂 shell 命令。事件:`pre_dispatch`、`post_dispatch`、`pre_review`、`post_review`、`on_merge`、`on_failure`。
+
+| 欄位 | 說明 |
+|------|------|
+| `command` | 要執行的 shell 命令 |
+| `timeout` | 逾時（如 `30s`，經 `time.ParseDuration`） |
+| `on_failure` | `warn`（預設，記錄）\| `abort`（中止工作流）\| `ignore` |
+| `env` | 額外環境變數 |
+
+---
+
+## worker - Worker 設定
+
+```yaml
+worker:
+  backend: codex              # codex（預設）| claude-code
+  knowledge_graph: auto       # auto（存在時注入）| off
+  # codex:
+  #   full_auto: true
+  #   max_attempts: 1
+  # claude_code:
+  #   model: sonnet
+  #   max_turns: 50
+  #   dangerously_skip_permissions: false
+```
+
+| 欄位 | 預設值 | 說明 |
+|------|--------|------|
+| `backend` | `codex` | Worker 後端:`codex` 或 `claude-code` |
+| `knowledge_graph` | `auto` | 當 `.understand-anything/knowledge-graph.json` 存在時,把票券相關的程式碼地圖切片注入 Worker prompt;`off` 停用 |
+| `codex.full_auto` | `true` | codex 使用 `--full-auto` |
+| `codex.max_attempts` | `1` | codex 層級的重試次數 |
+| `claude_code.model` | `sonnet` | claude-code Worker 的模型 |
+| `claude_code.max_turns` | `50` | claude-code 的最大回合數 |
+| `claude_code.dangerously_skip_permissions` | `false` | 是否跳過權限確認 |
 
 ---
 
@@ -335,7 +492,7 @@ Slack/Discord webhook notifications are defined in the configuration schema but 
 ### Single-Repo (Python)
 
 ```yaml
-version: "1.1"
+version: "1.2"
 
 project:
   name: "my-python-app"
@@ -375,7 +532,7 @@ escalation:
 ### Monorepo (Go + React)
 
 ```yaml
-version: "1.1"
+version: "1.2"
 
 project:
   name: "fullstack-app"
@@ -455,13 +612,26 @@ awkit doctor
 
 ### 手動遷移
 
-如果需要手動遷移，以下是 v1.0 → v1.1 的變更清單：
+通常執行 `awkit upgrade` 即可自動遷移。以下為各版本的主要變更。
+
+**v1.0 → v1.1：**
 
 1. **Label 值修正**：`review_failed: "review-fail"` → `review_failed: "review-failed"`
 2. **新增 labels**：`merge_conflict`、`needs_rebase`、`completed`
 3. **新增 timeout 欄位**：`gh_retry_count`、`gh_retry_base_delay`
 4. **新增 review section**：`score_threshold`、`merge_strategy`
 5. **版本號更新**：`version: "1.0"` → `version: "1.1"`
+
+**v1.1 → v1.2：**
+
+1. **新增 `agents` section**：`builtin`（pr-reviewer、conflict-resolver）+ `custom`
+2. **新增 `feedback` section**：`enabled`、`max_history_in_prompt`
+3. **新增 `lessons` section**（學習迴圈）：`enabled`、`max_active`、`inject_top_k`、`inject_max_chars`、`distiller.*`
+4. **新增 `hooks` section**：生命週期 shell 命令
+5. **新增 `worker` section**：`backend`（codex/claude-code）、`knowledge_graph`、`codex.*`、`claude_code.*`
+6. **擴充 `review`**：`severity_consistency`、`multi_model`、`secondary_reviewers[]`、`jittest.*`
+7. **新增 `verify.setup`**：建置前依賴安裝
+8. **版本號更新**：`version: "1.1"` → `version: "1.2"`
 
 ### 備份
 

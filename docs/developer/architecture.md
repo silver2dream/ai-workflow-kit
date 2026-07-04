@@ -2,11 +2,17 @@
 
 本文件說明 AI Workflow Kit 的內部架構，適用於 Kit 開發者與貢獻者。
 
+> **近期新增子系統（v0.14.0）**：下方部分流程圖早於這些子系統,對整體 Principal→Worker→Reviewer 骨架仍準確,但尚未畫出以下模組。各模組的權威說明見 [API Reference](api-reference.md#主要子系統internal) 與 [Configuration](../user/configuration.md):
+> - **學習迴圈**（`internal/lessons`）:記錄→蒸餾→注入→驗證,教訓存於 `.ai/state/lessons.json`
+> - **結構化 review**（`reviewer/structured.go`）+ **severity/verdict 閘門** + **multi-model 共識**（`reviewer/multi.go`,接進 `submit.go`）
+> - **Knowledge-graph 注入**（`worker/knowledgegraph.go`）與 **token/成本觀測**（`worker/usage.go`、trace `session_usage` 事件）
+> - **原生 Windows 支援**（`kickoff/pty_windows.go` ConPTY）
+
 ---
 
 ## 總覽
 
-AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Codex (Worker) 執行任務，並使用 GitHub 作為狀態機。
+AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Worker（`codex` 預設,或 `claude-code`）執行任務，並使用 GitHub 作為狀態機。審查端已從單一 reviewer 演進為結構化提交 + 證據驗證 + 選配的 multi-model 共識。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -125,13 +131,14 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Code
 | 指令 | 說明 |
 |------|------|
 | `awkit init` | 初始化專案 |
-| `awkit kickoff` | 啟動工作流程 |
-| `awkit status` | 檢查工作流程狀態 |
+| `awkit kickoff` | 啟動工作流程（audit/掃描已內建於迴圈） |
+| `awkit status` / `next` | 檢查工作流程狀態 / 下一動作 |
 | `awkit dispatch-worker` | 調度 Worker 執行任務 |
-| `awkit scan-repo` | 掃描專案結構 |
-| `awkit audit-project` | 審計專案狀態 |
+| `awkit submit-review` | 提交審查（`--body-file` 結構化 JSON） |
+| `awkit evaluate` | 評估 gate（`--offline`、`--strict`） |
+| `awkit lessons` | 學習迴圈（list/stats/add/distill/promote） |
 
-詳細用法請參考 `awkit --help` 或專案 README。
+詳細用法請參考 `awkit help` 或專案 README。（註:舊的 `scan-repo` / `audit-project` 子命令已移除,邏輯內建於 `kickoff` 與 `audit-epic`。）
 
 ---
 
@@ -173,9 +180,7 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Code
 │                                                              │
 │  [awkit kickoff]                                             │
 │       │                                                      │
-│       ├─► awkit scan-repo ──► analysis/repo_scan.json       │
-│       │                                                      │
-│       ├─► awkit audit-project ──► analysis/audit.json       │
+│       ├─► preflight + audit（內建）                          │
 │       │                                                      │
 │       └─► Claude Code session                                │
 │                 │                                            │

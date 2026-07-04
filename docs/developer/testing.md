@@ -438,48 +438,23 @@ def test_with_fixture_file(fixtures_dir):
 
 ### GitHub Actions
 
-> ⚠️ **已棄用**: 以下 Python/pytest CI 配置已棄用。目前 CI 使用 Go 測試。
+實際 CI 定義於 `.github/workflows/ci.yml`,共四個 job:
 
-```yaml
-# .github/workflows/test.yml (已棄用 - 僅供參考)
-name: Test
+| Job | Runner | 內容 |
+|-----|--------|------|
+| `awkit_cli` | ubuntu-latest | `go vet`、`go test -race -coverprofile`（**60% 覆蓋率門檻閘門**）、`awkit evaluate --offline` 與 `--offline --strict`、上傳覆蓋率 artifact |
+| `awkit_cli_windows` | **windows-latest** | 完整 `go test ./...` 套件,守護原生 path / ConPTY / process 行為（先關 autocrlf、把 Git Bash 加入 PATH） |
+| `backend` | ubuntu-latest | 在 `backend/` 跑 `go test -race ./...` |
+| `frontend` | ubuntu-latest | `frontend/Packages/manifest.json` JSON 驗證 + 資料夾檢查 |
 
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install pytest pytest-cov pyyaml jsonschema jinja2
-
-      - name: Run tests
-        run: |
-          python -m pytest .ai/tests/unit -v --tb=short
-
-      - name: Coverage report
-        run: |
-          # DEPRECATED: .ai/scripts/ has been removed. Use Go test coverage instead.
-          # python -m pytest .ai/tests/unit --cov=.ai/scripts --cov-report=term-missing
-          go test ./... -cover
-```
+> Windows job 是刻意的跨平台守門:kit 出貨 `awkit.exe`、`install.ps1` 與 ConPTY-based 的 Principal runner,只跑 Linux 曾累積過一批 Windows-only 的失敗。race 偵測器跑在 Linux job(`-race` 需要 cgo)。
 
 ### 本地 CI 模擬
 
 ```bash
-# 執行 Go 測試 (推薦)
-go test ./... -v
-
-# (已棄用) 執行 Python 測試
-# python3 -m pytest .ai/tests/unit -v --tb=short
+go vet ./...
+go test -race ./...          # 需 cgo（CGO_ENABLED=1）
+awkit evaluate --offline --strict
 ```
 
 ---
