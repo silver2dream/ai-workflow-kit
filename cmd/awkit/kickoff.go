@@ -688,6 +688,21 @@ func sanitizeStreamLine(line string) string {
 	return strings.TrimSpace(line)
 }
 
+// summarizeCommand collapses a shell command to a single length-bounded line for
+// [EXEC] display. Without it a multi-line command — e.g. a reviewer heredoc that
+// inlines an entire review body — dumps hundreds of lines to the console.
+func summarizeCommand(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if i := strings.IndexAny(cmd, "\r\n"); i >= 0 {
+		cmd = strings.TrimSpace(cmd[:i]) + " …"
+	}
+	const maxRunes = 200
+	if r := []rune(cmd); len(r) > maxRunes {
+		cmd = strings.TrimSpace(string(r[:maxRunes])) + " …"
+	}
+	return cmd
+}
+
 func extractTextFromStreamJSON(line string) string {
 	line = sanitizeStreamLine(line)
 	if line == "" {
@@ -730,7 +745,7 @@ func extractTextFromStreamJSON(line string) string {
 					if toolName == "Bash" || toolName == "bash" || toolName == "execute_bash" {
 						if input, ok := contentItem["input"].(map[string]any); ok {
 							if cmd, ok := input["command"].(string); ok {
-								texts = append(texts, fmt.Sprintf("[EXEC] %s", cmd))
+								texts = append(texts, fmt.Sprintf("[EXEC] %s", summarizeCommand(cmd)))
 							}
 						}
 					}

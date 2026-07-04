@@ -50,6 +50,9 @@ type GitHubClientInterface interface {
 	FindPRByBranch(ctx context.Context, branchName string) (int, error)
 	GetIssueBody(ctx context.Context, issueNumber int) (string, error)
 	UpdateIssueBody(ctx context.Context, issueNumber int, body string) error
+	ReopenIssue(ctx context.Context, issueNumber int) error
+	MergedIssueBranches(ctx context.Context) (map[string]bool, error)
+	TaskIssueStates(ctx context.Context, taskLabel string) (map[int]string, error)
 }
 
 // GitHubClient wraps GitHub CLI operations
@@ -269,6 +272,73 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, issueNumber int) error {
 
 	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "close", strconv.Itoa(issueNumber))
 	return err
+}
+
+// ReopenIssue reopens a closed issue. Used to re-schedule a task whose issue was
+// closed without the work actually landing (a "false completion").
+func (c *GitHubClient) ReopenIssue(ctx context.Context, issueNumber int) error {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "reopen", strconv.Itoa(issueNumber))
+	return err
+}
+
+// MergedIssueBranches returns the set of head-branch names that have a MERGED
+// PR. It lets the analyzer distinguish a genuinely-completed task (issue -> PR
+// -> merge) from a "false completion": an issue closed with no merged PR (e.g.
+// the codex read-only "success_no_changes" bug closed issues without ever
+// landing code). One API call for the whole repo.
+func (c *GitHubClient) MergedIssueBranches(ctx context.Context) (map[string]bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "list",
+		"--state", "merged",
+		"--limit", "500",
+		"--json", "headRefName",
+		"--jq", ".[].headRefName")
+	if err != nil {
+		return nil, err
+	}
+
+	set := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if b := strings.TrimSpace(line); b != "" {
+			set[b] = true
+		}
+	}
+	return set, nil
+}
+
+// TaskIssueStates returns a map of task-issue number -> state ("OPEN"/"CLOSED")
+// for every issue carrying the task label, in one API call.
+func (c *GitHubClient) TaskIssueStates(ctx context.Context, taskLabel string) (map[int]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
+		"--label", taskLabel,
+		"--state", "all",
+		"--limit", "500",
+		"--json", "number,state")
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []struct {
+		Number int    `json:"number"`
+		State  string `json:"state"`
+	}
+	if err := json.Unmarshal(output, &issues); err != nil {
+		return nil, err
+	}
+
+	states := make(map[int]string, len(issues))
+	for _, is := range issues {
+		states[is.Number] = strings.ToUpper(is.State)
+	}
+	return states, nil
 }
 
 // GetIssueBody reads the body of a GitHub issue
