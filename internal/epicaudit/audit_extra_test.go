@@ -31,6 +31,13 @@ func (m *mockGHClient) AddLabel(_ context.Context, _ int, _ string) error       
 func (m *mockGHClient) IsPRMerged(_ context.Context, _ int) (bool, error)         { return false, nil }
 func (m *mockGHClient) CloseIssue(_ context.Context, _ int) error                 { return nil }
 func (m *mockGHClient) FindPRByBranch(_ context.Context, _ string) (int, error)   { return 0, nil }
+func (m *mockGHClient) ReopenIssue(_ context.Context, _ int) error                { return nil }
+func (m *mockGHClient) MergedIssueBranches(_ context.Context) (map[string]bool, error) {
+	return nil, nil
+}
+func (m *mockGHClient) TaskIssueStates(_ context.Context, _ string) (map[int]string, error) {
+	return nil, nil
+}
 func (m *mockGHClient) UpdateIssueBody(_ context.Context, _ int, _ string) error  { return nil }
 
 // compile-time check

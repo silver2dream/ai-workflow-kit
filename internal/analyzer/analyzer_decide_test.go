@@ -33,6 +33,11 @@ type MockGitHubClient struct {
 	GetIssueBodyError   error
 	UpdateIssueBodyError error
 	UpdatedBodies       map[int]string // tracks UpdateIssueBody calls
+	ReopenedIssues      []int          // tracks ReopenIssue calls
+	MergedBranches      map[string]bool // head branch -> has a merged PR
+	IssueStates         map[int]string  // issue number -> OPEN/CLOSED
+	MergedBranchesError error
+	IssueStatesError    error
 }
 
 func NewMockGitHubClient() *MockGitHubClient {
@@ -46,6 +51,8 @@ func NewMockGitHubClient() *MockGitHubClient {
 		RemovedLabels:      make(map[int][]string),
 		IssueBodies:        make(map[int]string),
 		UpdatedBodies:      make(map[int]string),
+		MergedBranches:     make(map[string]bool),
+		IssueStates:        make(map[int]string),
 	}
 }
 
@@ -133,6 +140,25 @@ func (m *MockGitHubClient) UpdateIssueBody(ctx context.Context, issueNumber int,
 	m.IssueBodies[issueNumber] = body
 	m.UpdatedBodies[issueNumber] = body
 	return nil
+}
+
+func (m *MockGitHubClient) ReopenIssue(ctx context.Context, issueNumber int) error {
+	m.ReopenedIssues = append(m.ReopenedIssues, issueNumber)
+	return nil
+}
+
+func (m *MockGitHubClient) MergedIssueBranches(ctx context.Context) (map[string]bool, error) {
+	if m.MergedBranchesError != nil {
+		return nil, m.MergedBranchesError
+	}
+	return m.MergedBranches, nil
+}
+
+func (m *MockGitHubClient) TaskIssueStates(ctx context.Context, taskLabel string) (map[int]string, error) {
+	if m.IssueStatesError != nil {
+		return nil, m.IssueStatesError
+	}
+	return m.IssueStates, nil
 }
 
 // Helper function to create test analyzer with mock client
