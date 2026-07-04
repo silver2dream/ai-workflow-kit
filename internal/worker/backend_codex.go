@@ -182,6 +182,33 @@ func detectCodexArgs(helpText string) ([]string, codexFlagsInfo) {
 	return args, flags
 }
 
+// workerWriteBlockedReason scans a worker's captured output (summary file) and
+// returns a short reason if the run was prevented from writing files — a
+// read-only sandbox or a denied approval. Such a run leaves an empty diff, which
+// must be treated as a failure rather than a legitimate "no changes needed".
+// Returns "" when no blocking signal is present. Matching is case-insensitive.
+func workerWriteBlockedReason(summaryFile string) string {
+	data, err := os.ReadFile(summaryFile)
+	if err != nil {
+		return ""
+	}
+	lower := strings.ToLower(string(data))
+	// Signals emitted by codex (and comparable agent CLIs) when a write is denied.
+	for _, sig := range []string{
+		"read-only sandbox",
+		"writing is blocked",
+		"patch rejected",
+		"rejected by user approval",
+		"workspace write access",
+		"blocked by environment permissions",
+	} {
+		if strings.Contains(lower, sig) {
+			return sig
+		}
+	}
+	return ""
+}
+
 func runCodexAttempt(ctx context.Context, cmdArgs []string, opts BackendOptions, logFile string) int {
 	_ = os.MkdirAll(filepath.Dir(logFile), 0755)
 

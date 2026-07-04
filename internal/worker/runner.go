@@ -886,6 +886,45 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		consistencyStatus = submoduleState.ConsistencyStatus
 	} else {
 		if err := runGit(ctx, wtDir, opts.GitTimeout, "diff", "--cached", "--quiet"); err == nil {
+			// No staged changes. This is a legitimate "nothing to do" ONLY if the
+			// worker actually ran to completion. If its output shows it was blocked
+			// from writing (read-only sandbox / denied approval), a zero diff is a
+			// FALSE success — fail so the issue retries and surfaces the real cause
+			// instead of being silently closed with nothing implemented.
+			if reason := workerWriteBlockedReason(summaryFile); reason != "" {
+				result.Status = "failed"
+				result.Error = "worker made no changes: blocked from writing (" + reason + ")"
+				if trace != nil {
+					_ = trace.StepEnd("failed", "worker blocked from writing", nil)
+				}
+				_ = writeIssueResult(ctx, stateRoot, issueResultContext{
+					IssueID:               opts.IssueID,
+					Status:                "failed",
+					RepoName:              repoName,
+					RepoType:              repoType,
+					RepoPath:              repoPath,
+					WorktreeDir:           wtDir,
+					WorkDir:               workDir,
+					Branch:                branch,
+					BaseBranch:            prBase,
+					SummaryFile:           summaryFile,
+					ErrorMessage:          result.Error,
+					FailureStage:          "worker_write_blocked",
+					WorkerSessionID:       workerSessionID,
+					AttemptNumber:         attemptInfo.AttemptNumber,
+					PreviousSessionIDs:    attemptInfo.PreviousSessionIDs,
+					PreviousFailureReason: attemptInfo.PreviousFailureReason,
+					WorkerPID:             pidInfo.PID,
+					WorkerStartTime:       pidInfo.StartTime,
+					Duration:              time.Since(startTime),
+					RetryCount:            codex.RetryCount,
+					SpecName:              resolveSpecName(meta),
+					TaskLine:              resolveTaskLine(meta),
+				})
+				resultWritten = true
+				return result, fmt.Errorf("%s", result.Error)
+			}
+
 			// No staged changes - but if codex succeeded and tests passed, this is success_no_changes
 			// (task was completed without requiring code changes)
 			if trace != nil {

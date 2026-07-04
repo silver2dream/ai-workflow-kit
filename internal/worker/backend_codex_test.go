@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -81,5 +83,38 @@ func TestDetectCodexArgs_RealWorldRegression(t *testing.T) {
 	}
 	if flags.FullAuto || flags.Yolo {
 		t.Errorf("0.142.5 has no --full-auto/--yolo, flags=%+v", flags)
+	}
+}
+
+func TestWorkerWriteBlockedReason(t *testing.T) {
+	dir := t.TempDir()
+	write := func(content string) string {
+		p := filepath.Join(dir, "summary.txt")
+		if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// Real codex blocked-output phrasings must be detected.
+	blocked := []string{
+		"patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings",
+		"Blocked by environment permissions. Re-run with workspace write access so I can implement.",
+		"ERROR: operation refused by read-only sandbox",
+	}
+	for _, c := range blocked {
+		if reason := workerWriteBlockedReason(write(c)); reason == "" {
+			t.Errorf("expected a blocked reason for %q", c)
+		}
+	}
+
+	// A normal completion must NOT be flagged as blocked.
+	if reason := workerWriteBlockedReason(write("Implemented backend/sim, added tests, all green.")); reason != "" {
+		t.Errorf("normal output flagged as blocked: %q", reason)
+	}
+
+	// A missing summary file is not a blocking signal.
+	if reason := workerWriteBlockedReason(filepath.Join(dir, "does-not-exist.txt")); reason != "" {
+		t.Errorf("missing file should return empty, got %q", reason)
 	}
 }
