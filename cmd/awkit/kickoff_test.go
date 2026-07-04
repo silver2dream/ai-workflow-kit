@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
@@ -143,6 +144,25 @@ func TestSanitizeStreamLine(t *testing.T) {
 				t.Errorf("sanitizeStreamLine(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSummarizeCommand(t *testing.T) {
+	// Short single-line command is unchanged.
+	if got := summarizeCommand("awkit analyze-next --json"); got != "awkit analyze-next --json" {
+		t.Errorf("short cmd changed: %q", got)
+	}
+	// A multi-line heredoc collapses to its first line; the body must not leak.
+	got := summarizeCommand("cat > /tmp/x.md << 'EOF'\n### huge review body\nline2\nEOF")
+	if !strings.HasPrefix(got, "cat > /tmp/x.md << 'EOF'") {
+		t.Errorf("heredoc first line lost: %q", got)
+	}
+	if strings.Contains(got, "review body") || strings.Contains(got, "line2") {
+		t.Errorf("heredoc body leaked into [EXEC]: %q", got)
+	}
+	// A very long single line is truncated to bounded output.
+	if got := summarizeCommand("echo " + strings.Repeat("x", 500)); len([]rune(got)) > 210 {
+		t.Errorf("long cmd not truncated: %d runes", len([]rune(got)))
 	}
 }
 
