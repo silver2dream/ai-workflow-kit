@@ -213,24 +213,3 @@ func (l *LockManager) writeLockInfoTo(f *os.File) error {
 
 	return nil
 }
-
-// writeLockInfo writes the current process info to the lock file
-func (l *LockManager) writeLockInfo() error {
-	hostname, _ := os.Hostname()
-	info := LockInfo{
-		PID:       os.Getpid(),
-		StartTime: time.Now(),
-		Hostname:  hostname,
-	}
-
-	data, err := json.MarshalIndent(info, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal lock info: %w", err)
-	}
-
-	if err := os.WriteFile(l.lockFile, data, 0600); err != nil {
-		return fmt.Errorf("failed to write lock file: %w", err)
-	}
-
-	return nil
-}

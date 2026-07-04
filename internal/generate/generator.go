@@ -523,7 +523,7 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("2. **Read** " + bt + ".ai/skills/principal-workflow/phases/main-loop.md" + bt + "\n")
 	sb.WriteString("3. Follow the main loop instructions\n\n")
 	sb.WriteString("The Skill handles:\n")
-	sb.WriteString("- Project audit (scan_repo, audit_project)\n")
+	sb.WriteString("- Project audit (built into kickoff)\n")
 	sb.WriteString("- Task selection and Issue creation\n")
 	sb.WriteString("- Worker dispatch\n")
 	sb.WriteString("- Result checking\n")

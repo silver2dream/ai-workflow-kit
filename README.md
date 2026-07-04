@@ -7,7 +7,7 @@
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
-> An AI-assisted development workflow kit that drives **Spec → Implement → PR → Merge**, designed to work with **Claude Code (Principal)** + **Codex (Worker)**, and compatible with **Kiro-style specs**.
+> An AI-assisted development workflow kit that drives **Spec → Implement → PR → Merge** with a **self-improving** review loop. A **Principal** (Claude Code) orchestrates a **Worker** (Codex or Claude Code), and quality is enforced by deterministic Go gates — not by trusting LLM prose. Compatible with **Kiro-style specs**.
 
 [![Download](https://img.shields.io/badge/Download-Latest%20Release-brightgreen?style=for-the-badge&logo=github)](https://github.com/silver2dream/ai-workflow-kit/releases/latest)
 
@@ -15,8 +15,34 @@
 
 ---
 
+## 🌟 What Makes AWK Different
+
+Most AI workflow tools are a dispatch loop that trusts whatever the model says. AWK is built on two ideas that set it apart:
+
+### 🧠 A Self-Improving Learning Loop
+
+AWK **learns from its own review history**. Every rejection runs through a four-step loop — **record → distill → inject → verify**:
+
+- A rejected PR is **distilled** by an LLM into a compact, **committable lesson** (`.ai/state/lessons.json`) — a durable check, not a raw log line.
+- Relevant lessons are **injected** into future Worker/Reviewer prompts (scoped to the files you're touching, via the same relevance engine that powers knowledge-graph grounding).
+- Each lesson is **settled hit/miss** against real outcomes, and promoted through `candidate → active → proven` — ineffective lessons retire automatically.
+- A **proven** lesson can be promoted (`awkit lessons promote`) into a **hard gate** (rule / audit check) via a human-reviewed issue.
+
+The result: **a mistake caught once becomes a guardrail that stops it recurring.** The system gets harder to fool over time — and because lessons are committable JSON, the whole team shares the learning (unlike agent memory locked in a private runtime).
+
+### 🤝 Agent-Friendly Interfaces (ACI)
+
+AWK treats its agents as first-class users of a real interface, not prose-in / regex-out:
+
+- The reviewer submits a **structured `review.json`**, and AWK *renders* the human-readable review from it — nothing is parsed back out of hand-formatted markdown.
+- **Format errors are corrected in the same session** (exit code 2, seconds) — only genuine **evidence failures** cost a fresh re-review. The interface tells the agent exactly which field to fix.
+- Quality is enforced by **deterministic Go gates**: evidence verification (re-runs the tests, checks each criterion maps to a real passing assertion), severity/verdict consistency, and multi-model consensus — all in code, not agent-side math.
+
+---
+
 ## 📋 Table of Contents
 
+- [What Makes AWK Different](#-what-makes-awk-different)
 - [Features](#-features)
 - [Architecture Overview](#-architecture-overview)
 - [Technology Stack](#-technology-stack)

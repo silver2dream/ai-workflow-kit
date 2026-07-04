@@ -24,14 +24,14 @@ project:
 #   - directory: 操作在 worktree root 執行，變更限定在子目錄
 #   - submodule: commit/push 先在 submodule 執行，再更新 parent reference
 #
-# language 選項（會選擇對應的 CI 模板）：
-#   - go          → ci-go.yml.j2
-#   - node/typescript/javascript → ci-node.yml.j2
-#   - python      → ci-python.yml.j2
-#   - rust        → ci-rust.yml.j2
-#   - dotnet/csharp → ci-dotnet.yml.j2
-#   - unity       → ci-unity.yml.j2
-#   - generic     → ci-generic.yml.j2 (其他語言)
+# language 選項（決定 awkit init/generate 產生的 CI 內容）：
+#   - go
+#   - node / typescript / javascript
+#   - python
+#   - rust
+#   - dotnet / csharp
+#   - unity
+#   - generic（其他語言）
 #
 # 語言特定版本設定：
 #   - go_version: "1.25.x"
@@ -192,7 +192,7 @@ github:
 rules:
   # Kit 核心規則（由 awkit generate 管理，不要手動編輯）
   kit:
-    - git-workflow  # 從 git-workflow.md.j2 生成
+    - git-workflow  # 由 awkit generate 產生,含分支配置
   
   # 使用者自訂規則（放在 .ai/rules/，不會被覆蓋）
   # 預設保持為空，避免 AWK kit 綁死特定技術/架構。
