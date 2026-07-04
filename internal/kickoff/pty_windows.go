@@ -39,6 +39,12 @@ func isConPtyAvailable() bool {
 // startPlatform starts the command on Windows
 // Uses ConPTY if available (Windows 10 1809+), otherwise falls back to standard execution
 func (p *PTYExecutor) startPlatform() error {
+	// Headless children opt out of the PTY entirely (no TTY -> no interactive
+	// permission prompts, no ANSI injection).
+	if p.standard {
+		return p.startStandard()
+	}
+
 	// Check if ConPTY is available
 	if !isConPtyAvailable() {
 		return p.startStandard()
@@ -86,7 +92,11 @@ func (p *PTYExecutor) startPlatform() error {
 
 // startStandard starts the command without PTY (fallback mode)
 func (p *PTYExecutor) startStandard() error {
-	p.fallback = true
+	// Only a PTY that failed unexpectedly counts as a fallback; a deliberate
+	// standard-mode child is not a degraded state and must not warn.
+	if !p.standard {
+		p.fallback = true
+	}
 
 	// Create pipes for stdout and stderr
 	stdout, err := p.cmd.StdoutPipe()

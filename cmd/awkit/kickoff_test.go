@@ -143,6 +143,27 @@ func TestSanitizeStreamLine(t *testing.T) {
 	}
 }
 
+func TestGetEnvString(t *testing.T) {
+	const key = "AWKIT_TEST_PERMISSION_MODE"
+
+	// Empty value falls back to the default.
+	t.Setenv(key, "")
+	if got := getEnvString(key, "auto"); got != "auto" {
+		t.Errorf("empty env: got %q, want auto", got)
+	}
+
+	// Surrounding whitespace is trimmed.
+	t.Setenv(key, "  bypassPermissions  ")
+	if got := getEnvString(key, "auto"); got != "bypassPermissions" {
+		t.Errorf("override: got %q, want bypassPermissions", got)
+	}
+
+	// An unset variable returns the default.
+	if got := getEnvString("AWKIT_DEFINITELY_UNSET_KEY", "auto"); got != "auto" {
+		t.Errorf("unset env: got %q, want auto", got)
+	}
+}
+
 func TestParseAnalyzeNextOutput(t *testing.T) {
 	out := `
 NEXT_ACTION=create_task

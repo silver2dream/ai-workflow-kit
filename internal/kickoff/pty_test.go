@@ -254,6 +254,62 @@ func TestPTYExecutor_IsFallback(t *testing.T) {
 	executor.Wait()
 }
 
+// TestPTYExecutor_StandardModeByDesign verifies that a deliberately headless
+// executor (SetStandardMode) runs without a PTY, is NOT reported as a degraded
+// fallback, and still captures output over plain pipes. This is the path the
+// Principal uses so that `claude --print` never detects a TTY and never blocks
+// on an interactive permission prompt.
+func TestPTYExecutor_StandardModeByDesign(t *testing.T) {
+	var cmd string
+	var args []string
+	if runtime.GOOS == "windows" {
+		cmd = "cmd"
+		args = []string{"/c", "echo", "standard-mode"}
+	} else {
+		cmd = "echo"
+		args = []string{"standard-mode"}
+	}
+
+	executor, err := NewPTYExecutor(cmd, args)
+	if err != nil {
+		t.Fatalf("NewPTYExecutor failed: %v", err)
+	}
+	defer executor.Close()
+
+	if executor.IsStandardByDesign() {
+		t.Fatal("IsStandardByDesign should be false before SetStandardMode")
+	}
+	executor.SetStandardMode(true)
+	if !executor.IsStandardByDesign() {
+		t.Fatal("IsStandardByDesign should be true after SetStandardMode(true)")
+	}
+
+	if err := executor.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// A deliberate standard-mode child must NOT be flagged as a fallback,
+	// otherwise the kickoff loop prints a misleading "PTY failed" warning.
+	if executor.IsFallback() {
+		t.Error("IsFallback should be false for a by-design standard executor")
+	}
+
+	var buf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(&buf, executor.Output())
+		done <- err
+	}()
+	executor.Wait()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("standard-mode")) {
+		t.Errorf("expected output to contain marker, got %q", buf.String())
+	}
+}
+
 // TestNewPTYExecutor tests executor creation
 func TestNewPTYExecutor(t *testing.T) {
 	executor, err := NewPTYExecutor("echo", []string{"test"})

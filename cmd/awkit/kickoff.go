@@ -241,11 +241,23 @@ func cmdKickoff(args []string) int {
 	// Build Claude CLI command
 	// Use stream-json format for real-time streaming output
 	// Use principal-workflow Skill for deterministic workflow execution
+	//
+	// The Principal runs fully autonomously: `awkit kickoff` has no human to
+	// answer permission prompts. It therefore MUST run with a non-interactive
+	// permission mode, or the first tool call requiring approval hangs forever.
+	// Default to `auto` (Claude Code v2.1.83+): a background classifier
+	// auto-approves routine actions and blocks genuinely dangerous ones, so we
+	// get autonomy with a safety net. Override via AWKIT_PRINCIPAL_PERMISSION_MODE
+	// (e.g. `bypassPermissions` — equivalent to the Worker's
+	// --dangerously-skip-permissions — for locked-down or older environments
+	// where `auto` is unavailable).
+	permissionMode := getEnvString("AWKIT_PRINCIPAL_PERMISSION_MODE", "auto")
 	claudeCmd := "claude"
 	claudeArgs := []string{
 		"--print",
 		"--output-format", "stream-json",
 		"--verbose",
+		"--permission-mode", permissionMode,
 		"-p", "Run the AWK principal workflow.",
 	}
 
@@ -854,6 +866,13 @@ func getEnvInt(name string, defaultValue int) int {
 	return value
 }
 
+func getEnvString(name, defaultValue string) string {
+	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+		return raw
+	}
+	return defaultValue
+}
+
 type runClaudeSessionArgs struct {
 	ClaudeCmd     string
 	ClaudeArgs    []string
@@ -868,6 +887,12 @@ func runClaudeSession(args runClaudeSessionArgs) (int, error) {
 	if err != nil {
 		return 1, fmt.Errorf("failed to create executor: %w", err)
 	}
+	// Run the Principal headless (plain pipes, no PTY). A `claude --print
+	// --output-format stream-json` child that detects a TTY switches to
+	// interactive mode and blocks forever on tool-permission prompts nobody can
+	// answer — the root cause of the silent multi-minute kickoff hang on Windows
+	// (ConPTY) and native Unix PTYs. Pipes also emit clean JSON with no ANSI.
+	executor.SetStandardMode(true)
 	defer executor.Close()
 
 	args.SignalHandler.SetExecutor(executor)
