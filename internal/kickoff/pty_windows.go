@@ -39,6 +39,12 @@ func isConPtyAvailable() bool {
 // startPlatform starts the command on Windows
 // Uses ConPTY if available (Windows 10 1809+), otherwise falls back to standard execution
 func (p *PTYExecutor) startPlatform() error {
+	// Headless children opt out of the PTY entirely (no TTY -> no interactive
+	// permission prompts, no ANSI injection).
+	if p.standard {
+		return p.startStandard()
+	}
+
 	// Check if ConPTY is available
 	if !isConPtyAvailable() {
 		return p.startStandard()
@@ -61,8 +67,13 @@ func (p *PTYExecutor) startPlatform() error {
 		opts = append(opts, conpty.ConPtyEnv(p.cmd.Env))
 	}
 
-	// Set default terminal size (80x25 is standard)
-	opts = append(opts, conpty.ConPtyDimensions(80, 25))
+	// Use a very wide console so ConPTY does not hard-wrap the child's output.
+	// The Principal runs `claude --output-format stream-json`, whose events are
+	// long single-line JSON objects; an 80-column console reflows them into
+	// 80-char fragments, which defeats the line-based JSON parser and dumps raw
+	// JSON to the terminal. ConPTY dimensions are int16, so cap the width just
+	// under the max (32767).
+	opts = append(opts, conpty.ConPtyDimensions(32000, 50))
 
 	// Start the ConPTY process
 	cpty, err := conpty.Start(cmdLine, opts...)
@@ -81,7 +92,11 @@ func (p *PTYExecutor) startPlatform() error {
 
 // startStandard starts the command without PTY (fallback mode)
 func (p *PTYExecutor) startStandard() error {
-	p.fallback = true
+	// Only a PTY that failed unexpectedly counts as a fallback; a deliberate
+	// standard-mode child is not a degraded state and must not warn.
+	if !p.standard {
+		p.fallback = true
+	}
 
 	// Create pipes for stdout and stderr
 	stdout, err := p.cmd.StdoutPipe()
