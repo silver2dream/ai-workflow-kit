@@ -302,7 +302,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}, nil
 	}
 
-	if decision := a.checkTasksFiles(); decision != nil {
+	if decision := a.checkTasksFiles(ctx); decision != nil {
 		return decision, nil
 	}
 
@@ -432,8 +432,9 @@ func (a *Analyzer) extractPRNumberForIssue(issueNumber int, issueBody string) in
 	return 0
 }
 
-// checkTasksFiles checks tasks.md files for uncompleted tasks
-func (a *Analyzer) checkTasksFiles() *Decision {
+// checkTasksFiles checks tasks.md files for uncompleted tasks, and re-schedules
+// tasks that were "falsely completed" (issue closed with no merged PR).
+func (a *Analyzer) checkTasksFiles(ctx context.Context) *Decision {
 	if a.Config == nil || len(a.Config.Specs.Active) == 0 {
 		return nil
 	}
@@ -472,18 +473,26 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 
 		scanner := bufio.NewScanner(file)
 		lineNum := 0
+		var refTasks []refTask
 		for scanner.Scan() {
 			lineNum++
 			line := scanner.Text()
 
-			// Check for uncompleted task
-			if strings.HasPrefix(line, "- [ ]") && !strings.Contains(line, "<!-- Issue #") {
+			if !strings.HasPrefix(line, "- [ ]") {
+				continue
+			}
+			// A task that was never dispatched (no issue ref) is created first.
+			if !strings.Contains(line, "<!-- Issue #") {
 				file.Close()
 				return &Decision{
 					NextAction: ActionCreateTask,
 					SpecName:   spec,
 					TaskLine:   lineNum,
 				}
+			}
+			// Otherwise remember it for the false-completion check below.
+			if n := parseIssueRefNumber(line); n > 0 {
+				refTasks = append(refTasks, refTask{issue: n, line: lineNum})
 			}
 		}
 		// Check for scanner errors (e.g., I/O errors during reading)
@@ -492,8 +501,86 @@ func (a *Analyzer) checkTasksFiles() *Decision {
 			continue // Skip this spec file on read error
 		}
 		file.Close()
+
+		// Every remaining task carries an issue ref. Re-schedule any that were
+		// closed without the work actually landing — a merged PR is the proof of
+		// completion.
+		if d := a.checkFalseCompletions(ctx, spec, refTasks); d != nil {
+			return d
+		}
 	}
 
+	return nil
+}
+
+// refTask is a tasks.md task line that already carries a GitHub issue reference.
+type refTask struct {
+	issue int
+	line  int
+}
+
+// parseIssueRefNumber extracts N from a "<!-- Issue #N -->" marker on a task
+// line, or 0 when the marker is absent or malformed.
+func parseIssueRefNumber(line string) int {
+	const marker = "<!-- Issue #"
+	i := strings.Index(line, marker)
+	if i < 0 {
+		return 0
+	}
+	rest := line[i+len(marker):]
+	end := strings.IndexFunc(rest, func(r rune) bool { return r < '0' || r > '9' })
+	if end <= 0 {
+		return 0
+	}
+	n, _ := strconv.Atoi(rest[:end])
+	return n
+}
+
+// checkFalseCompletions re-schedules the first task whose issue was closed
+// without the work landing. A task is genuinely done only if a MERGED PR exists
+// for its feat/ai-issue-<n> branch; a closed issue with no merged PR (e.g. a
+// worker that produced no changes, or the codex read-only sandbox bug) is a
+// false completion — reopen the issue and dispatch a worker to actually do it.
+// Best-effort: on any GitHub API error it returns nil rather than risk
+// misclassifying a genuine completion as false.
+func (a *Analyzer) checkFalseCompletions(ctx context.Context, spec string, refTasks []refTask) *Decision {
+	if len(refTasks) == 0 {
+		return nil
+	}
+
+	taskLabel := DefaultLabels().Task
+	if a.Config != nil && a.Config.GitHub.Labels.Task != "" {
+		taskLabel = a.Config.GitHub.Labels.Task
+	}
+
+	merged, err := a.GHClient.MergedIssueBranches(ctx)
+	if err != nil {
+		return nil
+	}
+	states, err := a.GHClient.TaskIssueStates(ctx, taskLabel)
+	if err != nil {
+		return nil
+	}
+
+	for _, rt := range refTasks {
+		if merged[fmt.Sprintf("feat/ai-issue-%d", rt.issue)] {
+			continue // genuinely completed: issue -> PR -> merge
+		}
+		// No merged PR. Only re-schedule if the issue is CLOSED; an OPEN issue is
+		// still in the pipeline and is handled by the earlier steps.
+		if states[rt.issue] != "CLOSED" {
+			continue
+		}
+		fmt.Fprintf(os.Stderr,
+			"[analyzer] false completion: issue #%d (%s line %d) is closed but has no merged PR; reopening and re-dispatching\n",
+			rt.issue, spec, rt.line)
+		_ = a.GHClient.ReopenIssue(ctx, rt.issue)
+		a.updateIssueLabels(ctx, rt.issue, []string{taskLabel}, nil)
+		return &Decision{
+			NextAction:  ActionDispatchWorker,
+			IssueNumber: rt.issue,
+		}
+	}
 	return nil
 }
 

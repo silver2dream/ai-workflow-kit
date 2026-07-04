@@ -239,7 +239,7 @@ func TestCheckTasksFiles(t *testing.T) {
 			tt.setupFiles()
 
 			a := New(tmpDir, tt.config)
-			decision := a.checkTasksFiles()
+			decision := a.checkTasksFiles(context.Background())
 
 			if tt.wantAction == "" {
 				if decision != nil {
