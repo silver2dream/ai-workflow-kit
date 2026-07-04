@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -632,7 +633,23 @@ func formatDuration(d time.Duration) string {
 // - {"type":"system","subtype":"init",...} - initialization
 // - {"type":"assistant","message":{...}} - assistant response with content
 // - {"type":"result","subtype":"success",...} - final result
+// ansiEscape matches ANSI/VT escape sequences (SGR colors, cursor moves, ...).
+// When claude runs inside a PTY it detects a TTY and injects these into the
+// stream-json output; they must be removed before a line can be parsed as JSON
+// or the whole event is dropped/garbled.
+var ansiEscape = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
+
+// sanitizeStreamLine strips ANSI escapes and stray carriage returns/NULs that
+// a PTY may interleave with the JSON stream.
+func sanitizeStreamLine(line string) string {
+	line = ansiEscape.ReplaceAllString(line, "")
+	line = strings.ReplaceAll(line, "\r", "")
+	line = strings.ReplaceAll(line, "\x00", "")
+	return strings.TrimSpace(line)
+}
+
 func extractTextFromStreamJSON(line string) string {
+	line = sanitizeStreamLine(line)
 	if line == "" {
 		return ""
 	}

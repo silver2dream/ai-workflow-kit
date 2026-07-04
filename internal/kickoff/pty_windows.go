@@ -61,8 +61,13 @@ func (p *PTYExecutor) startPlatform() error {
 		opts = append(opts, conpty.ConPtyEnv(p.cmd.Env))
 	}
 
-	// Set default terminal size (80x25 is standard)
-	opts = append(opts, conpty.ConPtyDimensions(80, 25))
+	// Use a very wide console so ConPTY does not hard-wrap the child's output.
+	// The Principal runs `claude --output-format stream-json`, whose events are
+	// long single-line JSON objects; an 80-column console reflows them into
+	// 80-char fragments, which defeats the line-based JSON parser and dumps raw
+	// JSON to the terminal. ConPTY dimensions are int16, so cap the width just
+	// under the max (32767).
+	opts = append(opts, conpty.ConPtyDimensions(32000, 50))
 
 	// Start the ConPTY process
 	cpty, err := conpty.Start(cmdLine, opts...)
