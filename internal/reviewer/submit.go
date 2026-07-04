@@ -44,6 +44,10 @@ type SubmitReviewOptions struct {
 	GHTimeout      time.Duration
 	TestTimeout    time.Duration
 	HookRunner     HookFirer     // nil = no hooks
+	// Structured, when non-nil, is the agent-submitted structured review:
+	// severity counts and criteria verifications come straight from it
+	// (no prose parsing), and ReviewBody carries its rendered markdown.
+	Structured *StructuredReview
 }
 
 // SubmitReviewResult holds the result of submitting a review
@@ -208,14 +212,18 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	fmt.Printf("[REVIEW] Test Command: %s\n", opts.TestCommand)
 	fmt.Printf("[REVIEW] Language: %s\n", opts.Language)
 
-	verifyReport, verifyErr := VerifyTestEvidenceWithReport(ctx, VerifyOptions{
+	verifyOpts := VerifyOptions{
 		Ticket:       opts.Ticket,
 		ReviewBody:   opts.ReviewBody,
 		WorktreePath: opts.WorktreePath,
 		TestCommand:  opts.TestCommand,
 		TestTimeout:  opts.TestTimeout,
 		Language:     opts.Language,
-	})
+	}
+	if opts.Structured != nil {
+		verifyOpts.Verifications = opts.Structured.ToVerifications()
+	}
+	verifyReport, verifyErr := VerifyTestEvidenceWithReport(ctx, verifyOpts)
 
 	if verifyErr != nil {
 		fmt.Printf("[REVIEW] ❌ Verification failed: %s\n", verifyErr.Message)
@@ -231,7 +239,13 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	// severity-tagged findings must tell the same story (system-enforced
 	// counterpart of the pr-reviewer prompt contract).
 	if severityCheckEnabled(opts.StateRoot) {
-		if sevErr := ValidateSeverityConsistency(opts.Score, opts.ScoreThreshold, opts.ReviewBody); sevErr != nil {
+		var sevErr *EvidenceError
+		if opts.Structured != nil {
+			sevErr = ValidateSeverityCounts(opts.Score, opts.ScoreThreshold, opts.Structured.SeverityCounts())
+		} else {
+			sevErr = ValidateSeverityConsistency(opts.Score, opts.ScoreThreshold, opts.ReviewBody)
+		}
+		if sevErr != nil {
 			fmt.Printf("[REVIEW] ❌ Severity consistency check failed: %s\n", sevErr.Message)
 			for _, d := range sevErr.Details {
 				fmt.Printf("[REVIEW]   - %s\n", d)

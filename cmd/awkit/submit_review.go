@@ -18,26 +18,38 @@ import (
 func usageSubmitReview() {
 	fmt.Fprint(os.Stderr, `Submit PR review result
 
-Usage:
+Usage (structured, preferred):
+  awkit submit-review --pr <number> --issue <number> --ci-status <passed|failed> --body-file review.json
+
+Usage (legacy markdown):
   awkit submit-review --pr <number> --issue <number> --score <1-10> --ci-status <passed|failed> --body <review>
 
 Arguments:
   --pr          PR number (required)
   --issue       Issue number (required)
-  --score       Review score 1-10 (required, threshold configurable via review.score_threshold in workflow.yaml, default: 7)
   --ci-status   CI status: passed or failed (required)
-  --body        Review body text (required)
+  --body-file   Path to a structured review JSON file (score, criteria[],
+                improvements[]; schema is printed by prepare-review).
+                Score is taken from the file; --score must be omitted or match.
+  --score       Review score 1-10 (required with --body)
+  --body        Review body markdown (legacy; parsed by regex — prefer --body-file)
 
 Options:
   --state-root  Override state root (default: git root)
   --help        Show this help
+
+Exit codes:
+  0  review submitted (see RESULT= line for the verdict)
+  2  SUBMISSION INVALID — the JSON failed schema validation; the listed
+     fields tell you exactly what to fix. Fix and resubmit in this session.
+  1  operational failure (GitHub, config, ...)
 
 Config (workflow.yaml):
   review.score_threshold  Minimum score to approve (default: 7)
   review.merge_strategy   Merge strategy: squash, merge, rebase (default: squash)
 
 Examples:
-  awkit submit-review --pr 42 --issue 25 --score 8 --ci-status passed --body "LGTM. EVIDENCE: func NewHandler"
+  awkit submit-review --pr 42 --issue 25 --ci-status passed --body-file .ai/state/reviews/pr-42/review.json
   awkit submit-review --pr 42 --issue 25 --score 5 --ci-status failed --body "Needs work"
 `)
 }
@@ -52,6 +64,7 @@ func cmdSubmitReview(args []string) int {
 	score := fs.Int("score", 0, "")
 	ciStatus := fs.String("ci-status", "", "")
 	body := fs.String("body", "", "")
+	bodyFile := fs.String("body-file", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
@@ -78,22 +91,49 @@ func cmdSubmitReview(args []string) int {
 		return 2
 	}
 
-	if *score < 1 || *score > 10 {
-		errorf("Error: --score must be between 1 and 10\n\n")
-		usageSubmitReview()
-		return 2
-	}
-
 	if *ciStatus != "passed" && *ciStatus != "failed" {
 		errorf("Error: --ci-status must be 'passed' or 'failed'\n\n")
 		usageSubmitReview()
 		return 2
 	}
 
-	if *body == "" {
-		errorf("Error: --body is required\n\n")
-		usageSubmitReview()
-		return 2
+	// Structured path: parse + validate the JSON BEFORE any side effects so
+	// a malformed submission is corrected in-session (exit 2), never burned
+	// as a review_blocked round.
+	var structured *reviewer.StructuredReview
+	if *bodyFile != "" {
+		data, err := os.ReadFile(*bodyFile)
+		if err != nil {
+			errorf("Error: cannot read --body-file: %v\n", err)
+			return 2
+		}
+		parsed, verrs := reviewer.ParseStructuredReview(data)
+		if len(verrs) > 0 {
+			fmt.Println("SUBMISSION INVALID (fix the fields below and resubmit in this session):")
+			for _, ve := range verrs {
+				fmt.Printf("  - %s\n", ve.String())
+			}
+			return 2
+		}
+		if *score != 0 && *score != parsed.Score {
+			fmt.Println("SUBMISSION INVALID (fix the fields below and resubmit in this session):")
+			fmt.Printf("  - score: --score %d contradicts the file's \"score\": %d — omit --score or make them match\n", *score, parsed.Score)
+			return 2
+		}
+		structured = parsed
+		*score = parsed.Score
+		*body = parsed.RenderMarkdown()
+	} else {
+		if *score < 1 || *score > 10 {
+			errorf("Error: --score must be between 1 and 10\n\n")
+			usageSubmitReview()
+			return 2
+		}
+		if *body == "" {
+			errorf("Error: --body or --body-file is required\n\n")
+			usageSubmitReview()
+			return 2
+		}
 	}
 
 	// Resolve state root
@@ -139,6 +179,7 @@ func cmdSubmitReview(args []string) int {
 		MergeStrategy:  reviewSettings.MergeStrategy,
 		GHTimeout:      60 * time.Second,
 		HookRunner:     hookRunner,
+		Structured:     structured,
 	})
 
 	if err != nil {
