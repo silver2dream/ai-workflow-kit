@@ -23,18 +23,21 @@
 ```bash
 awkit init              # 初始化專案
 awkit init --preset go  # 使用 preset 初始化
-awkit kickoff           # 啟動工作流程
+awkit kickoff           # 啟動工作流程（audit/掃描已內建於 kickoff 迴圈）
 awkit kickoff --dry-run # 預覽執行
 awkit kickoff --resume  # 恢復上次執行
-awkit status            # 檢查狀態
+awkit status            # 檢查狀態（離線摘要）
+awkit next              # 顯示下一個動作
 awkit validate          # 驗證配置
-awkit scan-repo         # 掃描專案結構
-awkit audit-project     # 審計專案狀態
+awkit evaluate --offline  # 執行評估 gate（--strict 任一失敗即失敗）
+awkit lessons list      # 學習迴圈教訓（list/stats/add/distill/promote）
 awkit dispatch-worker   # 調度 Worker
 awkit upgrade           # 升級 kit 檔案
 awkit check-update      # 檢查更新
 awkit version           # 顯示版本
 ```
+
+> 完整命令清單見 `awkit help`。`scan-repo` / `audit-project` 等舊子命令已移除,相關邏輯內建於 `kickoff` 與 `awkit audit-epic`。
 
 ### 詳細用法
 
@@ -64,6 +67,8 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 | `principal-workflow` | Principal Agent 主工作流程 |
 | `create-issues` | Issue 建立技能 |
 | `run-issues` | Issue 執行技能 |
+| `post-mortem` | 失敗事後分析（唯讀）；學習迴圈的手動入口 |
+| `release-checklist` | 發布前 go/no-go 驗證 |
 
 ---
 
@@ -534,11 +539,43 @@ awkit generate [--generate-ci]
 
 ### awkit evaluate
 
-評估腳本。
+執行評估 gate（離線 O0–O10 + 線上 gate），輸出各 gate 狀態與評分。`--strict` 時任一 gate 失敗即以非零退出（用於 CI/發布前）。
 
 ```bash
 awkit evaluate [--offline] [--strict]
 ```
+
+### awkit lessons
+
+學習迴圈的教訓管理（見下方子系統）。
+
+```bash
+awkit lessons list [--all]         # 列出教訓
+awkit lessons stats                # 狀態分布 + 命中/落空率
+awkit lessons add --title ... --content ...   # 手動新增（post-mortem 入口）
+awkit lessons distill [--max N]    # 從新的 review feedback 蒸餾教訓
+awkit lessons promote <L-xxx>      # 為已驗證教訓開一個人審 issue（固化成硬閘門）
+```
+
+### awkit submit-review
+
+提交 PR 審查結果。**推薦**用 `--body-file` 提交結構化 JSON（`StructuredReview`）；schema 錯誤會以退出碼 **2**（`SUBMISSION INVALID`）返回,由同 session 修正,不會浪費一輪 review。舊的 `--body`（markdown）路徑保留相容。
+
+```bash
+awkit submit-review --pr N --issue M --ci-status passed --body-file review.json
+```
+
+---
+
+## 主要子系統（internal/）
+
+| 套件 | 職責 |
+|------|------|
+| `internal/lessons` | 學習迴圈:Store（`.ai/state/lessons.json`）、Select（相關性/注入預算）、Settle（命中/落空狀態機）、Distill（fail-closed LLM 蒸餾） |
+| `internal/reviewer` | 審查管線:`structured.go`（JSON 契約）、`severity.go`（severity/verdict 閘門）、`multi.go`/`secondary.go`/`consensus.go`（multi-model 共識,接進 `submit.go`）、`evidence.go`（證據驗證）、`feedback.go` |
+| `internal/worker` | Worker 執行:`knowledgegraph.go`（Understand-Anything 地圖注入）、`usage.go`（token/成本掃描）、`lessons_inject.go`（教訓注入 + 歸因） |
+| `internal/kickoff` | Principal 啟動器:PTY 執行（Windows ConPTY）、stream-json 解析、`session_usage` 事件 |
+| `internal/trace` | 統一事件流（`.ai/state/events/`），含 `session_usage`（token/成本）|
 
 ---
 

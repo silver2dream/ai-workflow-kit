@@ -13,6 +13,7 @@ Install these **before** anything else:
 | **GitHub CLI (`gh`)** | [cli.github.com](https://cli.github.com/) | Issue/PR operations (required) |
 | **`gh auth login`** | Run after installing `gh` | **#1 first-time blocker** — authenticate now |
 | **Claude Code (`claude`)** | [claude.ai/download](https://claude.ai/download) | Principal AI agent |
+| **Codex (`codex`)** | per Codex docs | Default Worker backend (`worker.backend: codex`) — needed for `kickoff` to dispatch work; skip if you set `worker.backend: claude-code` |
 | **Git** | [git-scm.com](https://git-scm.com/) | Version control |
 
 ```bash

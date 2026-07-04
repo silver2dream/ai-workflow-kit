@@ -278,7 +278,9 @@ brew install bash
 | `awkit validate` | 驗證配置 |
 | `awkit doctor` | 檢查專案健康狀態，報告問題 |
 | `awkit reset` | 重設專案狀態（支援 `--all`、`--dry-run` 等 flags） |
-| `awkit evaluate` | 執行品質評估（離線/線上 gate 檢查與評分） |
+| `awkit generate` | 生成輔助文件與 scaffolding |
+| `awkit evaluate` | 執行品質評估（離線/線上 gate 檢查與評分；`--offline`、`--strict`） |
+| `awkit lessons` | 學習迴圈：`list` / `stats` / `add` / `distill` / `promote` |
 
 ### init 選項
 

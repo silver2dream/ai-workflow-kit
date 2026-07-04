@@ -90,6 +90,27 @@ Principal Agent 的主工作流程。
 
 ---
 
+### `/post-mortem`
+
+任務失敗後的結構化事後分析（唯讀）。
+
+**用途：**
+- 分析 Worker/Review 失敗的根因
+- 是[學習迴圈](configuration.md#lessons---學習迴圈設定)的手動入口 —— 分析出的教訓可用 `awkit lessons add` 記錄
+
+---
+
+### `/release-checklist`
+
+發布前的 go/no-go 驗證。
+
+**用途：**
+- 在合併整合分支到 `main`、打 release tag 前執行
+- 檢查測試、未提交變更、依賴、CI 狀態、分支與 main 的落差
+- 產出明確的 GO / NO-GO 決策（僅驗證,不會自動修復或合併）
+
+---
+
 ## Skills 結構
 
 每個 Skill 由以下檔案組成：

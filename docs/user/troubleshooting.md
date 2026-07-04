@@ -620,16 +620,19 @@ API rate limit exceeded
 awkit validate
 ```
 
-### 掃描專案狀態
+### 查看工作流狀態
 
 ```bash
-awkit scan-repo
+awkit status        # 離線狀態摘要
+awkit next          # 顯示下一個動作
+awkit analyze-next --json   # 完整狀態機決策（JSON）
 ```
 
-### 執行審計
+### 查看學習迴圈教訓
 
 ```bash
-awkit audit-project
+awkit lessons list
+awkit lessons stats
 ```
 
 ---
