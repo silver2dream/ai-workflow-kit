@@ -19,6 +19,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
+	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
 func usageKickoff() {
@@ -237,6 +238,12 @@ func cmdKickoff(args []string) int {
 			"project": config.Project.Name,
 			"session": principalSessionID,
 		}))
+
+	// Ensure the workflow's state-machine labels exist before the Principal
+	// starts. The worker and reviewer add/remove these as issues move through the
+	// pipeline; if they're missing, every `gh issue edit` logs a noisy
+	// '<label> not found'. Best-effort — a permission failure is just a warning.
+	ensureWorkflowLabels(configPath, output)
 
 	// Build Claude CLI command
 	// Use stream-json format for real-time streaming output
@@ -510,6 +517,15 @@ func cmdKickoff(args []string) int {
 	signalHandler.Setup()
 
 	var lastNext analyzeNextVars
+	// No-progress guard: a "creation" decision (create_task/generate_tasks/
+	// audit_epic) always changes repo state on success, so if the analyzer keeps
+	// returning the exact same one, the workflow is stalled — classically a
+	// create_task whose `gh issue create` fails on a permission error, which is
+	// invisible to the analyzer (it only sees that the issue still doesn't
+	// exist) and never counts as a consecutive_failure. Count identical repeats
+	// so we can stop with a clear message instead of burning every session.
+	var sameDecisionStreak int
+	maxSameDecision := getEnvInt("AWKIT_MAX_SAME_DECISION", 3)
 
 	for sessionIndex := 1; sessionIndex <= maxSessions; sessionIndex++ {
 		// Write loop_start event
@@ -577,6 +593,11 @@ func cmdKickoff(args []string) int {
 			endPrincipalSession("paused")
 			return 1
 		}
+		if sessionIndex > 1 && sameDecision(next, lastNext) {
+			sameDecisionStreak++
+		} else {
+			sameDecisionStreak = 1
+		}
 		lastNext = next
 
 		// Write loop_decision event
@@ -617,6 +638,13 @@ func cmdKickoff(args []string) int {
 			endPrincipalSession("stopped")
 			return 1
 		default:
+			if isCreationAction(next.NextAction) && sameDecisionStreak >= maxSameDecision {
+				fmt.Println("")
+				output.Error(fmt.Sprintf("Workflow stopped: no progress — '%s'%s repeated %d× without advancing.", next.NextAction, formatAnalyzeNextContext(next), sameDecisionStreak))
+				output.Info("This usually means gh lacks write access to the repo (check `gh auth status` and the repo's permissions) or a label/config problem. See `awkit doctor`.")
+				endPrincipalSession("no_progress")
+				return 1
+			}
 			output.Info(fmt.Sprintf("Pending: %s%s (restarting in %s)", next.NextAction, formatAnalyzeNextContext(next), restartDelay))
 			time.Sleep(restartDelay)
 			// G8 fix: exponential backoff - double delay for next restart, capped at max
@@ -849,9 +877,65 @@ func formatAnalyzeNextContext(v analyzeNextVars) string {
 	return " (" + strings.Join(parts, " ") + ")"
 }
 
+// sameDecision reports whether two analyze-next results are identical across
+// every field that identifies the work to be done. Used to detect a stalled
+// loop that keeps deciding the same thing without making progress.
+func sameDecision(a, b analyzeNextVars) bool {
+	return a.NextAction == b.NextAction &&
+		a.IssueNumber == b.IssueNumber &&
+		a.PRNumber == b.PRNumber &&
+		a.SpecName == b.SpecName &&
+		a.TaskLine == b.TaskLine &&
+		a.MergeIssue == b.MergeIssue
+}
+
+// isCreationAction reports whether an action creates GitHub state (an issue or
+// task list) that, on success, necessarily advances the workflow. Repeating one
+// of these unchanged is a hard stall, so the no-progress guard only trips on
+// them — actions like check_result or dispatch_worker can legitimately recur
+// while a worker runs.
+func isCreationAction(action string) bool {
+	switch action {
+	case "create_task", "generate_tasks", "audit_epic":
+		return true
+	default:
+		return false
+	}
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// ensureWorkflowLabels creates the state-machine labels up front so the worker
+// and reviewer don't spam '<label> not found' as they move issues through the
+// pipeline. Best-effort: config/permission problems are a warning, not a blocker.
+func ensureWorkflowLabels(configPath string, output *kickoff.OutputFormatter) {
+	cfg, err := analyzer.LoadConfig(configPath)
+	if err != nil {
+		return // config errors are surfaced by preflight already
+	}
+	ghc := worker.NewGitHubClient(30 * time.Second)
+	if err := ghc.EnsureLabels(context.Background(), cfg.GitHub.Repo, workflowLabelSpecs(cfg.GitHub.Labels)); err != nil {
+		output.Warning(fmt.Sprintf("Some workflow labels could not be created: %v", err))
+	}
+}
+
+// workflowLabelSpecs maps the configured label names to create specs with stable
+// colors and descriptions.
+func workflowLabelSpecs(l analyzer.LabelsConfig) []worker.LabelSpec {
+	return []worker.LabelSpec{
+		{Name: l.Task, Color: "1d76db", Description: "AWK automated task"},
+		{Name: l.InProgress, Color: "fbca04", Description: "Worker is implementing this issue"},
+		{Name: l.PRReady, Color: "0e8a16", Description: "PR is ready for review"},
+		{Name: l.WorkerFailed, Color: "d93f0b", Description: "Worker failed after retries"},
+		{Name: l.NeedsHumanReview, Color: "d876e3", Description: "Needs human review"},
+		{Name: l.ReviewFailed, Color: "b60205", Description: "Automated review failed"},
+		{Name: l.MergeConflict, Color: "e99695", Description: "PR has merge conflicts"},
+		{Name: l.NeedsRebase, Color: "c2e0c6", Description: "Branch needs rebase before merge"},
+		{Name: l.Completed, Color: "5319e7", Description: "Task completed"},
+	}
 }
 
 func getEnvInt(name string, defaultValue int) int {

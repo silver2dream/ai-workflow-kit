@@ -114,6 +114,7 @@ func (b *CodexBackend) Execute(ctx context.Context, opts BackendOptions) Backend
 type codexFlagsInfo struct {
 	FullAuto bool
 	Yolo     bool
+	Sandbox  bool
 }
 
 func buildCodexCommand(ctx context.Context) ([]string, error) {
@@ -127,36 +128,85 @@ func buildCodexCommand(ctx context.Context) ([]string, error) {
 	cmd := exec.CommandContext(helpCtx, "codex", "exec", "--help")
 	output, err := cmd.CombinedOutput()
 
-	args := []string{"exec"}
-
 	// If help command fails, log warning and use basic args
 	if err != nil {
 		// Log warning to stderr so operators can see it
 		fmt.Fprintf(os.Stderr, "[codex] warning: failed to detect codex flags (codex exec --help failed): %v\n", err)
 		fmt.Fprintf(os.Stderr, "[codex] warning: using basic 'codex exec' without --full-auto or other optional flags\n")
-		return args, nil
+		return []string{"exec"}, nil
 	}
 
-	helpText := string(output)
+	args, _ := detectCodexArgs(string(output))
+	return args, nil
+}
+
+// detectCodexArgs picks the `codex exec` flags this codex build supports, based
+// on its --help text. It is pure (no process execution) so the flag logic stays
+// unit-testable as codex's CLI evolves.
+//
+// codex needs an explicit automation/sandbox flag or `codex exec` defaults to a
+// read-only sandbox and silently makes NO changes — it can't even write its plan
+// file, so every worker returns "no changes" and the issue is closed with
+// nothing implemented. Older codex exposed --full-auto/--yolo; codex 0.14x
+// dropped those in favour of --sandbox <mode>. We prefer the widest automation
+// flag this build understands.
+func detectCodexArgs(helpText string) ([]string, codexFlagsInfo) {
+	args := []string{"exec"}
 	var flags codexFlagsInfo
 
-	if strings.Contains(helpText, "--full-auto") {
+	switch {
+	case strings.Contains(helpText, "--full-auto"):
 		args = append(args, "--full-auto")
 		flags.FullAuto = true
-	} else if strings.Contains(helpText, "--yolo") {
+	case strings.Contains(helpText, "--yolo"):
 		args = append(args, "--yolo")
 		flags.Yolo = true
+	case strings.Contains(helpText, "--sandbox"):
+		// workspace-write lets codex read the whole repo and write its own
+		// worktree (the cwd) without per-command approval, while still blocking
+		// writes outside the workspace. Verified: `codex exec --sandbox
+		// workspace-write` actually writes files on this platform.
+		args = append(args, "--sandbox", "workspace-write")
+		flags.Sandbox = true
 	}
 	if strings.Contains(helpText, "--json") {
 		args = append(args, "--json")
 	}
 
-	// Log detected flags for debugging
-	if !flags.FullAuto && !flags.Yolo {
-		fmt.Fprintf(os.Stderr, "[codex] info: no --full-auto or --yolo flag detected, codex will run in interactive mode\n")
+	// A codex with none of these flags will run read-only and make no changes,
+	// so warn loudly rather than silently no-op.
+	if !flags.FullAuto && !flags.Yolo && !flags.Sandbox {
+		fmt.Fprintf(os.Stderr, "[codex] warning: no automation flag (--full-auto/--yolo/--sandbox) detected; codex may run read-only and make no changes\n")
 	}
 
-	return args, nil
+	return args, flags
+}
+
+// workerWriteBlockedReason scans a worker's captured output (summary file) and
+// returns a short reason if the run was prevented from writing files — a
+// read-only sandbox or a denied approval. Such a run leaves an empty diff, which
+// must be treated as a failure rather than a legitimate "no changes needed".
+// Returns "" when no blocking signal is present. Matching is case-insensitive.
+func workerWriteBlockedReason(summaryFile string) string {
+	data, err := os.ReadFile(summaryFile)
+	if err != nil {
+		return ""
+	}
+	lower := strings.ToLower(string(data))
+	// Signals emitted by codex (and comparable agent CLIs) when a write is denied.
+	for _, sig := range []string{
+		"read-only sandbox",
+		"writing is blocked",
+		"patch rejected",
+		"rejected by user approval",
+		"workspace write access",
+		"blocked by environment permissions",
+	} {
+		if strings.Contains(lower, sig) {
+			return sig
+		}
+	}
+	return ""
 }
 
 func runCodexAttempt(ctx context.Context, cmdArgs []string, opts BackendOptions, logFile string) int {
