@@ -132,6 +132,48 @@ func (c *GitHubClient) RemoveLabel(ctx context.Context, number int, label string
 	return c.EditIssueLabels(ctx, number, nil, []string{label})
 }
 
+// LabelSpec describes a repository label to ensure exists.
+type LabelSpec struct {
+	Name        string
+	Color       string // 6-hex, no leading '#'; empty lets gh pick one
+	Description string
+}
+
+// EnsureLabels creates each label, updating an existing one's color/description
+// (`gh label create --force` is an upsert). It is best-effort and idempotent: a
+// failure on one label is collected and reported but does not stop the others,
+// so a permission error surfaces without aborting the workflow. Labels with an
+// empty Name are skipped.
+func (c *GitHubClient) EnsureLabels(ctx context.Context, repo string, specs []LabelSpec) error {
+	var failed []string
+	for _, s := range specs {
+		if strings.TrimSpace(s.Name) == "" {
+			continue
+		}
+		args := []string{"label", "create", s.Name, "--force"}
+		if s.Color != "" {
+			args = append(args, "--color", s.Color)
+		}
+		if s.Description != "" {
+			args = append(args, "--description", s.Description)
+		}
+		if repo != "" {
+			args = append(args, "--repo", repo)
+		}
+
+		lctx, cancel := context.WithTimeout(ctx, c.Timeout)
+		out, err := ghutil.RunWithRetry(lctx, c.Retry, "gh", args...)
+		cancel()
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s (%s)", s.Name, strings.TrimSpace(string(out))))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("could not ensure %d label(s): %s", len(failed), strings.Join(failed, "; "))
+	}
+	return nil
+}
+
 // CommentOnIssue adds a comment to an issue
 func (c *GitHubClient) CommentOnIssue(ctx context.Context, number int, body string) error {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)

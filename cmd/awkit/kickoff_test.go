@@ -2,6 +2,9 @@ package main
 
 import (
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
 func TestExtractTextFromStreamJSON(t *testing.T) {
@@ -161,6 +164,37 @@ func TestGetEnvString(t *testing.T) {
 	// An unset variable returns the default.
 	if got := getEnvString("AWKIT_DEFINITELY_UNSET_KEY", "auto"); got != "auto" {
 		t.Errorf("unset env: got %q, want auto", got)
+	}
+}
+
+func TestWorkflowLabelSpecs(t *testing.T) {
+	labels := analyzer.DefaultLabels()
+	specs := workflowLabelSpecs(labels)
+
+	byName := make(map[string]worker.LabelSpec, len(specs))
+	for _, s := range specs {
+		byName[s.Name] = s
+	}
+
+	// Every state-machine label the workflow relies on must have a spec, or it
+	// won't be created and gh edits against it will fail with 'not found'.
+	want := []string{
+		labels.Task, labels.InProgress, labels.PRReady, labels.WorkerFailed,
+		labels.NeedsHumanReview, labels.ReviewFailed, labels.MergeConflict,
+		labels.NeedsRebase, labels.Completed,
+	}
+	for _, name := range want {
+		s, ok := byName[name]
+		if !ok {
+			t.Errorf("label %q has no spec", name)
+			continue
+		}
+		if len(s.Color) != 6 {
+			t.Errorf("label %q color %q must be 6-hex", name, s.Color)
+		}
+		if s.Description == "" {
+			t.Errorf("label %q has an empty description", name)
+		}
 	}
 }
 
