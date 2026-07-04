@@ -675,6 +675,31 @@ func TestValidateCompleteness(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:     "meta-criteria skips implementation requirement",
+			criteria: []string{"go build ./... passes"},
+			verifications: []CriteriaVerification{
+				{Criteria: "go build ./... passes", Implementation: "", TestName: "(meta)", Assertion: "(meta)", IsMeta: true},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "meta-criteria without IsMeta flag but with (meta) test name",
+			criteria: []string{"npm run build succeeds"},
+			verifications: []CriteriaVerification{
+				{Criteria: "npm run build succeeds", Implementation: "", TestName: "(meta)", Assertion: "(meta)"},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "mixed meta and non-meta criteria",
+			criteria: []string{"Feature A", "build passes"},
+			verifications: []CriteriaVerification{
+				{Criteria: "Feature A", Implementation: "Implemented using X pattern", TestName: "TestFeatureA", Assertion: "assert.Equal"},
+				{Criteria: "build passes", Implementation: "", TestName: "(meta)", Assertion: "(meta)", IsMeta: true},
+			},
+			wantErr: false,
+		},
+		{
 			name:          "empty criteria",
 			criteria:      []string{},
 			verifications: []CriteriaVerification{},
@@ -1814,7 +1839,9 @@ exit 0
 | Canvas renders game state | TestRenderDrawsSnakeSegments | expect(canvas).toMatchSnapshot() |
 `,
 		WorktreePath: tmpDir,
-		TestCommand:  "sh " + scriptPath,
+		// ToSlash keeps the path intact inside `sh -c` on Windows, where
+		// backslashes would otherwise be consumed as escape characters.
+		TestCommand:  "sh " + filepath.ToSlash(scriptPath),
 		Language:     "node",
 	}
 
@@ -2400,5 +2427,46 @@ func TestParseTestResults_VitestVerbosePreservesSpaces(t *testing.T) {
 	}
 	if !passed["GameCanvas/renders canvas element"] {
 		t.Error("expected original full path 'GameCanvas/renders canvas element' in passed tests")
+	}
+}
+
+func TestVerifyTestEvidenceWithReport_ReportsFileLevelOnly(t *testing.T) {
+	// Reuses the Vitest file-level fixture pattern: exit 0 with only
+	// file-level summary lines and no per-test names.
+	tmpDir := t.TempDir()
+	testContent := `import { describe, it, expect } from 'vitest'
+describe('GameCanvas', () => { it('renders', () => { expect(1).toBe(1) }) })
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "GameCanvas.test.ts"), []byte(testContent), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	scriptPath := filepath.Join(tmpDir, "run-test.sh")
+	script := "#!/bin/sh\necho ' Test Files  1 passed (1)'\necho '      Tests  1 passed (1)'\nexit 0\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	report, err := VerifyTestEvidenceWithReport(context.Background(), VerifyOptions{
+		Ticket: "## Acceptance Criteria\n- [ ] Canvas renders game state",
+		ReviewBody: `### Implementation Review
+
+#### 1. Canvas renders game state
+**Implementation**: Renders canvas via React component with game snapshot data
+
+### Test Review
+
+| Criteria | Test | Key Assertion |
+|----------|------|---------------|
+| Canvas renders game state | TestRenderDrawsSnakeSegments | expect(canvas).toMatchSnapshot() |
+`,
+		WorktreePath: tmpDir,
+		TestCommand:  "sh " + filepath.ToSlash(scriptPath),
+		Language:     "node",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: code=%d msg=%s", err.Code, err.Message)
+	}
+	if report == nil || !report.FileLevelOnly {
+		t.Errorf("expected FileLevelOnly=true in report, got %+v", report)
 	}
 }

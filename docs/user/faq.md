@@ -126,7 +126,7 @@ Coordination: sequential
 
 **A:**
 - **Principal (Claude Code)** - 讀取 spec、建立 Issue、審查 PR、決策
-- **Worker (Codex)** - 實作程式碼、提交 PR
+- **Worker** - 實作程式碼、提交 PR。後端可選 `codex`（預設）或 `claude-code`，由 `worker.backend` 設定
 
 ---
 
@@ -186,7 +186,7 @@ rules:
 
 ### Q: 如何查看執行日誌？
 
-**A:** 日誌存放在 `.ai/logs/` 目錄，使用 `--log-level debug` 可獲得更詳細的輸出。
+**A:** 日誌存放在 `.ai/exe-logs/` 目錄（`principal.log` 與 `issue-{N}.worker.log`）。結構化事件流在 `.ai/state/events/`，可用 `awkit events` 查詢。
 
 ---
 

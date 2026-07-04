@@ -193,7 +193,7 @@ func TestWritePromptFileWithDesignDoc(t *testing.T) {
 
 		promptPath := filepath.Join(tmpDir, "prompt.txt")
 		ticket := "# Task\n- Spec: test-spec\n- Repo: backend\n"
-		err := writePromptFile(promptPath, "", ticket, tmpDir, 999, 0, 0, nil, nil)
+		err := writePromptFile(promptPath, "", ticket, tmpDir, 999, 0, 0, nil, nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,7 +222,7 @@ func TestWritePromptFileWithDesignDoc(t *testing.T) {
 		tmpDir := t.TempDir()
 		promptPath := filepath.Join(tmpDir, "prompt.txt")
 		ticket := "# Task\n- Repo: backend\n"
-		err := writePromptFile(promptPath, "", ticket, tmpDir, 999, 0, 0, nil, nil)
+		err := writePromptFile(promptPath, "", ticket, tmpDir, 999, 0, 0, nil, nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

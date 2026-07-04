@@ -2,13 +2,37 @@ package evaluate
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/audit"
 	"gopkg.in/yaml.v3"
 )
+
+// CheckO3Audit runs the project audit. P0 findings (missing CLAUDE.md,
+// AGENTS.md, or workflow.yaml) fail the gate; P1/P2 findings are reported
+// in the reason but do not fail it.
+func CheckO3Audit(rootPath string) GateResult {
+	result, err := audit.AuditProject(rootPath)
+	if err != nil {
+		return Fail(fmt.Sprintf("audit failed to run: %v", err))
+	}
+
+	s := result.Summary
+	if s.P0Count > 0 {
+		var ids []string
+		for _, f := range result.Findings {
+			if f.Severity == audit.SeverityP0 {
+				ids = append(ids, f.ID)
+			}
+		}
+		return Fail(fmt.Sprintf("%d P0 finding(s): %s", s.P0Count, strings.Join(ids, ", ")))
+	}
+	return Pass(fmt.Sprintf("no P0 findings (P1: %d, P2: %d)", s.P1Count, s.P2Count))
+}
 
 // requiredIgnoredPaths lists paths that must be ignored by git.
 var requiredIgnoredPaths = []string{
@@ -29,10 +53,12 @@ func CheckO0GitIgnore(rootPath string) GateResult {
 
 	var notIgnored []string
 	for _, path := range requiredIgnoredPaths {
-		fullPath := filepath.Join(rootPath, path)
+		// Probe a phantom child instead of the directory itself: dir-only
+		// patterns like ".ai/results/" do not match a path that does not
+		// exist on disk yet, which would false-fail fresh checkouts.
+		probe := filepath.Join(rootPath, path, "awk-ignore-probe")
 
-		// Use git check-ignore to verify the path is ignored
-		cmd := exec.Command("git", "-C", rootPath, "check-ignore", "-q", fullPath)
+		cmd := exec.Command("git", "-C", rootPath, "check-ignore", "-q", probe)
 		err := cmd.Run()
 		if err != nil {
 			// Exit code != 0 means not ignored

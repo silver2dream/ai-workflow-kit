@@ -14,6 +14,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
+	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
@@ -43,6 +44,10 @@ type SubmitReviewOptions struct {
 	GHTimeout      time.Duration
 	TestTimeout    time.Duration
 	HookRunner     HookFirer     // nil = no hooks
+	// Structured, when non-nil, is the agent-submitted structured review:
+	// severity counts and criteria verifications come straight from it
+	// (no prose parsing), and ReviewBody carries its rendered markdown.
+	Structured *StructuredReview
 }
 
 // SubmitReviewResult holds the result of submitting a review
@@ -207,14 +212,18 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	fmt.Printf("[REVIEW] Test Command: %s\n", opts.TestCommand)
 	fmt.Printf("[REVIEW] Language: %s\n", opts.Language)
 
-	verifyErr := VerifyTestEvidence(ctx, VerifyOptions{
+	verifyOpts := VerifyOptions{
 		Ticket:       opts.Ticket,
 		ReviewBody:   opts.ReviewBody,
 		WorktreePath: opts.WorktreePath,
 		TestCommand:  opts.TestCommand,
 		TestTimeout:  opts.TestTimeout,
 		Language:     opts.Language,
-	})
+	}
+	if opts.Structured != nil {
+		verifyOpts.Verifications = opts.Structured.ToVerifications()
+	}
+	verifyReport, verifyErr := VerifyTestEvidenceWithReport(ctx, verifyOpts)
 
 	if verifyErr != nil {
 		fmt.Printf("[REVIEW] ❌ Verification failed: %s\n", verifyErr.Message)
@@ -226,13 +235,59 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		return handleVerificationFailure(ctx, opts, sessionID, verifyErr)
 	}
 
+	// Severity/verdict consistency gate: the numeric score and the
+	// severity-tagged findings must tell the same story (system-enforced
+	// counterpart of the pr-reviewer prompt contract).
+	if severityCheckEnabled(opts.StateRoot) {
+		var sevErr *EvidenceError
+		if opts.Structured != nil {
+			sevErr = ValidateSeverityCounts(opts.Score, opts.ScoreThreshold, opts.Structured.SeverityCounts())
+		} else {
+			sevErr = ValidateSeverityConsistency(opts.Score, opts.ScoreThreshold, opts.ReviewBody)
+		}
+		if sevErr != nil {
+			fmt.Printf("[REVIEW] ❌ Severity consistency check failed: %s\n", sevErr.Message)
+			for _, d := range sevErr.Details {
+				fmt.Printf("[REVIEW]   - %s\n", d)
+			}
+			return handleVerificationFailure(ctx, opts, sessionID, sevErr)
+		}
+	}
+
 	fmt.Printf("[REVIEW] ✅ All verifications passed\n")
+
+	// Multi-model consensus (review.multi_model): run secondary reviewers on
+	// the PR diff and let the weighted consensus replace the primary score
+	// for every decision below. The consensus section rides on ReviewBody so
+	// approval and rejection comments both carry it.
+	if settings := LoadMultiModelSettings(opts.StateRoot); settings != nil {
+		fmt.Printf("[REVIEW] Multi-model review: running %d secondary reviewer(s)...\n", len(settings.Reviewers))
+		if consensus, section, applied := ApplyMultiModelConsensus(ctx, opts.PRNumber, opts.Score, opts.ReviewBody, settings, opts.GHTimeout); applied {
+			fmt.Printf("[REVIEW] Consensus score: %d/10 (primary: %d/10)\n", consensus, opts.Score)
+			opts.ReviewBody += "\n\n" + section
+			opts.Score = consensus
+		}
+	}
 
 	// Count criteria for reporting
 	criteria := ParseAcceptanceCriteria(opts.Ticket)
 	criteriaCount := len(criteria)
 
-	// Post AWK Review Comment
+	// Post AWK Review Comment. Degraded verification modes are surfaced
+	// honestly instead of implying every check ran.
+	testsCell := "✅ Passed"
+	assertionsCell := "✅ Found"
+	metaRow := ""
+	if verifyReport != nil {
+		if verifyReport.FileLevelOnly {
+			testsCell = "✅ Passed (file-level output only)"
+			assertionsCell = "⚠️ Skipped — test runner produced no per-test names"
+		}
+		if n := len(verifyReport.MetaCriteria); n > 0 {
+			metaRow = fmt.Sprintf("\n| Meta Criteria | %d (verified by overall test pass only) |", n)
+		}
+	}
+
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	commentBody := fmt.Sprintf(`<!-- AWK:session:%s -->
 🤖 **AWK Review**
@@ -243,11 +298,11 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 | Review Timestamp | %s |
 | CI Status | %s |
 | Criteria Verified | %d |
-| Tests Executed | ✅ Passed |
-| Assertions Verified | ✅ Found |
+| Tests Executed | %s |
+| Assertions Verified | %s |%s
 | Score | %d/10 |
 
-%s`, sessionID, sessionID, timestamp, opts.CIStatus, criteriaCount, opts.Score, opts.ReviewBody)
+%s`, sessionID, sessionID, timestamp, opts.CIStatus, criteriaCount, testsCell, assertionsCell, metaRow, opts.Score, opts.ReviewBody)
 
 	// Append JiT test results if available
 	if jitResult != nil && jitResult.Generated > 0 {
@@ -303,6 +358,16 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: %v\n", err)
 			}
 
+			// Learning loop: record the approval and settle injected lessons.
+			_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				IssueID:   opts.IssueNumber,
+				PRNumber:  opts.PRNumber,
+				Score:     opts.Score,
+				Outcome:   "approved",
+			})
+			settleAndDistill(opts, lessons.OutcomeMerged, "")
+
 			return &SubmitReviewResult{Result: "merged"}, nil
 		}
 
@@ -341,7 +406,9 @@ PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHT
 			Score:      opts.Score,
 			Categories: []string{"ci-failure"},
 			Summary:    truncateSummary(ciReason, 500),
+			Paths:      prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout),
 		})
+		settleAndDistill(opts, lessons.OutcomeChangesRequested, ciReason)
 
 		return &SubmitReviewResult{Result: "changes_requested", Reason: ciReason}, nil
 	}
@@ -365,7 +432,10 @@ PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != n
 	}
 
 	// Record feedback for score-based rejection (fire-and-forget)
-	_ = RecordFeedback(opts.StateRoot, BuildFeedbackEntry(opts.IssueNumber, opts.PRNumber, opts.Score, opts.ReviewBody))
+	entry := BuildFeedbackEntry(opts.IssueNumber, opts.PRNumber, opts.Score, opts.ReviewBody)
+	entry.Paths = prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout)
+	_ = RecordFeedback(opts.StateRoot, entry)
+	settleAndDistill(opts, lessons.OutcomeChangesRequested, opts.ReviewBody)
 
 	return &SubmitReviewResult{Result: "changes_requested"}, nil
 }
@@ -384,6 +454,8 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 		verifyCategory = "test-execution"
 	case 3:
 		verifyCategory = "assertion"
+	case 4:
+		verifyCategory = "severity-consistency"
 	}
 	_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
@@ -392,7 +464,9 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 		Score:      opts.Score,
 		Categories: []string{verifyCategory},
 		Summary:    truncateSummary(err.Message, 500),
+		Paths:      prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout),
 	})
+	settleAndDistill(opts, lessons.OutcomeReviewBlocked, err.Message)
 
 	var details string
 	if err.Details != nil {
@@ -411,6 +485,8 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 		failureType = "test execution"
 	case 3:
 		failureType = "assertion"
+	case 4:
+		failureType = "severity consistency"
 	}
 
 	if commentErr := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
@@ -756,6 +832,61 @@ func jitFailurePolicy(stateRoot string) string {
 	return cfg.Review.JiTTest.FailurePolicy
 }
 
+// severityCheckEnabled reports whether the severity/verdict consistency gate
+// is enabled (review.severity_consistency, default: true).
+func severityCheckEnabled(stateRoot string) bool {
+	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	if err != nil {
+		return true
+	}
+	return cfg.Review.SeverityCheckEnabled()
+}
+
+// prChangedPaths returns the PR's changed-file paths (best-effort, capped).
+func prChangedPaths(ctx context.Context, prNumber int, timeout time.Duration) []string {
+	diff, err := fetchPRDiffFunc(ctx, prNumber, timeout)
+	if err != nil {
+		return nil
+	}
+	return DiffPaths(diff)
+}
+
+// settleAndDistill closes the learning loop for a terminal review outcome:
+// lessons injected into this issue's run are settled (hit/miss), then — for
+// rejections — new feedback is distilled into lessons. Both steps are
+// best-effort and never affect the review verdict.
+func settleAndDistill(opts SubmitReviewOptions, outcome, rejectionText string) {
+	if err := lessons.Settle(opts.StateRoot, opts.IssueNumber, outcome, rejectionText); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: lesson settlement failed: %v\n", err)
+	}
+	if outcome == lessons.OutcomeMerged {
+		return // successes feed settlement only; pitfalls come from failures
+	}
+
+	cfg, err := analyzer.LoadConfig(filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml"))
+	if err != nil || !cfg.Lessons.IsEnabled() {
+		return
+	}
+	timeout := 60 * time.Second
+	if cfg.Lessons.Distiller.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.Lessons.Distiller.TimeoutSeconds) * time.Second
+	}
+	report, err := lessons.Distill(context.Background(), opts.StateRoot, lessons.DistillOptions{
+		Model:      cfg.Lessons.Distiller.Model,
+		Timeout:    timeout,
+		MaxActive:  cfg.Lessons.MaxActive,
+		MaxEntries: 3,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: lesson distillation failed: %v\n", err)
+		return
+	}
+	if report.Processed > 0 {
+		fmt.Printf("[REVIEW] Lessons: %d distilled (%d new, %d upvoted, %d skipped)\n",
+			report.Processed, len(report.Created), len(report.Matched), report.Skipped)
+	}
+}
+
 // handleJiTTestBlock handles JiT test failure in block mode.
 func handleJiTTestBlock(ctx context.Context, opts SubmitReviewOptions, sessionID string, result *jittest.Result) (*SubmitReviewResult, error) {
 	// Record feedback for re-dispatch
@@ -766,7 +897,9 @@ func handleJiTTestBlock(ctx context.Context, opts SubmitReviewOptions, sessionID
 		Score:      opts.Score,
 		Categories: []string{"jittest"},
 		Summary:    truncateSummary(result.FormatFeedback(), 500),
+		Paths:      prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout),
 	})
+	settleAndDistill(opts, lessons.OutcomeChangesRequested, result.FormatFeedback())
 
 	// Post comment on issue
 	comment := fmt.Sprintf("## AWK Review blocked (JiT Test)\n\nJiT tests failed with block policy.\n\nPR: #%d\n\n%s\n\nMarked review-failed. Worker will be re-dispatched.",

@@ -692,14 +692,42 @@ func extractTextFromStreamJSON(line string) string {
 		return ""
 
 	case "result":
-		// Skip result event - it's just a summary of what was already output
-		// The actual content was already streamed via "assistant" events
-		return ""
+		// The content itself was already streamed via "assistant" events,
+		// but the result event carries the session's token/cost usage.
+		return recordSessionUsage(event)
 
 	default:
 		// Skip other event types (system, etc.)
 		return ""
 	}
+}
+
+// recordSessionUsage extracts token/cost usage from a Claude stream-json
+// "result" event, emits a session_usage trace event, and returns a one-line
+// summary for display. Returns "" when the event carries no usage data.
+func recordSessionUsage(event map[string]any) string {
+	cost, _ := event["total_cost_usd"].(float64)
+	var tokensIn, tokensOut int64
+	if usage, ok := event["usage"].(map[string]any); ok {
+		if f, ok := usage["input_tokens"].(float64); ok {
+			tokensIn = int64(f)
+		}
+		if f, ok := usage["output_tokens"].(float64); ok {
+			tokensOut = int64(f)
+		}
+	}
+	if cost == 0 && tokensIn == 0 && tokensOut == 0 {
+		return ""
+	}
+
+	trace.WriteEvent(trace.ComponentPrincipal, trace.TypeSessionUsage, trace.LevelInfo,
+		trace.WithData(map[string]any{
+			"cost_usd":   cost,
+			"tokens_in":  tokensIn,
+			"tokens_out": tokensOut,
+		}))
+
+	return fmt.Sprintf("[COST] session usage: $%.4f (in: %d, out: %d tokens)", cost, tokensIn, tokensOut)
 }
 
 type analyzeNextVars struct {

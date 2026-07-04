@@ -38,11 +38,29 @@
 - **Spec-driven**: reads `.ai/specs/<name>/tasks.md` (Kiro-compatible) to decide what to do next
 - **GitHub as state machine**: uses issues/PRs + labels to track progress
 - **Dispatch + review loop**: dispatches implementation to Worker, then reviews/merges or creates fix issues
+- **Worker backend selection**: `codex` (default) or `claude-code` via `worker.backend`
 
-### Kit Quality
-- **Offline Gate**: deterministic verification (no network required)
+### Review Quality
+- **Structured review submission**: reviewer submits `review.json` (`submit-review --body-file`); schema errors are corrected in-session, only real evidence failures block
+- **Evidence verification gate**: re-runs the test suite and verifies each acceptance criterion maps to a passing test with a real assertion before merge
+- **Multi-model consensus** (opt-in): `review.multi_model` runs secondary reviewers in parallel and applies weighted scoring with an `[ERROR]`-severity cap — enforced in Go, not agent-side math
+- **Severity/verdict consistency gate**: a below-threshold score must carry a Critical/Important finding; a passing score must not carry a Critical one
+- **JiT tests** (opt-in): generates independent tests from the PR diff at review time
+
+### Learning Loop
+- **Record → distill → inject → verify**: review rejections are distilled into compact, committable lessons (`.ai/state/lessons.json`) injected into future Worker/Reviewer prompts and settled hit/miss against outcomes
+- **Promotable to hard gates**: `awkit lessons promote` opens a human-gated issue to harden a proven lesson into a rule/audit check
+
+### Context Grounding
+- **Design-doc injection**: relevant `design.md` context is added to the Worker prompt
+- **Knowledge-graph injection**: when `.understand-anything/knowledge-graph.json` exists, a ticket-relevant slice of the codebase map (files + dependents) is injected (`worker.knowledge_graph`)
+
+### Kit Quality & Ops
+- **Offline Gate**: deterministic verification (no network required) via `awkit evaluate --offline`
 - **Strict mode**: `--strict` enforces “no P0 findings” in audit (CI/release checks)
-- **Extensibility checks**: validates CI triggers on `feat/example` (branch alignment)
+- **Cross-platform**: native Windows support (ConPTY) plus Linux/macOS; the full test suite runs on `windows-latest` in CI
+- **Token/cost observability**: per-session and per-worker LLM token/cost tracking (`awkit events`, `ResultMetrics`)
+- **Lifecycle hooks**: run shell commands at pre/post dispatch, pre/post review, on merge, on failure
 
 ---
 
@@ -72,17 +90,17 @@ More details: `docs/ai-workflow-architecture.md`.
 ## 🛠️ Technology Stack
 
 ### Offline (required)
-- `bash` (Windows: Git Bash / WSL)
+- `bash` (Windows: Git Bash — some verification steps shell out to `sh`; the Principal runner itself has native Windows/ConPTY support)
 - `git`
 - `go` 1.25+
 
 ### Offline (optional)
-- `python3` + `pyyaml` + `jsonschema` + `jinja2` (only needed for legacy scripts; generation is built into `awkit`)
+- `python3` (used only for the frontend CI JSON-validation example; core generation is built into `awkit`)
 
 ### Online / E2E (optional)
 - `gh` (GitHub CLI) + `gh auth login`
-- `claude` (Claude Code)
-- `codex` (Worker)
+- `claude` (Claude Code) — required for the Principal, and for the Worker when `worker.backend: claude-code`
+- `codex` — required for the Worker when `worker.backend: codex` (default)
 
 ---
 
@@ -255,6 +273,44 @@ Spec folder structure (Kiro compatible):
 
 To enable a spec, add its folder name to `specs.active` in `.ai/config/workflow.yaml`.
 
+### Config sections
+
+`workflow.yaml` has these top-level sections (full reference: [docs/user/configuration.md](docs/user/configuration.md)):
+
+| Section | Purpose |
+|---------|---------|
+| `project` / `repos` | Repo layout, types, per-repo `verify` commands |
+| `git` | Integration/release branches, commit format, PR template |
+| `specs` / `tasks` / `audit` | Spec sources, task format, audit checks |
+| `github` | Issue/PR labels, repo override |
+| `rules` / `agents` | Enabled kit/custom rules and subagents |
+| `timeouts` / `escalation` | Operation timeouts, retry/failure limits, PR-size caps |
+| `review` | Score threshold, merge strategy, **multi-model consensus**, **severity gate**, JiT tests |
+| `feedback` | Review feedback recording/injection |
+| `lessons` | **Learning loop**: distillation/injection budget, distiller model |
+| `worker` | Backend (`codex`/`claude-code`), **knowledge-graph injection** |
+| `hooks` | Lifecycle shell commands |
+
+Highlighted newer options:
+
+```yaml
+review:
+  score_threshold: 7
+  severity_consistency: true    # gate: score vs Critical/Important findings (default on)
+  multi_model: false            # run secondary reviewers + weighted consensus
+  # secondary_reviewers:
+  #   - backend: claude
+  #     model: opus
+  #     focus_area: architecture
+
+worker:
+  backend: codex                # codex (default) | claude-code
+  knowledge_graph: auto         # auto (inject when present) | off
+
+lessons:
+  enabled: true                 # learning loop: distill review rejections into reusable lessons
+```
+
 ---
 
 ## 📦 Directory Monorepo Example
@@ -279,11 +335,11 @@ Root CI workflow: `.github/workflows/ci.yml`
 **For this repo (awkit itself):**
 This repo ships a hand-maintained CI example. `awkit generate` does **not** modify workflows unless you pass `--generate-ci`.
 
-It runs:
-- AWK evaluation: `awkit evaluate --offline` and `--offline --strict`
-- Kit tests: `go test ./...`
-- Backend tests: `go test ./...` (in `backend/`)
-- Frontend sanity: `frontend/Packages/manifest.json` JSON validation + folder checks
+It runs four jobs:
+- `awkit_cli` (ubuntu): `go vet`, `go test -race` with a 60% coverage threshold gate, and AWK evaluation (`awkit evaluate --offline` and `--offline --strict`)
+- `awkit_cli_windows` (**windows-latest**): the full `go test ./...` suite on Windows, guarding native path/ConPTY/process behavior
+- `backend` (ubuntu): `go test -race ./...` in `backend/`
+- `frontend` (ubuntu): `frontend/Packages/manifest.json` JSON validation + folder checks
 
 ---
 
@@ -291,7 +347,7 @@ It runs:
 
 - For kit maintainers/CI only; regular users can skip.
 - Standard: `.ai/docs/evaluate.md`
-- Executor: `awkit evaluate`
+- Executor: `awkit evaluate --offline` (report-only) and `awkit evaluate --offline --strict` (fails on any gate failure, e.g. P0 audit findings — used by CI/release checks)
 
 ---
 
@@ -302,9 +358,10 @@ It runs:
 | Document | Description |
 |----------|-------------|
 | [Quick Start](docs/user/quick-start.md) | 5-minute setup guide |
-| [Getting Started](docs/user/getting-started.md) | Detailed setup guide (zh-TW) |
-| [Configuration](docs/user/configuration.md) | workflow.yaml reference |
-| [Troubleshooting](docs/user/troubleshooting.md) | Error solutions |
+| [Getting Started](docs/user/getting-started.md) | Detailed setup guide |
+| [Configuration](docs/user/configuration.md) | Complete `workflow.yaml` reference |
+| [Skills](docs/user/skills.md) | Slash-command skills reference |
+| [Troubleshooting](docs/user/troubleshooting.md) | Error solutions (incl. Windows) |
 | [FAQ](docs/user/faq.md) | Common questions |
 
 ### For Developers
@@ -312,7 +369,7 @@ It runs:
 | Document | Description |
 |----------|-------------|
 | [Architecture](docs/developer/architecture.md) | System internals |
-| [API Reference](docs/developer/api-reference.md) | Scripts & modules |
+| [API Reference](docs/developer/api-reference.md) | Modules & commands |
 | [Contributing](docs/developer/contributing.md) | Development guide |
 | [Testing](docs/developer/testing.md) | Test framework |
 

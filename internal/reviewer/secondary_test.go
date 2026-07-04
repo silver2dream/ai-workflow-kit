@@ -16,7 +16,10 @@ FINDINGS:
 The architecture follows clean separation of concerns.
 No critical issues found.`
 
-	score, findings := parseSecondaryReviewOutput(output)
+	score, findings, err := parseSecondaryReviewOutput(output)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if score != 8 {
 		t.Errorf("expected score 8, got %d", score)
 	}
@@ -30,20 +33,17 @@ No critical issues found.`
 
 func TestParseSecondaryReviewOutput_ScoreOutOfRange(t *testing.T) {
 	output := "SCORE: 15\nFINDINGS:\nSome findings"
-	score, _ := parseSecondaryReviewOutput(output)
-	if score != 5 { // default fallback
-		t.Errorf("expected default score 5 for out-of-range, got %d", score)
+	_, _, err := parseSecondaryReviewOutput(output)
+	if err == nil {
+		t.Error("expected error for out-of-range score (fail-closed, no default)")
 	}
 }
 
 func TestParseSecondaryReviewOutput_NoScore(t *testing.T) {
 	output := "No structured output here, just text."
-	score, findings := parseSecondaryReviewOutput(output)
-	if score != 5 { // default
-		t.Errorf("expected default score 5, got %d", score)
-	}
-	if findings == "" {
-		t.Error("expected fallback findings from raw output")
+	_, _, err := parseSecondaryReviewOutput(output)
+	if err == nil {
+		t.Error("expected error when SCORE line is missing (fail-closed, no default)")
 	}
 }
 
@@ -53,7 +53,10 @@ FINDINGS:
 [ERROR] SQL injection vulnerability in user input handling.
 Minor style issues in naming conventions.`
 
-	score, findings := parseSecondaryReviewOutput(output)
+	score, findings, err := parseSecondaryReviewOutput(output)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if score != 4 {
 		t.Errorf("expected score 4, got %d", score)
 	}

@@ -46,6 +46,7 @@ type workflowConfig struct {
 	Git        workflowGit        `yaml:"git"`
 	Escalation workflowEscalation `yaml:"escalation"`
 	Timeouts   workflowTimeouts   `yaml:"timeouts"`
+	Lessons    workflowLessons    `yaml:"lessons"`
 	Feedback   workflowFeedback   `yaml:"feedback"`
 	Worker     workflowWorker     `yaml:"worker"`
 	Specs      workflowSpecs      `yaml:"specs"`
@@ -63,6 +64,10 @@ type workflowSpecFiles struct {
 type workflowWorker struct {
 	Backend    string                 `yaml:"backend"`
 	ClaudeCode workflowClaudeCode     `yaml:"claude_code"`
+	// KnowledgeGraph controls injection of a ticket-relevant slice of
+	// .understand-anything/knowledge-graph.json into the Worker prompt.
+	// "auto" (default, inject when the file exists) | "off".
+	KnowledgeGraph string `yaml:"knowledge_graph"`
 }
 
 type workflowClaudeCode struct {
@@ -619,7 +624,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs, &cfg.Worker, &cfg.Lessons); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -1204,7 +1209,7 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs, workerCfg *workflowWorker, lessonsCfg *workflowLessons) error {
 	reviewComments := fetchReviewComments(issueID, ghTimeout)
 	prReviewComments := fetchPRReviewComments(prNumber, ghTimeout)
 
@@ -1247,6 +1252,16 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		builder.WriteString("\n============================================================\n\n")
 	}
 
+	// Inject a ticket-relevant slice of the codebase knowledge graph, when
+	// one is present (best-effort grounding; see knowledgegraph.go).
+	if graphSection := loadKnowledgeGraphContext(stateRoot, issueID, ticket, workerCfg); graphSection != "" {
+		builder.WriteString("============================================================\n")
+		builder.WriteString("CODEBASE MAP\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(graphSection)
+		builder.WriteString("============================================================\n\n")
+	}
+
 	builder.WriteString("Ticket:\n")
 	builder.WriteString(ticket)
 	builder.WriteString("\n")
@@ -1267,21 +1282,19 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		builder.WriteString("============================================================\n")
 	}
 
-	// Inject historical feedback patterns from past rejections
-	maxEntries := 10
+	// Inject distilled lessons relevant to this ticket (learning loop;
+	// replaces the old raw replay of recent rejections) plus the cheap
+	// top-category one-liners.
 	feedbackEnabled := true
 	if feedbackCfg != nil {
 		feedbackEnabled = feedbackCfg.isEnabled()
-		maxEntries = feedbackCfg.maxHistory()
+	}
+	if lessonsSection := loadLessonsSection(stateRoot, issueID, ticket, lessonsCfg); lessonsSection != "" {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString(lessonsSection)
+		builder.WriteString("============================================================\n")
 	}
 	if feedbackEnabled {
-		if historicalFeedback := loadHistoricalFeedback(stateRoot, maxEntries); historicalFeedback != "" {
-			builder.WriteString("\n============================================================\n")
-			builder.WriteString("HISTORICAL REVIEW PATTERNS (Learn from past rejections)\n")
-			builder.WriteString("============================================================\n")
-			builder.WriteString(historicalFeedback)
-			builder.WriteString("============================================================\n")
-		}
 		if topCatSection := loadTopCategorySummary(stateRoot); topCatSection != "" {
 			builder.WriteString("\n============================================================\n")
 			builder.WriteString(topCatSection)
@@ -1474,7 +1487,13 @@ func isValidRepoPath(repoPath string) bool {
 	}
 
 	// Check for absolute paths (Unix and Windows)
+	// filepath.IsAbs is platform-dependent: on Windows "/x" and "\x" are
+	// drive-relative (not absolute) yet still rooted, so reject any leading
+	// separator explicitly to keep behavior identical across platforms.
 	if filepath.IsAbs(repoPath) {
+		return false
+	}
+	if repoPath[0] == '/' || repoPath[0] == '\\' {
 		return false
 	}
 	if len(repoPath) >= 2 && repoPath[1] == ':' {
@@ -1687,17 +1706,6 @@ func formatPRReviewComments(raw string) string {
 	}
 
 	return builder.String()
-}
-
-func loadHistoricalFeedback(stateRoot string, maxEntries int) string {
-	if maxEntries <= 0 {
-		maxEntries = 10
-	}
-	entries, err := reviewer.LoadRecentFeedback(stateRoot, maxEntries)
-	if err != nil || len(entries) == 0 {
-		return ""
-	}
-	return reviewer.FormatFeedbackForPrompt(entries, 2000)
 }
 
 func loadTopCategorySummary(stateRoot string) string {
@@ -2112,6 +2120,12 @@ func writeIssueResult(ctx context.Context, stateRoot string, info issueResultCon
 			RetryCount:      info.RetryCount,
 		},
 	}
+
+	// Best-effort LLM usage from the worker log (zeros for text-only backends).
+	logUsage := ScanUsageFromLog(filepath.Join(stateRoot, ".ai", "exe-logs", fmt.Sprintf("issue-%d.worker.log", info.IssueID)))
+	result.Metrics.TokensIn = logUsage.TokensIn
+	result.Metrics.TokensOut = logUsage.TokensOut
+	result.Metrics.CostUSD = logUsage.CostUSD
 
 	return WriteResultAtomic(stateRoot, info.IssueID, result)
 }

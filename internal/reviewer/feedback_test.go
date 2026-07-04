@@ -438,3 +438,17 @@ func TestFormatTopCategoriesForPrompt_UnknownCategory(t *testing.T) {
 		t.Errorf("should use fallback description for unknown category, got %q", result)
 	}
 }
+
+func TestDiffPaths_ExtractsAndCaps(t *testing.T) {
+	diff := `diff --git a/internal/a.go b/internal/a.go
++++ b/internal/a.go
+@@ -1 +1 @@
++++ b/internal/b.go
++++ b//dev/null
++++ b/internal/a.go
+`
+	got := DiffPaths(diff)
+	if len(got) != 2 || got[0] != "internal/a.go" || got[1] != "internal/b.go" {
+		t.Errorf("DiffPaths = %v, want [internal/a.go internal/b.go]", got)
+	}
+}

@@ -2,6 +2,10 @@ package ghutil
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -24,22 +28,25 @@ func TestRunWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 // (e.g. authentication) is returned immediately without retrying.
 func TestRunWithRetry_NonRetryableError(t *testing.T) {
 	ctx := context.Background()
-	// Use a delay large enough to notice if retries happen, but MaxAttempts=3
-	// so a retry would be visible. We use a shell script that exits non-zero
-	// but prints a "not found" message (non-retryable keyword).
-	cfg := RetryConfig{MaxAttempts: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 200 * time.Millisecond}
+	cfg := RetryConfig{MaxAttempts: 3, BaseDelay: 1 * time.Millisecond, MaxDelay: 5 * time.Millisecond}
 
-	// Use 'sh -c' to echo a non-retryable message then exit 1
-	start := time.Now()
-	_, err := RunWithRetry(ctx, cfg, "sh", "-c", `echo "HTTP 404: Not Found"; exit 1`)
-	elapsed := time.Since(start)
+	// Count attempts via a file instead of wall-clock timing, which is
+	// unreliable under parallel test load (process spawn alone can exceed
+	// any reasonable threshold). Each attempt appends one line, then prints
+	// a non-retryable message ("not found") and exits 1.
+	counter := filepath.Join(t.TempDir(), "attempts")
+	script := fmt.Sprintf(`echo x >> "%s"; echo "HTTP 404: Not Found"; exit 1`, filepath.ToSlash(counter))
+	_, err := RunWithRetry(ctx, cfg, "sh", "-c", script)
 
 	if err == nil {
 		t.Fatal("expected error from non-zero exit")
 	}
-	// Should NOT have waited for 3 attempts (would be 100ms+ if it retried)
-	if elapsed > 80*time.Millisecond {
-		t.Errorf("non-retryable error took %v; should have returned immediately without retrying", elapsed)
+	data, readErr := os.ReadFile(counter)
+	if readErr != nil {
+		t.Fatalf("attempt counter not written: %v", readErr)
+	}
+	if attempts := strings.Count(string(data), "x"); attempts != 1 {
+		t.Errorf("non-retryable error ran %d attempts; should not retry", attempts)
 	}
 }
 

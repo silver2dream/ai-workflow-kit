@@ -133,15 +133,40 @@ Some acceptance criteria are meta-level (e.g., "all tests pass", "unit tests add
 5. **Code Quality**: Any debug code or obvious bugs?
 6. **Security Check**: Any sensitive information leakage?
 
-### Step 6: Submit Review
+### Step 6: Write and Submit the Structured Review
+
+Write your review as JSON to `.ai/state/reviews/pr-{PR_NUMBER}/review.json`
+(use the Write tool — do NOT format a markdown review body; the system
+renders the human-readable comment from your JSON):
+
+```json
+{
+  "score": 8,
+  "summary": "why this score",
+  "criteria": [
+    {
+      "criterion": "<acceptance criterion copied VERBATIM from the ticket>",
+      "implementation": "<function + file:line + key behavior, >=20 chars>",
+      "test_name": "<exact test function name>",
+      "assertion": "<key assertion copied VERBATIM from the test file>"
+    },
+    { "criterion": "All tests pass", "meta": true }
+  ],
+  "improvements": [
+    { "severity": "important", "location": "engine.go:118", "text": "no test for diagonal entry" }
+  ],
+  "risks": "None identified"
+}
+```
+
+Then submit:
 
 ```bash
 awkit submit-review \
   --pr $PR_NUMBER \
   --issue $ISSUE_NUMBER \
-  --score $SCORE \
   --ci-status $CI_STATUS \
-  --body "$REVIEW_BODY"
+  --body-file .ai/state/reviews/pr-$PR_NUMBER/review.json
 ```
 
 Scoring criteria:
@@ -149,6 +174,11 @@ Scoring criteria:
 - 7-8: Completed with good quality
 - 5-6: Partial completion, has issues
 - 1-4: Not completed or major issues
+
+**If the command prints `SUBMISSION INVALID` (exit code 2):** your JSON has
+a format problem, NOT an evidence problem. The output lists exactly which
+fields to fix. Fix the JSON and resubmit **in this session** — do not stop,
+do not treat it as review_blocked.
 
 ### Step 7: Return Result
 
@@ -163,47 +193,43 @@ Scoring criteria:
 
 ---
 
-## Review Body Format
+## Structured Review Field Guide
 
-Your review body MUST follow this exact format:
-
-```markdown
-### Implementation Review
-
-#### 1. [First Criterion Text]
-
-**Implementation**: [Describe the actual implementation. Must be 20+ chars, include function names and key logic.]
-
-**Code Location**: `path/to/file.go:LineNumber`
-
-#### 2. [Second Criterion Text]
-
-**Implementation**: [Description...]
-
-**Code Location**: `path/to/file.go:LineNumber`
-
-### Test Review
-
-| Criteria | Test | Key Assertion |
-|----------|------|---------------|
-| [FULL Criterion 1 text from ticket] | `TestFunctionName` | `assert.Equal(t, expected, actual)` |
-| [FULL Criterion 2 text from ticket] | `TestOtherFunction` | `require.NoError(t, err)` |
-| [Meta-criterion like "All tests pass"] | `(meta)` | `(meta)` |
-
-**CRITICAL**: The Criteria column MUST contain the **exact full text** from the ticket's acceptance criteria. Do NOT use shortened or paraphrased versions.
-
-### Score Reason
-
-[Explain why you gave this score]
+- `criteria[]` — one entry per acceptance criterion in the ticket, `criterion`
+  copied **verbatim** (the system matches them against the ticket; paraphrases
+  fail completeness).
+- `implementation` — what you actually read in the code: function names,
+  `file:line`, key behavior. Minimum 20 characters of substance.
+- `test_name` — the exact test function name you saw pass in the test output.
+- `assertion` — the key assertion line copied **verbatim** from the test file
+  (the system greps for it; paraphrases fail verification).
+- `meta: true` — only for criteria verified by the overall test run
+  ("all tests pass", "coverage maintained"); such entries may omit the other
+  evidence fields. Do NOT mark ordinary criteria as meta.
+- `improvements[].severity` — one of `critical`, `important`, `nit`,
+  `optional`, `fyi` (see the severity table below).
 
 ### Suggested Improvements
 
-[List any improvement suggestions, or "None" if perfect]
+Each item MUST start with a severity prefix so the author knows what is required vs optional:
 
-### Potential Risks
+| Prefix | Meaning | Author Action |
+|--------|---------|---------------|
+| **Critical:** | Blocks merge | Must fix (security, data loss, broken functionality) |
+| **Important:** | Should fix before merge | Required unless explicitly waived |
+| **Nit:** | Minor / style preference | Author may ignore |
+| **Optional:** / **Consider:** | Suggestion | Worth considering but not required |
+| **FYI:** | Informational | No action needed |
 
-[List any potential risks, or "None identified"]
+In the structured submission these are `improvements[]` entries:
+
+```json
+{ "severity": "critical", "location": "auth.go:42", "text": "token comparison is non-constant-time, exposes timing side channel" }
 ```
+
+If there are zero issues, submit an empty `improvements` array (or omit it).
+
+If your verdict is `changes_requested` (score below threshold), `improvements` MUST contain at least one `critical` or `important` entry — otherwise the score is inconsistent with the verdict and the system blocks the review.
 
 ---
 
@@ -224,47 +250,43 @@ The system will verify your submission:
    - Your quoted assertions must actually exist in test code
    - Non-existent assertions will block the review
 
-**If verification fails, the review is blocked. A NEW session will retry.**
+4. **Severity Consistency**: System cross-checks score vs findings
+   - Score below threshold (changes_requested) requires at least one `critical` or `important` improvement
+   - Score at/above threshold (approve) must not contain any `critical` improvement
+
+**Format errors (`SUBMISSION INVALID`, exit 2) are fixed by YOU in this
+session. Evidence failures (`review_blocked`) go to a NEW session — never
+self-retry those.**
 
 ---
 
 ## Common Mistakes to Avoid
 
-### Implementation Description
+### implementation field
 
-Wrong:
-```
-**Implementation**: Implemented according to requirements
-```
+Wrong: `"implementation": "Implemented according to requirements"`
 
-Wrong:
-```
-**Implementation**: The feature is complete
-```
+Wrong: `"implementation": "The feature is complete"`
 
-Correct:
-```
-**Implementation**: Implemented in `HandleCollision()` at engine.go:145. When snake head position matches wall boundary, sets `game.State = GameOver` and emits collision event.
-```
+Correct: `"implementation": "HandleCollision() at engine.go:145: when snake head position matches wall boundary, sets game.State = GameOver and emits collision event"`
 
-### Test Assertion (Criteria Column)
+### criterion / assertion fields
 
-Wrong (shortened text):
-```
-| Wall collision ends game | TestCollision | assert passes |
-```
+Wrong (paraphrased criterion): `"criterion": "Collision detection works"`
 
-Wrong (paraphrased text):
-```
-| Collision detection works | TestWallCollision | `t.Error("should end")` |
+Wrong (invented assertion): `"assertion": "assert passes"`
+
+Correct (verbatim ticket text + verbatim test-file assertion):
+
+```json
+{
+  "criterion": "Wall collision ends game and game state changes to GameOver",
+  "test_name": "TestCollisionScenarios",
+  "assertion": "assert.Equal(t, GameOver, game.State)"
+}
 ```
 
-Correct (FULL criteria text from ticket + actual assertion):
-```
-| Wall collision ends game and game state changes to GameOver | TestCollisionScenarios | `assert.Equal(t, GameOver, game.State)` |
-```
-
-**The Criteria column must match the EXACT text from the ticket's `- [ ]` lines.**
+**`criterion` must match the EXACT text from the ticket's `- [ ]` lines; `assertion` must exist verbatim in a test file.**
 
 ---
 
@@ -277,3 +299,37 @@ Correct (FULL criteria text from ticket + actual assertion):
 - **MUST** immediately return `review_blocked` to Principal
 
 **Violating this rule causes "self-dealing" problem - same session self-correction is invalid.**
+
+---
+
+## Common Rationalizations (READ BEFORE SHORTCUTTING)
+
+Reviewer fatigue produces predictable shortcuts. The right column is your reality check.
+
+| Rationalization | Reality |
+|---|---|
+| "Tests look like they cover it" | You haven't read the assertion. Open the test file and copy a real assertion line. Test names lie; assertions don't. |
+| "Code looks fine" | "Looks fine" without reading the diff is a rubber-stamp. Walk every changed file, not just the headers. |
+| "Implementation description is hard to write — I'll paraphrase the criterion" | That's a system-blocked anti-pattern. Implementation must describe HOW (function name + key logic), not WHAT (re-stated criterion). |
+| "Score 9 because the build passes" | Build passing is necessary, not sufficient. Score reflects correctness + tests + architecture + scope discipline, not CI status alone. |
+| "Score 5 but no Critical/Important findings" | Inconsistent. Either the issues warrant labels or the score is too low. Align verdict, score, and findings. |
+| "I'll trust the test name to imply assertion content" | Verification engine searches the assertion string in the test file. Mismatch = `review_blocked` and a wasted round. |
+| "All criteria look meta, just mark them all meta" | Real implementation criteria masquerading as meta is approval laundering. Only set `"meta": true` when the criterion describes setup/build/process, not behavior. |
+| "Worker said it works, no need to re-verify" | Self-attestation is not evidence. Read the assertion, run it through the verifier, then approve. |
+| "Suggestions don't need labels — they're all optional" | Without severity prefixes, Worker treats everything as required (or ignores everything). Tag every line. |
+
+## Red Flags (signs your review is going off-rails)
+
+If any of these are true, STOP and reconsider before submitting:
+
+- You haven't opened a single test file before approving.
+- Implementation description for two or more criteria is the same generic sentence.
+- Implementation description re-uses words from the criterion text without naming a function or location.
+- You scored ≥7 but the PR has no tests covering new logic.
+- You scored ≤6 but produced no `Critical:` or `Important:` items in Suggested Improvements.
+- CI status is `failed` but you're voting `merged`.
+- You marked every criterion as `"meta": true` to avoid finding tests.
+- Your submission has zero file:line references across implementation fields and improvements.
+- You didn't read `plan.md` to see what the Worker intended.
+
+If any red flag fires, fix the review before running `submit-review`. A `review_blocked` round and a no-op approval both cost the project — the first wastes a Worker session, the second ships defects.

@@ -17,6 +17,7 @@ type Config struct {
 	Feedback   FeedbackConfig   `yaml:"feedback"`
 	Hooks      HooksConfig      `yaml:"hooks"`
 	Worker     WorkerConfig     `yaml:"worker"`
+	Lessons    LessonsConfig    `yaml:"lessons"`
 }
 
 // HookDef defines a single hook command.
@@ -92,6 +93,45 @@ type ReviewConfig struct {
 	MultiModel         bool                      `yaml:"multi_model"`
 	SecondaryReviewers []SecondaryReviewerConfig  `yaml:"secondary_reviewers"`
 	JiTTest            JiTTestConfig              `yaml:"jittest"`
+	// SeverityConsistency gates the severity/verdict consistency check:
+	// a below-threshold score must list at least one Critical/Important
+	// finding, and a passing score must not carry Critical findings.
+	// nil = enabled (default).
+	SeverityConsistency *bool `yaml:"severity_consistency"`
+}
+
+// SeverityCheckEnabled returns whether the severity/verdict consistency
+// check is enabled (default: true).
+func (c *ReviewConfig) SeverityCheckEnabled() bool {
+	if c.SeverityConsistency == nil {
+		return true
+	}
+	return *c.SeverityConsistency
+}
+
+// LessonsConfig configures the learning loop (record -> distill -> inject ->
+// verify). See .ai/specs/learning-loop/design.md.
+type LessonsConfig struct {
+	Enabled        *bool                  `yaml:"enabled"`          // nil = true
+	MaxActive      int                    `yaml:"max_active"`       // default 30
+	InjectTopK     int                    `yaml:"inject_top_k"`     // default 3
+	InjectMaxChars int                    `yaml:"inject_max_chars"` // default 800
+	Distiller      LessonsDistillerConfig `yaml:"distiller"`
+}
+
+// LessonsDistillerConfig configures the LLM distiller.
+type LessonsDistillerConfig struct {
+	Backend        string `yaml:"backend"`         // default "claude"
+	Model          string `yaml:"model"`           // default "sonnet"
+	TimeoutSeconds int    `yaml:"timeout_seconds"` // default 60
+}
+
+// IsEnabled returns whether the learning loop is enabled (default: true).
+func (c *LessonsConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
 }
 
 // SecondaryReviewerConfig configures a secondary AI reviewer for multi-model consensus.

@@ -95,6 +95,55 @@ If you see a `DESIGN CONTEXT` section in your prompt:
 
 ---
 
+## Common Rationalizations (READ BEFORE SHORTCUTTING)
+
+When you feel tempted to skip a step, the excuse is almost always in this table. The right column is your reality check.
+
+| Rationalization | Reality |
+|---|---|
+| "I'll add tests after the code works" | You won't. Test coverage is part of the change — Acceptance Criteria require it, and reviewer rejects PRs without verifiable tests. Write the test first or alongside. |
+| "This is too simple to need tests" | Simple code grows complicated. The next change to it will break silently without a test pinning behavior. |
+| "I tested it manually, it works" | Manual checks don't survive the next refactor. Reviewer cannot verify "trust me". |
+| "The failing test is probably wrong, I'll skip it" | A failing test is a signal. Either fix the test (and explain why in the PR), or fix the code. Never silently skip. |
+| "Existing code is messy, let me clean it up while I'm here" | Out-of-scope refactors balloon the diff and break unrelated things. Stay within ticket scope; file a follow-up issue if cleanup is needed. |
+| "I'll just stub this part for now" | Half-finished implementations get merged and forgotten. Either complete the slice or split into a smaller ticket. |
+| "The Acceptance Criterion is vague, I'll guess" | Don't guess. Re-read design.md; if still unclear, document your interpretation in `plan.md` so reviewer can correct or accept it. |
+| "This is what existing code does, I'll mirror it even if it's wrong" | Existing bugs aren't a license to repeat them. If you spot a real issue, note it in `plan.md` rather than propagating. |
+| "Reviewer feedback is just nitpicking, I'll push back" | Critical/Important feedback blocks merge. Read severity prefixes (see "Responding to severity-tagged feedback" below) and address everything that isn't Nit/Optional/FYI. |
+
+## Red Flags (signs your work is going off-rails)
+
+If any of these are true, STOP and reconsider before reporting completion:
+
+- You ran no tests, or only "happy path" tests, before reporting done.
+- Your diff touches files unrelated to the ticket.
+- You added a test that passes immediately without ever failing first (it may not be testing what you think).
+- You silently changed behavior that wasn't asked for.
+- You copy-pasted criterion text into `plan.md` instead of describing the actual approach.
+- You couldn't run verify commands and decided "it should work".
+- You created a new pattern instead of extending the existing one because the existing one "felt complicated".
+- You introduced a new dependency without checking if a similar one already exists in the repo.
+
+If any red flag fires, fix it before printing `git status` / `git diff`. Reviewer enforces these and a `changes_requested` round-trip is far more expensive than slowing down now.
+
+---
+
+## Responding to severity-tagged feedback
+
+Reviewer comments may be prefixed with severity tags. Respond accordingly:
+
+| Prefix | Meaning | Your action |
+|--------|---------|-------------|
+| **Critical:** | Blocks merge (security, data loss, broken functionality) | MUST fix before next push |
+| **Important:** | Should fix before merge (missing test, wrong abstraction, poor error handling) | MUST fix unless you have a strong, written reason to defer |
+| **Nit:** | Minor / style preference | OPTIONAL — fix if cheap, otherwise leave a one-line note |
+| **Optional:** / **Consider:** | Suggestion worth thinking about | OPTIONAL — your discretion |
+| **FYI:** | Informational, no action required | No fix needed; acknowledge if relevant |
+
+If a review has zero `Critical:` or `Important:` items, it should be approval-track — push a small fix and re-request review rather than re-architecting.
+
+---
+
 ## REPO TYPE SUPPORT
 
 AWK supports three repository types configured in `.ai/config/workflow.yaml`:

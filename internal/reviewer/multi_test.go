@@ -3,16 +3,183 @@ package reviewer
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 )
 
-func TestMultiReviewOrchestrator_RunAll_Parallel(t *testing.T) {
-	// Replace claude runner with a fake that returns quickly
+func writeMultiModelConfig(t *testing.T, root, reviewYAML string) {
+	t.Helper()
+	dir := filepath.Join(root, ".ai", "config")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := `version: "1.2"
+project:
+  name: test
+  type: single-repo
+repos:
+  - name: root
+    path: ./
+    type: root
+    language: go
+review:
+` + reviewYAML
+	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+func TestLoadMultiModelSettings_Disabled(t *testing.T) {
+	root := t.TempDir()
+	writeMultiModelConfig(t, root, "  score_threshold: 7\n")
+	if got := LoadMultiModelSettings(root); got != nil {
+		t.Errorf("expected nil settings when multi_model unset, got %+v", got)
+	}
+}
+
+func TestLoadMultiModelSettings_EnabledDefaultsToOpusArchitecture(t *testing.T) {
+	root := t.TempDir()
+	writeMultiModelConfig(t, root, "  multi_model: true\n")
+	got := LoadMultiModelSettings(root)
+	if got == nil {
+		t.Fatal("expected settings when multi_model: true")
+	}
+	if len(got.Reviewers) != 1 || got.Reviewers[0].Model != "opus" || got.Reviewers[0].FocusArea != "architecture" {
+		t.Errorf("expected default opus/architecture reviewer, got %+v", got.Reviewers)
+	}
+}
+
+func TestLoadMultiModelSettings_ExplicitReviewers(t *testing.T) {
+	root := t.TempDir()
+	writeMultiModelConfig(t, root, `  multi_model: true
+  secondary_reviewers:
+    - backend: claude
+      model: sonnet
+      focus_area: security
+`)
+	got := LoadMultiModelSettings(root)
+	if got == nil || len(got.Reviewers) != 1 || got.Reviewers[0].FocusArea != "security" {
+		t.Fatalf("expected explicit security reviewer, got %+v", got)
+	}
+}
+
+func TestApplyMultiModelConsensus_WeightedScore(t *testing.T) {
+	origFetch := fetchPRDiffFunc
+	fetchPRDiffFunc = func(ctx context.Context, prNumber int, timeout time.Duration) (string, error) {
+		return "diff --git a/main.go b/main.go\n+change", nil
+	}
+	defer func() { fetchPRDiffFunc = origFetch }()
+
 	origRunner := claudeRunnerFunc
 	claudeRunnerFunc = func(ctx context.Context, prompt, model string) (string, error) {
+		return "SCORE: 4\nFINDINGS:\nweak layering", nil
+	}
+	defer func() { claudeRunnerFunc = origRunner }()
+
+	settings := &MultiModelSettings{
+		Reviewers: []analyzer.SecondaryReviewerConfig{{Backend: "claude", Model: "opus", FocusArea: "architecture"}},
+		Timeout:   5 * time.Second,
+	}
+	final, section, applied := ApplyMultiModelConsensus(context.Background(), 1, 9, "primary body", settings, time.Second)
+	if !applied {
+		t.Fatal("expected consensus to apply")
+	}
+	// 9*0.7 + 4*0.3 = 7.5 -> rounds per CalculateConsensusScore
+	want := CalculateConsensusScore(9, []int{4}, nil, false)
+	if final != want {
+		t.Errorf("final = %d, want %d", final, want)
+	}
+	if !strings.Contains(section, "Multi-Model Review Consensus") {
+		t.Errorf("section missing consensus header:\n%s", section)
+	}
+	if !strings.Contains(section, "weak layering") {
+		t.Errorf("section missing secondary findings:\n%s", section)
+	}
+}
+
+func TestApplyMultiModelConsensus_ErrorFindingsCap(t *testing.T) {
+	origFetch := fetchPRDiffFunc
+	fetchPRDiffFunc = func(ctx context.Context, prNumber int, timeout time.Duration) (string, error) {
+		return "+change", nil
+	}
+	defer func() { fetchPRDiffFunc = origFetch }()
+
+	origRunner := claudeRunnerFunc
+	claudeRunnerFunc = func(ctx context.Context, prompt, model string) (string, error) {
+		return "SCORE: 8\nFINDINGS:\n[ERROR] sql injection in handler", nil
+	}
+	defer func() { claudeRunnerFunc = origRunner }()
+
+	settings := &MultiModelSettings{
+		Reviewers: []analyzer.SecondaryReviewerConfig{{Backend: "claude", Model: "opus"}},
+		Timeout:   5 * time.Second,
+	}
+	final, _, applied := ApplyMultiModelConsensus(context.Background(), 1, 9, "primary", settings, time.Second)
+	if !applied {
+		t.Fatal("expected consensus to apply")
+	}
+	if final > 6 {
+		t.Errorf("final = %d, want <= 6 ([ERROR] cap)", final)
+	}
+}
+
+func TestApplyMultiModelConsensus_DiffUnavailableFallsBack(t *testing.T) {
+	origFetch := fetchPRDiffFunc
+	fetchPRDiffFunc = func(ctx context.Context, prNumber int, timeout time.Duration) (string, error) {
+		return "", fmt.Errorf("gh not available")
+	}
+	defer func() { fetchPRDiffFunc = origFetch }()
+
+	settings := &MultiModelSettings{
+		Reviewers: []analyzer.SecondaryReviewerConfig{{Backend: "claude", Model: "opus"}},
+	}
+	_, _, applied := ApplyMultiModelConsensus(context.Background(), 1, 9, "primary", settings, time.Second)
+	if applied {
+		t.Error("expected applied=false when diff unavailable")
+	}
+}
+
+func TestApplyMultiModelConsensus_AllSecondariesFailedKeepsPrimary(t *testing.T) {
+	origFetch := fetchPRDiffFunc
+	fetchPRDiffFunc = func(ctx context.Context, prNumber int, timeout time.Duration) (string, error) {
+		return "+change", nil
+	}
+	defer func() { fetchPRDiffFunc = origFetch }()
+
+	origRunner := claudeRunnerFunc
+	claudeRunnerFunc = func(ctx context.Context, prompt, model string) (string, error) {
+		return "", fmt.Errorf("backend down")
+	}
+	defer func() { claudeRunnerFunc = origRunner }()
+
+	settings := &MultiModelSettings{
+		Reviewers: []analyzer.SecondaryReviewerConfig{{Backend: "claude", Model: "opus"}},
+		Timeout:   5 * time.Second,
+	}
+	final, section, applied := ApplyMultiModelConsensus(context.Background(), 1, 8, "primary", settings, time.Second)
+	if !applied {
+		t.Fatal("expected consensus to still apply (failures reported, primary kept)")
+	}
+	if final != 8 {
+		t.Errorf("final = %d, want primary 8 when all secondaries failed", final)
+	}
+	if !strings.Contains(section, "FAILED") {
+		t.Errorf("section should report the failed secondary:\n%s", section)
+	}
+}
+
+func TestMultiReviewOrchestrator_RunAll_Parallel(t *testing.T) {
+	// Replace claude runner with a fake that returns quickly.
+	// The short sleep keeps Duration measurable on Windows, where the
+	// clock granularity would otherwise round an instant return to 0.
+	origRunner := claudeRunnerFunc
+	claudeRunnerFunc = func(ctx context.Context, prompt, model string) (string, error) {
+		time.Sleep(2 * time.Millisecond)
 		return fmt.Sprintf("SCORE: 8\nFINDINGS:\nLooks good from %s", model), nil
 	}
 	defer func() { claudeRunnerFunc = origRunner }()
