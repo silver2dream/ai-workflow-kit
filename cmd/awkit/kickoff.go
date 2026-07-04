@@ -19,6 +19,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
+	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
 func usageKickoff() {
@@ -237,6 +238,12 @@ func cmdKickoff(args []string) int {
 			"project": config.Project.Name,
 			"session": principalSessionID,
 		}))
+
+	// Ensure the workflow's state-machine labels exist before the Principal
+	// starts. The worker and reviewer add/remove these as issues move through the
+	// pipeline; if they're missing, every `gh issue edit` logs a noisy
+	// '<label> not found'. Best-effort — a permission failure is just a warning.
+	ensureWorkflowLabels(configPath, output)
 
 	// Build Claude CLI command
 	// Use stream-json format for real-time streaming output
@@ -852,6 +859,36 @@ func formatAnalyzeNextContext(v analyzeNextVars) string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// ensureWorkflowLabels creates the state-machine labels up front so the worker
+// and reviewer don't spam '<label> not found' as they move issues through the
+// pipeline. Best-effort: config/permission problems are a warning, not a blocker.
+func ensureWorkflowLabels(configPath string, output *kickoff.OutputFormatter) {
+	cfg, err := analyzer.LoadConfig(configPath)
+	if err != nil {
+		return // config errors are surfaced by preflight already
+	}
+	ghc := worker.NewGitHubClient(30 * time.Second)
+	if err := ghc.EnsureLabels(context.Background(), cfg.GitHub.Repo, workflowLabelSpecs(cfg.GitHub.Labels)); err != nil {
+		output.Warning(fmt.Sprintf("Some workflow labels could not be created: %v", err))
+	}
+}
+
+// workflowLabelSpecs maps the configured label names to create specs with stable
+// colors and descriptions.
+func workflowLabelSpecs(l analyzer.LabelsConfig) []worker.LabelSpec {
+	return []worker.LabelSpec{
+		{Name: l.Task, Color: "1d76db", Description: "AWK automated task"},
+		{Name: l.InProgress, Color: "fbca04", Description: "Worker is implementing this issue"},
+		{Name: l.PRReady, Color: "0e8a16", Description: "PR is ready for review"},
+		{Name: l.WorkerFailed, Color: "d93f0b", Description: "Worker failed after retries"},
+		{Name: l.NeedsHumanReview, Color: "d876e3", Description: "Needs human review"},
+		{Name: l.ReviewFailed, Color: "b60205", Description: "Automated review failed"},
+		{Name: l.MergeConflict, Color: "e99695", Description: "PR has merge conflicts"},
+		{Name: l.NeedsRebase, Color: "c2e0c6", Description: "Branch needs rebase before merge"},
+		{Name: l.Completed, Color: "5319e7", Description: "Task completed"},
+	}
 }
 
 func getEnvInt(name string, defaultValue int) int {
