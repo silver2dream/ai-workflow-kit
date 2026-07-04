@@ -41,7 +41,7 @@ When `awkit kickoff` starts, use the **principal-workflow** Skill:
 3. Follow the main loop instructions
 
 The Skill handles:
-- Project audit (scan_repo, audit_project)
+- Project audit (built into kickoff)
 - Task selection and Issue creation
 - Worker dispatch
 - Result checking

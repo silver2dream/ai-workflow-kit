@@ -24,7 +24,6 @@ var step4Pattern = regexp.MustCompile(`\[PRINCIPAL\].*\|\s*STEP-4\s*\|`)
 // - [EXEC] awkit dispatch-worker --issue 15
 // - dispatch_worker: issue=15
 var dispatchPattern = regexp.MustCompile(`(?:派工\s*Issue\s*#|dispatch[-_]worker(?:\.sh)?\s+(?:--issue\s+)?["']?)(\d+)`)
-var workerStartPattern = regexp.MustCompile(`\[WORKER\].*(?:worker_session_id|session_id)=`)
 var workerCompletePattern = regexp.MustCompile(`(?:Worker\s*執行完成|WORKER_STATUS=(?:success|failed))`)
 
 // NewOutputParser creates a new OutputParser with the given callbacks

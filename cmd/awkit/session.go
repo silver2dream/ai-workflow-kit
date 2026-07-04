@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 )
@@ -183,27 +182,3 @@ func cmdSessionUpdateReview(mgr *session.Manager, args []string) int {
 	return 0
 }
 
-// Placeholder for backwards compatibility with bash scripts
-func cmdSessionCheckRunning(mgr *session.Manager, args []string) int {
-	if len(args) < 2 {
-		errorf("usage: awkit session check-running <pid> <start_time>\n")
-		return 2
-	}
-
-	pid, err := strconv.Atoi(args[0])
-	if err != nil {
-		errorf("invalid pid: %s\n", args[0])
-		return 2
-	}
-
-	startTime, err := strconv.ParseInt(args[1], 10, 64)
-	if err != nil {
-		errorf("invalid start_time: %s\n", args[1])
-		return 2
-	}
-
-	if mgr.IsPrincipalRunning(pid, startTime) {
-		return 0 // Running
-	}
-	return 1 // Not running
-}

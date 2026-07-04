@@ -60,8 +60,8 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 ├── config/
 │   ├── workflow.yaml              # 主配置檔
 │   ├── workflow.schema.json       # 配置 Schema
-│   ├── repo_scan.schema.json      # scan_repo 輸出 Schema
-│   ├── audit.schema.json          # audit_project 輸出 Schema
+│   ├── repo_scan.schema.json      # repo 掃描輸出 Schema
+│   ├── audit.schema.json          # audit 輸出 Schema
 │   ├── execution_trace.schema.json # 執行追蹤 Schema
 │   └── failure_patterns.json      # 錯誤模式定義
 │
@@ -80,8 +80,7 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 │       └── phases/                # 分析、並行、驗證階段
 │
 ├── templates/                     # 模板檔案
-│   ├── design.md.example          # 設計文件範例
-│   └── _deprecated/               # 已棄用的 Jinja2 模板 (legacy)
+│   └── design.md.example          # 設計文件範例
 │
 ├── rules/
 │   ├── _kit/                      # Kit 核心規則
@@ -94,11 +93,15 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 ├── docs/                          # Kit 內部文件
 │   └── evaluate.md                # 評估指南
 │
-├── state/                         # 狀態檔案
+├── state/                         # 狀態檔案 (runtime, gitignored)
 │   ├── principal/                 # Principal 會話狀態
 │   │   ├── session.json           # 當前會話
 │   │   └── sessions/              # 歷史會話記錄
 │   ├── traces/                    # 執行追蹤
+│   ├── events/                    # 統一事件流 (含 session_usage token/成本)
+│   ├── reviews/                   # 各 PR 的審查記錄
+│   ├── lessons.json               # 學習迴圈教訓 (committable)
+│   ├── review_feedback.jsonl      # 審查回饋記錄
 │   ├── consecutive_failures       # 連續失敗計數
 │   └── loop_count                 # 迴圈計數
 │
@@ -269,26 +272,21 @@ escalation:
                     │   (配置中心)         │
                     └──────────┬──────────┘
                                │
-           ┌───────────────────┼───────────────────┐
-           │                   │                   │
-           ▼                   ▼                   ▼
-    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-    │   awkit     │     │   awkit     │     │   skills/   │
-    │  scan-repo  │     │audit-project│     │  技能定義    │
-    └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
-           │                   │                   │
-           ▼                   ▼                   │
-    ┌─────────────┐     ┌─────────────┐            │
-    │ repo_scan   │     │   audit     │            │
-    │   .json     │     │   .json     │            │
-    └─────────────┘     └─────────────┘            │
-           │                   │                   │
-           └───────────────────┼───────────────────┘
+           ┌───────────────────┴───────────────────┐
+           │                                       │
+           ▼                                       ▼
+    ┌─────────────┐                         ┌─────────────┐
+    │   rules/    │                         │   skills/   │
+    │  規則定義    │                         │  技能定義    │
+    └──────┬──────┘                         └──────┬──────┘
+           │                                       │
+           └───────────────────┬───────────────────┘
                                │
                                ▼
                     ┌─────────────────────┐
                     │   awkit kickoff     │
-                    │  (工作流程入口)       │
+                    │ (工作流程入口;內建   │
+                    │  preflight + audit) │
                     └──────────┬──────────┘
                                │
                                ▼
