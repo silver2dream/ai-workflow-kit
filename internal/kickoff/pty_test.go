@@ -300,11 +300,15 @@ func TestPTYExecutor_StandardModeByDesign(t *testing.T) {
 		_, err := io.Copy(&buf, executor.Output())
 		done <- err
 	}()
-	executor.Wait()
+	// Read to EOF BEFORE Wait: cmd.Wait() closes the stdout/stderr pipes, so
+	// waiting first races the reader and truncates the output to "" (flaky on
+	// Linux, where echo exits before the copy goroutine is even scheduled).
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out reading standard-mode output")
 	}
+	executor.Wait()
 	if !bytes.Contains(buf.Bytes(), []byte("standard-mode")) {
 		t.Errorf("expected output to contain marker, got %q", buf.String())
 	}
