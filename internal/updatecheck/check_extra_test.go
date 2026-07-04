@@ -25,6 +25,30 @@ func TestCachePath_ReturnsNonEmptyPath(t *testing.T) {
 	}
 }
 
+// TestCachePath_HonorsEnvOverride locks in the isolation fix: when
+// AWKIT_CACHE_DIR is set, the cache file lives under it (never the real user
+// cache dir). This is what keeps the whole package's tests from polluting a
+// developer's machine.
+func TestCachePath_HonorsEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(cacheDirEnv, dir)
+
+	p, err := cachePath()
+	if err != nil {
+		t.Fatalf("cachePath() error = %v", err)
+	}
+	want := filepath.Join(dir, "update.json")
+	if p != want {
+		t.Errorf("cachePath() = %q, want %q", p, want)
+	}
+
+	// A real writeCache must land in the override dir, not the user cache.
+	writeCache(cacheEntry{Latest: "v9.9.9", CheckedAt: time.Now()})
+	if _, err := os.Stat(want); err != nil {
+		t.Errorf("writeCache did not write to the override path: %v", err)
+	}
+}
+
 // --- readCache / writeCache round-trip ---
 
 func TestReadWriteCache_RoundTrip(t *testing.T) {
@@ -258,9 +282,9 @@ func TestCheck_NetworkError(t *testing.T) {
 // --- writeCache does not panic on error ---
 
 func TestWriteCache_NocrashOnBadPath(t *testing.T) {
-	// writeCache is best-effort; verify it doesn't panic
-	// We rely on the real writeCache which uses the system cache dir.
-	// Just call it and ensure no panic.
+	// writeCache is best-effort; verify it doesn't panic. The package's
+	// TestMain redirects AWKIT_CACHE_DIR to a temp dir, so this writes there,
+	// not to the real user cache.
 	entry := cacheEntry{Latest: "v1.0.0", CheckedAt: time.Now()}
 	defer func() {
 		if r := recover(); r != nil {
