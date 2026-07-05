@@ -66,7 +66,15 @@ func StopWorkflow(ctx context.Context, opts StopWorkflowOptions) (*StopWorkflowR
 		return nil, fmt.Errorf("failed to save report: %w", err)
 	}
 
-	// 5. Cleanup state files
+	// 5. Write the STOP marker. The kickoff multi-session loop polls for this
+	// file at the top of every session and halts when it appears. Without it,
+	// stop-workflow only wrote a report while the loop kept restarting until it
+	// hit max sessions — the reason a self-blocked review burned 50 sessions.
+	if err := writeStopMarker(opts.StateRoot, opts.Reason); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write STOP marker: %v\n", err)
+	}
+
+	// 6. Cleanup transient counters
 	cleanupStateFiles(opts.StateRoot)
 
 	// 6. End session
@@ -83,6 +91,18 @@ func StopWorkflow(ctx context.Context, opts StopWorkflowOptions) (*StopWorkflowR
 		Stats:      stats,
 		SessionID:  sessionID,
 	}, nil
+}
+
+// writeStopMarker creates the .ai/state/STOP file the kickoff loop halts on.
+// This is what actually stops the multi-session loop; the report is only a
+// human-facing artifact.
+func writeStopMarker(stateRoot, reason string) error {
+	stateDir := filepath.Join(stateRoot, ".ai", "state")
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return err
+	}
+	content := fmt.Sprintf("STOP requested by stop-workflow\nReason: %s\n", reason)
+	return os.WriteFile(filepath.Join(stateDir, "STOP"), []byte(content), 0644)
 }
 
 // cleanupStateFiles removes temporary state files

@@ -1080,3 +1080,22 @@ func TestPreflightRepoTypeChecks(t *testing.T) {
 		}
 	})
 }
+
+func TestWritePermissionResult(t *testing.T) {
+	// A writer passes.
+	if r := writePermissionResult("owner/repo", true, "alice"); !r.Passed {
+		t.Errorf("writer should pass preflight, got %+v", r)
+	}
+
+	// Read-only fails, with a message that names the account + repo and tells the
+	// user exactly how to fix it — so they never have to watch the loop spin.
+	r := writePermissionResult("owner/repo", false, "bob")
+	if r.Passed {
+		t.Fatal("read-only access must FAIL preflight")
+	}
+	for _, want := range []string{"bob", "owner/repo", "GH_TOKEN"} {
+		if !strings.Contains(r.Message, want) {
+			t.Errorf("message must contain %q for it to be actionable, got: %q", want, r.Message)
+		}
+	}
+}
