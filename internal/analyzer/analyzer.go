@@ -116,6 +116,41 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
 
 		if prNumber > 0 {
+			// A pr-ready PR that conflicts with its base can't be merged, so
+			// reviewing it just stalls the loop (the reviewer approves, the merge
+			// fails, the run escalates). Route it to automatic conflict resolution
+			// instead: dispatch_worker with a conflict merge-issue rebases the PR
+			// branch onto its base (and escalates to conflict-resolver if the
+			// worker can't). Only a definitive CONFLICTING is actionable — a
+			// transient UNKNOWN or an API error falls through to normal review.
+			// Bounded by an attempt counter so a genuinely unresolvable conflict
+			// escalates to a human rather than looping forever.
+			if status, mErr := a.GHClient.PRMergeable(ctx, prNumber); mErr == nil && status == "CONFLICTING" {
+				if a.getAttempts("conflict", prNumber) >= a.maxReviewAttempts() {
+					a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.PRReady})
+					return &Decision{
+						NextAction:  ActionNone,
+						IssueNumber: issue.Number,
+						PRNumber:    prNumber,
+						ExitReason:  ReasonNeedsHumanReview,
+					}, nil
+				}
+				if err := a.incrementAttempts("conflict", prNumber); err != nil {
+					a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.PRReady})
+					return &Decision{
+						NextAction:  ActionNone,
+						IssueNumber: issue.Number,
+						PRNumber:    prNumber,
+						ExitReason:  ReasonNeedsHumanReview,
+					}, nil
+				}
+				return &Decision{
+					NextAction:  ActionDispatchWorker,
+					IssueNumber: issue.Number,
+					PRNumber:    prNumber,
+					MergeIssue:  MergeIssueConflict,
+				}, nil
+			}
 			return &Decision{
 				NextAction:  ActionReviewPR,
 				IssueNumber: issue.Number,
@@ -721,10 +756,15 @@ func (a *Analyzer) maxReviewAttempts() int {
 	return DefaultMaxReviewAttempts
 }
 
-// getReviewAttempts returns the number of review attempts for a PR
-func (a *Analyzer) getReviewAttempts(prNumber int) int {
-	attemptFile := filepath.Join(a.StateRoot, ".ai", "state", "attempts", "review-pr-"+strconv.Itoa(prNumber))
-	data, err := os.ReadFile(attemptFile)
+// attemptFile is the state file tracking how many times a bounded action (kind,
+// e.g. "review" or "conflict") has been attempted for a PR.
+func (a *Analyzer) attemptFile(kind string, prNumber int) string {
+	return filepath.Join(a.StateRoot, ".ai", "state", "attempts", kind+"-pr-"+strconv.Itoa(prNumber))
+}
+
+// getAttempts returns the recorded attempt count for (kind, PR).
+func (a *Analyzer) getAttempts(kind string, prNumber int) int {
+	data, err := os.ReadFile(a.attemptFile(kind, prNumber))
 	if err != nil {
 		return 0
 	}
@@ -732,18 +772,27 @@ func (a *Analyzer) getReviewAttempts(prNumber int) int {
 	return count
 }
 
-// incrementReviewAttempts increments the review attempt count for a PR
-// Returns error if the attempt count cannot be persisted (which could cause infinite retry loops)
-func (a *Analyzer) incrementReviewAttempts(prNumber int) error {
-	attemptFile := filepath.Join(a.StateRoot, ".ai", "state", "attempts", "review-pr-"+strconv.Itoa(prNumber))
-
-	count := a.getReviewAttempts(prNumber) + 1
-	// Use atomic write to prevent corruption
-	if err := writeFileAtomic(attemptFile, []byte(strconv.Itoa(count)), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "[analyzer] error: failed to persist review attempt count for PR #%d: %v\n", prNumber, err)
+// incrementAttempts increments the attempt count for (kind, PR). Returns an error
+// if it cannot be persisted, so the caller can escalate rather than risk an
+// unbounded retry loop.
+func (a *Analyzer) incrementAttempts(kind string, prNumber int) error {
+	count := a.getAttempts(kind, prNumber) + 1
+	if err := writeFileAtomic(a.attemptFile(kind, prNumber), []byte(strconv.Itoa(count)), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "[analyzer] error: failed to persist %s attempt count for PR #%d: %v\n", kind, prNumber, err)
 		return err
 	}
 	return nil
+}
+
+// getReviewAttempts returns the number of review attempts for a PR
+func (a *Analyzer) getReviewAttempts(prNumber int) int {
+	return a.getAttempts("review", prNumber)
+}
+
+// incrementReviewAttempts increments the review attempt count for a PR
+// Returns error if the attempt count cannot be persisted (which could cause infinite retry loops)
+func (a *Analyzer) incrementReviewAttempts(prNumber int) error {
+	return a.incrementAttempts("review", prNumber)
 }
 
 // updateIssueLabels is a helper that logs warnings if label operations fail.
