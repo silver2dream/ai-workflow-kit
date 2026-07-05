@@ -176,6 +176,13 @@ func applyScaffoldToBranch(stateRoot, branch, preset string) error {
 		return fmt.Errorf("worktree add: %w", err)
 	}
 
+	// SkipDeps: commit the source scaffold only. No npm install runs, so no
+	// node_modules can exist to be committed — which is also why we deliberately
+	// do NOT write our own .gitignore here. A .gitignore that differs even
+	// slightly from the one `awkit init` commits becomes an add/add conflict
+	// against any in-flight scaffold PR (this is exactly what stalled
+	// tennis-arena's PR #8). The .gitignore is init's concern; reconcile restores
+	// only what's needed to unblock workers branching from the integration branch.
 	if _, err := install.Scaffold(wt, install.ScaffoldOptions{
 		Preset:      preset,
 		TargetDir:   wt,
@@ -184,14 +191,6 @@ func applyScaffoldToBranch(stateRoot, branch, preset string) error {
 		SkipDeps:    true,  // commit source only — never install/commit node_modules
 	}); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
-	}
-
-	// The scaffold's .gitignore is written by install-time setup, not Scaffold, so
-	// on a bare integration branch it can be missing. Restore it (if absent) so a
-	// worker that later runs `npm install` here can't accidentally commit
-	// dependency trees — belt-and-suspenders alongside SkipDeps above.
-	if err := ensureScaffoldGitignore(wt); err != nil {
-		return fmt.Errorf("ensure .gitignore: %w", err)
 	}
 
 	if err := runGit(wt, "add", "-A"); err != nil {
@@ -208,36 +207,6 @@ func applyScaffoldToBranch(stateRoot, branch, preset string) error {
 		return fmt.Errorf("git push: %w", err)
 	}
 	return nil
-}
-
-// ensureScaffoldGitignore writes a minimal .gitignore covering dependency and
-// build artifacts if the worktree root has none, so the reconciled scaffold
-// never becomes a vector for committing node_modules and friends. It is a no-op
-// when a .gitignore already exists — the project's own rules win.
-func ensureScaffoldGitignore(wt string) error {
-	path := filepath.Join(wt, ".gitignore")
-	if _, err := os.Stat(path); err == nil {
-		return nil // already present — don't touch the project's choices
-	}
-	const content = `# Dependencies
-node_modules/
-.npm/
-.yarn/
-
-# Build output
-dist/
-build/
-
-# Python caches
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-
-# Logs
-*.log
-`
-	return os.WriteFile(path, []byte(content), 0644)
 }
 
 // runGit runs a git command in dir. On failure it folds git's own stderr into

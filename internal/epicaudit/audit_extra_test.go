@@ -29,6 +29,7 @@ func (m *mockGHClient) CountOpenIssues(_ context.Context, _ string) (int, error)
 func (m *mockGHClient) RemoveLabel(_ context.Context, _ int, _ string) error      { return nil }
 func (m *mockGHClient) AddLabel(_ context.Context, _ int, _ string) error         { return nil }
 func (m *mockGHClient) IsPRMerged(_ context.Context, _ int) (bool, error)         { return false, nil }
+func (m *mockGHClient) PRMergeable(_ context.Context, _ int) (string, error)      { return "MERGEABLE", nil }
 func (m *mockGHClient) CloseIssue(_ context.Context, _ int) error                 { return nil }
 func (m *mockGHClient) FindPRByBranch(_ context.Context, _ string) (int, error)   { return 0, nil }
 func (m *mockGHClient) ReopenIssue(_ context.Context, _ int) error                { return nil }

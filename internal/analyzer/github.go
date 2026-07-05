@@ -46,6 +46,7 @@ type GitHubClientInterface interface {
 	RemoveLabel(ctx context.Context, issueNumber int, label string) error
 	AddLabel(ctx context.Context, issueNumber int, label string) error
 	IsPRMerged(ctx context.Context, prNumber int) (bool, error)
+	PRMergeable(ctx context.Context, prNumber int) (string, error)
 	CloseIssue(ctx context.Context, issueNumber int) error
 	FindPRByBranch(ctx context.Context, branchName string) (int, error)
 	GetIssueBody(ctx context.Context, issueNumber int) (string, error)
@@ -234,6 +235,37 @@ func (c *GitHubClient) IsPRMerged(ctx context.Context, prNumber int) (bool, erro
 	}
 
 	return pr.State == "MERGED" || pr.MergedAt != "", nil
+}
+
+// PRMergeable reports GitHub's merge status for a PR: "MERGEABLE", "CONFLICTING",
+// or "UNKNOWN". GitHub computes mergeability asynchronously, so immediately after
+// a push it answers UNKNOWN; we poll briefly to let it settle before returning
+// UNKNOWN. Callers treat only a definitive "CONFLICTING" as actionable, so a
+// transient UNKNOWN (or an API error) fails open to the normal review path.
+func (c *GitHubClient) PRMergeable(ctx context.Context, prNumber int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	for attempt := 0; attempt < 3; attempt++ {
+		output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "view",
+			strconv.Itoa(prNumber),
+			"--json", "mergeable",
+			"--jq", ".mergeable")
+		if err != nil {
+			return "", err
+		}
+		status := strings.TrimSpace(string(output))
+		if status != "" && status != "UNKNOWN" {
+			return status, nil
+		}
+		// UNKNOWN: GitHub hasn't finished computing mergeability yet. Wait and retry.
+		select {
+		case <-ctx.Done():
+			return "UNKNOWN", nil
+		case <-time.After(1 * time.Second):
+		}
+	}
+	return "UNKNOWN", nil
 }
 
 // FindPRByBranch finds an open PR by head branch name and returns its number
