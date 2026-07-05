@@ -148,6 +148,16 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 	ghRepoResult := p.CheckGitHubRepo()
 	results = append(results, ghRepoResult)
 
+	// 13b. Check repo write access (fatal). A read-only token passes `gh auth
+	// status` but 403s on every state-changing call — create issue, approve/merge
+	// PR, move labels — which silently spins the workflow loop for dozens of
+	// sessions. Catch it here instead of letting the run burn.
+	writeResult := p.CheckRepoWritePermission()
+	results = append(results, writeResult)
+	if !writeResult.Passed {
+		return results, fmt.Errorf("repo write access check failed: %s", writeResult.Message)
+	}
+
 	// 14. Check PTY
 	ptyResult := p.CheckPTY()
 	results = append(results, ptyResult)
@@ -674,6 +684,64 @@ func (p *PreflightChecker) CheckGitHubRepo() CheckResult {
 		Name:    "GitHub Repo",
 		Passed:  true,
 		Message: fmt.Sprintf("GitHub repo: %s", repoName),
+	}
+}
+
+// CheckRepoWritePermission verifies the authenticated gh identity can actually
+// WRITE to the target repo. `gh auth status` only proves a token is logged in;
+// the whole workflow (create issues, approve/merge PRs, move labels) needs write
+// access, and a read-only token 403s on every one of those — passing preflight
+// but then spinning the loop. This asks GitHub what the current identity can do
+// and fails fast when it can't push.
+func (p *PreflightChecker) CheckRepoWritePermission() CheckResult {
+	const name = "Repo Write Access"
+
+	if _, err := exec.LookPath("gh"); err != nil {
+		return CheckResult{Name: name, Passed: true, Warning: true, Message: "gh CLI not available, skipping"}
+	}
+
+	// Resolve OWNER/REPO for the current directory.
+	repoOut, err := exec.Command("gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").Output()
+	repo := strings.TrimSpace(string(repoOut))
+	if err != nil || repo == "" {
+		return CheckResult{Name: name, Passed: true, Warning: true, Message: "could not detect repo (offline or no remote), skipping write-access check"}
+	}
+
+	// Ask GitHub what the *current* identity may do on this repo.
+	permOut, err := exec.Command("gh", "api", "repos/"+repo, "--jq", ".permissions.push").Output()
+	if err != nil {
+		return CheckResult{Name: name, Passed: true, Warning: true, Message: fmt.Sprintf("could not verify write access to %s (offline?), continuing", repo)}
+	}
+	canPush := strings.TrimSpace(string(permOut)) == "true"
+
+	// Best-effort: name the account so the fix is obvious.
+	login := "the current gh account"
+	if out, uerr := exec.Command("gh", "api", "user", "--jq", ".login").Output(); uerr == nil {
+		if l := strings.TrimSpace(string(out)); l != "" {
+			login = l
+		}
+	}
+
+	return writePermissionResult(repo, canPush, login)
+}
+
+// writePermissionResult builds the CheckResult from resolved facts. Pure, so the
+// pass/fail decision and the guidance message stay unit-testable.
+func writePermissionResult(repo string, canPush bool, login string) CheckResult {
+	const name = "Repo Write Access"
+	if canPush {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Message: fmt.Sprintf("%s can write to %s", login, repo),
+		}
+	}
+	return CheckResult{
+		Name:   name,
+		Passed: false,
+		Message: fmt.Sprintf(
+			"%s has read-only access to %s. The workflow must create issues, approve/merge PRs and move labels — a read-only token passes auth but 403s on every state change and spins the loop. Fix: point GH_TOKEN at an account with write access (e.g. $env:GH_TOKEN = (gh auth token --user <writer>)), or add %s as a collaborator.",
+			login, repo, login),
 	}
 }
 
