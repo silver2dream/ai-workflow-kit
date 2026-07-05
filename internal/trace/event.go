@@ -62,6 +62,7 @@ const (
 
 	// Workflow events
 	TypeWorkflowStop = "workflow_stop"
+	TypeReconcile    = "reconcile" // self-heal reconciled a structural bad state
 
 	// Worker retry
 	TypeWorkerRetry = "worker_retry"

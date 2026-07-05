@@ -127,6 +127,8 @@ func run() int {
 		return cmdSession(os.Args[2:])
 	case "analyze-next":
 		return cmdAnalyzeNext(os.Args[2:])
+	case "reconcile":
+		return cmdReconcile(os.Args[2:])
 	case "stop-workflow":
 		return cmdStopWorkflow(os.Args[2:])
 	case "prepare-review":
@@ -283,6 +285,8 @@ func cmdHelp(command string) int {
 		usageSession()
 	case "analyze-next":
 		usageAnalyzeNext()
+	case "reconcile":
+		usageReconcile()
 	case "stop-workflow":
 		usageStopWorkflow()
 	case "prepare-review":

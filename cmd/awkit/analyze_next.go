@@ -76,6 +76,14 @@ func cmdAnalyzeNext(args []string) int {
 		}
 	}
 
+	// Self-heal structural bad states before deciding, so a repaired base is in
+	// place before any worker is dispatched. Most importantly this restores an
+	// integration branch that lost its scaffold to an early false-completion —
+	// otherwise every worker branches from an empty tree and the loop stalls.
+	// Output is confined to stderr/trace so it never corrupts the decision on
+	// stdout that the principal evals.
+	reconcileStructuralState(*stateRoot)
+
 	// Create analyzer
 	a := analyzer.New(*stateRoot, nil)
 

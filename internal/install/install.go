@@ -49,6 +49,11 @@ type ScaffoldOptions struct {
 	ProjectName string
 	Force       bool
 	DryRun      bool
+	// SkipDeps skips post-scaffold dependency installation (e.g. `npm install`).
+	// Used by self-heal, which only needs the source scaffold committed to the
+	// integration branch — installing node_modules there would be slow, require
+	// a network, and risk committing thousands of dependency files.
+	SkipDeps bool
 }
 
 // ScaffoldResult contains scaffold operation results
@@ -1514,7 +1519,7 @@ func Scaffold(targetDir string, opts ScaffoldOptions) (*ScaffoldResult, error) {
 	// Determine scaffold type based on preset
 	switch opts.Preset {
 	case "", "generic", "node":
-		return scaffoldNode(targetDir, projectName, opts.Force, opts.DryRun)
+		return scaffoldNode(targetDir, projectName, opts.Force, opts.DryRun, opts.SkipDeps)
 	case "go":
 		return scaffoldGo(targetDir, projectName, opts.Force, opts.DryRun)
 	case "python":
@@ -1524,15 +1529,15 @@ func Scaffold(targetDir string, opts ScaffoldOptions) (*ScaffoldResult, error) {
 	case "dotnet":
 		return scaffoldDotnet(targetDir, projectName, opts.Force, opts.DryRun)
 	case "react-go":
-		return scaffoldMonorepo(targetDir, projectName, "go", "react", opts.Force, opts.DryRun)
+		return scaffoldMonorepo(targetDir, projectName, "go", "react", opts.Force, opts.DryRun, opts.SkipDeps)
 	case "react-python":
-		return scaffoldMonorepo(targetDir, projectName, "python", "react", opts.Force, opts.DryRun)
+		return scaffoldMonorepo(targetDir, projectName, "python", "react", opts.Force, opts.DryRun, opts.SkipDeps)
 	case "unity-go":
-		return scaffoldMonorepo(targetDir, projectName, "go", "unity", opts.Force, opts.DryRun)
+		return scaffoldMonorepo(targetDir, projectName, "go", "unity", opts.Force, opts.DryRun, opts.SkipDeps)
 	case "godot-go":
-		return scaffoldMonorepo(targetDir, projectName, "go", "godot", opts.Force, opts.DryRun)
+		return scaffoldMonorepo(targetDir, projectName, "go", "godot", opts.Force, opts.DryRun, opts.SkipDeps)
 	case "unreal-go":
-		return scaffoldMonorepo(targetDir, projectName, "go", "unreal", opts.Force, opts.DryRun)
+		return scaffoldMonorepo(targetDir, projectName, "go", "unreal", opts.Force, opts.DryRun, opts.SkipDeps)
 	default:
 		return result, fmt.Errorf("%w: %q", ErrUnknownPreset, opts.Preset)
 	}
@@ -1690,7 +1695,7 @@ func scaffoldDotnet(targetDir, projectName string, force, dryRun bool) (*Scaffol
 	return scaffoldFiles(files, force, dryRun, result)
 }
 
-func scaffoldNode(targetDir, projectName string, force, dryRun bool) (*ScaffoldResult, error) {
+func scaffoldNode(targetDir, projectName string, force, dryRun, skipDeps bool) (*ScaffoldResult, error) {
 	result := &ScaffoldResult{}
 
 	files := []struct {
@@ -1757,14 +1762,14 @@ describe("smoke", () => {
 	}
 
 	// Install npm dependencies if package.json was created
-	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil {
+	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil && !skipDeps {
 		_ = npmInstallFunc(targetDir)
 	}
 
 	return res, nil
 }
 
-func scaffoldMonorepo(targetDir, projectName, backend, frontend string, force, dryRun bool) (*ScaffoldResult, error) {
+func scaffoldMonorepo(targetDir, projectName, backend, frontend string, force, dryRun, skipDeps bool) (*ScaffoldResult, error) {
 	result := &ScaffoldResult{}
 
 	// Scaffold backend
@@ -1792,7 +1797,7 @@ func scaffoldMonorepo(targetDir, projectName, backend, frontend string, force, d
 
 	switch frontend {
 	case "react":
-		frontendResult, err = scaffoldReactFrontend(frontendDir, force, dryRun)
+		frontendResult, err = scaffoldReactFrontend(frontendDir, force, dryRun, skipDeps)
 	case "unity":
 		frontendResult, err = scaffoldUnityFrontend(frontendDir, force, dryRun)
 	case "godot":
@@ -1814,7 +1819,7 @@ func scaffoldMonorepo(targetDir, projectName, backend, frontend string, force, d
 	return result, nil
 }
 
-func scaffoldReactFrontend(targetDir string, force, dryRun bool) (*ScaffoldResult, error) {
+func scaffoldReactFrontend(targetDir string, force, dryRun, skipDeps bool) (*ScaffoldResult, error) {
 	result := &ScaffoldResult{}
 
 	files := []struct {
@@ -1945,7 +1950,7 @@ describe('smoke', () => {
 	}
 
 	// Install npm dependencies if package.json was created
-	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil {
+	if _, statErr := os.Stat(filepath.Join(targetDir, "package.json")); statErr == nil && !skipDeps {
 		_ = npmInstallFunc(targetDir)
 	}
 
