@@ -20,6 +20,8 @@ type MockGitHubClient struct {
 	OpenIssueCount      int
 	PRMerged            map[int]bool
 	PRMergedError       map[int]error
+	PRMergeableStatus   map[int]string // PR number -> MERGEABLE/CONFLICTING/UNKNOWN
+	PRMergeableError    map[int]error
 	PRByBranch          map[string]int // branch name -> PR number
 	ClosedIssues        []int
 	AddedLabels         map[int][]string
@@ -46,6 +48,8 @@ func NewMockGitHubClient() *MockGitHubClient {
 		IssuesByLabelError: make(map[string]error),
 		PRMerged:           make(map[int]bool),
 		PRMergedError:      make(map[int]error),
+		PRMergeableStatus:  make(map[int]string),
+		PRMergeableError:   make(map[int]error),
 		PRByBranch:         make(map[string]int),
 		AddedLabels:        make(map[int][]string),
 		RemovedLabels:      make(map[int][]string),
@@ -105,6 +109,16 @@ func (m *MockGitHubClient) IsPRMerged(ctx context.Context, prNumber int) (bool, 
 		return false, err
 	}
 	return m.PRMerged[prNumber], nil
+}
+
+func (m *MockGitHubClient) PRMergeable(ctx context.Context, prNumber int) (string, error) {
+	if err, ok := m.PRMergeableError[prNumber]; ok && err != nil {
+		return "", err
+	}
+	if status, ok := m.PRMergeableStatus[prNumber]; ok {
+		return status, nil
+	}
+	return "MERGEABLE", nil // default: a PR is mergeable unless a test says otherwise
 }
 
 func (m *MockGitHubClient) CloseIssue(ctx context.Context, issueNumber int) error {
@@ -293,6 +307,71 @@ func TestDecide_PRReadyWithPRNumber(t *testing.T) {
 	}
 	if decision.PRNumber != 100 {
 		t.Errorf("PRNumber = %d, want 100", decision.PRNumber)
+	}
+}
+
+// TestDecide_PRReadyConflicting_RoutesToConflictResolution is the regression for
+// the tennis-arena stall: a pr-ready PR that conflicts with its base must be
+// routed to automatic conflict resolution (dispatch_worker + conflict), not sent
+// to review where the merge fails and the run escalates/stops.
+func TestDecide_PRReadyConflicting_RoutesToConflictResolution(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := defaultTestConfig()
+
+	mockClient.IssuesByLabel[config.GitHub.Labels.PRReady] = []Issue{
+		{Number: 10, Body: "PR ready - see https://github.com/owner/repo/pull/100"},
+	}
+	mockClient.PRMergeableStatus[100] = "CONFLICTING"
+
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+	decision, err := a.Decide(context.Background())
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+	if decision.NextAction != ActionDispatchWorker {
+		t.Errorf("NextAction = %q, want %q (auto-resolve, not review)", decision.NextAction, ActionDispatchWorker)
+	}
+	if decision.MergeIssue != MergeIssueConflict {
+		t.Errorf("MergeIssue = %q, want %q", decision.MergeIssue, MergeIssueConflict)
+	}
+	if decision.PRNumber != 100 {
+		t.Errorf("PRNumber = %d, want 100", decision.PRNumber)
+	}
+}
+
+// TestDecide_PRReadyConflicting_EscalatesAfterMaxAttempts ensures the auto-resolve
+// path is bounded: a genuinely unresolvable conflict must escalate to a human
+// instead of dispatching forever (the class of bug that burned 50 sessions).
+func TestDecide_PRReadyConflicting_EscalatesAfterMaxAttempts(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockClient := NewMockGitHubClient()
+	config := defaultTestConfig()
+
+	mockClient.IssuesByLabel[config.GitHub.Labels.PRReady] = []Issue{
+		{Number: 10, Body: "PR ready - see https://github.com/owner/repo/pull/100"},
+	}
+	mockClient.PRMergeableStatus[100] = "CONFLICTING"
+
+	a := newTestAnalyzer(tmpDir, config, mockClient)
+	max := a.maxReviewAttempts()
+
+	for i := range max {
+		d, err := a.Decide(context.Background())
+		if err != nil {
+			t.Fatalf("attempt %d: Decide() error = %v", i, err)
+		}
+		if d.NextAction != ActionDispatchWorker || d.MergeIssue != MergeIssueConflict {
+			t.Fatalf("attempt %d: got %q/%q, want dispatch_worker/conflict", i, d.NextAction, d.MergeIssue)
+		}
+	}
+
+	d, err := a.Decide(context.Background())
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+	if d.NextAction != ActionNone || d.ExitReason != ReasonNeedsHumanReview {
+		t.Errorf("after %d attempts, got %q/%q, want none/needs_human_review", max, d.NextAction, d.ExitReason)
 	}
 }
 
