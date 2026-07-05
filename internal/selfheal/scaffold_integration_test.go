@@ -92,16 +92,19 @@ func TestReconcileIntegrationScaffold_RealPush(t *testing.T) {
 		}
 	}
 
-	// It must NOT have committed dependency trees. Regressing this (running
-	// `npm install` and `git add -A` with no .gitignore) would dump thousands of
-	// node_modules files onto the integration branch.
+	// It must NOT have committed dependency trees. SkipDeps means npm install
+	// never runs, so no node_modules can exist to be staged; regressing that
+	// would dump thousands of files onto the integration branch.
 	tree := gitT(t, work, "ls-tree", "-r", "--name-only", "origin/main")
 	if strings.Contains(tree, "node_modules/") {
 		t.Errorf("reconcile committed node_modules to origin/main:\n%s", tree)
 	}
-	// And it must have restored a .gitignore so a later worker can't leak deps.
-	if !hasOnBranch(t, work, "origin/main", ".gitignore") {
-		t.Errorf("reconcile did not restore a .gitignore on origin/main")
+	// It must NOT write its own .gitignore: a .gitignore that differs from the one
+	// `awkit init` commits becomes an add/add conflict against an in-flight
+	// scaffold PR (the tennis-arena PR #8 stall). The reconcile restores source
+	// scaffold only; .gitignore is init's concern.
+	if hasOnBranch(t, work, "origin/main", ".gitignore") {
+		t.Errorf("reconcile should not author a .gitignore (conflict vector), but one is on origin/main")
 	}
 
 	// The main working tree must be untouched — the fix ran on an isolated
