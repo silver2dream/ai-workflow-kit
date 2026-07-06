@@ -281,13 +281,6 @@ func getRepoSettingsFromConfig(stateRoot, worktreePath string) repoSettings {
 	return repoSettings{TestCommand: "", Language: "unknown"}
 }
 
-// getTestCommandFromConfig extracts test command from workflow.yaml
-// For directory-type repos, returns "cd <path> && <test_command>"
-// Deprecated: Use getRepoSettingsFromConfig instead for access to both test command and language
-func getTestCommandFromConfig(stateRoot, worktreePath string) string {
-	return getRepoSettingsFromConfig(stateRoot, worktreePath).TestCommand
-}
-
 // buildTestCommand constructs test command with proper directory handling
 // For directory-type repos (path != "./" and path != ""), prepends "cd <path> &&"
 func buildTestCommand(repoPath, repoType, testCmd string) string {

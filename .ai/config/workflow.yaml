@@ -328,7 +328,7 @@ feedback:
 # injected into future Worker/Reviewer prompts and settled hit/miss
 # against outcomes. Proven lessons can be promoted to hard gates via
 # `awkit lessons promote <id>` (opens a human-gated issue).
-# Design: .ai/specs/learning-loop/design.md
+# Design: https://github.com/silver2dream/ai-workflow-kit/blob/main/.ai/specs/learning-loop/design.md
 #
 # enabled: true (default) — set false to disable injection + distillation
 #   (feedback recording continues regardless).

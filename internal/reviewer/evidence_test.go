@@ -102,9 +102,9 @@ func TestIsValidTestName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isValidTestName(tt.input)
+			result := isValidTestNameForLanguage(tt.input, "go")
 			if result != tt.expected {
-				t.Errorf("isValidTestName(%q) = %v, expected %v", tt.input, result, tt.expected)
+				t.Errorf("isValidTestNameForLanguage(%q, \"go\") = %v, expected %v", tt.input, result, tt.expected)
 			}
 		})
 	}

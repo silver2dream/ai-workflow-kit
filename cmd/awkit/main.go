@@ -197,6 +197,7 @@ Commands:
   run-issue       Run a worker for a single issue
   session         Manage Principal/Worker sessions
   analyze-next    Analyze and determine next workflow action
+  reconcile       Self-heal structural drift (e.g. integration-branch scaffold)
   stop-workflow   Stop the workflow and generate a report
   prepare-review  Prepare PR review context
   submit-review   Submit PR review and handle result
@@ -871,6 +872,14 @@ func cmdUpgrade(args []string) int {
 			fmt.Printf("  %s\n", agentsResult.Message)
 		}
 
+		// Check scaffold alignment (dry-run)
+		scaffoldResult := upgrade.UpgradeScaffold(targetDir, true)
+		if !scaffoldResult.Skipped {
+			fmt.Println("")
+			fmt.Println(bold("Scaffold:"))
+			fmt.Printf("  %s\n", scaffoldResult.Message)
+		}
+
 		// Check config migrations (dry-run)
 		if !*skipMigrate && !*forceConfig {
 			configPath := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
@@ -937,6 +946,17 @@ func cmdUpgrade(args []string) int {
 			success("Agents installed: %s\n", agentsResult.Message)
 		} else {
 			warn("Agents install: %s\n", agentsResult.Message)
+		}
+	}
+
+	// Align scaffold with current templates (patch known defects, keep user code)
+	scaffoldResult := upgrade.UpgradeScaffold(targetDir, *dryRun)
+	if !scaffoldResult.Skipped {
+		fmt.Println("")
+		if scaffoldResult.Success {
+			success("Scaffold aligned: %s\n", scaffoldResult.Message)
+		} else {
+			warn("Scaffold align: %s\n", scaffoldResult.Message)
 		}
 	}
 
@@ -1228,7 +1248,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next stop-workflow prepare-review submit-review create-task create-epic audit-epic doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next reconcile stop-workflow prepare-review submit-review create-task create-epic audit-epic jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1285,12 +1305,14 @@ _awkit() {
         'run-issue:Run a worker for a single issue'
         'session:Manage Principal/Worker sessions'
         'analyze-next:Analyze and determine next workflow action'
+        'reconcile:Self-heal structural drift'
         'stop-workflow:Stop the workflow and generate a report'
         'prepare-review:Prepare PR review context'
         'submit-review:Submit PR review and handle result'
         'create-task:Create GitHub Issue from task entry'
         'create-epic:Create GitHub Tracking Issue (Epic)'
         'audit-epic:Audit Epic coverage against design.md'
+        'jittest:Run JiT (Just-in-Time) tests for a PR'
         'doctor:Check project health and identify issues'
         'reset:Reset project state for fresh start'
         'generate:Generate helper docs and scaffolding'
@@ -1379,12 +1401,14 @@ complete -c awkit -n __fish_use_subcommand -a dispatch-worker -d 'Dispatch an is
 complete -c awkit -n __fish_use_subcommand -a run-issue -d 'Run a worker for a single issue'
 complete -c awkit -n __fish_use_subcommand -a session -d 'Manage Principal/Worker sessions'
 complete -c awkit -n __fish_use_subcommand -a analyze-next -d 'Analyze and determine next workflow action'
+complete -c awkit -n __fish_use_subcommand -a reconcile -d 'Self-heal structural drift'
 complete -c awkit -n __fish_use_subcommand -a stop-workflow -d 'Stop the workflow and generate a report'
 complete -c awkit -n __fish_use_subcommand -a prepare-review -d 'Prepare PR review context'
 complete -c awkit -n __fish_use_subcommand -a submit-review -d 'Submit PR review and handle result'
 complete -c awkit -n __fish_use_subcommand -a create-task -d 'Create GitHub Issue from task entry'
 complete -c awkit -n __fish_use_subcommand -a create-epic -d 'Create GitHub Tracking Issue (Epic)'
 complete -c awkit -n __fish_use_subcommand -a audit-epic -d 'Audit Epic coverage against design.md'
+complete -c awkit -n __fish_use_subcommand -a jittest -d 'Run JiT (Just-in-Time) tests for a PR'
 complete -c awkit -n __fish_use_subcommand -a doctor -d 'Check project health and identify issues'
 complete -c awkit -n __fish_use_subcommand -a reset -d 'Reset project state for fresh start'
 complete -c awkit -n __fish_use_subcommand -a generate -d 'Generate helper docs and scaffolding'
@@ -1392,6 +1416,8 @@ complete -c awkit -n __fish_use_subcommand -a list-presets -d 'Show available pr
 complete -c awkit -n __fish_use_subcommand -a hooks -d 'Manage lifecycle hooks'
 complete -c awkit -n __fish_use_subcommand -a events -d 'Query unified event stream'
 complete -c awkit -n __fish_use_subcommand -a feedback-stats -d 'Show review feedback statistics'
+complete -c awkit -n __fish_use_subcommand -a evaluate -d 'Run evaluation gates'
+complete -c awkit -n __fish_use_subcommand -a lessons -d 'Manage the learning loop'
 complete -c awkit -n __fish_use_subcommand -a context-snapshot -d 'Generate compact context snapshot'
 complete -c awkit -n __fish_use_subcommand -a check-update -d 'Check for CLI updates'
 complete -c awkit -n __fish_use_subcommand -a completion -d 'Generate shell completion'

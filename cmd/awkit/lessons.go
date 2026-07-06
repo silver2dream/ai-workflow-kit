@@ -19,7 +19,7 @@ func usageLessons() {
 	fmt.Fprint(os.Stderr, `Usage: awkit lessons <subcommand> [options]
 
 Manage the learning loop's lesson store (.ai/state/lessons.json).
-See .ai/specs/learning-loop/design.md for the full design.
+Full design: https://github.com/silver2dream/ai-workflow-kit/blob/main/.ai/specs/learning-loop/design.md
 
 Subcommands:
   list [--all]           List lessons (--all includes retired)

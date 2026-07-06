@@ -295,7 +295,7 @@ func (c *Resetter) ResetTraces() []Result {
 	return []Result{{
 		Name:    "traces",
 		Success: true,
-		Message: "Deleted traces directory (migrated to unified event stream)",
+		Message: "Deleted traces directory (per-issue liveness records; check-result rebuilds them on the next dispatch)",
 	}}
 }
 

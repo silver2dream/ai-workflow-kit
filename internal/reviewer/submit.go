@@ -579,13 +579,6 @@ func fetchIssueBody(ctx context.Context, issueNumber int, timeout time.Duration)
 	return strings.TrimSpace(string(output)), nil
 }
 
-// getTestCommand determines the test command based on config and repo
-// Delegates to getTestCommandFromConfig with worktree path derived from issue number
-func getTestCommand(stateRoot string, issueNumber int) string {
-	worktreePath := filepath.Join(stateRoot, ".worktrees", fmt.Sprintf("issue-%d", issueNumber))
-	return getTestCommandFromConfig(stateRoot, worktreePath)
-}
-
 // GitHub helper functions - all functions now return errors for proper handling
 
 func postPRComment(ctx context.Context, prNumber int, body string, timeout time.Duration) error {
