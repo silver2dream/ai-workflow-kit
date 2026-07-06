@@ -90,6 +90,15 @@ specs:
 
 	// 1. Run preflight checks
 	checker := NewPreflightChecker(configPath, lockFile)
+
+	// Write access to the ambient repo is an environmental precondition, same
+	// as the gh-auth skip above: a developer whose default gh account is
+	// read-only on this repo should skip, not fail. Runs the production check
+	// itself, so no logic is duplicated here.
+	if wr := checker.CheckRepoWritePermission(); !wr.Passed {
+		t.Skipf("Skipping: %s", wr.Message)
+	}
+
 	results, err := checker.RunAll()
 	if err != nil {
 		t.Fatalf("Preflight failed: %v", err)
