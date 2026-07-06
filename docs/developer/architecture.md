@@ -72,12 +72,9 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 │   │   │   └── main-loop.md       # 主迴圈邏輯
 │   │   ├── references/            # 參考文件
 │   │   └── tasks/                 # 任務範本
-│   ├── create-issues/             # Issue 建立技能
-│   │   ├── SKILL.md
-│   │   └── phases/                # 分析、分解、建立階段
-│   └── run-issues/                # Issue 執行技能
+│   └── create-issues/             # Issue 建立技能
 │       ├── SKILL.md
-│       └── phases/                # 分析、並行、驗證階段
+│       └── phases/                # 分析、分解、建立階段
 │
 ├── templates/                     # 模板檔案
 │   └── design.md.example          # 設計文件範例

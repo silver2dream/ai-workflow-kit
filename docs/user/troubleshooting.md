@@ -77,7 +77,7 @@ awkit reset --dry-run     # 預覽模式，不實際執行
 | `--lock` | 移除鎖定檔案（kickoff.lock）（謹慎使用） |
 | `--deprecated` | 移除已棄用檔案 |
 | `--results` | 清理 result 檔案（`.ai/results/`） |
-| `--traces` | 清理舊版 trace 檔案（`.ai/state/traces/`，已遷移至 events） |
+| `--traces` | 清理 per-issue trace 檔案（`.ai/state/traces/`，worker 存活記錄，check-result 的 crash/timeout 偵測依賴它；下次 dispatch 會重建） |
 | `--events` | 清理 event stream 檔案（`.ai/state/events/`） |
 | `--labels` | 將 GitHub 上的 `review-failed` 標籤重設為 `pr-ready` |
 | `--temp` | 清理暫存票據檔案（`.ai/temp/ticket-*.md`） |

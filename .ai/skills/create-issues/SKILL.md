@@ -83,19 +83,12 @@ Create issues via GitHub CLI:
 
 ## Integration with AWK Workflow
 
-Issues created by this skill will have the `ai-task` label and can be processed by:
-- `awkit kickoff` - AWK principal workflow (spec-driven)
-- `/run-issues` - Batch issue processing skill
-
-**⚠️ WARNING**: Do NOT run `/run-issues` and `awkit kickoff` simultaneously on the same issues.
+Issues created by this skill will have the `ai-task` label and are processed by
+`awkit kickoff` (the AWK principal workflow).
 
 **Recommended workflow:**
 ```
-/create-issues → (user approves) → issues created
-        ↓
-    Choose ONE:
-        ├─ awkit kickoff (structured, spec-driven)
-        └─ /run-issues (autonomous, batch processing)
+/create-issues → (user approves) → issues created → awkit kickoff
 ```
 
 ## Self-Check

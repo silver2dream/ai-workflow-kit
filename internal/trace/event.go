@@ -61,8 +61,9 @@ const (
 	TypeAuditTriggered = "audit_triggered"
 
 	// Workflow events
-	TypeWorkflowStop = "workflow_stop"
-	TypeReconcile    = "reconcile" // self-heal reconciled a structural bad state
+	TypeWorkflowStop   = "workflow_stop"
+	TypeReconcile      = "reconcile"       // self-heal reconciled a structural bad state
+	TypeDeprecatedPath = "deprecated_path" // a deprecated compat path was exercised (managed migration)
 
 	// Worker retry
 	TypeWorkerRetry = "worker_retry"
