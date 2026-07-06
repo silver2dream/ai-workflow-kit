@@ -48,8 +48,15 @@ func TestIntegration_PreflightToLockRelease(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Setup config
-	configPath := filepath.Join(tmpDir, "workflow.yaml")
+	// Setup config in the production layout (<root>/.ai/config/workflow.yaml):
+	// baseDir() resolves the state root by walking three levels up from the
+	// config path, so the fixture must mirror the real structure or the
+	// spec-file checks resolve outside tmpDir.
+	configDir := filepath.Join(tmpDir, ".ai", "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
+	configPath := filepath.Join(configDir, "workflow.yaml")
 	configContent := `version: "1.0"
 project:
   name: test-project
@@ -61,22 +68,37 @@ repos:
 git:
   integration_branch: feat/test
 specs:
-  path: .ai/specs
+  base_path: .ai/specs
+  active:
+    - testspec
 `
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
-	// Create specs directory
-	specsDir := filepath.Join(tmpDir, ".ai", "specs")
-	if err := os.MkdirAll(specsDir, 0755); err != nil {
-		t.Fatalf("Failed to create specs dir: %v", err)
+	// Active specs must have a tasks.md or design.md (preflight CheckSpecFiles)
+	specDir := filepath.Join(tmpDir, ".ai", "specs", "testspec")
+	if err := os.MkdirAll(specDir, 0755); err != nil {
+		t.Fatalf("Failed to create spec dir: %v", err)
+	}
+	tasksContent := "# Test Spec\n\n## Tasks\n\n- [ ] 1. Placeholder task\n"
+	if err := os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte(tasksContent), 0644); err != nil {
+		t.Fatalf("Failed to write tasks.md: %v", err)
 	}
 
 	lockFile := filepath.Join(tmpDir, "kickoff.lock")
 
 	// 1. Run preflight checks
 	checker := NewPreflightChecker(configPath, lockFile)
+
+	// Write access to the ambient repo is an environmental precondition, same
+	// as the gh-auth skip above: a developer whose default gh account is
+	// read-only on this repo should skip, not fail. Runs the production check
+	// itself, so no logic is duplicated here.
+	if wr := checker.CheckRepoWritePermission(); !wr.Passed {
+		t.Skipf("Skipping: %s", wr.Message)
+	}
+
 	results, err := checker.RunAll()
 	if err != nil {
 		t.Fatalf("Preflight failed: %v", err)

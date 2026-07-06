@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: ["feat/example", "develop"]
+    branches: ["feat/example", "develop", "main"]
   pull_request:
     branches: ["feat/example", "develop", "main"]
 
@@ -26,6 +26,18 @@ jobs:
 
       - name: Go test (awkit)
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      # Integration tests self-skip when claude CLI / gh auth are absent on
+      # the runner. Surface every skip so a green run cannot silently mean
+      # "the assertions never executed". Reporting only: failures are already
+      # gated by the main test step above.
+      - name: Integration-test skip visibility
+        run: |
+          set -o pipefail
+          status=0
+          out=$(go test ./... -run Integration -v 2>&1) || status=$?
+          echo "$out" | grep -E -- '--- (SKIP|PASS|FAIL)' || echo "no integration test results found"
+          exit $status
 
       - name: AWK evaluation (offline + strict)
         run: |
