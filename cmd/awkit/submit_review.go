@@ -21,7 +21,7 @@ func usageSubmitReview() {
 Usage (structured, preferred):
   awkit submit-review --pr <number> --issue <number> --ci-status <passed|failed> --body-file review.json
 
-Usage (legacy markdown):
+Usage (legacy markdown — DEPRECATED, scheduled for removal in v0.16):
   awkit submit-review --pr <number> --issue <number> --score <1-10> --ci-status <passed|failed> --body <review>
 
 Arguments:
@@ -32,7 +32,8 @@ Arguments:
                 improvements[]; schema is printed by prepare-review).
                 Score is taken from the file; --score must be omitted or match.
   --score       Review score 1-10 (required with --body)
-  --body        Review body markdown (legacy; parsed by regex — prefer --body-file)
+  --body        Review body markdown (DEPRECATED: parsed by regex; use --body-file.
+                Scheduled for removal in v0.16)
 
 Options:
   --state-root  Override state root (default: git root)
@@ -134,6 +135,7 @@ func cmdSubmitReview(args []string) int {
 			usageSubmitReview()
 			return 2
 		}
+		fmt.Fprintln(os.Stderr, "[submit-review] WARNING: the --body markdown path is deprecated and scheduled for removal in v0.16 — submit a structured review via --body-file instead")
 	}
 
 	// Resolve state root
@@ -154,6 +156,17 @@ func cmdSubmitReview(args []string) int {
 		} else {
 			defer trace.CloseGlobalWriter()
 		}
+	}
+
+	// Managed migration: make every use of the legacy --body path observable
+	// so the v0.16 removal decision is grounded in real usage data.
+	if *bodyFile == "" {
+		trace.WriteEvent(trace.ComponentReviewer, trace.TypeDeprecatedPath, trace.LevelWarn,
+			trace.WithData(map[string]any{
+				"path":    "submit-review --body",
+				"removal": "v0.16",
+				"pr":      *prNumber,
+			}))
 	}
 
 	// Load review settings from workflow.yaml

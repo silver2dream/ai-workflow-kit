@@ -42,35 +42,6 @@ Skills 可以透過 Claude Code 的 Slash Command 或直接對話觸發。
 
 ---
 
-### `/run-issues`
-
-自動執行多個 GitHub Issues。
-
-**用途：**
-- 批量處理已建立的 Issues
-- 並行調度 Worker 執行任務
-
-**使用方式：**
-```
-/run-issues <issue 編號列表>
-```
-
-**範例：**
-```
-/run-issues 98 99 100 101 102
-```
-
-**流程：**
-1. **Pre-Flight** - 檢查是否有其他工作流程執行中
-2. **Fetch** - 取得 Issue 詳情
-3. **Analyze** - 分析依賴關係和優先級
-4. **Parallelize** - 規劃並行執行批次
-5. **Execute** - 調度 Worker 執行任務
-6. **Verify** - 驗證執行結果
-7. **Report** - 產生執行報告
-
----
-
 ### `/principal-workflow`
 
 Principal Agent 的主工作流程。

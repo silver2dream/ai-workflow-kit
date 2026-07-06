@@ -66,7 +66,6 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 |-------|------|
 | `principal-workflow` | Principal Agent 主工作流程 |
 | `create-issues` | Issue 建立技能 |
-| `run-issues` | Issue 執行技能 |
 | `post-mortem` | 失敗事後分析（唯讀）；學習迴圈的手動入口 |
 | `release-checklist` | 發布前 go/no-go 驗證 |
 
@@ -130,7 +129,7 @@ awkit lessons promote <L-xxx>      # 為已驗證教訓開一個人審 issue（�
 
 ### awkit submit-review
 
-提交 PR 審查結果。**推薦**用 `--body-file` 提交結構化 JSON（`StructuredReview`）；schema 錯誤會以退出碼 **2**（`SUBMISSION INVALID`）返回,由同 session 修正,不會浪費一輪 review。舊的 `--body`（markdown）路徑保留相容。
+提交 PR 審查結果。**推薦**用 `--body-file` 提交結構化 JSON（`StructuredReview`）；schema 錯誤會以退出碼 **2**（`SUBMISSION INVALID`）返回,由同 session 修正,不會浪費一輪 review。舊的 `--body`（markdown）路徑已棄用（使用時輸出警告並記錄 `deprecated_path` 事件），排定於 v0.16 移除。
 
 ```bash
 awkit submit-review --pr N --issue M --ci-status passed --body-file review.json
