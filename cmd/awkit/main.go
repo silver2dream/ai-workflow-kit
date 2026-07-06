@@ -872,6 +872,14 @@ func cmdUpgrade(args []string) int {
 			fmt.Printf("  %s\n", agentsResult.Message)
 		}
 
+		// Check scaffold alignment (dry-run)
+		scaffoldResult := upgrade.UpgradeScaffold(targetDir, true)
+		if !scaffoldResult.Skipped {
+			fmt.Println("")
+			fmt.Println(bold("Scaffold:"))
+			fmt.Printf("  %s\n", scaffoldResult.Message)
+		}
+
 		// Check config migrations (dry-run)
 		if !*skipMigrate && !*forceConfig {
 			configPath := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
@@ -938,6 +946,17 @@ func cmdUpgrade(args []string) int {
 			success("Agents installed: %s\n", agentsResult.Message)
 		} else {
 			warn("Agents install: %s\n", agentsResult.Message)
+		}
+	}
+
+	// Align scaffold with current templates (patch known defects, keep user code)
+	scaffoldResult := upgrade.UpgradeScaffold(targetDir, *dryRun)
+	if !scaffoldResult.Skipped {
+		fmt.Println("")
+		if scaffoldResult.Success {
+			success("Scaffold aligned: %s\n", scaffoldResult.Message)
+		} else {
+			warn("Scaffold align: %s\n", scaffoldResult.Message)
 		}
 	}
 
