@@ -1,5 +1,12 @@
 # Platform Evolution — Design
 
+> **Status: IMPLEMENTED (archived).** All 6 areas shipped: custom agents
+> (`agents.custom` + generator), rule/skill example library
+> (`.ai/rules/_examples/`, post-mortem/release-checklist skills),
+> compaction/context-snapshot, review feedback loop, lifecycle hooks, and
+> multi-model worker backends. Kept as design history; no longer distributed
+> to user projects.
+
 ## Overview
 
 ### Motivation

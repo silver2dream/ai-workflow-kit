@@ -1,5 +1,7 @@
 # Platform Evolution — Requirements
 
+> **Status: IMPLEMENTED (archived).** See design.md status note.
+
 ## Goal
 
 Based on ECC (everything-claude-code) competitive analysis, strengthen AWKit's platform across 6 areas in 3 priority tiers while preserving the core moat: deterministic workflow engine + GitHub state machine.

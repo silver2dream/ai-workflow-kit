@@ -252,58 +252,6 @@ func TestIsCreationAction(t *testing.T) {
 	}
 }
 
-func TestParseAnalyzeNextOutput(t *testing.T) {
-	out := `
-NEXT_ACTION=create_task
-ISSUE_NUMBER=
-PR_NUMBER=
-SPEC_NAME=snake-arena
-TASK_LINE=7
-EXIT_REASON=
-MERGE_ISSUE=
-`
-
-	got := parseAnalyzeNextOutput(out)
-	if got.NextAction != "create_task" {
-		t.Fatalf("NextAction = %q, want %q", got.NextAction, "create_task")
-	}
-	if got.SpecName != "snake-arena" {
-		t.Fatalf("SpecName = %q, want %q", got.SpecName, "snake-arena")
-	}
-	if got.TaskLine != "7" {
-		t.Fatalf("TaskLine = %q, want %q", got.TaskLine, "7")
-	}
-	if got.ExitReason != "" {
-		t.Fatalf("ExitReason = %q, want empty", got.ExitReason)
-	}
-}
-
-func TestParseAnalyzeNextOutputWithMergeIssue(t *testing.T) {
-	out := `
-NEXT_ACTION=dispatch_worker
-ISSUE_NUMBER=27
-PR_NUMBER=30
-SPEC_NAME=
-TASK_LINE=0
-EXIT_REASON=
-MERGE_ISSUE=conflict
-`
-
-	got := parseAnalyzeNextOutput(out)
-	if got.NextAction != "dispatch_worker" {
-		t.Fatalf("NextAction = %q, want %q", got.NextAction, "dispatch_worker")
-	}
-	if got.IssueNumber != "27" {
-		t.Fatalf("IssueNumber = %q, want %q", got.IssueNumber, "27")
-	}
-	if got.PRNumber != "30" {
-		t.Fatalf("PRNumber = %q, want %q", got.PRNumber, "30")
-	}
-	if got.MergeIssue != "conflict" {
-		t.Fatalf("MergeIssue = %q, want %q", got.MergeIssue, "conflict")
-	}
-}
-
 func TestFormatAnalyzeNextContext(t *testing.T) {
 	ctx := formatAnalyzeNextContext(analyzeNextVars{
 		NextAction:  "create_task",

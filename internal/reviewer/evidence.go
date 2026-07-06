@@ -463,12 +463,6 @@ func isValidTestNameForLanguage(name, language string) bool {
 	return validator.IsValid(name)
 }
 
-// isValidTestName validates test name using Go format (for backward compatibility)
-// Deprecated: Use isValidTestNameForLanguage instead
-func isValidTestName(name string) bool {
-	return isValidTestNameForLanguage(name, "go")
-}
-
 // getTestNameFormatHint returns format hint for the given language
 func getTestNameFormatHint(language string) string {
 	validator := GetTestNameValidator(language)

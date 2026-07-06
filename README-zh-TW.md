@@ -138,7 +138,6 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 │   ├── config/workflow.yaml     # main config
 │   ├── templates/               # generators (CLAUDE/AGENTS/CI)
 │   ├── rules/                   # architecture + git workflow rules
-│   ├── docs/evaluate.md         # evaluation standard
 │   └── specs/                   # Kiro-style specs
 ├── .github/workflows/ci.yml     # root CI example
 ├── backend/                     # directory example (Go)
@@ -370,7 +369,7 @@ Root CI workflow：`.github/workflows/ci.yml`
 ## 🧪 評估
 
 - 僅供 kit 維護者 / CI 使用，一般使用者可跳過。
-- 標準：`.ai/docs/evaluate.md`
+- 標準：`docs/developer/evaluation.md`
 - 執行器：`awkit evaluate --offline`（僅報告）與 `awkit evaluate --offline --strict`（任一閘門失敗即失敗,如 P0 audit 發現 —— 用於 CI/發布前檢查）
 
 ---

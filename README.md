@@ -138,7 +138,6 @@ More details: `docs/ai-workflow-architecture.md`.
 │   ├── config/workflow.yaml     # main config
 │   ├── templates/               # generators (CLAUDE/AGENTS/CI)
 │   ├── rules/                   # architecture + git workflow rules
-│   ├── docs/evaluate.md         # evaluation standard
 │   └── specs/                   # Kiro-style specs
 ├── .github/workflows/ci.yml     # root CI example
 ├── backend/                     # directory example (Go)
@@ -372,7 +371,7 @@ It runs four jobs:
 ## 🧪 Evaluation
 
 - For kit maintainers/CI only; regular users can skip.
-- Standard: `.ai/docs/evaluate.md`
+- Standard: `docs/developer/evaluation.md`
 - Executor: `awkit evaluate --offline` (report-only) and `awkit evaluate --offline --strict` (fails on any gate failure, e.g. P0 audit findings — used by CI/release checks)
 
 ---

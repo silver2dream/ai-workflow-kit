@@ -295,12 +295,12 @@ func TestCleanupWorktree_NonExistent(t *testing.T) {
 	}
 }
 
-func TestGetTestCommand(t *testing.T) {
-	// Test the getTestCommand helper that uses getTestCommandFromConfig
+func TestGetRepoSettingsFromConfig_NoConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Without config, should return empty (no longer defaults to go test)
-	cmd := getTestCommand(tmpDir, 123)
+	worktreePath := filepath.Join(tmpDir, ".worktrees", "issue-123")
+	cmd := getRepoSettingsFromConfig(tmpDir, worktreePath).TestCommand
 	if cmd != "" {
 		t.Errorf("default command = %q, want empty string", cmd)
 	}

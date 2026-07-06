@@ -7,3 +7,11 @@
 
 # v0.x.x - docs and tests no longer distributed to user projects
 .ai/docs/evaluate.md
+
+# v0.15.x - AWK-internal design specs no longer distributed to user projects
+# (files first, then the emptied directory - os.Remove only deletes empty dirs)
+.ai/specs/platform-evolution/design.md
+.ai/specs/platform-evolution/requirements.md
+.ai/specs/platform-evolution
+.ai/specs/learning-loop/design.md
+.ai/specs/learning-loop

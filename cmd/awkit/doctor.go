@@ -85,7 +85,7 @@ func cmdReset(args []string) int {
 	lock := fs.Bool("lock", false, "Remove lock file")
 	deprecated := fs.Bool("deprecated", false, "Remove deprecated files")
 	results := fs.Bool("results", false, "Reset result files")
-	traces := fs.Bool("traces", false, "Reset old trace files (deprecated, use events)")
+	traces := fs.Bool("traces", false, "Reset per-issue trace files (worker liveness records used by check-result)")
 	events := fs.Bool("events", false, "Reset event stream files")
 	labels := fs.Bool("labels", false, "Reset blocking labels (worker-failed, review-failed) on GitHub issues")
 	temp := fs.Bool("temp", false, "Clean ticket temp files (.ai/temp/ticket-*.md)")

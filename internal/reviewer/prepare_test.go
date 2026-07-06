@@ -150,9 +150,9 @@ func TestGetTestCommandFromConfig(t *testing.T) {
 				}
 			}
 
-			got := getTestCommandFromConfig(tmpDir, tt.worktreePath)
+			got := getRepoSettingsFromConfig(tmpDir, tt.worktreePath).TestCommand
 			if got != tt.want {
-				t.Errorf("getTestCommandFromConfig() = %q, want %q", got, tt.want)
+				t.Errorf("getRepoSettingsFromConfig().TestCommand = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -380,13 +380,13 @@ func TestWorkflowConfigParsing(t *testing.T) {
 	}
 
 	// Test backend matching
-	cmd := getTestCommandFromConfig(tmpDir, "/path/with/backend")
+	cmd := getRepoSettingsFromConfig(tmpDir, "/path/with/backend").TestCommand
 	if cmd != "cd backend && go test ./..." {
 		t.Errorf("backend match failed: got %q", cmd)
 	}
 
 	// Test frontend matching
-	cmd = getTestCommandFromConfig(tmpDir, "/path/with/frontend")
+	cmd = getRepoSettingsFromConfig(tmpDir, "/path/with/frontend").TestCommand
 	if cmd != "cd frontend && npm test" {
 		t.Errorf("frontend match failed: got %q", cmd)
 	}

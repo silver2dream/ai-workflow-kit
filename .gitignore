@@ -34,4 +34,13 @@ Thumbs.db
 
 # Claude Code local settings (do not commit)
 .claude/settings.local.json
+# Symlinks generated locally by `awkit install` (ensureClaudeLinks); ignoring
+# them also stops Windows git from warning while trying to traverse them
+.claude/rules
+.claude/skills
+.claude/worktrees/
+
+# Kiro IDE local workspace
+.kiro/
+
 awkit.exe
