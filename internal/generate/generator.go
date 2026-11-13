@@ -37,7 +37,6 @@ type Config struct {
 	Repos   []RepoConfig  `yaml:"repos"`
 	Rules   RulesConfig   `yaml:"rules"`
 	Agents  AgentsConfig  `yaml:"agents"`
-	Specs   SpecsConfig   `yaml:"specs"`
 }
 
 // ValidationError represents a configuration validation error
@@ -168,7 +167,7 @@ func (c *Config) Validate() []ValidationError {
 	validModels := map[string]bool{"haiku": true, "sonnet": true, "opus": true}
 	validTriggers := map[string]bool{
 		"review_pr": true, "check_result": true,
-		"dispatch_worker": true, "generate_tasks": true,
+		"dispatch_worker": true,
 	}
 	builtinAgentNames := make(map[string]bool)
 	for _, name := range c.Agents.Builtin {
@@ -220,7 +219,7 @@ func (c *Config) Validate() []ValidationError {
 			errors = append(errors, ValidationError{
 				Field:    fmt.Sprintf("agents.custom[%d].trigger", i),
 				Message:  fmt.Sprintf("invalid trigger: %s", agent.Trigger),
-				Expected: "review_pr, check_result, dispatch_worker, or generate_tasks",
+				Expected: "review_pr, check_result, or dispatch_worker",
 			})
 		}
 	}
@@ -294,10 +293,6 @@ type CustomAgentDef struct {
 	Model       string `yaml:"model"`
 	Trigger     string `yaml:"trigger"`
 	Condition   string `yaml:"condition"`
-}
-
-type SpecsConfig struct {
-	BasePath string `yaml:"base_path"`
 }
 
 // TemplateContext holds all data for template rendering
@@ -434,9 +429,6 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	// Set defaults
-	if config.Specs.BasePath == "" {
-		config.Specs.BasePath = ".ai/specs"
-	}
 	if len(config.Rules.Kit) == 0 {
 		config.Rules.Kit = []string{"git-workflow"}
 	}
@@ -479,8 +471,7 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("## Role: Principal Engineer\n\n")
 	sb.WriteString("You are the **Principal Engineer**, responsible for orchestrating the AWK automated workflow and ensuring quality.\n\n")
 	sb.WriteString("**Your responsibilities:**\n")
-	sb.WriteString("- Audit the project and generate tasks (audit → GitHub Epic)\n")
-	sb.WriteString("- Create Issues for Workers to execute\n")
+	sb.WriteString("- Work through the open tickets: the GitHub issues that carry the task label\n")
 	sb.WriteString("- Dispatch Workers (Senior Engineers) to execute tasks\n")
 	sb.WriteString("- Review PRs submitted by Workers\n")
 	sb.WriteString("- Decide approve/reject and merge approved PRs\n\n")
@@ -562,21 +553,18 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("```bash\nawkit doctor\n```\n\n")
 	sb.WriteString("### Reset State\n")
 	sb.WriteString("```bash\nawkit reset          # default cleanup\nawkit reset --all    # full cleanup\nawkit reset --dry-run # preview only\n```\n\n")
-	sb.WriteString("### Create Epic (GitHub Tracking Issue mode)\n")
-	sb.WriteString("```bash\nawkit create-epic --spec my-project --body-file epic-body.md  # REQUIRED: --body-file\nawkit create-epic --spec my-project --body-file epic-body.md --dry-run  # preview only\n```\n\n")
 	sb.WriteString("## File Locations\n\n")
 	sb.WriteString("| What | Where |\n")
 	sb.WriteString("|------|-------|\n")
 	sb.WriteString("| Config | " + bt + ".ai/config/workflow.yaml" + bt + " |\n")
 	sb.WriteString("| Skills | " + bt + ".ai/skills/" + bt + " |\n")
 	sb.WriteString("| Rules | " + bt + ".ai/rules/" + bt + " |\n")
-	sb.WriteString(fmt.Sprintf("| Specs | %s%s/%s |\n", bt, ctx.Specs.BasePath, bt))
 	sb.WriteString("| Results | " + bt + ".ai/results/" + bt + " |\n")
 	sb.WriteString("| Principal Log | " + bt + ".ai/exe-logs/principal.log" + bt + " |\n")
 	sb.WriteString("| Worker Logs | " + bt + ".ai/exe-logs/issue-{N}.worker.log" + bt + " |\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## Ticket Format\n\n")
-	sb.WriteString("Tickets are written during " + bt + "create_task" + bt + ". The required sections and a template are in " + bt + ".ai/skills/principal-workflow/tasks/create-task.md" + bt + "; " + bt + "awkit create-task" + bt + " rejects a body that lacks them.\n")
+	sb.WriteString("A ticket is a GitHub issue that carries the task label. The required sections and a template are in " + bt + ".ai/skills/principal-workflow/tasks/create-task.md" + bt + "; " + bt + "awkit create-task" + bt + " rejects a body that lacks them.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
@@ -649,11 +637,6 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("  - Score Reason (why it failed)\n")
 	sb.WriteString("  - Suggested Improvements (what to fix)\n")
 	sb.WriteString("  - CI failures (if mentioned)\n\n")
-	sb.WriteString("### 6. Design document context\n")
-	sb.WriteString("If you see a " + bt + "DESIGN CONTEXT" + bt + " section in your prompt:\n")
-	sb.WriteString("- It contains the relevant design document (design.md) for the current task\n")
-	sb.WriteString("- Ensure your implementation aligns with the design specifications\n")
-	sb.WriteString("- If the design and ticket conflict, follow the ticket (it may be a deliberate deviation)\n\n")
 	sb.WriteString("---\n\n")
 	writeWorkerGuardrails(&sb)
 	sb.WriteString("## REPO TYPE SUPPORT\n\n")
@@ -697,7 +680,7 @@ func writeWorkerGuardrails(sb *strings.Builder) {
 	sb.WriteString("| \"The failing test is probably wrong, I'll skip it\" | A failing test is a signal. Either fix the test (and explain why in the PR), or fix the code. Never silently skip. |\n")
 	sb.WriteString("| \"Existing code is messy, let me clean it up while I'm here\" | Out-of-scope refactors balloon the diff and break unrelated things. Stay within ticket scope; file a follow-up issue if cleanup is needed. |\n")
 	sb.WriteString("| \"I'll just stub this part for now\" | Half-finished implementations get merged and forgotten. Either complete the slice or split into a smaller ticket. |\n")
-	sb.WriteString("| \"The Acceptance Criterion is vague, I'll guess\" | Don't guess. Re-read design.md; if still unclear, document your interpretation in " + bt + "plan.md" + bt + " so reviewer can correct or accept it. |\n")
+	sb.WriteString("| \"The Acceptance Criterion is vague, I'll guess\" | Don't guess. Re-read the ticket and the documents it points to; if still unclear, document your interpretation in " + bt + "plan.md" + bt + " so reviewer can correct or accept it. |\n")
 	sb.WriteString("| \"This is what existing code does, I'll mirror it even if it's wrong\" | Existing bugs aren't a license to repeat them. If you spot a real issue, note it in " + bt + "plan.md" + bt + " rather than propagating. |\n")
 	sb.WriteString("| \"Reviewer feedback is just nitpicking, I'll push back\" | Critical/Important feedback blocks merge. Read severity prefixes (see \"Responding to severity-tagged feedback\" below) and address everything that isn't Nit/Optional/FYI. |\n\n")
 	sb.WriteString("## Red Flags (signs your work is going off-rails)\n\n")

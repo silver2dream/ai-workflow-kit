@@ -99,39 +99,6 @@ git:
     ${COMMIT_MSG}
 
 # ============================================================
-# Spec Configuration
-# ============================================================
-# Spec 文件結構（Kiro 相容）：
-#   - requirements.md  (可選) 需求文檔
-#   - design.md        (可選) 設計文檔
-#   - tasks.md         (必要) 任務清單 - AI Workflow 讀取此文件
-#
-# 如果 tasks.md 不存在但 design.md 存在，Principal 會自動生成 tasks.md
-specs:
-  base_path: ".ai/specs"
-  files:
-    requirements: "requirements.md"  # 可選
-    design: "design.md"              # 可選，用於生成 tasks.md
-    tasks: "tasks.md"                # 必要，AI Workflow 讀取
-  # 啟用自動生成 tasks.md（從 design.md）
-  auto_generate_tasks: true
-  # 預設不啟用任何 spec，避免新使用者一跑就產生 Issue/PR。
-  # 參考範例 spec：.ai/specs/example/
-  active: []
-
-# ============================================================
-# Task Configuration
-# ============================================================
-tasks:
-  format:
-    uncompleted: "- [ ]"
-    completed: "- [x]"
-    optional: "- [ ]*"
-  source_priority:
-    - audit
-    - specs
-
-# ============================================================
 # Audit Configuration
 # ============================================================
 audit:

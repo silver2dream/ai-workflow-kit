@@ -14,7 +14,6 @@ type Config struct {
 	Project ProjectConfig `yaml:"project"`
 	Repos   []RepoConfig  `yaml:"repos"`
 	Git     GitConfig     `yaml:"git"`
-	Specs   SpecsConfig   `yaml:"specs"`
 	GitHub  GitHubConfig  `yaml:"github"`
 }
 
@@ -45,18 +44,6 @@ type GitConfig struct {
 	IntegrationBranch string `yaml:"integration_branch"`
 	ReleaseBranch     string `yaml:"release_branch"`
 	CommitFormat      string `yaml:"commit_format"`
-}
-
-// SpecsConfig holds specs directory settings
-type SpecsConfig struct {
-	BasePath string          `yaml:"base_path"`
-	Active   []string        `yaml:"active"`
-	Tracking TrackingConfig  `yaml:"tracking"`
-}
-
-// TrackingConfig holds task tracking mode settings
-type TrackingConfig struct {
-	Mode string `yaml:"mode"` // "tasks_md" | "github_epic"
 }
 
 // GitHubConfig holds GitHub-related settings
@@ -161,16 +148,6 @@ func (c *Config) ValidatePaths(baseDir string) []ValidationError {
 			errors = append(errors, ValidationError{
 				Field:   fmt.Sprintf("repos[%d].path", i),
 				Message: fmt.Sprintf("path does not exist: %s", repo.Path),
-			})
-		}
-	}
-
-	if c.Specs.BasePath != "" {
-		specsPath := filepath.Join(baseDir, c.Specs.BasePath)
-		if _, err := os.Stat(specsPath); os.IsNotExist(err) {
-			errors = append(errors, ValidationError{
-				Field:   "specs.base_path",
-				Message: fmt.Sprintf("path does not exist: %s", c.Specs.BasePath),
 			})
 		}
 	}

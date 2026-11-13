@@ -49,12 +49,12 @@ func StopWorkflow(ctx context.Context, opts StopWorkflowOptions) (*StopWorkflowR
 	// 2b. Emit workflow_stop trace event
 	trace.WriteEvent(trace.ComponentPrincipal, trace.TypeWorkflowStop, trace.LevelInfo,
 		trace.WithData(map[string]any{
-			"reason":         opts.Reason,
-			"total_issues":   stats.TotalIssues,
-			"closed_issues":  stats.ClosedIssues,
-			"open_issues":    stats.OpenIssues,
-			"worker_failed":  stats.WorkerFailed,
-			"needs_review":   stats.NeedsReview,
+			"reason":        opts.Reason,
+			"total_issues":  stats.TotalIssues,
+			"closed_issues": stats.ClosedIssues,
+			"open_issues":   stats.OpenIssues,
+			"worker_failed": stats.WorkerFailed,
+			"needs_review":  stats.NeedsReview,
 		}))
 
 	// 3. Generate report
@@ -140,9 +140,6 @@ func ValidExitReasons() []string {
 		"config_not_found",
 		"loop_count_error",
 		"github_api_error",
-		// Raised by the Principal itself: task generation in an unattended run
-		// found risky assumptions and nobody is there to confirm them.
-		"risky_assumptions",
 	}
 }
 

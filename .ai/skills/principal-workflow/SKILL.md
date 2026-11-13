@@ -1,6 +1,6 @@
 ---
 name: principal-workflow
-description: Run the AWK principal workflow (awkit kickoff, principal loop, dispatch worker, check results, review/merge PR). Triggers: awkit kickoff, review pr, dispatch worker, autonomous workflow, generate tasks, create task.
+description: Run the AWK principal workflow (awkit kickoff, principal loop, dispatch worker, check results, review/merge PR). Triggers: awkit kickoff, review pr, dispatch worker, autonomous workflow, create task.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -27,9 +27,7 @@ Preflight 已由 `awkit kickoff` 完成，Session 已初始化。
 
 | Task 檔案 | 說明 |
 |-----------|------|
-| `tasks/generate-tasks.md` | 任務生成（Epic 或 tasks.md 模式） |
-| `tasks/create-task.md` | Issue 創建 |
-| `tasks/audit-epic-review.md` | Epic 審計結果審查 |
+| `tasks/create-task.md` | 票券格式，以及如何建立票券（Issue） |
 
 ## 自我檢查
 

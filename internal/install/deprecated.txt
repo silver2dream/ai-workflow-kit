@@ -23,6 +23,14 @@
 .ai/config/execution_trace.schema.json
 .ai/config/failure_patterns.json
 
+# v0.16.x - the spec-driven flow is gone: no tasks.md, no epics, no example spec
+.ai/skills/principal-workflow/tasks/generate-tasks.md
+.ai/skills/principal-workflow/tasks/audit-epic-review.md
+.ai/specs/example/requirements.md
+.ai/specs/example/design.md
+.ai/specs/example/tasks.md
+.ai/specs/example
+
 # v0.16.x - rule examples of stacks the kit no longer ships. A copy a
 # project enabled lives in .ai/rules/ and is not touched.
 .ai/rules/_examples/backend-go.md

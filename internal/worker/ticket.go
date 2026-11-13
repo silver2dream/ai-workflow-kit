@@ -12,13 +12,10 @@ import (
 type TicketMetadata struct {
 	Repo               string // root, backend, frontend, etc.
 	Severity           string // P0, P1, P2
-	Source             string // audit:<finding-id>, tasks.md #<n>
 	Release            bool
-	SpecName           string // Spec name for task mapping
-	TaskLine           int    // Task line number for auto-marking
-	AllowParentChanges bool   // Allow changes outside submodule boundary
-	AllowScriptChanges bool   // Allow changes to the workflow's own files (protectedPaths)
-	AllowSecrets       bool   // Allow secrets in diff
+	AllowParentChanges bool // Allow changes outside submodule boundary
+	AllowScriptChanges bool // Allow changes to the workflow's own files (protectedPaths)
+	AllowSecrets       bool // Allow secrets in diff
 }
 
 // ParseTicketMetadata extracts metadata from issue body
@@ -51,18 +48,6 @@ func ParseTicketMetadata(body string) *TicketMetadata {
 		}
 	}
 
-	// Parse Source
-	sourcePatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?im)\*\*Source\*\*\s*:\s*([^\r\n]+)`),
-		regexp.MustCompile(`(?im)^[-*]\s*Source\s*:\s*([^\r\n]+)`),
-	}
-	for _, pattern := range sourcePatterns {
-		if matches := pattern.FindStringSubmatch(body); len(matches) > 1 {
-			meta.Source = strings.TrimSpace(matches[1])
-			break
-		}
-	}
-
 	// Parse Release: **Release**: true/false
 	releasePatterns := []*regexp.Regexp{
 		regexp.MustCompile(`(?im)\*\*Release\*\*\s*:\s*(true|false)`),
@@ -71,37 +56,6 @@ func ParseTicketMetadata(body string) *TicketMetadata {
 	for _, pattern := range releasePatterns {
 		if matches := pattern.FindStringSubmatch(body); len(matches) > 1 {
 			meta.Release = strings.ToLower(matches[1]) == "true"
-			break
-		}
-	}
-
-	// Parse Spec name: **Spec**: name or - Spec: name
-	specPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?im)\*\*Spec\*\*\s*:\s*([^\r\n]+)`),
-		regexp.MustCompile(`(?im)^[-*]\s*Spec\s*:\s*([^\r\n]+)`),
-	}
-	for _, pattern := range specPatterns {
-		if matches := pattern.FindStringSubmatch(body); len(matches) > 1 {
-			specName := strings.TrimSpace(matches[1])
-			// Validate: no path traversal
-			if !strings.Contains(specName, "/") && !strings.Contains(specName, "\\") && !strings.Contains(specName, "..") {
-				meta.SpecName = specName
-			}
-			break
-		}
-	}
-
-	// Parse Task Line: **Task Line**: 123 or - Task Line: 123
-	taskLinePatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?im)\*\*Task\s+Line\*\*\s*:\s*(\d+)`),
-		regexp.MustCompile(`(?im)^[-*]\s*Task\s+Line\s*:\s*(\d+)`),
-	}
-	for _, pattern := range taskLinePatterns {
-		if matches := pattern.FindStringSubmatch(body); len(matches) > 1 {
-			var line int
-			if _, err := fmt.Sscanf(matches[1], "%d", &line); err == nil {
-				meta.TaskLine = line
-			}
 			break
 		}
 	}
@@ -163,8 +117,8 @@ type VerificationCommands struct {
 // ParseVerificationCommands extracts verification commands from ticket body
 // Format: ## Verification
 //
-//	- backend: `go build ./...` and `go test ./...`
-//	- frontend: `npm run build` and `npm run test`
+//   - backend: `go build ./...` and `go test ./...`
+//   - frontend: `npm run build` and `npm run test`
 func ParseVerificationCommands(body string) []VerificationCommands {
 	var results []VerificationCommands
 

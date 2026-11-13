@@ -16,10 +16,10 @@ import (
 
 // Issue represents a GitHub issue
 type Issue struct {
-	Number int      `json:"number"`
-	Body   string   `json:"body"`
-	Labels []Label  `json:"labels"`
-	State  string   `json:"state"`
+	Number int     `json:"number"`
+	Body   string  `json:"body"`
+	Labels []Label `json:"labels"`
+	State  string  `json:"state"`
 }
 
 // Label represents a GitHub label
@@ -395,7 +395,7 @@ func (c *GitHubClient) UpdateIssueBody(ctx context.Context, issueNumber int, bod
 	defer cancel()
 
 	// Write body to temp file to avoid shell escaping issues with large/complex bodies
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("awkit-epic-body-%d.md", issueNumber))
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("awkit-issue-body-%d.md", issueNumber))
 	if err := os.WriteFile(tmpFile, []byte(body), 0644); err != nil {
 		return fmt.Errorf("failed to write temp body file: %w", err)
 	}

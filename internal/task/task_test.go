@@ -1,154 +1,214 @@
 package task
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 )
 
-func TestHasIssueRef(t *testing.T) {
-	tests := []struct {
-		line  string
-		num   int
-		found bool
-	}{
-		{"- [ ] Task <!-- Issue #123 -->", 123, true},
-		{"- [ ] Task <!-- Issue #456 -->", 456, true},
-		{"- [ ] Task without ref", 0, false},
-		{"- [x] Completed <!-- Issue #789 -->", 789, true},
-	}
+const validBody = `## Summary
+Add a health endpoint.
 
-	for _, tt := range tests {
-		t.Run(tt.line, func(t *testing.T) {
-			num, found := HasIssueRef(tt.line)
-			if found != tt.found {
-				t.Errorf("HasIssueRef(%q) found = %v, want %v", tt.line, found, tt.found)
-			}
-			if found && num != tt.num {
-				t.Errorf("HasIssueRef(%q) num = %d, want %d", tt.line, num, tt.num)
-			}
-		})
+## Scope
+- backend/health
+
+## Acceptance Criteria
+- [ ] GET /healthz answers 200
+
+## Testing Requirements
+- [ ] a test covers the handler
+
+## Metadata
+- **Repo**: backend
+`
+
+func writeBody(t *testing.T, dir, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, "ticket.md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeConfig(t *testing.T, dir, content string) {
+	t.Helper()
+	path := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestExtractTaskText(t *testing.T) {
-	tests := []struct {
-		line string
-		want string
-	}{
-		{"- [ ] Simple task", "Simple task"},
-		{"- [x] Completed task", "Completed task"},
-		{"- [ ] Task <!-- Issue #123 -->", "Task"},
-		{"  - [ ] Indented task", "Indented task"},
+// fakeGH replaces the gh CLI for one test and records what it was asked.
+func fakeGH(t *testing.T, output string, err error) *[][]string {
+	t.Helper()
+	var calls [][]string
+	orig := runGH
+	runGH = func(ctx context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, args)
+		return []byte(output), err
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.line, func(t *testing.T) {
-			got := ExtractTaskText(tt.line)
-			got = strings.TrimSpace(got)
-			if got != tt.want {
-				t.Errorf("ExtractTaskText(%q) = %q, want %q", tt.line, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestDefaultIssueTitle(t *testing.T) {
-	tests := []struct {
-		text string
-		want string
-	}{
-		{"implement feature X", "[feat] implement feature x"},
-		{"fix bug in Y", "[feat] fix bug in y"},
-		{"add tests for Z", "[feat] add tests for z"},
-		{"update documentation", "[feat] update documentation"},
-		{"refactor module A", "[feat] refactor module a"},
-		{"some other task", "[feat] some other task"},
-		{"[fix] already prefixed", "[fix] already prefixed"},
-		{"", "[feat] implement task"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.text, func(t *testing.T) {
-			got := DefaultIssueTitle(tt.text)
-			if got != tt.want {
-				t.Errorf("DefaultIssueTitle(%q) = %q, want %q", tt.text, got, tt.want)
-			}
-		})
-	}
+	t.Cleanup(func() { runGH = orig })
+	return &calls
 }
 
 func TestValidateBody(t *testing.T) {
+	if err := ValidateBody(validBody); err != nil {
+		t.Errorf("a complete ticket was refused: %v", err)
+	}
+
 	tests := []struct {
-		name    string
-		body    string
-		wantErr bool
+		name, body, wantInError string
 	}{
-		{
-			name: "valid body with all sections",
-			body: `## Summary
-Test summary
-## Scope
-Test scope
-## Acceptance Criteria
-- [ ] Test checkbox
-## Testing Requirements
-Test requirements
-## Metadata
-Test metadata`,
-			wantErr: false,
-		},
-		{
-			name:    "empty body",
-			body:    "",
-			wantErr: true,
-		},
-		{
-			name: "missing sections",
-			body: `## Summary
-Test`,
-			wantErr: true,
-		},
+		{"empty", "", "Summary, Scope, Acceptance Criteria, Testing Requirements, Metadata"},
+		{"one section missing", strings.Replace(validBody, "## Scope\n- backend/health\n\n", "", 1), "missing required sections: Scope"},
+		{"several missing", "## Summary\ntext\n\n## Scope\n- x\n", "Acceptance Criteria, Testing Requirements, Metadata"},
+		{"no checkbox", strings.NewReplacer("- [ ] ", "- ").Replace(validBody), "missing acceptance checkboxes"},
+		{"only ticked checkboxes", strings.NewReplacer("- [ ] ", "- [x] ").Replace(validBody), "missing acceptance checkboxes"},
+		{"a heading of the wrong level is not the section", strings.Replace(validBody, "## Scope", "### Scope", 1), "missing required sections: Scope"},
+		{"a longer heading is not the section", strings.Replace(validBody, "## Scope", "## Scope of work", 1), "missing required sections: Scope"},
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateBody(tt.body)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateBody() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		err := ValidateBody(tt.body)
+		if err == nil {
+			t.Errorf("%s: the body was accepted", tt.name)
+			continue
+		}
+		if !strings.Contains(err.Error(), tt.wantInError) {
+			t.Errorf("%s: error = %q, want it to mention %q", tt.name, err, tt.wantInError)
+		}
+	}
+
+	// Heading case does not matter.
+	if err := ValidateBody(strings.Replace(validBody, "## Summary", "## SUMMARY", 1)); err != nil {
+		t.Errorf("a heading in another case was refused: %v", err)
 	}
 }
 
-func TestEnsureAWKMetadata(t *testing.T) {
-	body := "## Summary\nTest"
-	result := EnsureAWKMetadata(body, "test-spec", 5)
+func TestCreateTask(t *testing.T) {
+	dir := t.TempDir()
+	body := writeBody(t, dir, validBody)
+	calls := fakeGH(t, "https://github.com/acme/game/issues/42\n", nil)
 
-	if !strings.Contains(result, "**Spec**: test-spec") {
-		t.Error("should contain Spec")
-	}
-	if !strings.Contains(result, "**Task Line**: 5") {
-		t.Error("should contain Task Line")
-	}
-}
+	result, err := CreateTask(context.Background(), CreateTaskOptions{
+		Title: "  [feat] add a health endpoint  ", BodyFile: body, StateRoot: dir,
+	})
 
-func TestAppendIssueRef(t *testing.T) {
-	tmpDir := t.TempDir()
-	tasksPath := filepath.Join(tmpDir, "tasks.md")
-
-	content := "# Tasks\n- [ ] First task\n- [ ] Second task\n"
-	os.WriteFile(tasksPath, []byte(content), 0644)
-
-	err := AppendIssueRef(tasksPath, 2, 123)
 	if err != nil {
-		t.Fatalf("AppendIssueRef() error = %v", err)
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if result.IssueNumber != 42 || result.IssueURL != "https://github.com/acme/game/issues/42" {
+		t.Errorf("result = %+v, want issue 42 with its URL", result)
+	}
+	want := []string{"issue", "create", "--title", "[feat] add a health endpoint", "--body-file", body, "--label", "ai-task"}
+	if len(*calls) != 1 || !reflect.DeepEqual((*calls)[0], want) {
+		t.Errorf("gh was called with %v, want once with %v", *calls, want)
+	}
+	// The ticket is created from the body as written.
+	if got, _ := os.ReadFile(body); string(got) != validBody {
+		t.Error("the body file was changed")
+	}
+}
+
+// The label and the repository come from the project's config; the repository
+// can be overridden for one ticket.
+func TestCreateTask_LabelAndRepoFromConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "github:\n  repo: acme/game\n  labels:\n    task: work-item\n")
+	body := writeBody(t, dir, validBody)
+
+	calls := fakeGH(t, "https://github.com/acme/game/issues/7\n", nil)
+	if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	want := []string{"issue", "create", "--title", "t", "--body-file", body, "--label", "work-item", "--repo", "acme/game"}
+	if !reflect.DeepEqual((*calls)[0], want) {
+		t.Errorf("gh was called with %v, want %v", (*calls)[0], want)
 	}
 
-	updated, _ := os.ReadFile(tasksPath)
-	if !strings.Contains(string(updated), "<!-- Issue #123 -->") {
-		t.Error("should contain issue reference")
+	calls = fakeGH(t, "https://github.com/acme/other/issues/8\n", nil)
+	if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir, Repo: "acme/other"}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if got := (*calls)[0]; got[len(got)-1] != "acme/other" {
+		t.Errorf("gh was called with %v, want the overriding repository", got)
+	}
+}
+
+func TestCreateTask_DryRunCreatesNothing(t *testing.T) {
+	dir := t.TempDir()
+	body := writeBody(t, dir, validBody)
+	calls := fakeGH(t, "", nil)
+
+	result, err := CreateTask(context.Background(), CreateTaskOptions{Title: "[feat] x", BodyFile: body, StateRoot: dir, DryRun: true})
+
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("a dry run called gh: %v", *calls)
+	}
+	if !strings.HasPrefix(result.DryRunCmd, "gh issue create --title [feat] x --body-file ") || !strings.HasSuffix(result.DryRunCmd, "--label ai-task") {
+		t.Errorf("DryRunCmd = %q", result.DryRunCmd)
+	}
+}
+
+// Nothing is created from a ticket the Worker and the review could not act on.
+func TestCreateTask_RefusesBeforeCallingGitHub(t *testing.T) {
+	dir := t.TempDir()
+	good := writeBody(t, dir, validBody)
+	bad := filepath.Join(dir, "bad.md")
+	if err := os.WriteFile(bad, []byte("## Summary\nonly this\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, dir, "github: [this is not a mapping\n")
+
+	tests := []struct {
+		name        string
+		opts        CreateTaskOptions
+		wantInError string
+	}{
+		{"no title", CreateTaskOptions{BodyFile: good, StateRoot: t.TempDir()}, "title is required"},
+		{"blank title", CreateTaskOptions{Title: "   ", BodyFile: good, StateRoot: t.TempDir()}, "title is required"},
+		{"no body file", CreateTaskOptions{Title: "t", StateRoot: t.TempDir()}, "body file is required"},
+		{"body file missing", CreateTaskOptions{Title: "t", BodyFile: filepath.Join(dir, "absent.md"), StateRoot: t.TempDir()}, "body file not found"},
+		{"body incomplete", CreateTaskOptions{Title: "t", BodyFile: bad, StateRoot: t.TempDir()}, "missing required sections"},
+		{"config unreadable", CreateTaskOptions{Title: "t", BodyFile: good, StateRoot: dir}, "failed to load config"},
+	}
+	for _, tt := range tests {
+		calls := fakeGH(t, "https://github.com/acme/game/issues/1\n", nil)
+		_, err := CreateTask(context.Background(), tt.opts)
+		if err == nil || !strings.Contains(err.Error(), tt.wantInError) {
+			t.Errorf("%s: error = %v, want it to mention %q", tt.name, err, tt.wantInError)
+		}
+		if len(*calls) != 0 {
+			t.Errorf("%s: gh was called although the ticket was refused", tt.name)
+		}
+	}
+}
+
+func TestCreateTask_GitHubFailure(t *testing.T) {
+	dir := t.TempDir()
+	body := writeBody(t, dir, validBody)
+
+	fakeGH(t, "HTTP 403: resource not accessible", errors.New("exit status 1"))
+	if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir}); err == nil || !strings.Contains(err.Error(), "HTTP 403") {
+		t.Errorf("error = %v, want gh's own message in it", err)
+	}
+
+	// gh succeeded but printed nothing that names the issue.
+	fakeGH(t, "created\n", nil)
+	if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir}); err == nil || !strings.Contains(err.Error(), "failed to parse issue number") {
+		t.Errorf("error = %v, want a complaint about the missing issue number", err)
 	}
 }
 
@@ -156,35 +216,35 @@ func TestParseIssueOutput(t *testing.T) {
 	tests := []struct {
 		output  string
 		wantNum int
+		wantURL string
 		wantErr bool
 	}{
-		{
-			output:  "https://github.com/owner/repo/issues/123",
-			wantNum: 123,
-			wantErr: false,
-		},
-		{
-			output:  "Created issue #456\nhttps://github.com/owner/repo/issues/456",
-			wantNum: 456,
-			wantErr: false,
-		},
-		{
-			output:  "no issue number here",
-			wantNum: 0,
-			wantErr: true,
-		},
+		{"https://github.com/owner/repo/issues/123\n", 123, "https://github.com/owner/repo/issues/123", false},
+		{"Creating issue in owner/repo\n\nhttps://github.com/owner/repo/issues/7\n", 7, "https://github.com/owner/repo/issues/7", false},
+		{"/issues/9", 9, "", false},
+		{"no issue here", 0, "", true},
+		{"", 0, "", true},
+		{"https://github.com/owner/repo/pull/5", 0, "", true},
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.output, func(t *testing.T) {
-			num, _, err := parseIssueOutput(tt.output)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseIssueOutput() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && num != tt.wantNum {
-				t.Errorf("parseIssueOutput() num = %d, want %d", num, tt.wantNum)
-			}
-		})
+		num, url, err := parseIssueOutput(tt.output)
+		if (err != nil) != tt.wantErr || num != tt.wantNum || url != tt.wantURL {
+			t.Errorf("parseIssueOutput(%q) = %d, %q, %v; want %d, %q, error %v", tt.output, num, url, err, tt.wantNum, tt.wantURL, tt.wantErr)
+		}
+	}
+}
+
+func TestResolveGHParams(t *testing.T) {
+	cfg := &analyzer.Config{}
+	if label, repo := resolveGHParams(CreateTaskOptions{}, cfg); label != "ai-task" || repo != "" {
+		t.Errorf("defaults = %q, %q; want the default label and no repository", label, repo)
+	}
+	cfg.GitHub.Labels.Task = "work-item"
+	cfg.GitHub.Repo = "acme/game"
+	if label, repo := resolveGHParams(CreateTaskOptions{}, cfg); label != "work-item" || repo != "acme/game" {
+		t.Errorf("from config = %q, %q", label, repo)
+	}
+	if _, repo := resolveGHParams(CreateTaskOptions{Repo: "acme/other"}, cfg); repo != "acme/other" {
+		t.Errorf("repo = %q, want the one given for this ticket", repo)
 	}
 }

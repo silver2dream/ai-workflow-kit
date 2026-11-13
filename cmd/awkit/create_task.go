@@ -10,29 +10,26 @@ import (
 )
 
 func usageCreateTask() {
-	fmt.Fprint(os.Stderr, `Create GitHub Issue from tasks.md entry
+	fmt.Fprint(os.Stderr, `Create a ticket: a GitHub issue the workflow will pick up
 
 Usage:
-  awkit create-task --spec <name> --task-line <N> --body-file <path>
+  awkit create-task --title <title> --body-file <path>
 
 Required:
-  --spec        Spec name (e.g., "user-auth")
-  --task-line   Line number in tasks.md (1-based)
-  --body-file   Path to ticket body markdown file
+  --title       Issue title, e.g. "[feat] add login"
+  --body-file   Path to the ticket body (markdown). It must have the sections
+                Summary, Scope, Acceptance Criteria, Testing Requirements and
+                Metadata, and at least one unchecked checkbox.
 
 Options:
-  --title       Override issue title (auto-generated if not specified)
   --repo        GitHub repo (owner/repo), uses config if not specified
   --state-root  Override state root (default: git root)
   --dry-run     Show gh command without executing
-  --epic-issue  Tracking issue number (epic mode)
-  --task-text   Task text from epic body (epic mode)
   --help        Show this help
 
 Examples:
-  awkit create-task --spec user-auth --task-line 5 --body-file .ai/temp/create-task-body.md
-  awkit create-task --spec user-auth --task-line 5 --body-file body.md --title "[feat] add login"
-  awkit create-task --spec user-auth --task-line 5 --body-file body.md --dry-run
+  awkit create-task --title "[feat] add login" --body-file .ai/temp/ticket.md
+  awkit create-task --title "[feat] add login" --body-file ticket.md --dry-run
 `)
 }
 
@@ -41,15 +38,11 @@ func cmdCreateTask(args []string) int {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = usageCreateTask
 
-	spec := fs.String("spec", "", "")
-	taskLine := fs.Int("task-line", 0, "")
 	bodyFile := fs.String("body-file", "", "")
 	title := fs.String("title", "", "")
 	repo := fs.String("repo", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	dryRun := fs.Bool("dry-run", false, "")
-	epicIssue := fs.Int("epic-issue", 0, "")
-	taskText := fs.String("task-text", "", "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
@@ -63,13 +56,8 @@ func cmdCreateTask(args []string) int {
 	}
 
 	// Validate required arguments
-	if *spec == "" {
-		errorf("--spec is required\n")
-		usageCreateTask()
-		return 2
-	}
-	if *taskLine <= 0 {
-		errorf("--task-line is required and must be positive\n")
+	if *title == "" {
+		errorf("--title is required\n")
 		usageCreateTask()
 		return 2
 	}
@@ -90,31 +78,20 @@ func cmdCreateTask(args []string) int {
 		}
 	}
 
-	// Execute create task
 	result, err := task.CreateTask(context.Background(), task.CreateTaskOptions{
-		SpecName:  *spec,
-		TaskLine:  *taskLine,
-		BodyFile:  *bodyFile,
 		Title:     *title,
+		BodyFile:  *bodyFile,
 		Repo:      *repo,
 		StateRoot: root,
 		DryRun:    *dryRun,
-		EpicIssue: *epicIssue,
-		TaskText:  *taskText,
 	})
 	if err != nil {
 		errorf("%v\n", err)
 		return 1
 	}
 
-	// Output result
 	if *dryRun {
 		fmt.Printf("DRY_RUN: %s\n", result.DryRunCmd)
-		return 0
-	}
-
-	if result.Skipped {
-		fmt.Printf("Skipped: Issue #%d already exists\n", result.IssueNumber)
 		return 0
 	}
 

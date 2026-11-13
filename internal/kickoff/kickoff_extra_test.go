@@ -152,25 +152,11 @@ func TestConfig_Validate_MultipleErrors(t *testing.T) {
 	}
 }
 
-// TestConfig_Validate_EmptySpecsPath confirms an empty specs.base_path
-// is not itself a validation error (it is optional).
-func TestConfig_Validate_EmptySpecsPath(t *testing.T) {
-	cfg := &Config{
-		Project: ProjectConfig{Name: "proj", Type: "monorepo"},
-		Git:     GitConfig{IntegrationBranch: "develop"},
-		Specs:   SpecsConfig{BasePath: ""},
-	}
-	errs := cfg.Validate()
-	if len(errs) != 0 {
-		t.Errorf("empty specs.base_path should not cause validation error, got: %v", errs)
-	}
-}
-
 // TestConfig_ValidatePaths_EmptyRepos confirms ValidatePaths with no repos
-// and no specs path returns zero errors.
+// returns zero errors.
 func TestConfig_ValidatePaths_EmptyRepos(t *testing.T) {
 	tmpDir := t.TempDir()
-	cfg := &Config{Repos: nil, Specs: SpecsConfig{BasePath: ""}}
+	cfg := &Config{Repos: nil}
 	errs := cfg.ValidatePaths(tmpDir)
 	if len(errs) != 0 {
 		t.Errorf("empty repos should produce no path errors, got: %v", errs)

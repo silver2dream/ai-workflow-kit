@@ -22,7 +22,6 @@ func TestBuildWorkerPrompt_Minimal(t *testing.T) {
 	}
 
 	for _, section := range []string{
-		"DESIGN CONTEXT",
 		"CODEBASE MAP",
 		"PREVIOUS REVIEW FEEDBACK",
 		"FILE-LEVEL REVIEW COMMENTS",
@@ -39,7 +38,6 @@ func TestBuildWorkerPrompt_OptionalSectionsInOrder(t *testing.T) {
 		WorkDirInstruction: "IMPORTANT: You are working in a MONOREPO (directory type).\n",
 		Ticket:             "# Task",
 		IssueID:            7,
-		DesignContent:      "design-doc-text",
 		GraphSection:       "graph-text\n",
 		ReviewComments:     "review-feedback-text",
 		PRReviewComments:   "- **a.go:1** → file-comment-text\n",
@@ -51,8 +49,6 @@ func TestBuildWorkerPrompt_OptionalSectionsInOrder(t *testing.T) {
 	order := []string{
 		"IMPORTANT: You are working in a MONOREPO",
 		"FORBIDDEN OPERATIONS",
-		"DESIGN CONTEXT",
-		"design-doc-text",
 		"CODEBASE MAP",
 		"graph-text",
 		"Ticket:\n# Task",

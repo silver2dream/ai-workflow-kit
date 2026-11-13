@@ -83,36 +83,6 @@
         "pr_body_template": { "type": "string" }
       }
     },
-    "specs": {
-      "type": "object",
-      "properties": {
-        "base_path": { "type": "string", "default": ".ai/specs" },
-        "files": {
-          "type": "object",
-          "properties": {
-            "requirements": { "type": "string" },
-            "design": { "type": "string" },
-            "tasks": { "type": "string" }
-          }
-        },
-        "auto_generate_tasks": { "type": "boolean" },
-        "active": { "type": "array", "items": { "type": "string" } }
-      }
-    },
-    "tasks": {
-      "type": "object",
-      "properties": {
-        "format": {
-          "type": "object",
-          "properties": {
-            "uncompleted": { "type": "string" },
-            "completed": { "type": "string" },
-            "optional": { "type": "string" }
-          }
-        },
-        "source_priority": { "type": "array", "items": { "type": "string" } }
-      }
-    },
     "audit": {
       "type": "object",
       "properties": {

@@ -70,12 +70,6 @@ If you see a `PREVIOUS REVIEW FEEDBACK` section in your prompt:
   - Suggested Improvements (what to fix)
   - CI failures (if mentioned)
 
-### 6. Design document context
-If you see a `DESIGN CONTEXT` section in your prompt:
-- It contains the relevant design document (design.md) for the current task
-- Ensure your implementation aligns with the design specifications
-- If the design and ticket conflict, follow the ticket (it may be a deliberate deviation)
-
 ---
 
 ## Common Rationalizations (READ BEFORE SHORTCUTTING)
@@ -90,7 +84,7 @@ When you feel tempted to skip a step, the excuse is almost always in this table.
 | "The failing test is probably wrong, I'll skip it" | A failing test is a signal. Either fix the test (and explain why in the PR), or fix the code. Never silently skip. |
 | "Existing code is messy, let me clean it up while I'm here" | Out-of-scope refactors balloon the diff and break unrelated things. Stay within ticket scope; file a follow-up issue if cleanup is needed. |
 | "I'll just stub this part for now" | Half-finished implementations get merged and forgotten. Either complete the slice or split into a smaller ticket. |
-| "The Acceptance Criterion is vague, I'll guess" | Don't guess. Re-read design.md; if still unclear, document your interpretation in `plan.md` so reviewer can correct or accept it. |
+| "The Acceptance Criterion is vague, I'll guess" | Don't guess. Re-read the ticket and the documents it points to; if still unclear, document your interpretation in `plan.md` so reviewer can correct or accept it. |
 | "This is what existing code does, I'll mirror it even if it's wrong" | Existing bugs aren't a license to repeat them. If you spot a real issue, note it in `plan.md` rather than propagating. |
 | "Reviewer feedback is just nitpicking, I'll push back" | Critical/Important feedback blocks merge. Read severity prefixes (see "Responding to severity-tagged feedback" below) and address everything that isn't Nit/Optional/FYI. |
 

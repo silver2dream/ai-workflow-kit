@@ -13,33 +13,33 @@ import (
 // MockGitHubClient is a mock implementation of GitHubClientInterface for testing
 type MockGitHubClient struct {
 	// Mock data for responses
-	IssuesByLabel       map[string][]Issue
-	IssuesByLabelError  map[string]error // Per-label errors for ListIssuesByLabel
-	PendingIssues       []Issue
-	PendingIssuesError  error // Specific error for ListPendingIssues
-	OpenIssueCount      int
-	PRMerged            map[int]bool
-	PRMergedError       map[int]error
-	PRMergeableStatus   map[int]string // PR number -> MERGEABLE/CONFLICTING/UNKNOWN
-	PRMergeableError    map[int]error
-	PRByBranch          map[string]int // branch name -> PR number
-	ClosedIssues        []int
-	AddedLabels         map[int][]string
-	RemovedLabels       map[int][]string
-	ListIssuesError     error
-	CountError          error
-	AddLabelError       error
-	RemoveLabelError    error
-	CloseIssueError     error
-	IssueBodies         map[int]string // issue number -> body
-	GetIssueBodyError   error
+	IssuesByLabel        map[string][]Issue
+	IssuesByLabelError   map[string]error // Per-label errors for ListIssuesByLabel
+	PendingIssues        []Issue
+	PendingIssuesError   error // Specific error for ListPendingIssues
+	OpenIssueCount       int
+	PRMerged             map[int]bool
+	PRMergedError        map[int]error
+	PRMergeableStatus    map[int]string // PR number -> MERGEABLE/CONFLICTING/UNKNOWN
+	PRMergeableError     map[int]error
+	PRByBranch           map[string]int // branch name -> PR number
+	ClosedIssues         []int
+	AddedLabels          map[int][]string
+	RemovedLabels        map[int][]string
+	ListIssuesError      error
+	CountError           error
+	AddLabelError        error
+	RemoveLabelError     error
+	CloseIssueError      error
+	IssueBodies          map[int]string // issue number -> body
+	GetIssueBodyError    error
 	UpdateIssueBodyError error
-	UpdatedBodies       map[int]string // tracks UpdateIssueBody calls
-	ReopenedIssues      []int          // tracks ReopenIssue calls
-	MergedBranches      map[string]bool // head branch -> has a merged PR
-	IssueStates         map[int]string  // issue number -> OPEN/CLOSED
-	MergedBranchesError error
-	IssueStatesError    error
+	UpdatedBodies        map[int]string  // tracks UpdateIssueBody calls
+	ReopenedIssues       []int           // tracks ReopenIssue calls
+	MergedBranches       map[string]bool // head branch -> has a merged PR
+	IssueStates          map[int]string  // issue number -> OPEN/CLOSED
+	MergedBranchesError  error
+	IssueStatesError     error
 }
 
 func NewMockGitHubClient() *MockGitHubClient {
@@ -678,77 +678,6 @@ func TestDecide_NoActionableTasks(t *testing.T) {
 	}
 	if decision.ExitReason != ReasonNoActionableTasks {
 		t.Errorf("ExitReason = %q, want %q", decision.ExitReason, ReasonNoActionableTasks)
-	}
-}
-
-func TestDecide_GenerateTasks(t *testing.T) {
-	tmpDir := t.TempDir()
-	mockClient := NewMockGitHubClient()
-	config := &Config{
-		GitHub: GitHubConfig{
-			Labels: DefaultLabels(),
-		},
-		Specs: SpecsConfig{
-			BasePath: ".ai/specs",
-			Active:   []string{"my-feature"},
-		},
-	}
-
-	// Create design.md but no tasks.md
-	specDir := filepath.Join(tmpDir, ".ai", "specs", "my-feature")
-	os.MkdirAll(specDir, 0755)
-	os.WriteFile(filepath.Join(specDir, "design.md"), []byte("# Design"), 0644)
-
-	a := newTestAnalyzer(tmpDir, config, mockClient)
-	decision, err := a.Decide(context.Background())
-	if err != nil {
-		t.Fatalf("Decide() error = %v", err)
-	}
-
-	if decision.NextAction != ActionGenerateTasks {
-		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionGenerateTasks)
-	}
-	if decision.SpecName != "my-feature" {
-		t.Errorf("SpecName = %q, want %q", decision.SpecName, "my-feature")
-	}
-}
-
-func TestDecide_CreateTask(t *testing.T) {
-	tmpDir := t.TempDir()
-	mockClient := NewMockGitHubClient()
-	config := &Config{
-		GitHub: GitHubConfig{
-			Labels: DefaultLabels(),
-		},
-		Specs: SpecsConfig{
-			BasePath: ".ai/specs",
-			Active:   []string{"my-feature"},
-		},
-	}
-
-	// Create tasks.md with uncompleted task
-	specDir := filepath.Join(tmpDir, ".ai", "specs", "my-feature")
-	os.MkdirAll(specDir, 0755)
-	tasksContent := `# Tasks
-- [ ] First task
-- [x] Completed task <!-- Issue #1 -->
-`
-	os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte(tasksContent), 0644)
-
-	a := newTestAnalyzer(tmpDir, config, mockClient)
-	decision, err := a.Decide(context.Background())
-	if err != nil {
-		t.Fatalf("Decide() error = %v", err)
-	}
-
-	if decision.NextAction != ActionCreateTask {
-		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionCreateTask)
-	}
-	if decision.SpecName != "my-feature" {
-		t.Errorf("SpecName = %q, want %q", decision.SpecName, "my-feature")
-	}
-	if decision.TaskLine != 2 { // Line 2 is the uncompleted task
-		t.Errorf("TaskLine = %d, want 2", decision.TaskLine)
 	}
 }
 

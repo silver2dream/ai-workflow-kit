@@ -204,50 +204,6 @@ func TestReviewContext_ToJSON(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// isEpicMode
-// ---------------------------------------------------------------------------
-
-func TestIsEpicMode_NoConfig(t *testing.T) {
-	dir := t.TempDir()
-	// No config file → returns false (safe default)
-	if isEpicMode(dir) {
-		t.Error("isEpicMode with no config should return false")
-	}
-}
-
-func TestIsEpicMode_TasksMdMode(t *testing.T) {
-	dir := t.TempDir()
-	cfgDir := filepath.Join(dir, ".ai", "config")
-	os.MkdirAll(cfgDir, 0755)
-
-	yaml := `specs:
-  tracking:
-    mode: tasks_md
-`
-	os.WriteFile(filepath.Join(cfgDir, "workflow.yaml"), []byte(yaml), 0644)
-
-	if isEpicMode(dir) {
-		t.Error("isEpicMode with tasks_md should return false")
-	}
-}
-
-func TestIsEpicMode_GithubEpicMode(t *testing.T) {
-	dir := t.TempDir()
-	cfgDir := filepath.Join(dir, ".ai", "config")
-	os.MkdirAll(cfgDir, 0755)
-
-	yaml := `specs:
-  tracking:
-    mode: github_epic
-`
-	os.WriteFile(filepath.Join(cfgDir, "workflow.yaml"), []byte(yaml), 0644)
-
-	if !isEpicMode(dir) {
-		t.Error("isEpicMode with github_epic mode should return true")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // cleanupWorktree (no actual git worktree, just tests the "not exists" path)
 // ---------------------------------------------------------------------------
 

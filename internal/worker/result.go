@@ -26,8 +26,6 @@ type IssueResult struct {
 	RecoveryCommand   string        `json:"recovery_command,omitempty"`
 	TimestampUTC      string        `json:"timestamp_utc"`
 	PRURL             string        `json:"pr_url,omitempty"`
-	SpecName          string        `json:"spec_name,omitempty"`
-	TaskLine          string        `json:"task_line,omitempty"`
 	SummaryFile       string        `json:"summary_file,omitempty"`
 	SubmoduleStatus   string        `json:"submodule_status,omitempty"`
 	ErrorMessage      string        `json:"error,omitempty"`
@@ -72,19 +70,19 @@ type ResultMetrics struct {
 
 // ExecutionTrace represents the trace JSON file structure (.ai/state/traces/issue-{N}.json)
 type ExecutionTrace struct {
-	TraceID    string      `json:"trace_id"`
-	IssueID    string      `json:"issue_id"`
-	Repo       string      `json:"repo"`
-	Branch     string      `json:"branch"`
-	BaseBranch string      `json:"base_branch"`
-	Status     string      `json:"status"` // running, success, failed
-	StartedAt  string      `json:"started_at"`
-	EndedAt    string      `json:"ended_at,omitempty"`
-	Duration   int         `json:"duration_seconds"`
-	Error      string      `json:"error,omitempty"`
-	WorkerPID  int         `json:"worker_pid,omitempty"`
-	WorkerStart int64      `json:"worker_start_time,omitempty"`
-	Steps      []TraceStep `json:"steps"`
+	TraceID     string      `json:"trace_id"`
+	IssueID     string      `json:"issue_id"`
+	Repo        string      `json:"repo"`
+	Branch      string      `json:"branch"`
+	BaseBranch  string      `json:"base_branch"`
+	Status      string      `json:"status"` // running, success, failed
+	StartedAt   string      `json:"started_at"`
+	EndedAt     string      `json:"ended_at,omitempty"`
+	Duration    int         `json:"duration_seconds"`
+	Error       string      `json:"error,omitempty"`
+	WorkerPID   int         `json:"worker_pid,omitempty"`
+	WorkerStart int64       `json:"worker_start_time,omitempty"`
+	Steps       []TraceStep `json:"steps"`
 }
 
 // TraceStep represents a single step in the execution trace

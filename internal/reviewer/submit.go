@@ -2,7 +2,6 @@ package reviewer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,10 +15,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
-	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
-
-	"gopkg.in/yaml.v3"
 )
 
 // HookFirer is the interface for firing lifecycle hooks.
@@ -35,15 +31,15 @@ type SubmitReviewOptions struct {
 	CIStatus       string // "passed" | "failed"
 	ReviewBody     string
 	StateRoot      string
-	WorktreePath   string        // Path to worktree for test execution
-	TestCommand    string        // Command to run tests
-	Language       string        // Programming language for test name validation
-	Ticket         string        // Issue body with acceptance criteria
-	ScoreThreshold int           // Minimum score to approve (default: 7, from config)
-	MergeStrategy  string        // Merge strategy: "squash" | "merge" | "rebase" (default: "squash", from config)
+	WorktreePath   string // Path to worktree for test execution
+	TestCommand    string // Command to run tests
+	Language       string // Programming language for test name validation
+	Ticket         string // Issue body with acceptance criteria
+	ScoreThreshold int    // Minimum score to approve (default: 7, from config)
+	MergeStrategy  string // Merge strategy: "squash" | "merge" | "rebase" (default: "squash", from config)
 	GHTimeout      time.Duration
 	TestTimeout    time.Duration
-	HookRunner     HookFirer     // nil = no hooks
+	HookRunner     HookFirer // nil = no hooks
 	// Structured, when non-nil, is the agent-submitted structured review:
 	// severity counts and criteria verifications come straight from it
 	// (no prose parsing), and ReviewBody carries its rendered markdown.
@@ -361,11 +357,6 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			}
 			if err := removeLabel(ctx, opts.IssueNumber, "pr-ready", opts.GHTimeout); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to remove pr-ready label from issue #%d: %v\n", opts.IssueNumber, err)
-			}
-			if !isEpicMode(opts.StateRoot) {
-				updateTasksMd(ctx, opts.StateRoot, opts.IssueNumber)
-			} else {
-				fmt.Fprintf(os.Stderr, "[REVIEW] epic mode: skipping tasks.md update (GitHub handles checkbox state)\n")
 			}
 			if err := cleanupWorktree(opts.StateRoot, opts.IssueNumber); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: %v\n", err)
@@ -698,73 +689,6 @@ func getMergeStateStatus(ctx context.Context, prNumber int, timeout time.Duratio
 		return "unknown"
 	}
 	return strings.TrimSpace(string(output))
-}
-
-func updateTasksMd(ctx context.Context, stateRoot string, issueNumber int) {
-	resultFile := filepath.Join(stateRoot, ".ai", "results", fmt.Sprintf("issue-%d.json", issueNumber))
-	data, err := os.ReadFile(resultFile)
-	if err != nil {
-		return
-	}
-
-	var result struct {
-		SpecName string `json:"spec_name"`
-		TaskLine int    `json:"task_line"`
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return
-	}
-
-	if result.SpecName == "" || result.TaskLine <= 0 {
-		return
-	}
-
-	// Find tasks.md path via proper YAML parsing
-	configFile := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
-	specBasePath := ".ai/specs"
-	if configData, err := os.ReadFile(configFile); err == nil {
-		var cfg struct {
-			Specs struct {
-				BasePath string `yaml:"base_path"`
-			} `yaml:"specs"`
-		}
-		if err := yaml.Unmarshal(configData, &cfg); err == nil && cfg.Specs.BasePath != "" {
-			specBasePath = cfg.Specs.BasePath
-		}
-	}
-
-	specNameClean := strings.ReplaceAll(result.SpecName, " ", "")
-	tasksFile := filepath.Join(stateRoot, specBasePath, specNameClean, "tasks.md")
-
-	content, err := os.ReadFile(tasksFile)
-	if err != nil {
-		return
-	}
-
-	lines := strings.Split(string(content), "\n")
-	if result.TaskLine <= len(lines) {
-		lines[result.TaskLine-1] = strings.Replace(lines[result.TaskLine-1], "[ ]", "[x]", 1)
-		if err := os.WriteFile(tasksFile, []byte(strings.Join(lines, "\n")), 0644); err != nil {
-			return
-		}
-
-		// Commit tasks.md update (best-effort)
-		if err := task.CommitTasksUpdate(tasksFile, issueNumber, "complete"); err != nil {
-			// Log warning but continue
-			fmt.Fprintf(os.Stderr, "warning: failed to commit tasks.md update: %v\n", err)
-		}
-	}
-}
-
-// isEpicMode checks if the project uses GitHub Epic tracking mode.
-// Returns false on any error (safe default to tasks_md behavior).
-func isEpicMode(stateRoot string) bool {
-	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
-	cfg, err := analyzer.LoadConfig(configPath)
-	if err != nil {
-		return false
-	}
-	return cfg.IsEpicMode()
 }
 
 func cleanupWorktree(stateRoot string, issueNumber int) error {

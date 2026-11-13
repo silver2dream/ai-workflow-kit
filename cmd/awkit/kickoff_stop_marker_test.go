@@ -15,12 +15,12 @@ func TestStopMarkerReason(t *testing.T) {
 	}
 
 	// The shape `awkit stop-workflow` writes (internal/workflow.writeStopMarker).
-	content := "STOP requested by stop-workflow\nReason: risky_assumptions\n"
+	content := "STOP requested by stop-workflow\nReason: needs_human_review\n"
 	if err := os.WriteFile(marker, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if got := stopMarkerReason(marker); got != "risky_assumptions" {
-		t.Errorf("reason = %q, want risky_assumptions", got)
+	if got := stopMarkerReason(marker); got != "needs_human_review" {
+		t.Errorf("reason = %q, want needs_human_review", got)
 	}
 
 	// A marker created by hand (`touch .ai/state/STOP`) carries no reason.

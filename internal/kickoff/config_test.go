@@ -185,12 +185,6 @@ func TestConfig_ValidatePaths(t *testing.T) {
 		t.Fatalf("Failed to create backend dir: %v", err)
 	}
 
-	// Create specs directory
-	specsDir := filepath.Join(tmpDir, ".ai", "specs")
-	if err := os.MkdirAll(specsDir, 0755); err != nil {
-		t.Fatalf("Failed to create specs dir: %v", err)
-	}
-
 	tests := []struct {
 		name        string
 		config      Config
@@ -203,7 +197,6 @@ func TestConfig_ValidatePaths(t *testing.T) {
 				Repos: []RepoConfig{
 					{Name: "backend", Path: "backend/"},
 				},
-				Specs: SpecsConfig{BasePath: ".ai/specs"},
 			},
 			expectError: false,
 		},
@@ -216,14 +209,6 @@ func TestConfig_ValidatePaths(t *testing.T) {
 			},
 			expectError: true,
 			errorField:  "repos[0].path",
-		},
-		{
-			name: "nonexistent specs path",
-			config: Config{
-				Specs: SpecsConfig{BasePath: "nonexistent/specs"},
-			},
-			expectError: true,
-			errorField:  "specs.base_path",
 		},
 	}
 

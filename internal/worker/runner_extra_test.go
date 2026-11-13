@@ -35,22 +35,22 @@ func TestIsValidGitRef_ValidRefs(t *testing.T) {
 func TestIsValidGitRef_InvalidRefs(t *testing.T) {
 	invalid := []string{
 		"",
-		"feat branch",      // space
-		"ref~1",            // tilde
-		"HEAD^1",           // caret
-		"ref:other",        // colon
-		"ref?wildcard",     // question mark
-		"ref*glob",         // asterisk
-		"ref[bracket",      // bracket
-		"ref\\backslash",   // backslash
-		".hidden",          // starts with dot
-		"ends-with.",       // ends with dot
-		"/starts-slash",    // starts with slash
-		"ends-slash/",      // ends with slash
-		"two..dots",        // consecutive dots
-		"double//slash",    // double slash
-		"ref.lock",         // ends with .lock
-		"ref@{reflog}",     // @{ sequence
+		"feat branch",    // space
+		"ref~1",          // tilde
+		"HEAD^1",         // caret
+		"ref:other",      // colon
+		"ref?wildcard",   // question mark
+		"ref*glob",       // asterisk
+		"ref[bracket",    // bracket
+		"ref\\backslash", // backslash
+		".hidden",        // starts with dot
+		"ends-with.",     // ends with dot
+		"/starts-slash",  // starts with slash
+		"ends-slash/",    // ends with slash
+		"two..dots",      // consecutive dots
+		"double//slash",  // double slash
+		"ref.lock",       // ends with .lock
+		"ref@{reflog}",   // @{ sequence
 	}
 	for _, ref := range invalid {
 		t.Run(fmt.Sprintf("%q", ref), func(t *testing.T) {
@@ -165,51 +165,6 @@ func TestBuildWorkerCompleteExtra_Empty(t *testing.T) {
 // ---------------------------------------------------------------------------
 // resolveSpecName / resolveTaskLine
 // ---------------------------------------------------------------------------
-
-func TestResolveSpecName_FromEnv(t *testing.T) {
-	t.Setenv("AI_SPEC_NAME", "my-spec")
-	meta := &TicketMetadata{SpecName: "other-spec"}
-	result := resolveSpecName(meta)
-	if result != "my-spec" {
-		t.Errorf("resolveSpecName from env = %q, want %q", result, "my-spec")
-	}
-}
-
-func TestResolveSpecName_FromMeta(t *testing.T) {
-	t.Setenv("AI_SPEC_NAME", "")
-	meta := &TicketMetadata{SpecName: "meta-spec"}
-	result := resolveSpecName(meta)
-	if result != "meta-spec" {
-		t.Errorf("resolveSpecName from meta = %q, want %q", result, "meta-spec")
-	}
-}
-
-func TestResolveTaskLine_FromEnv(t *testing.T) {
-	t.Setenv("AI_TASK_LINE", "42")
-	meta := &TicketMetadata{TaskLine: 10}
-	result := resolveTaskLine(meta)
-	if result != "42" {
-		t.Errorf("resolveTaskLine from env = %q, want %q", result, "42")
-	}
-}
-
-func TestResolveTaskLine_FromMeta(t *testing.T) {
-	t.Setenv("AI_TASK_LINE", "")
-	meta := &TicketMetadata{TaskLine: 7}
-	result := resolveTaskLine(meta)
-	if result != "7" {
-		t.Errorf("resolveTaskLine from meta = %q, want %q", result, "7")
-	}
-}
-
-func TestResolveTaskLine_Empty(t *testing.T) {
-	t.Setenv("AI_TASK_LINE", "")
-	meta := &TicketMetadata{TaskLine: 0}
-	result := resolveTaskLine(meta)
-	if result != "" {
-		t.Errorf("resolveTaskLine with no data = %q, want empty", result)
-	}
-}
 
 // ---------------------------------------------------------------------------
 // resolveTimeout

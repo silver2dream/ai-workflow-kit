@@ -18,14 +18,14 @@ import (
 // DispatchOptions contains options for DispatchWorker
 type DispatchOptions struct {
 	IssueNumber        int
-	PRNumber           int                // PR number (used when MergeIssue is set to get base branch)
+	PRNumber           int // PR number (used when MergeIssue is set to get base branch)
 	PrincipalSessionID string
-	StateRoot          string             // defaults to git root
-	GHTimeout          time.Duration      // GitHub API timeout (default: 30s)
-	WorkerTimeout      time.Duration      // Worker execution timeout (default: 60m)
-	MaxRetries         int                // Max retry count (default: 3)
-	MergeIssue         string             // "conflict" or "rebase" - indicates Worker needs to fix merge issues
-	HookRunner         *hooks.HookRunner  // nil = no hooks
+	StateRoot          string            // defaults to git root
+	GHTimeout          time.Duration     // GitHub API timeout (default: 30s)
+	WorkerTimeout      time.Duration     // Worker execution timeout (default: 60m)
+	MaxRetries         int               // Max retry count (default: 3)
+	MergeIssue         string            // "conflict" or "rebase" - indicates Worker needs to fix merge issues
+	HookRunner         *hooks.HookRunner // nil = no hooks
 }
 
 // DispatchOutput is the output for bash eval compatibility
@@ -306,11 +306,6 @@ PR 分支落後 base branch，請執行以下步驟：
 	// Parse ticket metadata
 	meta := ParseTicketMetadata(issue.Body)
 	logger.Log("Repo: %s", meta.Repo)
-	if meta.SpecName != "" && meta.TaskLine > 0 {
-		logger.Log("Task mapping: %s (line %d)", meta.SpecName, meta.TaskLine)
-		os.Setenv("AI_SPEC_NAME", meta.SpecName)
-		os.Setenv("AI_TASK_LINE", fmt.Sprintf("%d", meta.TaskLine))
-	}
 
 	// Step 4: Add in-progress label and remove merge labels
 	logger.Log("標記 Issue 為 in-progress...")

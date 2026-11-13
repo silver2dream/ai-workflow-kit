@@ -40,22 +40,9 @@ repos:
     path: ./
 git:
   integration_branch: feat/test
-specs:
-  base_path: ".ai/specs"
-  active:
-    - my-feature
 `
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
-	}
-
-	// Create specs directory with a spec that has tasks.md
-	specDir := filepath.Join(tmpDir, ".ai", "specs", "my-feature")
-	if err := os.MkdirAll(specDir, 0755); err != nil {
-		t.Fatalf("Failed to create spec dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte("# Tasks\n- [ ] task 1"), 0644); err != nil {
-		t.Fatalf("Failed to write tasks.md: %v", err)
 	}
 
 	lockFile := filepath.Join(tmpDir, "kickoff.lock")
@@ -71,20 +58,18 @@ specs:
 
 	// Verify expected checks are present
 	expectedChecks := map[string]bool{
-		"gh CLI":              false,
-		"gh Auth":             false,
-		"claude CLI":          false,
-		"codex CLI":           false,
-		"Git Status":          false,
-		"Stop Marker":         false,
-		"Lock File":           false,
-		"Config":              false,
-		"Repo Paths":          false,
-		"Active Specs":        false,
-		"Spec Files":          false,
-		"Integration Branch":  false,
-		"GitHub Repo":         false,
-		"PTY":                 false,
+		"gh CLI":             false,
+		"gh Auth":            false,
+		"claude CLI":         false,
+		"codex CLI":          false,
+		"Git Status":         false,
+		"Stop Marker":        false,
+		"Lock File":          false,
+		"Config":             false,
+		"Repo Paths":         false,
+		"Integration Branch": false,
+		"GitHub Repo":        false,
+		"PTY":                false,
 	}
 
 	for _, result := range results {
@@ -399,143 +384,6 @@ func TestPreflightChecker_SetForceDelete(t *testing.T) {
 	if !checker.forceDelete {
 		t.Error("forceDelete should be true after SetForceDelete(true)")
 	}
-}
-
-// TestCheckActiveSpecs tests active specs validation
-func TestCheckActiveSpecs(t *testing.T) {
-	tests := []struct {
-		name       string
-		config     *Config
-		shouldPass bool
-		hasMessage string
-	}{
-		{
-			name:       "nil config",
-			config:     nil,
-			shouldPass: false,
-			hasMessage: "config not loaded",
-		},
-		{
-			name:       "empty active list",
-			config:     &Config{Specs: SpecsConfig{Active: []string{}}},
-			shouldPass: false,
-			hasMessage: "specs.active is empty",
-		},
-		{
-			name:       "nil active list",
-			config:     &Config{},
-			shouldPass: false,
-			hasMessage: "specs.active is empty",
-		},
-		{
-			name:       "has active specs",
-			config:     &Config{Specs: SpecsConfig{Active: []string{"my-feature"}}},
-			shouldPass: true,
-			hasMessage: "1 active spec(s)",
-		},
-		{
-			name:       "multiple active specs",
-			config:     &Config{Specs: SpecsConfig{Active: []string{"feat-a", "feat-b"}}},
-			shouldPass: true,
-			hasMessage: "2 active spec(s)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			checker := NewPreflightChecker("", "")
-			checker.config = tt.config
-
-			result := checker.CheckActiveSpecs()
-			if result.Passed != tt.shouldPass {
-				t.Errorf("CheckActiveSpecs() passed=%v, want %v: %s", result.Passed, tt.shouldPass, result.Message)
-			}
-			if tt.hasMessage != "" && !strings.Contains(result.Message, tt.hasMessage) {
-				t.Errorf("CheckActiveSpecs() message=%q, want containing %q", result.Message, tt.hasMessage)
-			}
-		})
-	}
-}
-
-// TestCheckSpecFiles tests spec file existence validation
-func TestCheckSpecFiles(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "preflight-specfiles-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Setup: create .ai/config/workflow.yaml path so baseDir() works
-	aiConfigDir := filepath.Join(tmpDir, ".ai", "config")
-	os.MkdirAll(aiConfigDir, 0755)
-	configPath := filepath.Join(aiConfigDir, "workflow.yaml")
-
-	specsBase := filepath.Join(tmpDir, ".ai", "specs")
-	os.MkdirAll(specsBase, 0755)
-
-	t.Run("has_tasks_md", func(t *testing.T) {
-		specDir := filepath.Join(specsBase, "feat-tasks")
-		os.MkdirAll(specDir, 0755)
-		os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte("# Tasks"), 0644)
-
-		checker := NewPreflightChecker(configPath, "")
-		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"feat-tasks"}}}
-
-		result := checker.CheckSpecFiles()
-		if !result.Passed {
-			t.Errorf("should pass with tasks.md: %s", result.Message)
-		}
-	})
-
-	t.Run("has_design_md", func(t *testing.T) {
-		specDir := filepath.Join(specsBase, "feat-design")
-		os.MkdirAll(specDir, 0755)
-		os.WriteFile(filepath.Join(specDir, "design.md"), []byte("# Design"), 0644)
-
-		checker := NewPreflightChecker(configPath, "")
-		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"feat-design"}}}
-
-		result := checker.CheckSpecFiles()
-		if !result.Passed {
-			t.Errorf("should pass with design.md: %s", result.Message)
-		}
-	})
-
-	t.Run("empty_dir", func(t *testing.T) {
-		specDir := filepath.Join(specsBase, "feat-empty")
-		os.MkdirAll(specDir, 0755)
-
-		checker := NewPreflightChecker(configPath, "")
-		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"feat-empty"}}}
-
-		result := checker.CheckSpecFiles()
-		if result.Passed {
-			t.Error("should fail with empty spec dir")
-		}
-		if !strings.Contains(result.Message, "feat-empty") {
-			t.Errorf("message should mention missing spec: %s", result.Message)
-		}
-	})
-
-	t.Run("missing_dir", func(t *testing.T) {
-		checker := NewPreflightChecker(configPath, "")
-		checker.config = &Config{Specs: SpecsConfig{BasePath: ".ai/specs", Active: []string{"nonexistent"}}}
-
-		result := checker.CheckSpecFiles()
-		if result.Passed {
-			t.Error("should fail with nonexistent spec dir")
-		}
-	})
-
-	t.Run("nil_config", func(t *testing.T) {
-		checker := NewPreflightChecker(configPath, "")
-		checker.config = nil
-
-		result := checker.CheckSpecFiles()
-		if result.Passed {
-			t.Error("should fail with nil config")
-		}
-	})
 }
 
 // TestCheckRepoPaths tests repo path validation

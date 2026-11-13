@@ -67,23 +67,9 @@ repos:
     path: ./
 git:
   integration_branch: feat/test
-specs:
-  base_path: .ai/specs
-  active:
-    - testspec
 `
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
-	}
-
-	// Active specs must have a tasks.md or design.md (preflight CheckSpecFiles)
-	specDir := filepath.Join(tmpDir, ".ai", "specs", "testspec")
-	if err := os.MkdirAll(specDir, 0755); err != nil {
-		t.Fatalf("Failed to create spec dir: %v", err)
-	}
-	tasksContent := "# Test Spec\n\n## Tasks\n\n- [ ] 1. Placeholder task\n"
-	if err := os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte(tasksContent), 0644); err != nil {
-		t.Fatalf("Failed to write tasks.md: %v", err)
 	}
 
 	lockFile := filepath.Join(tmpDir, "kickoff.lock")

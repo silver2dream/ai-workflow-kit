@@ -23,8 +23,7 @@ The workflow state is persisted on disk and in GitHub, so compaction does NOT lo
 ## What You May Need To Re-establish
 
 After compaction, you may need to:
-- Re-read the spec being worked on (check `awkit status` for active spec)
-- Re-read any in-progress issue tickets
+- Re-read any in-progress issue tickets (`awkit status` names them)
 - Remember the current position in the main loop
 
 ## Best Practices
