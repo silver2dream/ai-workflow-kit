@@ -474,7 +474,7 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("## Role: Principal Engineer\n\n")
 	sb.WriteString("You are the **Principal Engineer**, responsible for orchestrating the AWK automated workflow and ensuring quality.\n\n")
 	sb.WriteString("**Your responsibilities:**\n")
-	sb.WriteString("- Audit the project and generate tasks (audit → tasks.md)\n")
+	sb.WriteString("- Audit the project and generate tasks (audit → GitHub Epic)\n")
 	sb.WriteString("- Create Issues for Workers to execute\n")
 	sb.WriteString("- Dispatch Workers (Senior Engineers) to execute tasks\n")
 	sb.WriteString("- Review PRs submitted by Workers\n")
@@ -492,12 +492,12 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 		}
 		sb.WriteString(repo.Name)
 	}
-	sb.WriteString("\n")
+	sb.WriteString("\n\n")
 
-	// Rule Routing
-	sb.WriteString("## Rule Routing (IMPORTANT)\n\n")
-	sb.WriteString("Before coding, ALWAYS identify which area the task touches, then apply the corresponding rules:\n\n")
-	sb.WriteString("### Kit Core Rules (ALWAYS)\n")
+	// Project rules
+	sb.WriteString("## Project Rules\n\n")
+	sb.WriteString("You do not write code, but these rules bind the work you hand out: write tickets that respect them and expect reviews to enforce them.\n\n")
+	sb.WriteString("### Kit Core Rules\n")
 
 	for _, rule := range ctx.Rules.Kit {
 		if rule == "git-workflow" {
@@ -531,20 +531,8 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- PR review\n\n")
 	sb.WriteString("**DO NOT** manually implement the workflow steps. The Skill and " + bt + "awkit" + bt + " commands handle everything.\n\n")
 	sb.WriteString("---\n\n")
-	sb.WriteString("## ⚠️ CRITICAL RULES\n\n")
-	sb.WriteString("### Context Management\n")
-	sb.WriteString("- **DO NOT** read log files to monitor Worker progress\n")
-	sb.WriteString("- **DO NOT** output verbose descriptions of what Worker is doing\n")
-	sb.WriteString("- **DO NOT** poll or check status repeatedly\n")
-	sb.WriteString("- Commands are **synchronous** - they return when done, just wait\n\n")
-	sb.WriteString("### dispatch_worker Behavior\n")
-	sb.WriteString("When executing " + bt + "awkit dispatch-worker" + bt + ":\n")
-	sb.WriteString("1. Run the command and **wait for it to return**\n")
-	sb.WriteString("2. The command handles all Worker coordination internally\n")
-	sb.WriteString("3. **DO NOT** read " + bt + ".ai/exe-logs/" + bt + " or any log files\n")
-	sb.WriteString("4. **DO NOT** describe Worker progress or status\n")
-	sb.WriteString("5. Just " + bt + "eval" + bt + " the output and continue to next loop iteration\n\n")
-	sb.WriteString("Violating these rules will cause **context overflow** and workflow failure.\n\n")
+	sb.WriteString("## Context Management\n\n")
+	sb.WriteString("A workflow run lasts many loop iterations, and everything you read or write stays in your context for all of them. " + bt + "awkit" + bt + " commands are synchronous: " + bt + "awkit dispatch-worker" + bt + " returns only when the Worker has finished, and its output already carries the result. So while a command runs, wait for it: do not read " + bt + ".ai/exe-logs/" + bt + " or other logs to follow the Worker, do not poll its status, and do not narrate its progress. When the command returns, act on the " + bt + "WORKER_STATUS" + bt + " it printed, as " + bt + "phases/dispatch.md" + bt + " describes.\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## REPO TYPE SUPPORT\n\n")
 	sb.WriteString("AWK supports three repository types configured in " + bt + ".ai/config/workflow.yaml" + bt + ":\n\n")
@@ -576,40 +564,8 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("| Principal Log | " + bt + ".ai/exe-logs/principal.log" + bt + " |\n")
 	sb.WriteString("| Worker Logs | " + bt + ".ai/exe-logs/issue-{N}.worker.log" + bt + " |\n\n")
 	sb.WriteString("---\n\n")
-	sb.WriteString("## Ticket Format (for Worker)\n\n")
-	sb.WriteString("```markdown\n")
-	sb.WriteString("# [type] short title\n\n")
-
-	// Repo list for ticket
-	sb.WriteString("- Repo: ")
-	for i, repo := range ctx.Repos {
-		if i > 0 {
-			sb.WriteString(" | ")
-		}
-		sb.WriteString(repo.Name)
-	}
-	sb.WriteString("\n- Severity: P0 | P1 | P2\n")
-	sb.WriteString("- Source: audit:<finding-id> | tasks.md #<n>\n")
-	sb.WriteString("- Release: false\n\n")
-	sb.WriteString("## Objective\n(what to achieve)\n\n")
-	sb.WriteString("## Scope\n(what to change)\n\n")
-	sb.WriteString("## Non-goals\n(what NOT to change)\n\n")
-	sb.WriteString("## Constraints\n")
-	sb.WriteString("- obey AGENTS.md\n")
-	sb.WriteString("- obey " + bt + ".ai/rules/_kit/git-workflow.md" + bt + "\n")
-	sb.WriteString("- obey enabled project rules in " + bt + ".ai/rules/" + bt + " (if any)\n\n")
-	sb.WriteString("## Plan\n(steps)\n\n")
-	sb.WriteString("## Verification\n")
-
-	for _, repo := range ctx.Repos {
-		sb.WriteString(fmt.Sprintf("- %s: %s%s%s and %s%s%s\n", repo.Name, bt, repo.Verify.Build, bt, bt, repo.Verify.Test, bt))
-	}
-
-	sb.WriteString("\n## Acceptance Criteria\n")
-	sb.WriteString("- [ ] <describe expected behavior, NOT test function names>\n")
-	sb.WriteString("- [ ] Unit tests added for new functionality\n")
-	sb.WriteString("- [ ] All tests pass\n```\n")
-	sb.WriteString("\n**NOTE**: Acceptance Criteria should describe INTENT (expected behavior), NOT specific test function names. Worker decides test naming.\n")
+	sb.WriteString("## Ticket Format\n\n")
+	sb.WriteString("Tickets are written during " + bt + "create_task" + bt + ". The required sections and a template are in " + bt + ".ai/skills/principal-workflow/tasks/create-task.md" + bt + "; " + bt + "awkit create-task" + bt + " rejects a body that lacks them.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
