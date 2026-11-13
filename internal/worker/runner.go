@@ -1248,17 +1248,54 @@ func extractTitleLine(content string) string {
 	return ""
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs, workerCfg *workflowWorker, lessonsCfg *workflowLessons) error {
-	reviewComments := fetchReviewComments(issueID, ghTimeout)
-	prReviewComments := fetchPRReviewComments(prNumber, ghTimeout)
+// workerPromptInputs is everything the Worker prompt is assembled from.
+// writePromptFile gathers it (GitHub, design docs, knowledge graph, lessons);
+// buildWorkerPrompt only lays it out, so the prompt text can be tested without
+// touching the network or the state directory.
+type workerPromptInputs struct {
+	WorkDirInstruction string
+	Ticket             string
+	IssueID            int
+	DesignContent      string // design.md context for the task's spec
+	GraphSection       string // ticket-relevant slice of the knowledge graph
+	ReviewComments     string // earlier AWK Review feedback on the issue
+	PRReviewComments   string // file-level comments from the previous review
+	LessonsSection     string // distilled lessons relevant to the ticket
+	TopCategorySection string // most common rejection categories
+}
 
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs, workerCfg *workflowWorker, lessonsCfg *workflowLessons) error {
+	in := workerPromptInputs{
+		WorkDirInstruction: workDirInstruction,
+		Ticket:             ticket,
+		IssueID:            issueID,
+	}
+	in.ReviewComments = fetchReviewComments(issueID, ghTimeout)
+	in.PRReviewComments = fetchPRReviewComments(prNumber, ghTimeout)
+	in.DesignContent = resolveDesignDoc(stateRoot, ticket, specsCfg)
+	// A ticket-relevant slice of the codebase knowledge graph, when one is
+	// present (best-effort grounding; see knowledgegraph.go).
+	in.GraphSection = loadKnowledgeGraphContext(stateRoot, issueID, ticket, workerCfg)
+	// Distilled lessons relevant to this ticket (learning loop; replaces the
+	// old raw replay of recent rejections) plus the cheap top-category
+	// one-liners.
+	in.LessonsSection = loadLessonsSection(stateRoot, issueID, ticket, lessonsCfg)
+	if feedbackCfg == nil || feedbackCfg.isEnabled() {
+		in.TopCategorySection = loadTopCategorySummary(stateRoot)
+	}
+
+	return os.WriteFile(path, []byte(buildWorkerPrompt(in)), 0644)
+}
+
+// buildWorkerPrompt lays out the Worker prompt from already gathered inputs.
+func buildWorkerPrompt(in workerPromptInputs) string {
 	builder := strings.Builder{}
 	builder.WriteString("You are an automated coding agent running inside a git worktree.\n\n")
 	builder.WriteString("Repo rules:\n")
 	builder.WriteString("- Read and follow AGENTS.md.\n")
 	builder.WriteString("- Keep changes minimal and strictly within ticket scope.\n")
-	if workDirInstruction != "" {
-		builder.WriteString(workDirInstruction)
+	if in.WorkDirInstruction != "" {
+		builder.WriteString(in.WorkDirInstruction)
 		builder.WriteString("\n")
 	}
 	builder.WriteString("IMPORTANT: Do NOT run any git commands (commit, push, etc.) or create PRs.\n")
@@ -1280,68 +1317,57 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	builder.WriteString("Attempting to access them will result in task failure.\n")
 	builder.WriteString("============================================================\n\n")
 
-	// Inject design document context before the ticket
-	if designContent := resolveDesignDoc(stateRoot, ticket, specsCfg); designContent != "" {
+	// Design document context comes before the ticket.
+	if in.DesignContent != "" {
 		builder.WriteString("============================================================\n")
 		builder.WriteString("DESIGN CONTEXT\n")
 		builder.WriteString("============================================================\n")
 		builder.WriteString("The following design document provides context for this task:\n\n")
-		builder.WriteString(designContent)
+		builder.WriteString(in.DesignContent)
 		builder.WriteString("\n============================================================\n\n")
 	}
 
-	// Inject a ticket-relevant slice of the codebase knowledge graph, when
-	// one is present (best-effort grounding; see knowledgegraph.go).
-	if graphSection := loadKnowledgeGraphContext(stateRoot, issueID, ticket, workerCfg); graphSection != "" {
+	if in.GraphSection != "" {
 		builder.WriteString("============================================================\n")
 		builder.WriteString("CODEBASE MAP\n")
 		builder.WriteString("============================================================\n")
-		builder.WriteString(graphSection)
+		builder.WriteString(in.GraphSection)
 		builder.WriteString("============================================================\n\n")
 	}
 
 	builder.WriteString("Ticket:\n")
-	builder.WriteString(ticket)
+	builder.WriteString(in.Ticket)
 	builder.WriteString("\n")
 
-	if reviewComments != "" {
+	if in.ReviewComments != "" {
 		builder.WriteString("\n============================================================\n")
 		builder.WriteString("PREVIOUS REVIEW FEEDBACK (IMPORTANT - Address these issues!)\n")
 		builder.WriteString("============================================================\n")
-		builder.WriteString(reviewComments)
+		builder.WriteString(in.ReviewComments)
 		builder.WriteString("\n============================================================\n")
 	}
 
-	if prReviewComments != "" {
+	if in.PRReviewComments != "" {
 		builder.WriteString("\n============================================================\n")
 		builder.WriteString("FILE-LEVEL REVIEW COMMENTS (from previous review):\n")
 		builder.WriteString("============================================================\n")
-		builder.WriteString(prReviewComments)
+		builder.WriteString(in.PRReviewComments)
 		builder.WriteString("============================================================\n")
 	}
 
-	// Inject distilled lessons relevant to this ticket (learning loop;
-	// replaces the old raw replay of recent rejections) plus the cheap
-	// top-category one-liners.
-	feedbackEnabled := true
-	if feedbackCfg != nil {
-		feedbackEnabled = feedbackCfg.isEnabled()
-	}
-	if lessonsSection := loadLessonsSection(stateRoot, issueID, ticket, lessonsCfg); lessonsSection != "" {
+	if in.LessonsSection != "" {
 		builder.WriteString("\n============================================================\n")
-		builder.WriteString(lessonsSection)
+		builder.WriteString(in.LessonsSection)
 		builder.WriteString("============================================================\n")
 	}
-	if feedbackEnabled {
-		if topCatSection := loadTopCategorySummary(stateRoot); topCatSection != "" {
-			builder.WriteString("\n============================================================\n")
-			builder.WriteString(topCatSection)
-			builder.WriteString("============================================================\n")
-		}
+	if in.TopCategorySection != "" {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString(in.TopCategorySection)
+		builder.WriteString("============================================================\n")
 	}
 
-	builder.WriteString(fmt.Sprintf("\nBEFORE making code changes, create an implementation plan file at:\n"))
-	builder.WriteString(fmt.Sprintf(".ai/runs/issue-%d/plan.md\n\n", issueID))
+	builder.WriteString("\nBEFORE making code changes, create an implementation plan file at:\n")
+	builder.WriteString(fmt.Sprintf(".ai/runs/issue-%d/plan.md\n\n", in.IssueID))
 	builder.WriteString("The plan file MUST contain:\n")
 	builder.WriteString("- ## Summary — brief description of the approach (1-3 sentences)\n")
 	builder.WriteString("- ## Files to modify — list of files and what changes\n")
@@ -1352,7 +1378,7 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	builder.WriteString("- Run the verification commands (the ticket's, or the defaults in AGENTS.md).\n")
 	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
 
-	return os.WriteFile(path, []byte(builder.String()), 0644)
+	return builder.String()
 }
 
 // maxDesignDocChars is the maximum number of characters to inject from a design document.
