@@ -42,7 +42,7 @@ func CheckResult(ctx context.Context, opts CheckResultOptions) (output *CheckRes
 	// or a legitimately running worker gets declared timed out and the
 	// issue can be double-dispatched.
 	if opts.WorkerTimeout == 0 {
-		opts.WorkerTimeout = 60 * time.Minute
+		opts.WorkerTimeout = DefaultWorkerTimeout
 	}
 	if opts.WaitDuration == 0 {
 		opts.WaitDuration = 30 * time.Second

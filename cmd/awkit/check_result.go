@@ -62,7 +62,7 @@ func cmdCheckResult(args []string) int {
 	stateRoot := fs.String("state-root", "", "")
 	maxRetries := fs.Int("max-retries", 3, "")
 	timeout := fs.Duration("timeout", 30*time.Second, "")
-	workerTimeout := fs.Duration("worker-timeout", 60*time.Minute, "")
+	workerTimeout := fs.Duration("worker-timeout", worker.DefaultWorkerTimeout, "")
 	waitDuration := fs.Duration("wait", 30*time.Second, "")
 	jsonOutput := fs.Bool("json", false, "")
 	showHelp := fs.Bool("help", false, "")

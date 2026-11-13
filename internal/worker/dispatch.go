@@ -30,6 +30,11 @@ type DispatchOptions struct {
 	HookRunner         *hooks.HookRunner // nil = no hooks
 }
 
+// DefaultWorkerTimeout is how long a dispatch waits for its Worker unless it
+// is told otherwise. Whoever starts a dispatch has to be able to wait that
+// long: see what `awkit run` sets for the Principal's shell tool.
+const DefaultWorkerTimeout = 60 * time.Minute
+
 // DispatchOutput is the output for bash eval compatibility
 type DispatchOutput struct {
 	Status       string // success, failed, in_progress, needs_conflict_resolution
@@ -48,7 +53,7 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 		opts.GHTimeout = 30 * time.Second
 	}
 	if opts.WorkerTimeout == 0 {
-		opts.WorkerTimeout = 60 * time.Minute
+		opts.WorkerTimeout = DefaultWorkerTimeout
 	}
 	if opts.MaxRetries == 0 {
 		opts.MaxRetries = 3

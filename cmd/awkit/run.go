@@ -130,6 +130,7 @@ func cmdRun(args []string) int {
 	}
 
 	setRunScope(*issue)
+	setPrincipalShellTimeouts()
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		output.Error(fmt.Sprintf("Failed to create log directory: %v", err))
@@ -837,6 +838,36 @@ func setRunScope(issue int) {
 		return
 	}
 	_ = os.Unsetenv(analyzer.ScopeEnv)
+}
+
+// principalShellTimeout is how long the Principal's shell tool lets one
+// command run: as long as a dispatch waits for its Worker, and a little more
+// for what the dispatch does afterwards.
+const principalShellTimeout = worker.DefaultWorkerTimeout + 5*time.Minute
+
+// shellTimeoutSettings are the two settings of Claude Code's shell tool: how
+// long a command runs when the model names no timeout, and the longest
+// timeout the model may name.
+var shellTimeoutSettings = []string{"BASH_DEFAULT_TIMEOUT_MS", "BASH_MAX_TIMEOUT_MS"}
+
+// setPrincipalShellTimeouts lets the commands of the session a run starts
+// take as long as a Worker may. Claude Code moves a command that outlives
+// its timeout (two minutes when nothing is set) to the background and stops
+// it ten minutes later. `awkit dispatch-worker` waits for the Worker, so a
+// Worker that needed longer than that was killed in the middle of its work
+// and came back as crashed, attempt after attempt.
+//
+// A setting that is already at least this high is the user's and stays.
+// Subagents and a Worker with the claude-code backend are started from this
+// session and get the same settings.
+func setPrincipalShellTimeouts() {
+	want := principalShellTimeout.Milliseconds()
+	for _, name := range shellTimeoutSettings {
+		if current, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(name)), 10, 64); err == nil && current >= want {
+			continue
+		}
+		_ = os.Setenv(name, strconv.FormatInt(want, 10))
+	}
 }
 
 // checkRunTicket checks that an issue is a ticket a run can be limited to, and
