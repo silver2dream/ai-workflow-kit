@@ -34,4 +34,4 @@ Subagent 會獨立執行完整審查流程並返回結果：
 3. 共識報告（每位審查者的分數與 findings）自動附加到 review body，approve 與 changes_requested 的留言都會帶上。
 4. 次要審查者失敗或超時不會阻塞審查：失敗會記載於報告中並排除於計分外（graceful degradation）。
 
-**Principal 不要自行調用 architecture-reviewer、不要自行計算加權分數** —— 這些已由 `awkit submit-review` 處理。
+Principal 不需要自行計算加權分數——這由 `awkit submit-review` 處理。
