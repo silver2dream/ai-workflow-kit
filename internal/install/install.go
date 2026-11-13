@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 )
 
@@ -105,6 +106,15 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	}
 	result.ConfigSkipped = configSkipped
 	result.ConfigPath = filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
+
+	// A new project gets the roster of its preset: who sits at the table when
+	// `awkit plan` turns a brief into documents and tickets. An upgrade writes
+	// none: `awkit plan` does, from the project's repos, the first time it runs.
+	if !opts.SkipConfig {
+		if err := ensureRoster(targetDir, opts.Preset); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := copyDir(kit, ".ai", filepath.Join(targetDir, ".ai"), opts.Force); err != nil {
 		return nil, err
@@ -254,6 +264,19 @@ func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 
 		return nil
 	})
+}
+
+// ensureRoster writes the roster of a preset into a project that has none.
+// A roster that is there is the project's own and is never replaced.
+func ensureRoster(targetDir, preset string) error {
+	file := filepath.Join(targetDir, filepath.FromSlash(council.RosterPath))
+	if _, err := os.Stat(file); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(file, council.DefaultRoster(preset), 0o644)
 }
 
 func ensureRuntimeDirs(targetDir string) error {
