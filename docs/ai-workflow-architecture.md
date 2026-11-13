@@ -517,33 +517,28 @@ cat .ai/results/*.json            # 查看執行結果
 
 ### A.1 Issue Template
 
-```markdown
-# [type] Task Title
+票券內文（完整說明見 `.ai/skills/principal-workflow/tasks/create-task.md`；用 `awkit create-task` 建立）：
 
-- Repo: backend | frontend | root
-- Severity: P0 | P1 | P2
-- Source: tasks.md #N | audit:F001
-
-## Objective
+````markdown
+## Summary
 What to achieve.
 
 ## Scope
 What to change.
 
-## Non-goals
-What NOT to change.
-
-## Constraints
-- obey AGENTS.md
-- obey .claude/rules/*.md
-
-## Verification
-- Commands to run
-
 ## Acceptance Criteria
 - [ ] Criterion 1
 - [ ] Criterion 2
+
+## Testing Requirements
+- What must be tested.
+
+```yaml awk-ticket
+schema: 1
+repo: backend
+depends_on: [12]
 ```
+````
 
 ### A.2 Stop File
 

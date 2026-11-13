@@ -17,6 +17,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	repocfg "github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
@@ -180,7 +181,13 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		return nil, fmt.Errorf("failed to read ticket file: %w", err)
 	}
 
-	meta := ParseTicketMetadata(string(ticketBody))
+	// What the ticket says about itself is read from the ticket, never from
+	// what the dispatch added to the file.
+	ticketText := ticketOf(string(ticketBody))
+	meta, err := ReadTicketMetadata(ticketText)
+	if err != nil {
+		return nil, fmt.Errorf("ticket #%d cannot be used: %w", opts.IssueID, err)
+	}
 	repoName := strings.TrimSpace(opts.RepoOverride)
 	if repoName == "" {
 		repoName = meta.Repo
@@ -252,11 +259,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	releaseFlag := meta.Release
-	if !releaseFlag {
-		if value := extractTicketValue(string(ticketBody), "Release"); value != "" {
-			releaseFlag = parseBool(value)
-		}
-	}
 	if releaseFlag && repoName != "root" {
 		return nil, fmt.Errorf("release tickets are allowed only for root repo")
 	}
@@ -716,13 +718,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		return result, err
 	}
 
-	allowScriptChanges := meta.AllowScriptChanges
-	if value := extractTicketValue(string(ticketBody), "allow_script_changes"); value != "" {
-		allowScriptChanges = parseBool(value)
-	}
-	scriptWhitelist := extractTicketValue(string(ticketBody), "script_whitelist")
-
-	scriptViolations, err := CheckScriptModifications(ctx, wtDir, allowScriptChanges, scriptWhitelist)
+	scriptViolations, err := CheckScriptModifications(ctx, wtDir, meta.AllowScriptChanges, meta.ScriptWhitelist)
 	if err != nil {
 		runErr = err
 		result.Error = err.Error()
@@ -735,13 +731,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		logger.Log("script modifications allowed: %s", strings.Join(scriptViolations, ", "))
 	}
 
-	allowSecrets := meta.AllowSecrets
-	if value := extractTicketValue(string(ticketBody), "allow_secrets"); value != "" {
-		allowSecrets = parseBool(value)
-	}
-	customPatterns := strings.Fields(extractTicketValue(string(ticketBody), "secret_patterns"))
-
-	secretMatches, err := CheckSensitiveInfo(ctx, wtDir, allowSecrets, customPatterns)
+	secretMatches, err := CheckSensitiveInfo(ctx, wtDir, meta.AllowSecrets, meta.SecretPatterns)
 	if err != nil {
 		runErr = err
 		result.Error = err.Error()
@@ -763,8 +753,10 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		trace.StepStart("run_tests")
 	}
 
-	// Try to get verification commands from ticket first, fallback to config
-	verifyCommands := GetVerificationCommandsForRepo(string(ticketBody), repoName)
+	// Try to get verification commands from ticket first, fallback to config.
+	// Only the ticket itself names commands to run: a "## Verification"
+	// heading in what the dispatch added (a review's findings) is not one.
+	verifyCommands := GetVerificationCommandsForRepo(ticketText, repoName)
 	if len(verifyCommands) == 0 {
 		// Fallback to config's verify.build and verify.test
 		verifyCommands = getConfigVerifyCommands(cfg, repoName)
@@ -807,13 +799,9 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 
 	consistencyStatus := "consistent"
 	submoduleState := &SubmoduleState{ConsistencyStatus: consistencyStatus}
-	allowParentChanges := meta.AllowParentChanges
-	if value := extractTicketValue(string(ticketBody), "allow_parent_changes"); value != "" {
-		allowParentChanges = parseBool(value)
-	}
 
 	if repoType == "submodule" {
-		outside, err := CheckSubmoduleBoundary(ctx, wtDir, repoPath, allowParentChanges)
+		outside, err := CheckSubmoduleBoundary(ctx, wtDir, repoPath, meta.AllowParentChanges)
 		if err != nil {
 			runErr = err
 			result.Error = err.Error()
@@ -1283,7 +1271,7 @@ func buildWorkerPrompt(in workerPromptInputs) string {
 	builder.WriteString("- Access or modify Principal session data\n")
 	builder.WriteString("- Forge or manipulate session IDs\n")
 	builder.WriteString("- Access audit logs or review data\n")
-	builder.WriteString("- Modify the workflow's own files (" + protectedPathList() + ") unless the ticket's Constraints section allows it\n\n")
+	builder.WriteString("- Modify the workflow's own files (" + protectedPathList() + ") unless the ticket's `" + ticket.Info + "` block sets `allow_script_changes: true`\n\n")
 	builder.WriteString("These paths are reserved for the Principal agent and are protected.\n")
 	builder.WriteString("Attempting to access them will result in task failure.\n")
 	builder.WriteString("============================================================\n\n")

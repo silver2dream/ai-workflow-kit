@@ -24,9 +24,9 @@ Add a health endpoint.
 ## Testing Requirements
 - [ ] a test covers the handler
 
-## Metadata
-- **Repo**: backend
-`
+` + validBlock
+
+const validBlock = "```yaml awk-ticket\nschema: 1\nrepo: backend\ndepends_on: [12]\n```\n"
 
 func writeBody(t *testing.T, dir, body string) string {
 	t.Helper()
@@ -69,13 +69,21 @@ func TestValidateBody(t *testing.T) {
 	tests := []struct {
 		name, body, wantInError string
 	}{
-		{"empty", "", "Summary, Scope, Acceptance Criteria, Testing Requirements, Metadata"},
+		{"empty", "", "Summary, Scope, Acceptance Criteria, Testing Requirements"},
 		{"one section missing", strings.Replace(validBody, "## Scope\n- backend/health\n\n", "", 1), "missing required sections: Scope"},
-		{"several missing", "## Summary\ntext\n\n## Scope\n- x\n", "Acceptance Criteria, Testing Requirements, Metadata"},
+		{"several missing", "## Summary\ntext\n\n## Scope\n- x\n", "Acceptance Criteria, Testing Requirements"},
 		{"no checkbox", strings.NewReplacer("- [ ] ", "- ").Replace(validBody), "missing acceptance checkboxes"},
 		{"only ticked checkboxes", strings.NewReplacer("- [ ] ", "- [x] ").Replace(validBody), "missing acceptance checkboxes"},
 		{"a heading of the wrong level is not the section", strings.Replace(validBody, "## Scope", "### Scope", 1), "missing required sections: Scope"},
 		{"a longer heading is not the section", strings.Replace(validBody, "## Scope", "## Scope of work", 1), "missing required sections: Scope"},
+		// The awk-ticket block.
+		{"no block", strings.Replace(validBody, validBlock, "", 1), "has no `yaml awk-ticket` block"},
+		{"what the block says, as prose", strings.Replace(validBody, validBlock, "## Metadata\n- **Repo**: backend\n- Depends on: #12\n", 1), "has no `yaml awk-ticket` block"},
+		{"the block only as an example", strings.Replace(validBody, validBlock, "````markdown\n"+validBlock+"````\n", 1), "has no `yaml awk-ticket` block"},
+		{"a field the block does not have", strings.Replace(validBody, "repo: backend\n", "repo: backend\npriority: high\n", 1), `unknown field "priority"`},
+		{"a block without a repo", strings.Replace(validBody, "repo: backend\n", "", 1), "repo is missing"},
+		{"a release outside the root repo", strings.Replace(validBody, "repo: backend\n", "repo: backend\nrelease: true\n", 1), "only a ticket for the root repo can be a release"},
+		{"two blocks", validBody + "\n" + validBlock, "2 awk-ticket blocks"},
 	}
 	for _, tt := range tests {
 		err := ValidateBody(tt.body)
@@ -123,7 +131,7 @@ func TestCreateTask(t *testing.T) {
 // can be overridden for one ticket.
 func TestCreateTask_LabelAndRepoFromConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeConfig(t, dir, "github:\n  repo: acme/game\n  labels:\n    task: work-item\n")
+	writeConfig(t, dir, "github:\n  repo: acme/game\n  labels:\n    task: work-item\nrepos:\n  - name: backend\n    path: backend/\n")
 	body := writeBody(t, dir, validBody)
 
 	calls := fakeGH(t, "https://github.com/acme/game/issues/7\n", nil)
@@ -141,6 +149,42 @@ func TestCreateTask_LabelAndRepoFromConfig(t *testing.T) {
 	}
 	if got := (*calls)[0]; got[len(got)-1] != "acme/other" {
 		t.Errorf("gh was called with %v, want the overriding repository", got)
+	}
+}
+
+// A ticket is for a repo of the project's config, or for the root of the
+// repository. One the Worker would refuse is not created.
+func TestCreateTask_RepoOfTheConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "repos:\n  - name: backend\n    path: backend/\n  - name: frontend\n    path: frontend/\n")
+
+	for _, repo := range []string{"backend", "frontend", "root", "Backend"} {
+		body := writeBody(t, dir, strings.Replace(validBody, "repo: backend\n", "repo: "+repo+"\n", 1))
+		calls := fakeGH(t, "https://github.com/acme/game/issues/7\n", nil)
+		if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir}); err != nil {
+			t.Errorf("repo %q: %v", repo, err)
+		}
+		if len(*calls) != 1 {
+			t.Errorf("repo %q: gh was called %d times, want once", repo, len(*calls))
+		}
+	}
+
+	body := writeBody(t, dir, strings.Replace(validBody, "repo: backend\n", "repo: web\n", 1))
+	calls := fakeGH(t, "https://github.com/acme/game/issues/8\n", nil)
+	_, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir, DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), `repo "web", which is not a repo of .ai/config/workflow.yaml (it has: root, backend, frontend)`) {
+		t.Errorf("error = %v, want it to name the repo and list the config's", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("gh was called although the ticket was refused: %v", *calls)
+	}
+
+	// A project without a config has nothing to check the repo against.
+	bare := t.TempDir()
+	body = writeBody(t, bare, strings.Replace(validBody, "repo: backend\n", "repo: web\n", 1))
+	fakeGH(t, "https://github.com/acme/game/issues/9\n", nil)
+	if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: bare}); err != nil {
+		t.Errorf("without a config: %v", err)
 	}
 }
 

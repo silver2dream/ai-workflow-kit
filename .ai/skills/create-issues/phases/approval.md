@@ -67,7 +67,7 @@ User wants more information. Show expanded details for the requested issue:
 
 **Title**: [type] description
 
-**Full Objective**:
+**Full Summary**:
 {expanded explanation of what this issue achieves and why}
 
 **Detailed Scope**:

@@ -14,13 +14,12 @@ For each issue, generate a detailed proposal using this exact format:
 | Field | Value |
 |-------|-------|
 | **Title** | [type] description |
-| **Repo** | backend / frontend |
+| **Repo** | backend / frontend / root |
 | **Priority** | P0 / P1 / P2 |
 | **Complexity** | 1-5 |
 | **Depends On** | Issue #X, #Y or None |
-| **Labels** | feat, backend, ai-task |
 
-**Objective:**
+**Summary:**
 Clear statement of what this issue achieves. One to two sentences maximum.
 
 **Scope:**
@@ -36,12 +35,6 @@ Clear statement of what this issue achieves. One to two sentences maximum.
 - [ ] Code builds without errors
 
 **IMPORTANT**: Acceptance Criteria should describe the INTENT (what behavior is expected), NOT specific test function names. The Worker decides how to name and structure tests.
-
-**Verification:**
-```bash
-go build ./...
-go test ./...
-```
 
 ---
 ```
@@ -59,13 +52,19 @@ go test ./...
   - `[refactor] extract validation logic to separate file`
 
 ### Repo
-- Use exact repo name from workflow.yaml
-- Common values: `backend`, `frontend`
+- Use the exact repo name from `.ai/config/workflow.yaml`, or `root` for the repository root
+- It becomes `repo` in the ticket's `yaml awk-ticket` block: the Worker works there and runs that repo's verify commands
 
 ### Priority
 - **P0**: Critical path, blocks other issues
 - **P1**: Important, core functionality
 - **P2**: Nice to have, polish, tests
+- It becomes `severity` in the ticket's block, and decides which of several ready issues is created (and so worked on) first
+
+### Depends On
+- The proposals whose work must be merged before this one can start
+- It becomes `depends_on` in the ticket's block: the workflow does not start the ticket before those issues are closed
+- List only real ordering constraints; every dependency makes the ticket wait
 
 ### Complexity
 - **1**: Trivial (< 30 min)
@@ -74,17 +73,7 @@ go test ./...
 - **4**: Complex (2-4 hrs)
 - **5**: Major (4+ hrs)
 
-### Labels
-Always include:
-- Issue type: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
-- Repo name: `backend`, `frontend`
-- Workflow label: `ai-task`
-
-Optional:
-- Priority: `priority-p0`, `priority-p1`, `priority-p2`
-- Area: `api`, `database`, `ui`, `config`
-
-### Objective
+### Summary
 - One to two sentences
 - Focus on the "why" and "what"
 - Avoid implementation details
@@ -106,10 +95,7 @@ List all files that will be touched:
 - **DO** describe what behavior should be tested (e.g., "Unit tests cover edge case X")
 
 ### Verification
-Include actual commands to verify:
-- For Go: `go build ./...` and `go test ./...`
-- For Node: `npm run build` and `npm run test`
-- For Unity: `echo 'Unity build via Editor'`
+Do not list commands. The Worker and the review run the verify commands of the issue's repo from `.ai/config/workflow.yaml`.
 
 ## Summary Table
 
@@ -162,9 +148,8 @@ Phase 3 (Testing):
 | **Priority** | P0 |
 | **Complexity** | 2 |
 | **Depends On** | None |
-| **Labels** | feat, backend, ai-task |
 
-**Objective:**
+**Summary:**
 Define the repository port interface for user data access, establishing the contract between the service layer and data persistence.
 
 **Scope:**
@@ -177,12 +162,6 @@ Define the repository port interface for user data access, establishing the cont
 - [ ] Unit tests added for new functionality
 - [ ] All tests pass (`go test ./...`)
 - [ ] Code builds without errors
-
-**Verification:**
-```bash
-go build ./...
-go test ./...
-```
 
 ---
 ```

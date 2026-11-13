@@ -351,6 +351,10 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 				_ = opts.HookRunner.Fire(ctx, "on_merge", hookEnv)
 			}
 
+			// The work landed: the decision engine reads this instead of asking
+			// GitHub whether the closed issue has a merged pull request.
+			analyzer.MarkLanded(opts.StateRoot, opts.IssueNumber)
+
 			// Merge successful - cleanup operations (non-critical, log warnings)
 			if err := closeIssue(ctx, opts.IssueNumber, opts.GHTimeout); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to close issue #%d: %v\n", opts.IssueNumber, err)

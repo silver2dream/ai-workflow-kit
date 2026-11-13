@@ -6,7 +6,9 @@ import (
 	"testing"
 )
 
-func TestParseTicketMetadata(t *testing.T) {
+// A ticket without an awk-ticket block is read from its prose, the way every
+// ticket was before the block existed.
+func TestReadLegacyTicket(t *testing.T) {
 	tests := []struct {
 		name     string
 		body     string
@@ -96,7 +98,10 @@ Fix something dangerous.
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ParseTicketMetadata(tt.body)
+			result := readLegacyTicket(tt.body)
+			if !result.Legacy {
+				t.Error("Legacy is not set")
+			}
 
 			if result.Repo != tt.expected.Repo {
 				t.Errorf("Repo = %q, want %q", result.Repo, tt.expected.Repo)

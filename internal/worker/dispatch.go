@@ -11,6 +11,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
@@ -147,7 +148,19 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 		}, nil
 	}
 
+	// What the ticket says about itself is read from the issue as it stands on
+	// GitHub, before anything is done about it.
+	meta, err := ticketForDispatch(opts.IssueNumber, issue.Body, logger)
+	if err != nil {
+		logger.Log("✗ %v", err)
+		return &DispatchOutput{
+			Status: "failed",
+			Error:  err.Error(),
+		}, nil
+	}
+
 	logger.Log("✓ Issue 驗證通過")
+	logger.Log("Repo: %s", meta.Repo)
 
 	// Step 2.5: Auto-detect merge issue if not provided
 	// This handles the case where Principal doesn't pass --merge-issue
@@ -218,26 +231,21 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 		logger.Log("使用 Principal 傳遞的 merge issue: %s", opts.MergeIssue)
 	}
 
-	// Step 3: Prepare ticket file
+	// Step 3: Prepare ticket file: the issue body, then what the Worker has to
+	// know on top of it. The notes are kept apart from the ticket (see
+	// dispatchNotesMark): they inform the Worker, they do not change the ticket.
 	logger.Log("準備 ticket 文件...")
-	ticketBody := issue.Body
 
-	// Check for previous review blocked reason and append to ticket
-	if reviewReason, err := ghClient.GetLatestReviewBlockedReason(ctx, opts.IssueNumber); err == nil && reviewReason != "" {
-		ticketBody += fmt.Sprintf(`
-
----
-
-## ⚠️ 上次 Review 被阻擋 - 請修復以下問題
-
-%s
-
-**請根據以上錯誤修復代碼，確保所有測試通過後再提交。**
-`, reviewReason)
+	// Why the last review was blocked, if it was.
+	reviewReason, reasonErr := ghClient.GetLatestReviewBlockedReason(ctx, opts.IssueNumber)
+	if reasonErr != nil {
+		reviewReason = ""
+	}
+	if reviewReason != "" {
 		logger.Log("附加 review blocked 原因到 ticket")
 	}
 
-	// Append merge issue instructions if needed
+	baseBranch := "main" // default fallback
 	if opts.MergeIssue != "" {
 		// Reset fail count - merge issue dispatch is a fresh start, not a retry
 		if err := ResetFailCount(opts.StateRoot, opts.IssueNumber); err != nil {
@@ -247,53 +255,17 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 		}
 
 		// Get the base branch from PR
-		baseBranch := "main" // default fallback
 		if opts.PRNumber > 0 {
 			if prBaseBranch, err := ghClient.GetPRBaseBranch(ctx, opts.PRNumber); err == nil && prBaseBranch != "" {
 				baseBranch = prBaseBranch
 				logger.Log("PR #%d base branch: %s", opts.PRNumber, baseBranch)
 			}
 		}
-
-		var instruction string
-		switch opts.MergeIssue {
-		case "conflict":
-			instruction = fmt.Sprintf(`
-
----
-
-## ⚠️ MERGE CONFLICT - 請先解決
-
-PR 有 merge conflict，請執行以下步驟：
-
-1. 在 worktree 中執行 `+"`git fetch origin && git rebase origin/%s`"+`
-2. 解決衝突後 `+"`git add . && git rebase --continue`"+`
-3. 推送更新 `+"`git push --force-with-lease`"+`
-4. 確認 CI 通過
-
-**這是最優先的任務，必須先完成才能繼續其他工作。**`, baseBranch)
-		case "rebase":
-			instruction = fmt.Sprintf(`
-
----
-
-## ⚠️ BRANCH BEHIND - 請先 Rebase
-
-PR 分支落後 base branch，請執行以下步驟：
-
-1. 在 worktree 中執行 `+"`git fetch origin && git rebase origin/%s`"+`
-2. 推送更新 `+"`git push --force-with-lease`"+`
-3. 確認 CI 通過
-
-**這是最優先的任務，必須先完成才能繼續其他工作。**`, baseBranch)
-		}
-		if instruction != "" {
-			ticketBody += instruction
-			logger.Log("附加 merge issue 指示: %s", opts.MergeIssue)
-		}
+		logger.Log("附加 merge issue 指示: %s", opts.MergeIssue)
 	}
 
-	ticketPath, err := SaveTicketFile(opts.StateRoot, opts.IssueNumber, ticketBody)
+	ticketPath, err := SaveTicketFile(opts.StateRoot, opts.IssueNumber,
+		ticketFileContent(issue.Body, reviewReason, opts.MergeIssue, baseBranch))
 	if err != nil {
 		logger.Log("✗ 無法保存 ticket 文件: %v", err)
 		return &DispatchOutput{
@@ -302,10 +274,6 @@ PR 分支落後 base branch，請執行以下步驟：
 		}, nil
 	}
 	logger.Log("✓ Ticket 文件已保存: %s", ticketPath)
-
-	// Parse ticket metadata
-	meta := ParseTicketMetadata(issue.Body)
-	logger.Log("Repo: %s", meta.Repo)
 
 	// Step 4: Add in-progress label and remove merge labels
 	logger.Log("標記 Issue 為 in-progress...")
@@ -561,6 +529,25 @@ func handleWorkerSuccessNoChanges(ctx context.Context, opts DispatchOptions, log
 	return &DispatchOutput{
 		Status: "success_no_changes",
 	}, nil
+}
+
+// ticketForDispatch reads what a ticket says about itself from the issue body.
+// A ticket without an awk-ticket block is still read, the old way; that it
+// happened goes on record, so that it is known when no such ticket is left.
+func ticketForDispatch(issueNumber int, issueBody string, logger *DispatchLogger) (*TicketMetadata, error) {
+	meta, err := ReadTicketMetadata(issueBody)
+	if err != nil {
+		return nil, fmt.Errorf("ticket #%d cannot be used: %w", issueNumber, err)
+	}
+	if meta.Legacy {
+		logger.Log("⚠ Ticket 沒有 `%s` 區塊，按舊格式從內文讀取", ticket.Info)
+		trace.WriteEvent(trace.ComponentPrincipal, trace.TypeDeprecatedPath, trace.LevelWarn,
+			trace.WithIssue(issueNumber),
+			trace.WithData(map[string]any{
+				"path": "ticket without an awk-ticket block",
+			}))
+	}
+	return meta, nil
 }
 
 // handleWorkerFailure handles failed worker execution

@@ -30,6 +30,13 @@ func TestIsRetryable_NonRetryableErrors(t *testing.T) {
 			want:     false,
 		},
 		{
+			// What gh prints for an issue number that does not exist.
+			name:     "graphql could not resolve",
+			output:   "GraphQL: Could not resolve to an issue or pull request with the number of 999999. (repository.issue)",
+			exitCode: 1,
+			want:     false,
+		},
+		{
 			name:     "validation failed 422",
 			output:   "HTTP 422: Validation Failed",
 			exitCode: 1,
@@ -112,6 +119,13 @@ func TestIsRetryable_RetryableErrors(t *testing.T) {
 			name:     "no such host",
 			output:   "dial tcp: lookup api.github.com: no such host",
 			exitCode: 1,
+			want:     true,
+		},
+		{
+			// Not to be taken for GraphQL's "could not resolve to an issue".
+			name:     "host not resolved",
+			output:   "curl: (6) Could not resolve host: api.github.com",
+			exitCode: 6,
 			want:     true,
 		},
 		{

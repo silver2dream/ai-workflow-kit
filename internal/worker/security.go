@@ -7,13 +7,15 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
 // protectedPaths are the workflow's own control files: the configuration,
 // rules, skills and agent definitions that decide how work is dispatched and
 // reviewed. A Worker that edits them changes the rules it is checked against,
 // so the runner rejects such a change unless the ticket allows it
-// (`allow-script-changes` under `## Constraints`).
+// (`allow_script_changes: true` in its awk-ticket block).
 var protectedPaths = []string{
 	".ai/config/",
 	".ai/rules/",
@@ -71,7 +73,7 @@ func CheckScriptModifications(ctx context.Context, wtDir string, allowChanges bo
 	files := splitLines(output)
 	violations := findProtectedChanges(files, whitelist)
 	if len(violations) > 0 && !allowChanges {
-		return violations, fmt.Errorf("protected workflow files modified without approval: %s (to allow it, add 'allow-script-changes' under '## Constraints' in the ticket)", strings.Join(violations, ", "))
+		return violations, fmt.Errorf("protected workflow files modified without approval: %s (to allow it, set 'allow_script_changes: true' in the ticket's '%s' block)", strings.Join(violations, ", "), ticket.Info)
 	}
 
 	return violations, nil
