@@ -76,11 +76,11 @@ awkit reset --dry-run     # 預覽模式，不實際執行
 | `--stop` | 移除 STOP 標記 |
 | `--lock` | 移除鎖定檔案（kickoff.lock）（謹慎使用） |
 | `--deprecated` | 移除已棄用檔案 |
-| `--results` | 清理 result 檔案（`.ai/results/`） |
+| `--results` | 清理 result 檔案（`.ai/state/results/`） |
 | `--traces` | 清理 per-issue trace 檔案（`.ai/state/traces/`，worker 存活記錄，check-result 的 crash/timeout 偵測依賴它；下次 dispatch 會重建） |
 | `--events` | 清理 event stream 檔案（`.ai/state/events/`） |
 | `--labels` | 將 GitHub 上的 `review-failed` 標籤重設為 `pr-ready` |
-| `--temp` | 清理暫存票據檔案（`.ai/temp/ticket-*.md`） |
+| `--temp` | 清理暫存票據檔案（`.ai/state/tmp/ticket-*.md`） |
 | `--sessions` | 清理舊 session 檔案（保留最近 5 個） |
 | `--reports` | 清理舊版工作流程報告（`.ai/state/workflow-report-*.md`） |
 | `--orphans` | 清理超過 1 小時的孤立 .tmp 檔案 |
@@ -111,7 +111,7 @@ AWK Reset
 | O0 | Git ignore — 檢查 state/result 目錄是否被 git 忽略 | 10 |
 | O1 | Scan repo（預留） | 5 |
 | O3 | Audit project（預留） | 5 |
-| O5 | Config validation — 驗證 workflow.yaml 結構與必要欄位 | 15 |
+| O5 | Config validation — 驗證 config.yaml 結構與必要欄位 | 15 |
 | O7 | Version sync — 檢查版本檔案是否存在 | 5 |
 | O8 | File encoding — 檢查 CRLF 行尾和 UTF-16 BOM 編碼問題 | 10 |
 | O10 | Test suite（預留） | 10 |
@@ -147,36 +147,17 @@ AWK Reset
 
 **症狀：**
 ```
-Config file not found: .ai/config/workflow.yaml
+Config file not found: .ai/config.yaml
 ```
 
-**原因：** workflow.yaml 不存在或路徑錯誤
+**原因：** config.yaml 不存在或路徑錯誤
 
 **解決：**
-1. 確認 `.ai/config/workflow.yaml` 存在
+1. 確認 `.ai/config.yaml` 存在
 2. 從正確的專案根目錄執行命令
 3. 如果是新專案，使用 `awkit init` 初始化
 
 ---
-
-### 找不到 Schema 檔
-
-**症狀：**
-```
-Schema file not found: .ai/config/workflow.schema.json
-```
-
-**原因：** Schema 檔案遺失
-
-**解決：**
-```bash
-# 重新生成配置
-awkit generate
-```
-
----
-
-## Validation Error (Exit Code 3)
 
 ### YAML 格式錯誤
 
@@ -215,7 +196,7 @@ repos:
 Validation error: 'repos' is a required property
 ```
 
-**原因：** workflow.yaml 缺少必要欄位
+**原因：** config.yaml 缺少必要欄位
 
 **解決：** 參考 [配置說明](configuration.md) 補齊必要欄位
 
@@ -450,7 +431,7 @@ FAILED tests/test_xxx.py::test_function
 
 #### 終端機顯示中文亂碼
 
-**症狀：** 執行 `awkit init` 或查看 workflow.yaml 時，中文註解顯示為亂碼
+**症狀：** 執行 `awkit init` 或查看 config.yaml 時，中文註解顯示為亂碼
 
 **原因：** Windows PowerShell 預設使用系統編碼（Big5/GBK），而非 UTF-8
 

@@ -14,33 +14,52 @@ import (
 
 // Where things are, relative to the root of the project, with forward
 // slashes.
+//
+// A project holds three things of AWK's under .ai: what the project says
+// (ConfigFile, RosterFile) and what a run leaves behind (StateDir). What
+// agents read is under .claude, where Claude Code looks for it.
 const (
 	// ConfigFile is the configuration of the project.
-	ConfigFile = ".ai/config/workflow.yaml"
+	ConfigFile = ".ai/config.yaml"
 	// RosterFile names the roles that plan when `awkit plan` runs.
 	RosterFile = ".ai/roster.yaml"
 
 	// RulesDir holds the rule files agents are told to read. The ones in
 	// KitRulesDir are AWK's: an upgrade replaces them. The others are the
 	// project's own.
-	RulesDir    = ".ai/rules"
-	KitRulesDir = ".ai/rules/_kit"
+	RulesDir    = ".claude/rules"
+	KitRulesDir = ".claude/rules/_kit"
 	// SkillsDir holds the skills the Principal works from.
-	SkillsDir = ".ai/skills"
+	SkillsDir = ".claude/skills"
+	// AgentsDir holds the subagents the Principal hands work to.
+	AgentsDir = ".claude/agents"
 
-	// StateDir holds what a run remembers from one step to the next. Nothing
-	// in it is committed.
+	// StateDir holds what a run leaves behind: what it remembers from one
+	// step to the next, its results and its logs. Nothing in it is
+	// committed.
 	StateDir = ".ai/state"
 	// ResultsDir holds one file per issue: what the Worker's run came to.
-	ResultsDir = ".ai/results"
+	ResultsDir = StateDir + "/results"
 	// RunsDir holds one directory per issue: the Worker's prompt, its plan
 	// and its summary.
-	RunsDir = ".ai/runs"
+	RunsDir = StateDir + "/runs"
 	// LogsDir holds the logs of the Principal and of the Workers.
-	LogsDir = ".ai/exe-logs"
+	LogsDir = StateDir + "/logs"
 	// TempDir holds files that live for one step, such as the ticket a
 	// dispatch hands the Worker.
-	TempDir = ".ai/temp"
+	TempDir = StateDir + "/tmp"
+)
+
+// Where the same things were before. `awkit upgrade` moves a project from
+// there to here; a command that finds a project still there says so.
+const (
+	OldConfigFile = ".ai/config/workflow.yaml"
+	OldRulesDir   = ".ai/rules"
+	OldSkillsDir  = ".ai/skills"
+	OldResultsDir = ".ai/results"
+	OldRunsDir    = ".ai/runs"
+	OldLogsDir    = ".ai/exe-logs"
+	OldTempDir    = ".ai/temp"
 )
 
 // In returns a location of the project at root, as a path of this system.
@@ -73,6 +92,9 @@ func KitRules(root string) string { return In(root, KitRulesDir) }
 
 // Skills returns the directory of the project's skills.
 func Skills(root string) string { return In(root, SkillsDir) }
+
+// Agents returns the directory of the project's subagents.
+func Agents(root string) string { return In(root, AgentsDir) }
 
 // State returns the state directory, or a path below it.
 func State(root string, elem ...string) string {

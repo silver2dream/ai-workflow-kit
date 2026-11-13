@@ -26,7 +26,7 @@ awkit init /path/to/your-repo --preset godot-go --scaffold
 | `generic` (default) | single repo, any stack | `root` at `./`, language `generic` | empty: you set them |
 | `godot-go` | monorepo | `backend/` (Go), `frontend/` (Godot C#) | `go build ./...`, `go test ./...`; `dotnet build`, `dotnet test` |
 
-The `generic` preset assumes nothing about your project. Set `verify.build` and `verify.test` of the repo in `.ai/config/workflow.yaml` before the first run: the Worker runs them before it opens a pull request, the review runs the tests again, and CI is generated from them.
+The `generic` preset assumes nothing about your project. Set `verify.build` and `verify.test` of the repo in `.ai/config.yaml` before the first run: the Worker runs them before it opens a pull request, the review runs the tests again, and CI is generated from them.
 
 ## Using --scaffold
 
@@ -68,9 +68,9 @@ The skeleton builds and passes its tests as it is: `go build ./... && go test ./
 
 Files that already exist are kept; `--force` overwrites them.
 
-## 1) Configure `workflow.yaml`
+## 1) Configure `config.yaml`
 
-Edit `.ai/config/workflow.yaml`:
+Edit `.ai/config.yaml`:
 
 - Set `repos[].type` based on your project structure:
   - `root`: Single repository (path must be `./`)
@@ -108,14 +108,14 @@ If you don't use an integration/release branch split, set `git.integration_branc
 
 ## 2) (Optional) Enable rule packs
 
-AWK defaults to a minimal rule set under `.ai/rules/_kit/`.
+AWK defaults to a minimal rule set under `.claude/rules/_kit/`.
 
-If you want stricter, tech-specific rules, copy them from `.ai/rules/_examples/` into `.ai/rules/`, then enable them in `.ai/config/workflow.yaml` under `rules.custom`.
+If you want stricter rules, copy a rule pack from the AWK repository ([docs/examples/rules](https://github.com/silver2dream/ai-workflow-kit/tree/main/docs/examples/rules)) into `.claude/rules/`, then enable it in `.ai/config.yaml` under `rules.custom`.
 
 Example:
 
-- Copy `.ai/rules/_examples/testing-strategy.md` → `.ai/rules/testing-strategy.md`
-- Update `.ai/config/workflow.yaml`:
+- Copy `docs/examples/rules/testing-strategy.md` of the AWK repository → `.claude/rules/testing-strategy.md`
+- Update `.ai/config.yaml`:
 
 ```yaml
 rules:
@@ -137,7 +137,7 @@ This will also generate `.claude/settings.local.json` with pre-approved permissi
 
 For anything larger than one ticket, let the council plan it: `awkit plan "<what you want built>"` has the roles of `.ai/roster.yaml` argue the brief out, write the documents under `docs/`, record their decisions and propose the tickets; `awkit plan approve <plan>` creates the issues once you have read the list. See "Plan the work: the council" in the README.
 
-The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block that names its repo and the issues it waits for. Write the body to a file (the template is in `.ai/skills/principal-workflow/tasks/create-task.md`) and create the issue:
+The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block that names its repo and the issues it waits for. Write the body to a file (the template is in `.claude/skills/principal-workflow/tasks/create-task.md`) and create the issue:
 
 ```bash
 awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md

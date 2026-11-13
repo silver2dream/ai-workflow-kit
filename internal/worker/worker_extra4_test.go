@@ -87,7 +87,7 @@ func TestEnsureWorktreeDirs_CreatesDirectories(t *testing.T) {
 	}
 
 	// Check expected dirs were created
-	for _, sub := range []string{".worktrees", ".ai/runs", ".ai/results", ".ai/exe-logs"} {
+	for _, sub := range []string{".worktrees", ".ai/state/runs", ".ai/state/results", ".ai/state/logs"} {
 		full := filepath.Join(dir, sub)
 		if _, err := os.Stat(full); err != nil {
 			t.Errorf("directory %q not created: %v", sub, err)

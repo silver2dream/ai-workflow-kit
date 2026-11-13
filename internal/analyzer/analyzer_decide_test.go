@@ -265,7 +265,7 @@ func TestDecide_ConfigNotValid(t *testing.T) {
 		if err != nil || decision.NextAction != ActionNone || decision.ExitReason != ReasonConfigInvalid {
 			t.Errorf("%s: decision = %+v, err = %v; want the run to stop with %s", name, decision, err, ReasonConfigInvalid)
 		}
-		if !strings.Contains(string(said), "workflow.yaml is not valid: ") {
+		if !strings.Contains(string(said), layout.ConfigFile+" is not valid: ") {
 			t.Errorf("%s: what is wrong with the file is not said: %q", name, said)
 		}
 		// Nothing was decided from a file that could not be read: no loop was counted.

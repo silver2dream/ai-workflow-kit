@@ -59,7 +59,7 @@ awkit init /path/to/your-project --preset godot-go
 升級現有專案：
 
 ```bash
-# 升級 kit 檔案（保留你的 workflow.yaml）
+# 升級 kit 檔案（保留你的 config.yaml）
 awkit upgrade
 
 # 重新生成輔助檔案
@@ -75,9 +75,9 @@ awkit generate
 
 ## 初始化專案
 
-### 步驟 1：配置 workflow.yaml
+### 步驟 1：配置 config.yaml
 
-編輯 `.ai/config/workflow.yaml`，設定你的專案結構：
+編輯 `.ai/config.yaml`，設定你的專案結構：
 
 **Single Repo 範例：**
 
@@ -130,7 +130,7 @@ awkit generate
 這會產生：
 - `CLAUDE.md` - Principal AI 的指令檔
 - `AGENTS.md` - Worker AI 的指令檔
-- `.ai/rules/_kit/git-workflow.md` - Git 工作流程規則
+- `.claude/rules/_kit/git-workflow.md` - Git 工作流程規則
 - `.claude/settings.local.json` - Claude Code 權限設定（自動批准 gh、git 等命令）
 
 ### 步驟 3：驗證設定
@@ -182,7 +182,7 @@ repo: root
 ```
 ````
 
-`yaml awk-ticket` 區塊的欄位：`schema` 固定為 `1`；`repo` 是 `workflow.yaml` 裡的 repo 名稱或 `root`；需要等其他 Issue 先完成時，加上 `depends_on: [12, 15]`。完整說明見 `.ai/skills/principal-workflow/tasks/create-task.md`。
+`yaml awk-ticket` 區塊的欄位：`schema` 固定為 `1`；`repo` 是 `config.yaml` 裡的 repo 名稱或 `root`；需要等其他 Issue 先完成時，加上 `depends_on: [12, 15]`。完整說明見 `.claude/skills/principal-workflow/tasks/create-task.md`。
 
 ### 2. 建立 Issue
 
@@ -246,13 +246,13 @@ brew install bash
 
 **問題：** `yaml.scanner.ScannerError`
 
-**解決：** 檢查 `workflow.yaml` 的縮排是否使用空格 (不要用 Tab)
+**解決：** 檢查 `config.yaml` 的縮排是否使用空格 (不要用 Tab)
 
 ---
 
 ## 下一步
 
-- [配置說明](configuration.md) - 完整的 workflow.yaml 設定
+- [配置說明](configuration.md) - 完整的 config.yaml 設定
 - [故障排除](troubleshooting.md) - 常見錯誤與解決方案
 - [FAQ](faq.md) - 常見問題
 
@@ -264,7 +264,7 @@ brew install bash
 |------|------|
 | `awkit init` | 初始化新專案 |
 | `awkit init --preset <name>` | 使用指定 preset 初始化 |
-| `awkit upgrade` | 升級 kit 檔案，保留 workflow.yaml |
+| `awkit upgrade` | 升級 kit 檔案，保留 config.yaml |
 | `awkit uninstall` | 移除 AWK |
 | `awkit list-presets` | 列出可用 preset |
 | `awkit check-update` | 檢查 CLI 更新 |
@@ -291,7 +291,7 @@ Options:
   --preset <name>     使用指定 preset (generic 或 godot-go)
   --scaffold          建立專案骨架（僅 godot-go）
   --force             覆蓋所有現有檔案
-  --force-config      只覆蓋 workflow.yaml
+  --force-config      只覆蓋 config.yaml
   --dry-run           預覽操作，不實際執行
   --no-generate       跳過執行 awkit generate
   --project-name      覆蓋專案名稱

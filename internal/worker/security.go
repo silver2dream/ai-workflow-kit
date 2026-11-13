@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"path"
 	"regexp"
 	"runtime"
 	"strings"
@@ -13,22 +12,28 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
-// protectedPaths are the workflow's own control files: the configuration,
-// rules, skills and agent definitions that decide how work is dispatched and
-// reviewed. A Worker that edits them changes the rules it is checked against,
+// protectedPaths are the workflow's own control files: what decides how work
+// is dispatched and reviewed, and what the agents that do it are told and
+// allowed. A Worker that edits them changes the rules it is checked against,
 // so the runner rejects such a change unless the ticket allows it
 // (`allow_script_changes: true` in its awk-ticket block).
+//
+// All of .claude is protected, not only what AWK puts there: rules and skills
+// are instructions to the Principal and the reviewers, and a settings file
+// can grant permissions and run commands in their sessions.
 var protectedPaths = []string{
-	path.Dir(layout.ConfigFile) + "/",
-	layout.RulesDir + "/",
-	layout.SkillsDir + "/",
-	".claude/agents/",
+	".claude/",
 }
 
-// protectedFiles are single files at the repository root with the same standing.
+// protectedFiles are single files with the same standing: the project's
+// configuration and roster, the guides of the Principal and the Worker, and
+// the file that names the project's MCP servers.
 var protectedFiles = []string{
+	layout.ConfigFile,
+	layout.RosterFile,
 	"CLAUDE.md",
 	"AGENTS.md",
+	".mcp.json",
 }
 
 // protectedPathList renders the protected set for the Worker prompt, so the
@@ -38,16 +43,18 @@ func protectedPathList() string {
 	return strings.Join(all, ", ")
 }
 
-// isProtectedPath reports whether a normalized, repository-relative path is
-// one of the workflow's control files.
+// isProtectedPath reports whether a repository-relative path is one of the
+// workflow's control files. Case does not count: on a file system that
+// ignores it, .Claude/settings.json is .claude/settings.json.
 func isProtectedPath(normalized string) bool {
+	name := strings.ToLower(normalized)
 	for _, prefix := range protectedPaths {
-		if strings.HasPrefix(normalized, prefix) {
+		if strings.HasPrefix(name, strings.ToLower(prefix)) {
 			return true
 		}
 	}
 	for _, file := range protectedFiles {
-		if normalized == normalizePath(file) {
+		if name == strings.ToLower(normalizePath(file)) {
 			return true
 		}
 	}

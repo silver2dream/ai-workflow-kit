@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // AuditProject performs a full audit of the project at the given path.
@@ -51,7 +52,7 @@ func CheckRequiredFiles(path string) []Finding {
 		findings = append(findings, NewFinding(FindingMissingAgentsMD, SeverityP0, agentsPath))
 	}
 
-	// Check .ai/config/workflow.yaml
+	// The project's configuration
 	workflowPath := config.Path(path)
 	if !fileExists(workflowPath) {
 		findings = append(findings, NewFinding(FindingMissingWorkflowYAML, SeverityP0, workflowPath))
@@ -87,30 +88,15 @@ func CheckWorktreeStatus(path string) []Finding {
 	return findings
 }
 
-// CheckAIDirectory checks if the .ai directory structure is complete.
+// CheckAIDirectory checks that the project has AWK's directory. What a run
+// writes below it is not required: git ignores it, so a fresh clone has none
+// of it until a command makes it.
 func CheckAIDirectory(path string) []Finding {
 	var findings []Finding
 
-	// Required subdirectories in .ai
-	requiredDirs := []string{
-		"config",
-		"state",
-		"results",
-		"exe-logs",
-	}
-
-	aiDir := filepath.Join(path, ".ai")
+	aiDir := filepath.Dir(layout.Config(path))
 	if !dirExists(aiDir) {
 		findings = append(findings, NewFinding(FindingMissingAIDir, SeverityP1, aiDir))
-		return findings
-	}
-
-	// Check each required subdirectory
-	for _, dir := range requiredDirs {
-		dirPath := filepath.Join(aiDir, dir)
-		if !dirExists(dirPath) {
-			findings = append(findings, NewFinding(FindingMissingAIDir, SeverityP1, dirPath))
-		}
 	}
 
 	return findings

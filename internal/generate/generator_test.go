@@ -1211,39 +1211,6 @@ func TestInstallAgentsDir_WithCustomAgents(t *testing.T) {
 	}
 }
 
-func TestInstallAgentsDir_CleanStaleAgents(t *testing.T) {
-	tmpDir := t.TempDir()
-	agentsDir := filepath.Join(tmpDir, "agents")
-	if err := os.MkdirAll(agentsDir, 0755); err != nil {
-		t.Fatalf("mkdir error: %v", err)
-	}
-
-	// Create a stale agent file
-	stalePath := filepath.Join(agentsDir, "old-agent.md")
-	if err := os.WriteFile(stalePath, []byte("stale"), 0644); err != nil {
-		t.Fatalf("write stale file error: %v", err)
-	}
-
-	agents := AgentsConfig{
-		Builtin: []string{"pr-reviewer", "conflict-resolver"},
-		Custom:  []CustomAgentDef{},
-	}
-
-	if err := installAgentsDir(agentsDir, agents); err != nil {
-		t.Fatalf("installAgentsDir() error = %v", err)
-	}
-
-	// Stale file should be removed
-	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
-		t.Error("stale agent file should have been removed")
-	}
-
-	// Built-in should still exist
-	if _, err := os.Stat(filepath.Join(agentsDir, "pr-reviewer.md")); os.IsNotExist(err) {
-		t.Error("built-in agent should still exist after cleanup")
-	}
-}
-
 // =============================================================================
 // ValidateCustomRules Tests
 // =============================================================================
@@ -1383,5 +1350,59 @@ func TestValidateRepoPath_AllRepoTypes(t *testing.T) {
 					tt.repoType, tt.repoPath, isValid, tt.expectValid)
 			}
 		})
+	}
+}
+
+// A subagent the generator wrote for a custom agent goes when the
+// configuration no longer names that agent. A subagent the project put there
+// itself stays, whatever the configuration says: the agents directory is
+// Claude Code's before it is AWK's.
+func TestInstallAgentsDir_CleanStaleAgents(t *testing.T) {
+	agentsDir := filepath.Join(t.TempDir(), "agents")
+	builtin := []string{"pr-reviewer", "conflict-resolver"}
+	exists := func(name string) bool {
+		_, err := os.Stat(filepath.Join(agentsDir, name))
+		return err == nil
+	}
+
+	two := AgentsConfig{Builtin: builtin, Custom: []CustomAgentDef{
+		{Name: "sec-check", Description: "Security"},
+		{Name: "perf", Description: "Performance"},
+	}}
+	if err := installAgentsDir(agentsDir, two); err != nil {
+		t.Fatalf("installAgentsDir: %v", err)
+	}
+	generated, err := os.ReadFile(filepath.Join(agentsDir, "sec-check.md"))
+	if err != nil || !strings.Contains(string(generated), GeneratedAgentMark) {
+		t.Fatalf("a generated subagent does not carry the generator's mark (err %v):\n%s", err, generated)
+	}
+	// The mark comes after the front matter: Claude Code reads that first.
+	if !strings.HasPrefix(string(generated), "---\nname: sec-check\n") {
+		t.Errorf("the subagent does not start with its front matter:\n%s", generated)
+	}
+
+	own := "---\nname: designer\ndescription: The project's own\n---\n\nNot from the configuration.\n"
+	if err := os.WriteFile(filepath.Join(agentsDir, "designer.md"), []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsDir, "notes.txt"), []byte("not a subagent"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	one := AgentsConfig{Builtin: builtin, Custom: []CustomAgentDef{{Name: "perf", Description: "Performance"}}}
+	if err := installAgentsDir(agentsDir, one); err != nil {
+		t.Fatalf("installAgentsDir: %v", err)
+	}
+
+	if exists("sec-check.md") {
+		t.Error("the subagent of an agent the configuration no longer names is still there")
+	}
+	for _, kept := range []string{"perf.md", "pr-reviewer.md", "conflict-resolver.md", "designer.md", "notes.txt"} {
+		if !exists(kept) {
+			t.Errorf("%s was removed", kept)
+		}
+	}
+	if content, _ := os.ReadFile(filepath.Join(agentsDir, "designer.md")); string(content) != own {
+		t.Errorf("the project's own subagent was changed:\n%s", content)
 	}
 }

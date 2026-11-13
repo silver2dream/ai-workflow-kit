@@ -4,7 +4,7 @@
 // ineffective lessons are retired and effective ones can be promoted into
 // hard gates.
 //
-// Design: .ai/specs/learning-loop/design.md
+// Design: docs/developer/specs/learning-loop/design.md
 // The store is a committable JSON artifact (like the Understand-Anything
 // knowledge graph): team-shareable, diffable, and survives state resets.
 package lessons

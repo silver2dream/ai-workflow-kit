@@ -481,7 +481,7 @@ func TestInstall_ReportsAFailedGenerate(t *testing.T) {
 	if !strings.Contains(result.GenerateError.Error(), "project.type") {
 		t.Errorf("the error should say what is wrong with the config, got: %v", result.GenerateError)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".ai", "config", "workflow.schema.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(layout.KitRules(dir), "git-workflow.md")); err != nil {
 		t.Errorf("the kit files should be installed all the same: %v", err)
 	}
 	if files := workflowFiles(t, dir); len(files) != 0 {

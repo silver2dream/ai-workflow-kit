@@ -25,7 +25,7 @@ Options:
   --ticket        Required: Ticket file path
   --repo          Optional: Repo override (root/backend/frontend)
   --state-root    Optional: Override state root (default: git root)
-  --gh-timeout    Optional: GitHub CLI timeout (default: timeouts.gh_seconds of workflow.yaml, 60s)
+  --gh-timeout    Optional: GitHub CLI timeout (default: timeouts.gh_seconds of `+layout.ConfigFile+`, 60s)
   --git-timeout   Optional: Git timeout (default: timeouts.git_seconds, 120s)
   --codex-timeout Optional: Worker backend timeout (default: timeouts.codex_minutes, 30m)
   --merge-issue   Optional: Merge issue type (conflict/rebase)

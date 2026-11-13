@@ -605,3 +605,20 @@ func TestRunSubmoduleAudit_EmptySubmoduleList(t *testing.T) {
 	// Empty slice or nil are both valid results when there are no findings
 	_ = findings // findings may be nil or empty slice, both are valid
 }
+
+// A fresh clone has the project's configuration and nothing a run wrote: git
+// ignores that. It is a whole project all the same. The audit used to ask for
+// the directories of the runs, and found a project wanting until it had run.
+func TestCheckAIDirectory_AFreshClone(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".ai", "config.yaml"), []byte("project: {name: demo}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if findings := CheckAIDirectory(dir); len(findings) != 0 {
+		t.Errorf("a fresh clone has findings: %+v", findings)
+	}
+}
