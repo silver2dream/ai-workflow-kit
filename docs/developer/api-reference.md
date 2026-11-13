@@ -142,7 +142,7 @@ awkit submit-review --pr N --issue M --ci-status passed --body-file review.json
 | 套件 | 職責 |
 |------|------|
 | `internal/lessons` | 學習迴圈:Store（`.ai/state/lessons.json`）、Select（相關性/注入預算）、Settle（只在教訓適用的 PR 上結算命中/落空 + 狀態機）、Distill（以「被拒→通過」案例為單位的 fail-closed LLM 蒸餾） |
-| `internal/reviewer` | 審查管線:`structured.go`（JSON 契約）、`severity.go`（severity/verdict 閘門）、`multi.go`/`secondary.go`/`consensus.go`（multi-model 共識,接進 `submit.go`）、`evidence.go`（證據驗證）、`feedback.go`、`learning.go`（每個 review 結果的記錄 → 結算 → 合併時蒸餾） |
+| `internal/reviewer` | 審查管線:`structured.go`（JSON 契約）、`severity.go`（severity/verdict 閘門）、`multi.go`/`secondary.go`/`consensus.go`（multi-model 共識,接進 `submit.go`）、`evidence.go`（證據驗證）、`feedback.go`、`learning.go`（每個 review 結果的記錄 → 結算 → 合併時蒸餾）、`human_feedback.go`（維護者審查意見:合併前閘門、交給 Worker、記為 human 證據） |
 | `internal/worker` | Worker 執行:`knowledgegraph.go`（Understand-Anything 地圖注入）、`usage.go`（token/成本掃描）、`lessons_inject.go`（教訓注入 + 歸因） |
 | `internal/kickoff` | Principal 啟動器:PTY 執行（Windows ConPTY）、stream-json 解析、`session_usage` 事件 |
 | `internal/trace` | 統一事件流（`.ai/state/events/`），含 `session_usage`（token/成本）|
