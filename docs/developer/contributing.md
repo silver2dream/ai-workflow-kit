@@ -30,7 +30,7 @@ go test ./...
 ├── internal/         # 核心套件（analyzer, reviewer, worker, lessons, kickoff, ...）
 ├── .ai/              # 這個 repo 自己的 config.yaml（不隨 kit 發佈）
 ├── .claude/          # kit 本體：rules/_kit、skills（principal-workflow、post-mortem、release-checklist）、agents
-└── docs/             # 文件 (你正在讀的)；examples/rules 是範例規則包，developer/specs 是 AWK 自己的設計文件
+└── docs/             # 文件 (你正在讀的)；developer/specs 是 AWK 自己的設計文件
 ```
 
 ---

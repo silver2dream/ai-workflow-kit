@@ -5,9 +5,10 @@ import (
 	"strings"
 )
 
-// A preset decides what a new project starts with: its workflow config and,
-// with --scaffold, a project skeleton. Everything else, CI workflows
-// included, is generated from that config.
+// A preset decides what a new project starts with: its workflow config, the
+// rules for its stack (starter_rules.go) and, with --scaffold, a project
+// skeleton. Everything else, CI workflows included, is generated from that
+// config.
 const (
 	// PresetGeneric assumes nothing about the stack: one repository, and the
 	// build and test commands are left for the project to fill in.
@@ -52,8 +53,21 @@ func unknownPreset(preset string) error {
 	return fmt.Errorf("%w: %q (available: %s)", ErrUnknownPreset, preset, strings.Join(Presets, ", "))
 }
 
-// configSections are the sections every preset shares.
-const configSections = `
+// sharedSections are the sections every preset shares. The rules a project's
+// agents are told to read are the kit's and the ones the preset starts the
+// project with: the list is taken from the files, so the two cannot differ.
+func sharedSections(preset string) string {
+	custom := "  custom: []\n"
+	if rules := StarterRules(preset); len(rules) > 0 {
+		custom = "  custom:\n"
+		for _, rule := range rules {
+			custom += "    - " + rule + "\n"
+		}
+	}
+	return configBeforeRules + "\nrules:\n  kit:\n    - git-workflow\n" + custom + configAfterRules
+}
+
+const configBeforeRules = `
 git:
   integration_branch: "feat/example"
   release_branch: "main"
@@ -78,12 +92,9 @@ github:
     review_failed: "review-failed"
     merge_conflict: "merge-conflict"
     needs_rebase: "needs-rebase"
+`
 
-rules:
-  kit:
-    - git-workflow
-  custom: []
-
+const configAfterRules = `
 agents:
   builtin:
     - pr-reviewer
@@ -140,7 +151,7 @@ repos:
       build: ""
       test: ""
 `, projectName)
-	return []byte(head + configSections)
+	return []byte(head + sharedSections(PresetGeneric))
 }
 
 func godotGoConfig(projectName string) []byte {
@@ -169,5 +180,5 @@ repos:
       build: "dotnet build"
       test: "dotnet test"
 `, projectName)
-	return []byte(head + configSections)
+	return []byte(head + sharedSections(PresetGodotGo))
 }

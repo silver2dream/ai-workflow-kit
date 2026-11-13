@@ -193,23 +193,12 @@ rules:
     - frontend-patterns
 ```
 
-### 規則查找順序
+### 規則檔的位置
 
-1. `.claude/rules/{rule}.md` (使用者自訂優先)
-2. `.claude/rules/_kit/{rule}.md` (Kit 核心)
+- `rules.kit` 的每一項對應 `.claude/rules/_kit/{rule}.md`：AWK 附的，升級時更新。
+- `rules.custom` 的每一項對應 `.claude/rules/{rule}.md`：專案自己的，升級不會動。列在這裡，`AGENTS.md` 才會要求 Worker 讀它；檔案不存在時 `awkit generate` 會警告。
 
-### 使用範例規則
-
-```bash
-# 複製範例規則
-# 規則包在 AWK repo 的 docs/examples/rules/，把要用的那一份複製進專案
-cp <ai-workflow-kit>/docs/examples/rules/testing-strategy.md .claude/rules/
-
-# 在 config.yaml 中啟用
-rules:
-  custom:
-    - testing-strategy
-```
+`godot-go` preset 建立專案時會寫下 `backend`、`frontend`、`testing` 三份起始規則並列在 `rules.custom`。規則檔的寫法見 [Skills 與規則](skills.md#規則檔)。
 
 ---
 

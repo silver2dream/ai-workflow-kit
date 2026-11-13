@@ -1,149 +1,127 @@
-# Skills 使用指南
+# Skills 與規則
 
-本文件說明 AI Workflow Kit 的 Skills 功能。
+AWK 告訴 agent 的事分成三種檔案，各管一件事：
 
----
+| 檔案 | 管什麼 | 誰維護 |
+|---|---|---|
+| `CLAUDE.md`、`AGENTS.md` | 地圖：你是誰、每件事的定義處在哪裡 | `awkit generate` 從 `.ai/config.yaml` 產生，不要手改 |
+| `.claude/rules/` | 規則：要求什麼、禁止什麼、要檢查什麼 | `_kit/` 下的隨 AWK 升級；其餘是專案自己的 |
+| `.claude/skills/` | 流程：一件工作照什麼順序做 | AWK 附的三個隨升級更新；專案可以加自己的 |
 
-## 什麼是 Skills？
-
-Skills 是 AWK 的技能系統，用於定義 AI Agent 的可執行任務。每個 Skill 是一組結構化的指令，讓 Agent 能夠執行特定的工作流程。
-
-Skills 可以透過 Claude Code 的 Slash Command 或直接對話觸發。
-
----
-
-## 可用的 Skills
-
-### `/create-issues`
-
-自動建立 GitHub Issues。
-
-**用途：**
-- 根據專案分析建立 Issue
-- 批量建立任務清單
-
-**使用方式：**
-```
-/create-issues <描述你想建立什麼類型的 issues>
-```
-
-**範例：**
-```
-/create-issues 更新文檔
-/create-issues 重構 API 模組
-```
-
-**流程：**
-1. **Analyze** - 分析專案結構和現有文件
-2. **Breakdown** - 詢問具體需求 (scope, priority)
-3. **Propose** - 提出 Issue 清單
-4. **Approval** - 等待使用者確認
-5. **Create** - 建立 GitHub Issues
+一個主題只在一個地方定義。兩個檔案說法不同時，以定義處為準，並修正另一個。
 
 ---
 
-### `/principal-workflow`
+## AWK 附的 Skills
 
-Principal Agent 的主工作流程。
+三個都在 `.claude/skills/<名稱>/`，由 `awkit init` 安裝、`awkit upgrade` 更新。
 
-**用途：**
-- 執行完整的 AWK 自動化工作流程
-- 通常由 `awkit run` 自動觸發
+### `principal-workflow`
 
-**流程：**
-1. 取得下一張票券（未完成、依賴都已完成的 Issue 中編號最小的）
-2. 調度 Worker 執行
-3. 審查 PR
-4. 合併或退回
-5. 迴圈
+`awkit run` 啟動的 Principal 用它跑主迴圈：問 `awkit analyze-next` 下一步 → 派工、檢查結果或交付審查 → 再問，直到沒有工作或需要人處理。你不需要自己呼叫它。
 
----
+它的 `references/ticket.md` 是票券格式的定義處。在 Claude Code 裡說「幫我補一張票」時，agent 會照那份文件寫，再用 `awkit create-task` 建立。一批新工作用 `awkit plan` 規劃。
 
-### `/post-mortem`
+### `post-mortem`
 
-任務失敗後的結構化事後分析（唯讀）。
-
-**用途：**
-- 分析 Worker/Review 失敗的根因
-- 是[學習迴圈](configuration.md#lessons---學習迴圈設定)的手動入口 —— 分析出的教訓可用 `awkit lessons add` 記錄
-
----
-
-### `/release-checklist`
-
-發布前的 go/no-go 驗證。
-
-**用途：**
-- 在合併整合分支到 `main`、打 release tag 前執行
-- 檢查測試、未提交變更、依賴、CI 狀態、分支與 main 的落差
-- 產出明確的 GO / NO-GO 決策（僅驗證,不會自動修復或合併）
-
----
-
-## Skills 結構
-
-每個 Skill 由以下檔案組成：
+流程出錯之後的失敗分析，只讀不改：收集證據 → 判定根因 → 評估影響範圍 → 提出復原步驟與預防措施。
 
 ```
-.claude/skills/<skill-name>/
-├── SKILL.md           # 技能入口和總覽
-├── phases/            # 流程階段
-│   ├── analyze.md     # 分析階段指令
-│   ├── execute.md     # 執行階段指令
-│   └── verify.md      # 驗證階段指令
-├── references/        # 參考文件
-└── tasks/             # 任務範本
+/post-mortem issue 42 的 Worker 連續失敗三次
+```
+
+分析出的教訓可以用 `awkit lessons add` 記進[學習迴圈](configuration.md#lessons---學習迴圈設定)。
+
+### `release-checklist`
+
+發版前的檢查，只檢查、不修不推：建置與測試、工作目錄、版本與變更紀錄、相依套件、CI、與 release 分支的差距，最後給出 GO 或 NO-GO。分支與驗證指令讀 `.ai/config.yaml`。
+
+```
+/release-checklist
 ```
 
 ---
 
-## 建立自訂 Skill
+## 規則檔
 
-### 1. 建立目錄結構
+### AWK 附的
 
-```bash
-mkdir -p .claude/skills/my-skill/phases
-```
+`.claude/rules/_kit/git-workflow.md`：分支、commit 格式、PR 的規則，由 `awkit generate` 依設定檔產生。
 
-### 2. 建立 SKILL.md
+### Preset 附的起始規則
+
+`godot-go` preset 建立專案時，會寫下三份起始規則，並列在設定檔的 `rules.custom`：
+
+| 檔案 | 範圍 |
+|---|---|
+| `.claude/rules/backend.md` | `backend/`：Go 的結構、錯誤處理、context 與並發、資料的修改 |
+| `.claude/rules/frontend.md` | `frontend/`：全面 C#、Core 與 Godot 的分層、訊號、客戶端的界線 |
+| `.claude/rules/testing.md` | 兩邊的測試：每個變更帶測試、三道關卡、失敗的測試怎麼處理 |
+
+它們從寫下的那一刻起就是專案自己的：升級不會動，`awkit init` 再跑一次也不會覆寫。架構定案之後，把決定寫進文件，再回來把這些檢查清單收緊。`generic` preset 不假設技術棧，所以沒有起始規則。
+
+### 寫一份規則檔
+
+1. 建立 `.claude/rules/<名稱>.md`。
+2. 把 `<名稱>` 加進 `.ai/config.yaml` 的 `rules.custom`。
+3. 執行 `awkit generate`，`AGENTS.md` 就會要求 Worker 讀它。
+
+寫法：
+
+- 只放規則（要求、禁止、檢查清單），不寫現況。需要事實就指向定義處。
+- 理由寫在句子裡，讀的人才知道邊界在哪。
+- 開頭用 `paths:` 說明它管哪些檔案。Claude Code 只在動到那些檔案時才載入它，Principal 的對話不會被它佔掉：
 
 ```markdown
-# My Custom Skill
+---
+paths:
+  - "backend/**"
+---
 
-描述這個 Skill 的用途。
+# Backend Rules
 
-## When to Use
-- 使用情境 1
-- 使用情境 2
-
-## Workflow
-1. Phase 1
-2. Phase 2
-3. Phase 3
-
-## Quick Reference
-| Phase | Action | File |
-|-------|--------|------|
-| Analyze | 分析專案 | phases/analyze.md |
+- 每個錯誤不是處理就是回傳，不吞掉。
 ```
 
-### 3. 建立階段檔案
+- 規則與程式碼衝突時以程式碼為準，並回修規則檔。
 
-在 `phases/` 目錄建立各階段的指令檔案。
+Worker 預設不能改 `.claude/` 下的任何檔案。要讓一張票修改規則或 skill，在它的 `awk-ticket` 區塊加上 `allow_script_changes: true`。
 
 ---
 
-## 與 awkit CLI 的整合
+## 寫自己的 Skill
 
-Skills 可以透過 `awkit run` 自動觸發：
-
-```bash
-# 啟動工作流程 (使用 principal-workflow skill)
-awkit run
-
-# 乾跑模式
-awkit run --dry-run
 ```
+.claude/skills/<名稱>/
+├── SKILL.md           # 短：步驟與界線
+└── references/        # 範本、檢查清單、查閱用的表
+```
+
+`SKILL.md` 的開頭說明它是什麼、什麼時候用，Claude Code 靠這段決定要不要載入：
+
+```markdown
+---
+name: my-skill
+description: 做什麼（步驟 → 步驟）。什麼時候用；不適用時改用什麼。
+---
+
+# My Skill
+
+權威文件在哪裡，這個 skill 只把步驟串起來。
+
+## Workflow
+
+1. 第一步
+2. 第二步
+
+## Guardrails
+
+- 不能做的事，以及為什麼
+```
+
+- `name` 與資料夾同名。
+- `description` 不要在一行裡寫半形冒號加空格（`: `），那不是合法的 YAML；用全形標點或加引號。
+- `SKILL.md` 保持短。長的範本與檢查清單放 `references/`，在 `SKILL.md` 裡點名，需要時才讀。
 
 ---
 
