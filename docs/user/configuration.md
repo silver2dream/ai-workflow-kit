@@ -410,7 +410,13 @@ lessons:
     timeout_seconds: 60
 ```
 
-學習迴圈:審查拒絕經 LLM 蒸餾成精簡教訓（存於可提交的 `.ai/state/lessons.json`），注入後續 Worker/Reviewer prompt,並依 PR 結果結算命中/落空。已驗證（proven）的教訓可用 `awkit lessons promote <id>` 開一個人審 issue,固化成硬閘門。
+學習迴圈:被拒絕的 PR 之後通過時,LLM 以「審查者反對什麼」加上「從被拒版本到通過版本改了什麼」蒸餾成精簡教訓（存於可提交的 `.ai/state/lessons.json`），注入後續 Worker/Reviewer prompt,並依 PR 結果結算命中/落空。已驗證（proven）的教訓可用 `awkit lessons promote <id>` 開一個人審 issue,固化成硬閘門。
+
+會影響你看到的數字的幾條規則:
+
+- 拒絕不會單獨蒸餾,要等同一個 issue 通過。一直沒通過的 issue 不會自動產生教訓,請用 `awkit lessons add --issue N` 手動記錄;`awkit lessons stats` 會顯示有幾筆拒絕在等待。
+- 有 scope 的教訓,只有 PR 改到該 scope 底下的檔案時才計命中或落空;讀不到 PR 的檔案清單時不計。
+- 同一個 issue 對一條教訓最多計一次落空,落空之後該 issue 的合併不算命中。
 
 指令:`awkit lessons list | stats | add | distill | promote`。
 
