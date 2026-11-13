@@ -761,9 +761,12 @@ func TestRun_TheTableObjectsToTheWorkList(t *testing.T) {
 		case c.Step == "review" && c.Role == "skeptic":
 			reviewed++
 			if reviewed == 1 {
-				return block(`{"objections": [{"ticket": "t9", "point": "No failure test.", "wants": "A ticket for it."}]}`), nil
+				return block(`{"objections": [{"ticket": "t1, t9", "point": "No failure test.", "wants": "A ticket for it."}]}`), nil
 			}
 			return block(`{"objections": [{"ticket": "t2", "point": "No failure test.", "wants": "A criterion for the database being down."}]}`), nil
+		case c.Step == "review" && c.Role == "designer":
+			// One objection about two tickets, written loosely.
+			return block(`{"objections": [{"ticket": " t1 ,t2, ", "point": "Nobody is told when it fails.", "wants": "An error a person can read."}]}`), nil
 		case c.Step == "revise":
 			return block(`{"tickets": [
 				{"key": "t1", "title": "[chore] set up the module", "repo": "backend", "summary": "The Go module.", "scope": ["go.mod"], "acceptance": ["go build passes"], "testing": []},
@@ -788,9 +791,18 @@ func TestRun_TheTableObjectsToTheWorkList(t *testing.T) {
 		t.Errorf("the revised list was not taken: %+v", plan.Tickets)
 	}
 	for _, c := range model.calls {
-		if c.Step == "revise" && !strings.Contains(c.Prompt, "- skeptic on t2: No failure test. Wants: A criterion for the database being down.") {
-			t.Errorf("the planning role was not shown the objection:\n%s", c.Prompt)
+		if c.Step != "revise" {
+			continue
 		}
+		for _, want := range []string{"- skeptic on t2: No failure test. Wants: A criterion for the database being down.", "- designer on t1, t2: Nobody is told when it fails. Wants: An error a person can read."} {
+			if !strings.Contains(c.Prompt, want) {
+				t.Errorf("the planning role was not shown the objection %q:\n%s", want, c.Prompt)
+			}
+		}
+	}
+	// What the role was told about the ticket that is not there: its name alone.
+	if again := model.promptOf("skeptic", "review"); !strings.Contains(again, `an objection names the ticket "t9", which is not in the list`) {
+		t.Errorf("the role is not told which ticket is not in the list:\n%s", again[max(0, len(again)-300):])
 	}
 	minutes := readFile(t, root, plan.Dir()+"/minutes.md")
 	for _, want := range []string{"- skeptic on t2: No failure test.", "Not taken in, and why:\n- metrics stay out"} {
