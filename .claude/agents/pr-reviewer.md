@@ -105,12 +105,6 @@ Some acceptance criteria are meta-level (e.g., "all tests pass", "unit tests add
 - `N/A` ❌
 - `Various tests` ❌
 
-**MATCHING CRITERIA TO TESTS:**
-- Acceptance Criteria describe INTENT, not test function names
-- Find tests that COVER the described behavior
-- A criterion like "Wall collision ends game" should map to whichever test covers that behavior
-- The test may be named differently from the criterion — any valid test name is fine if it tests the behavior
-
 **KEY ASSERTION FORMAT:**
 - MUST be copied from the actual test file (open the file, find the assertion, copy it)
 - Do NOT write assertions from memory — open the test file and copy the exact line

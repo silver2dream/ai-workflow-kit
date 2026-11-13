@@ -1,19 +1,13 @@
 # Review PR
 
-## CRITICAL: review_pr 必須使用 Task Tool
+## review_pr 交給 pr-reviewer subagent
 
-當 `next_action` 為 `review_pr` 時，**你必須使用 Task tool 調用 pr-reviewer subagent**。
-
-**絕對禁止**：
-- ❌ 直接執行 `awkit prepare-review` 命令
-- ❌ 直接執行 `awkit submit-review` 命令
-- ❌ 自己讀取 PR 代碼進行審查
-- ❌ 自己撰寫 review body
-
-**你必須做的**：使用 Task tool，設定以下參數：
+當 `next_action` 為 `review_pr` 時，把審查委派給 `pr-reviewer` subagent，參數如下：
 - `subagent_type`: `"pr-reviewer"`
 - `description`: `"Review PR #<pr_number>"`
 - `prompt`: `"Review PR #<pr_number> for Issue #<issue_number>"`
+
+審查必須在獨立的 context 裡完成：開票與派工的是你，由你自己審查等於自己驗收自己。所以不要自己執行 `awkit prepare-review` 或 `awkit submit-review`，也不要自己讀 PR 代碼或撰寫 review。
 
 Subagent 會獨立執行完整審查流程並返回結果：
 - `merged`: PR 已合併

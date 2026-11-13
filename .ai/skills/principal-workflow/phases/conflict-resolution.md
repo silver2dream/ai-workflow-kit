@@ -9,9 +9,7 @@
 - `ISSUE_NUMBER`: Issue 編號
 - `PR_NUMBER`: PR 編號
 
-**Step 2**: 使用 Task tool 調用 conflict-resolver subagent：
-
-使用 Task tool，設定以下參數：
+**Step 2**: 把衝突交給 `conflict-resolver` subagent，參數如下：
 - `subagent_type`: `"conflict-resolver"`
 - `description`: `"Resolve conflict for Issue #<n>"`
 - `prompt`: `"Resolve merge conflict. WORKTREE_PATH=<path> ISSUE_NUMBER=<n> PR_NUMBER=<n>"`
