@@ -159,10 +159,9 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	// The ticket's repo is lowered above; the configuration may write the
-	// name with capitals.
-	validRepos := buildValidRepos(cfg)
-	if !containsFold(validRepos, repoName) {
-		return nil, fmt.Errorf("repo must be one of: %s (got %q)", strings.Join(validRepos, ", "), repoName)
+	// name with capitals, and finds it all the same.
+	if !cfg.HasTicketRepo(repoName) {
+		return nil, fmt.Errorf("repo must be one of: %s (got %q)", strings.Join(cfg.TicketRepos(), ", "), repoName)
 	}
 
 	repoType, repoPath := resolveRepoConfig(cfg, repoName)
@@ -1026,67 +1025,32 @@ func loadWorkflowConfig(path string) (*workflowConfig, error) {
 	return config.LoadFile(path)
 }
 
-// containsFold reports whether a list holds a name, whatever its case.
-func containsFold(list []string, name string) bool {
-	for _, item := range list {
-		if strings.EqualFold(item, name) {
-			return true
-		}
-	}
-	return false
-}
-
-func buildValidRepos(cfg *workflowConfig) []string {
-	valid := []string{"root"}
-	if cfg == nil {
-		return append(valid, "backend", "frontend")
-	}
-	for _, repo := range cfg.Repos {
-		if repo.Name != "" && !containsFold(valid, repo.Name) {
-			valid = append(valid, repo.Name)
-		}
-	}
-	return valid
-}
-
+// resolveRepoConfig returns the type and the path of the repo a ticket names.
+// A repo the configuration does not know, or says nothing more about, is a
+// directory at the root.
 func resolveRepoConfig(cfg *workflowConfig, repoName string) (string, string) {
+	repoType, repoPath := "directory", "./"
 	if cfg == nil {
-		return "directory", "./"
+		return repoType, repoPath
 	}
-	for _, repo := range cfg.Repos {
-		if strings.EqualFold(repo.Name, repoName) {
-			repoType := repo.Type
-			if repoType == "" {
-				repoType = "directory"
-			}
-			repoPath := repo.Path
-			if repoPath == "" {
-				repoPath = "./"
-			}
-			return repoType, repoPath
+	if repo := cfg.FindRepo(repoName); repo != nil {
+		if repo.Type != "" {
+			repoType = repo.Type
+		}
+		if repo.Path != "" {
+			repoPath = repo.Path
 		}
 	}
-	return "directory", "./"
+	return repoType, repoPath
 }
 
-// getConfigVerifyCommands returns verification commands from workflow.yaml config
+// getConfigVerifyCommands returns the build and test commands the
+// configuration gives the repo a ticket names.
 func getConfigVerifyCommands(cfg *workflowConfig, repoName string) []string {
 	if cfg == nil {
 		return nil
 	}
-	for _, repo := range cfg.Repos {
-		if strings.EqualFold(repo.Name, repoName) {
-			var commands []string
-			if repo.Verify.Build != "" {
-				commands = append(commands, repo.Verify.Build)
-			}
-			if repo.Verify.Test != "" {
-				commands = append(commands, repo.Verify.Test)
-			}
-			return commands
-		}
-	}
-	return nil
+	return cfg.GetVerifyCommands(repoName)
 }
 
 // getSetupCommand returns the setup command for a repo.
@@ -1095,15 +1059,14 @@ func getSetupCommand(cfg *workflowConfig, repoName string) string {
 	if cfg == nil {
 		return ""
 	}
-	for _, repo := range cfg.Repos {
-		if strings.EqualFold(repo.Name, repoName) {
-			if repo.Verify.Setup != "" {
-				return repo.Verify.Setup
-			}
-			return inferSetupCommand(repo.Language, repo.PackageManager)
-		}
+	repo := cfg.FindRepo(repoName)
+	if repo == nil {
+		return ""
 	}
-	return ""
+	if repo.Verify.Setup != "" {
+		return repo.Verify.Setup
+	}
+	return inferSetupCommand(repo.Language, repo.PackageManager)
 }
 
 // inferSetupCommand returns a dependency install command based on language and package manager.
@@ -2048,15 +2011,6 @@ func generateSessionID(role string) string {
 		random = []byte{0, 0, 0, 0}
 	}
 	return fmt.Sprintf("%s-%s-%x", role, now, random)
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func extractTicketValue(content, key string) string {

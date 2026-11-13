@@ -46,6 +46,9 @@ Examples:
 `)
 }
 
+// runJiTTests generates and runs the JiT tests. Replaced in tests.
+var runJiTTests = jittest.Run
+
 func cmdJiTTest(args []string) int {
 	fs := flag.NewFlagSet("jittest", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -153,7 +156,7 @@ func cmdJiTTest(args []string) int {
 		Language:    language,
 	}
 
-	result, err := jittest.Run(ctx, input, jitCfg)
+	result, err := runJiTTests(ctx, input, jitCfg)
 	if err != nil {
 		errorf("jittest: %v\n", err)
 		return 1

@@ -93,6 +93,15 @@ func TestPlanRepos(t *testing.T) {
 		t.Errorf("planRepos = %+v, %v; want %+v", got, err, want)
 	}
 
+	// Written with a capital it is still the root: once, under the name
+	// tickets use, with what the config says.
+	dir = t.TempDir()
+	writePlanConfig(t, dir, "repos:\n  - {name: Root, path: ./, language: go}\n  - {name: Backend, path: backend/, language: go}\n")
+	got, err = planRepos(dir)
+	if want := []council.Repo{{Name: "root", Language: "go", Path: "./"}, {Name: "Backend", Language: "go", Path: "backend/"}}; err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("planRepos = %+v, %v; want %+v", got, err, want)
+	}
+
 	if _, err := planRepos(t.TempDir()); err == nil || !strings.Contains(err.Error(), "awkit init") {
 		t.Errorf("without a config: err = %v, want it to say what to do", err)
 	}

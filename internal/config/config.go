@@ -485,16 +485,6 @@ func (c *Config) BaseBranch() string {
 	return c.Git.IntegrationBranch
 }
 
-// GetRepoByName returns the repo with exactly this name, or nil.
-func (c *Config) GetRepoByName(name string) *Repo {
-	for i := range c.Repos {
-		if c.Repos[i].Name == name {
-			return &c.Repos[i]
-		}
-	}
-	return nil
-}
-
 // FindRepo returns the repo a ticket names, or nil. The case of the name does
 // not matter: a ticket's repo is written by a person, or by a model.
 func (c *Config) FindRepo(name string) *Repo {
@@ -507,11 +497,12 @@ func (c *Config) FindRepo(name string) *Repo {
 }
 
 // TicketRepos lists the repos a ticket can be for: the root of the
-// repository, always, and the repos of the file.
+// repository, always, and the repos of the file. A name the file writes
+// twice, in whatever case, is one repo.
 func (c *Config) TicketRepos() []string {
 	names := []string{ticket.RootRepo}
 	for _, repo := range c.Repos {
-		if repo.Name != "" && !strings.EqualFold(repo.Name, ticket.RootRepo) {
+		if repo.Name != "" && !containsFold(names, repo.Name) {
 			names = append(names, repo.Name)
 		}
 	}
@@ -521,7 +512,11 @@ func (c *Config) TicketRepos() []string {
 // HasTicketRepo reports whether a ticket can be for the named repo, whatever
 // the case of the name.
 func (c *Config) HasTicketRepo(name string) bool {
-	for _, known := range c.TicketRepos() {
+	return containsFold(c.TicketRepos(), name)
+}
+
+func containsFold(names []string, name string) bool {
+	for _, known := range names {
 		if strings.EqualFold(known, name) {
 			return true
 		}
@@ -529,9 +524,10 @@ func (c *Config) HasTicketRepo(name string) bool {
 	return false
 }
 
-// GetVerifyCommands returns the build and test commands of a repo.
+// GetVerifyCommands returns the build and test commands of the repo a ticket
+// names.
 func (c *Config) GetVerifyCommands(repoName string) []string {
-	repo := c.GetRepoByName(repoName)
+	repo := c.FindRepo(repoName)
 	if repo == nil {
 		return nil
 	}

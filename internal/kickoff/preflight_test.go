@@ -967,19 +967,24 @@ func TestCheckCodexCLI_ChecksTheConfiguredBackend(t *testing.T) {
 		return path
 	}
 	tests := []struct {
-		name, content, want string
+		name, content, want, program string
 	}{
-		{"claude-code", "worker: {backend: claude-code}\n", "claude CLI (worker backend: claude-code)"},
-		{"codex", "worker: {backend: codex}\n", "codex CLI (worker backend: codex)"},
-		{"no backend named", "project: {name: demo}\n", "codex CLI (worker backend: codex)"},
-		{"a file that is not valid", "worker: [claude-code\n", "codex CLI (worker backend: codex)"},
-		{"no file", "", "codex CLI (worker backend: codex)"},
+		{"claude-code", "worker: {backend: claude-code}\n", "claude CLI (worker backend: claude-code)", "claude"},
+		{"codex", "worker: {backend: codex}\n", "codex CLI (worker backend: codex)", "codex"},
+		{"no backend named", "project: {name: demo}\n", "codex CLI (worker backend: codex)", "codex"},
+		{"a file that is not valid", "worker: [claude-code\n", "codex CLI (worker backend: codex)", "codex"},
+		{"no file", "", "codex CLI (worker backend: codex)", "codex"},
 	}
 	for _, tt := range tests {
 		checker := NewPreflightChecker(write(tt.content), "")
 		result := checker.CheckCodexCLI()
 		if result.Name != tt.want || !result.Passed {
 			t.Errorf("%s: the check is %q (passed %v), want %q and never fatal", tt.name, result.Name, result.Passed, tt.want)
+		}
+		// The program that is looked for is the one of that backend, whether
+		// it is installed here or not.
+		if !strings.HasPrefix(result.Message, tt.program+" ") {
+			t.Errorf("%s: the check says %q, want it to have looked for %s", tt.name, result.Message, tt.program)
 		}
 	}
 
@@ -990,5 +995,14 @@ func TestCheckCodexCLI_ChecksTheConfiguredBackend(t *testing.T) {
 	checker.config = loaded
 	if result := checker.CheckCodexCLI(); result.Name != "claude CLI (worker backend: claude-code)" {
 		t.Errorf("with a loaded configuration the check is %q", result.Name)
+	}
+
+	// A program that is not installed is a warning, never a reason to stop.
+	t.Setenv("PATH", "")
+	for backend, program := range map[string]string{"claude-code": "claude", "codex": "codex"} {
+		result := NewPreflightChecker(write("worker: {backend: "+backend+"}\n"), "").CheckCodexCLI()
+		if !result.Passed || !result.Warning || result.Message != program+" not installed (worker execution may fail)" {
+			t.Errorf("%s without its program: %+v, want a warning that names %s", backend, result, program)
+		}
 	}
 }

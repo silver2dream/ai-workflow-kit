@@ -593,9 +593,9 @@ func TestParseBool_TableDriven(t *testing.T) {
 		{"NO", false},
 		{"0", false},
 		{"", false},
-		{"  true  ", true},  // trimmed whitespace
+		{"  true  ", true}, // trimmed whitespace
 		{"  false  ", false},
-		{"2", false},        // only "1" is truthy, not other numbers
+		{"2", false}, // only "1" is truthy, not other numbers
 		{"on", false},
 		{"off", false},
 	}
@@ -605,39 +605,6 @@ func TestParseBool_TableDriven(t *testing.T) {
 			got := parseBool(tt.input)
 			if got != tt.expected {
 				t.Errorf("parseBool(%q) = %v, want %v", tt.input, got, tt.expected)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// containsString – edge cases
-// ---------------------------------------------------------------------------
-
-func TestContainsString_TableDriven(t *testing.T) {
-	tests := []struct {
-		name     string
-		slice    []string
-		target   string
-		expected bool
-	}{
-		{"found in middle", []string{"a", "b", "c"}, "b", true},
-		{"found at start", []string{"x", "y"}, "x", true},
-		{"found at end", []string{"m", "n"}, "n", true},
-		{"not found", []string{"a", "b"}, "z", false},
-		{"empty slice", []string{}, "a", false},
-		{"nil slice", nil, "a", false},
-		{"empty target found", []string{"", "b"}, "", true},
-		{"empty target not found", []string{"a", "b"}, "", false},
-		{"case sensitive – no match", []string{"Root"}, "root", false},
-		{"exact match required", []string{"backend"}, "back", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := containsString(tt.slice, tt.target)
-			if got != tt.expected {
-				t.Errorf("containsString(%v, %q) = %v, want %v", tt.slice, tt.target, got, tt.expected)
 			}
 		})
 	}
@@ -777,63 +744,6 @@ func TestCleanupManager_NoRegistrations_RunCleanup_NoPanic(t *testing.T) {
 
 	// Should not panic even with no registered functions
 	cm.runCleanup()
-}
-
-// ---------------------------------------------------------------------------
-// buildValidRepos – various config shapes
-// ---------------------------------------------------------------------------
-
-func TestBuildValidRepos_NilConfig_ReturnsDefaults(t *testing.T) {
-	repos := buildValidRepos(nil)
-	// nil config must return root, backend, frontend
-	if !containsString(repos, "root") {
-		t.Errorf("expected 'root' in %v", repos)
-	}
-	if !containsString(repos, "backend") {
-		t.Errorf("expected 'backend' in %v", repos)
-	}
-	if !containsString(repos, "frontend") {
-		t.Errorf("expected 'frontend' in %v", repos)
-	}
-}
-
-func TestBuildValidRepos_ConfigWithRepos_IncludesRoot(t *testing.T) {
-	cfg := &workflowConfig{
-		Repos: []workflowRepo{
-			{Name: "api"},
-			{Name: "web"},
-		},
-	}
-	repos := buildValidRepos(cfg)
-	if !containsString(repos, "root") {
-		t.Errorf("expected 'root' to always be present in %v", repos)
-	}
-	if !containsString(repos, "api") {
-		t.Errorf("expected 'api' in %v", repos)
-	}
-	if !containsString(repos, "web") {
-		t.Errorf("expected 'web' in %v", repos)
-	}
-}
-
-func TestBuildValidRepos_DeduplicatesRootEntry(t *testing.T) {
-	// A repo named "root" in config should not cause duplicate "root" entries
-	cfg := &workflowConfig{
-		Repos: []workflowRepo{
-			{Name: "root"},
-			{Name: "backend"},
-		},
-	}
-	repos := buildValidRepos(cfg)
-	count := 0
-	for _, r := range repos {
-		if r == "root" {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Errorf("'root' appears %d times in %v, want exactly 1", count, repos)
-	}
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -202,5 +203,27 @@ func TestFileExists_Status_ExistingFile(t *testing.T) {
 func TestFileExists_Status_Missing(t *testing.T) {
 	if fileExists("/nonexistent/path/file.txt") {
 		t.Error("fileExists should return false for missing file")
+	}
+}
+
+// What is shown is what is in effect: a file that names no rules and no
+// built-in agents still gets the kit's, and an agent without a name is not
+// listed.
+func TestCollectConfigInfo_ShowsWhatIsInEffect(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, ".ai", "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "agents:\n  custom:\n    - {description: nameless}\n    - {name: sec-check, description: Security}\n"
+	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	info := collectConfigInfo(dir)
+
+	want := ConfigInfo{RulesKit: []string{"git-workflow"}, AgentsBuiltin: []string{"pr-reviewer", "conflict-resolver"}, AgentsCustom: []string{"sec-check"}}
+	if !reflect.DeepEqual(info, want) {
+		t.Errorf("collectConfigInfo = %+v, want %+v", info, want)
 	}
 }
