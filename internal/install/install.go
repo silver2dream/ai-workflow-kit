@@ -25,8 +25,8 @@ type Options struct {
 	Preset      string
 	ProjectName string
 	Force       bool
-	ForceConfig bool // Only overwrite workflow.yaml
-	SkipConfig  bool // Skip workflow.yaml entirely (for upgrade)
+	ForceConfig bool // only the configuration is written over
+	SkipConfig  bool // the configuration is left alone (an upgrade)
 	NoGenerate  bool // Skip the files derived from the config, CI workflows included
 	// CI is what to do about the CI workflows: init writes the missing ones
 	// (generate.CISync), upgrade only refreshes the ones awkit owns
@@ -100,8 +100,8 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		opts.ProjectName = filepath.Base(targetDir)
 	}
 
-	// Apply preset FIRST to generate workflow.yaml before copyDir
-	// This ensures preset-specific config is used instead of embedded default
+	// The configuration of a new project comes from its preset. An upgrade
+	// leaves the one that is there alone.
 	configSkipped, err := applyPreset(targetDir, opts)
 	if err != nil {
 		return nil, err
@@ -118,42 +118,15 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		}
 	}
 
-	if err := copyDir(kit, ".ai", filepath.Join(targetDir, ".ai"), opts.Force); err != nil {
+	// The kit: rules, skills and subagents, at the paths they have in a
+	// project. Only the kit's own files are written: what else the project
+	// keeps under .claude is its own and is not touched.
+	if err := copyDir(kit, KitRoot, filepath.Join(targetDir, filepath.FromSlash(KitRoot)), opts.Force); err != nil {
 		return nil, err
 	}
 
-	// Copy .ai/skills/ directory if it exists in the kit
-	if _, err := fs.Stat(kit, layout.SkillsDir); err == nil {
-		if err := copyDir(kit, layout.SkillsDir, layout.Skills(targetDir), opts.Force); err != nil {
-			return nil, err
-		}
-	}
-
-	// Clean up deprecated .ai/commands/ directory (replaced by .ai/skills/)
-	deprecatedCommandsDir := filepath.Join(targetDir, ".ai", "commands")
-	if _, err := os.Stat(deprecatedCommandsDir); err == nil {
-		_ = os.RemoveAll(deprecatedCommandsDir)
-	}
-
-	// Clean up deprecated .claude/commands symlink/directory
-	deprecatedClaudeCommands := filepath.Join(targetDir, ".claude", "commands")
-	if _, err := os.Stat(deprecatedClaudeCommands); err == nil {
-		_ = os.RemoveAll(deprecatedClaudeCommands)
-	}
-
-	// Clean up deprecated kit files (removed in newer versions)
-	cleanupDeprecatedFiles(targetDir)
-
-	// Copy .claude/agents/ directory if it exists in the kit
-	if _, err := fs.Stat(kit, ".claude/agents"); err == nil {
-		agentsDir := filepath.Join(targetDir, ".claude", "agents")
-		if err := os.MkdirAll(filepath.Dir(agentsDir), 0o755); err != nil {
-			return nil, err
-		}
-		if err := copyDir(kit, ".claude/agents", agentsDir, opts.Force); err != nil {
-			return nil, err
-		}
-	}
+	// Files earlier versions of the kit installed and this one does not.
+	CleanupDeprecatedFiles(targetDir)
 
 	if err := ensureRuntimeDirs(targetDir); err != nil {
 		return nil, err
@@ -168,10 +141,6 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	}
 
 	if err := migrateExistingCIWorkflow(targetDir); err != nil {
-		return nil, err
-	}
-
-	if err := ensureClaudeLinks(targetDir); err != nil {
 		return nil, err
 	}
 
@@ -210,6 +179,10 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	return result, nil
 }
 
+// KitRoot is the directory of the kit, in the kit and in a project: where
+// Claude Code looks for rules, skills and subagents.
+const KitRoot = ".claude"
+
 func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 	return fs.WalkDir(src, srcDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -223,12 +196,6 @@ func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 
 		if d.IsDir() {
 			return os.MkdirAll(dstPath, 0o755)
-		}
-
-		// Skip workflow.yaml - it's managed by applyPreset, not copyDir
-		// This prevents the embedded default config from overwriting preset-generated config
-		if path == layout.ConfigFile {
-			return nil
 		}
 
 		if !force {
@@ -281,37 +248,22 @@ func ensureRoster(targetDir, preset string) error {
 	return os.WriteFile(file, council.DefaultRoster(preset), 0o644)
 }
 
+// ensureRuntimeDirs creates the directories a run writes to: the state
+// directory and what is kept in it, and the one of the Workers' worktrees.
+// git ignores them, so they hold no placeholder files: a clone gets them the
+// first time awkit needs them.
 func ensureRuntimeDirs(targetDir string) error {
 	dirs := []string{
-		filepath.Join(targetDir, ".ai", "state"),
-		filepath.Join(targetDir, ".ai", "state", "traces"),
+		layout.State(targetDir),
+		layout.State(targetDir, "traces"),
 		layout.Results(targetDir),
 		layout.Runs(targetDir),
 		layout.Logs(targetDir),
 		layout.Temp(targetDir),
-		filepath.Join(targetDir, ".ai", "logs"),
 		filepath.Join(targetDir, ".worktrees"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {
-			return err
-		}
-	}
-
-	keepFiles := []string{
-		filepath.Join(targetDir, ".ai", "state", ".gitkeep"),
-		filepath.Join(targetDir, ".ai", "state", "traces", ".gitkeep"),
-		filepath.Join(layout.Results(targetDir), ".gitkeep"),
-		filepath.Join(layout.Runs(targetDir), ".gitkeep"),
-		filepath.Join(layout.Logs(targetDir), ".gitkeep"),
-		filepath.Join(layout.Temp(targetDir), ".gitkeep"),
-		filepath.Join(targetDir, ".ai", "logs", ".gitkeep"),
-	}
-	for _, f := range keepFiles {
-		if _, err := os.Stat(f); err == nil {
-			continue
-		}
-		if err := os.WriteFile(f, []byte("\n"), 0o644); err != nil {
 			return err
 		}
 	}
@@ -324,13 +276,8 @@ func ensureGitIgnore(targetDir string) error {
 
 	snippet := strings.Join([]string{
 		markerStart,
-		"# Runtime state (do not commit)",
-		".ai/state/",
-		layout.ResultsDir + "/",
-		layout.RunsDir + "/",
-		layout.LogsDir + "/",
-		".ai/logs/",
-		layout.TempDir + "/",
+		"# What a run leaves behind: state, results, logs (do not commit)",
+		layout.StateDir + "/",
 		".worktrees/",
 		"# Claude Code local settings (do not commit)",
 		".claude/settings.local.json",
@@ -401,80 +348,6 @@ func ensureGitAttributes(targetDir string) error {
 		"",
 	}, "\n")
 	return os.WriteFile(path, []byte(content), 0o644)
-}
-
-func ensureClaudeLinks(targetDir string) error {
-	claudeDir := filepath.Join(targetDir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return err
-	}
-
-	type link struct {
-		name   string
-		source string
-		target string
-	}
-	links := []link{
-		{
-			name:   "rules",
-			source: layout.Rules(targetDir),
-			target: filepath.Join(claudeDir, "rules"),
-		},
-		{
-			name:   "skills",
-			source: layout.Skills(targetDir),
-			target: filepath.Join(claudeDir, "skills"),
-		},
-	}
-
-	for _, l := range links {
-		// Skip if source doesn't exist
-		if _, err := os.Stat(l.source); os.IsNotExist(err) {
-			continue
-		}
-
-		_ = os.RemoveAll(l.target)
-		relSource, err := filepath.Rel(filepath.Dir(l.target), l.source)
-		if err != nil {
-			return err
-		}
-
-		if err := os.Symlink(relSource, l.target); err == nil {
-			continue
-		}
-
-		// Symlink failed (e.g., Windows without admin), fall back to copy
-		if err := copyOSDir(l.source, l.target); err != nil {
-			return fmt.Errorf("failed to create .claude/%s (symlink+copy both failed): %w", l.name, err)
-		}
-	}
-	return nil
-}
-
-func copyOSDir(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		dstPath := filepath.Join(dst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0o755)
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(dstPath, data, 0o644)
-	})
 }
 
 func ensureWorkflowConfig(targetDir, projectName string, forceOverwrite bool, preset func(projectName string) []byte) (skipped bool, err error) {
@@ -577,8 +450,9 @@ func writeFileIfNotExists(path string, content []byte, force bool) (created bool
 	return true, false, nil
 }
 
-// cleanupDeprecatedFiles removes files listed in deprecated.txt
-func cleanupDeprecatedFiles(targetDir string) {
+// CleanupDeprecatedFiles removes the files earlier versions of the kit
+// installed and this one does not (deprecated.txt).
+func CleanupDeprecatedFiles(targetDir string) {
 	scanner := bufio.NewScanner(strings.NewReader(deprecatedFiles))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

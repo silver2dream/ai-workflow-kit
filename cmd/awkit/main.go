@@ -183,7 +183,7 @@ Usage:
 
 Set up a project:
   init          Initialize AWK in a project (or current directory)
-  upgrade       Upgrade AWK kit files (preserves workflow.yaml by default)
+  upgrade       Upgrade AWK kit files (keeps the project's configuration)
   uninstall     Remove AWK from a project
   generate      Generate helper docs and scaffolding
   validate      Validate workflow configuration
@@ -351,7 +351,7 @@ Options:
   --scaffold      Create minimal project structure for the preset
   --force         Overwrite all existing kit files, the CI workflows the project took
                   over, and scaffold files if --scaffold
-  --force-config  Overwrite only workflow.yaml (apply preset to existing project)
+  --force-config  Overwrite only the configuration (apply preset to existing project)
   --dry-run       Show what would be done without making changes
   --no-generate   Skip the generated files (CLAUDE.md, AGENTS.md, CI workflows)
   --project-name  Override project name in config
@@ -372,7 +372,7 @@ func usageUpgrade() {
 	fmt.Fprint(os.Stderr, `Upgrade AWK kit files in a project
 
 This command updates the kit's rules, skills and agents while preserving
-your workflow.yaml configuration by default.
+your configuration by default.
 
 The CI workflows awkit generated follow the new kit. A workflow the project
 wrote or took over is left alone, apart from an old ci.yml losing the
@@ -414,7 +414,13 @@ Arguments:
 
 Options:
   --dry-run       Show what would be removed without making changes
-  --keep-config   Keep `+layout.ConfigFile+`
+  --keep-config   Keep `+layout.ConfigFile+` and `+layout.RosterFile+`
+
+Removes what awkit installed: the kit's rules, skills and subagents under
+.claude/, the subagents generated from the configuration, what runs left
+behind (`+layout.StateDir+`/, .worktrees/), and the configuration and roster.
+What else the project keeps under .claude/ stays, and so do CLAUDE.md and
+AGENTS.md.
 
 Examples:
   awkit uninstall
@@ -542,6 +548,14 @@ func cmdInit(args []string) int {
 		}
 	}
 
+	// A project an earlier awkit set up keeps its files elsewhere. Setting it
+	// up again next to them would leave it with two of everything.
+	if _, err := os.Stat(layout.In(targetDir, layout.OldConfigFile)); err == nil {
+		errorf("%s was set up by an earlier awkit: its files are where that one kept them (%s)\n", displayTarget, layout.OldConfigFile)
+		fmt.Fprintln(os.Stderr, "Run 'awkit upgrade' there to move them. It keeps the project's configuration, rules and skills.")
+		return 1
+	}
+
 	fmt.Println("")
 	if *dryRun {
 		fmt.Printf("%s[DRY RUN]%s Would initialize AWK:\n", colorYellow, colorReset)
@@ -563,14 +577,12 @@ func cmdInit(args []string) int {
 	if *dryRun {
 		fmt.Println(bold("AWK Kit files:"))
 		fmt.Println("  " + layout.ConfigFile)
-		fmt.Println("  " + layout.RulesDir + "/")
+		fmt.Println("  " + layout.RosterFile)
+		fmt.Println("  " + layout.KitRulesDir + "/")
 		fmt.Println("  " + layout.SkillsDir + "/")
-		fmt.Println("  .ai/state/ (runtime, gitignored)")
-		fmt.Println("  " + layout.ResultsDir + "/ (runtime, gitignored)")
-		fmt.Println("  " + layout.RunsDir + "/ (runtime, gitignored)")
-		fmt.Println("  " + layout.LogsDir + "/ (runtime, gitignored)")
+		fmt.Println("  " + layout.AgentsDir + "/")
+		fmt.Println("  " + layout.StateDir + "/ (what a run leaves behind, gitignored)")
 		fmt.Println("  .worktrees/ (gitignored)")
-		fmt.Println("  .claude/agents/")
 		fmt.Println("  .github/workflows/ (a CI workflow per repo that has build or test commands)")
 		fmt.Println("  .gitignore (append AWK entries)")
 		fmt.Println("  .gitattributes (if missing)")
@@ -829,11 +841,22 @@ func cmdUpgrade(args []string) int {
 	fmt.Println("")
 
 	if *dryRun {
+		if migrate.UsesOldLayout(targetDir) {
+			steps, err := migrate.MoveLayout(targetDir, true)
+			fmt.Println("Would move the project's files to where awkit keeps them now:")
+			for _, step := range steps {
+				fmt.Printf("  %s\n", step)
+			}
+			fmt.Println("")
+			if err != nil {
+				errorf("%v\n", err)
+				return 1
+			}
+		}
 		fmt.Println("Would update:")
 		fmt.Println("  " + layout.KitRulesDir + "/")
-		fmt.Println("  " + layout.RulesDir + "/_examples/")
-		fmt.Println("  " + layout.SkillsDir + "/")
-		fmt.Println("  .claude/agents/")
+		fmt.Println("  " + layout.SkillsDir + "/ (the kit's skills)")
+		fmt.Println("  " + layout.AgentsDir + "/ (the kit's subagents)")
 		fmt.Println("  .github/workflows/ (the workflows awkit generated; an old ci.yml loses the awk job)")
 		fmt.Println("")
 		if *forceConfig {
@@ -843,7 +866,7 @@ func cmdUpgrade(args []string) int {
 			fmt.Println("Would preserve:")
 			fmt.Println("  " + layout.ConfigFile)
 		}
-		fmt.Println("  " + layout.RulesDir + "/ (user rules)")
+		fmt.Println("  what else the project keeps under .claude/ (its own rules, skills, subagents, settings)")
 
 		// Scaffold dry-run
 		if *scaffold {
@@ -891,6 +914,9 @@ func cmdUpgrade(args []string) int {
 		// Check config migrations (dry-run)
 		if !*skipMigrate && !*forceConfig {
 			configPath := config.Path(targetDir)
+			if _, err := os.Stat(configPath); err != nil {
+				configPath = layout.In(targetDir, layout.OldConfigFile) // not moved yet: this is a dry run
+			}
 			if _, err := os.Stat(configPath); err == nil {
 				migrations, _ := migrate.Run(configPath, true)
 				if len(migrations) > 0 {
@@ -908,12 +934,30 @@ func cmdUpgrade(args []string) int {
 		return 0
 	}
 
-	// Upgrade: force overwrite kit files. By default we skip workflow.yaml unless --force-config is provided.
+	// A project of an earlier awkit keeps its files elsewhere. They are moved
+	// first, so that the kit is installed next to what is the project's own.
+	if migrate.UsesOldLayout(targetDir) {
+		install.CleanupDeprecatedFiles(targetDir)
+		steps, moveErr := migrate.MoveLayout(targetDir, false)
+		if len(steps) > 0 {
+			fmt.Println(bold("Moved to where awkit keeps a project's files now:"))
+			for _, step := range steps {
+				fmt.Printf("  %s\n", step)
+			}
+			fmt.Println("")
+		}
+		if moveErr != nil {
+			errorf("%v\n", moveErr)
+			return 1
+		}
+	}
+
+	// Upgrade: the kit's files are written over. The configuration is kept unless --force-config is given.
 	result, err := install.Install(awkit.KitFS, targetDir, install.Options{
 		Preset:      *preset,
 		Force:       true, // Overwrite kit files
 		ForceConfig: *forceConfig,
-		SkipConfig:  !*forceConfig, // Preserve workflow.yaml by default
+		SkipConfig:  !*forceConfig, // the configuration is kept by default
 		NoGenerate:  *noGenerate,
 		// The workflows awkit owns follow the new kit; none is added, and one
 		// the project took over is left alone.
@@ -1044,7 +1088,7 @@ func cmdUpgrade(args []string) int {
 			warn("Failed to auto-commit changes: %v\n", err)
 			fmt.Println("")
 			fmt.Println("Please commit manually:")
-			fmt.Printf("  %s\n", cyan("git add .ai/ .claude/ CLAUDE.md AGENTS.md"))
+			fmt.Printf("  %s\n", cyan("git add .ai/ .claude/ CLAUDE.md AGENTS.md .gitignore .gitattributes"))
 			fmt.Printf("  %s\n", cyan(`git commit -m "[chore] upgrade awkit"`))
 		} else {
 			fmt.Println("")
@@ -1066,10 +1110,18 @@ func cmdUpgrade(args []string) int {
 // .github/workflows, relative to the project. A submodule's workflow belongs
 // to another repository and cannot go into the project's commit.
 func projectWorkflowPaths(targetDir string, fileLists ...[]string) []string {
+	// Both sides as full paths: the project may be named as ".", and the
+	// files are reported by their full path.
 	workflowDir := filepath.Join(targetDir, ".github", "workflows")
+	if abs, err := filepath.Abs(workflowDir); err == nil {
+		workflowDir = abs
+	}
 	var paths []string
 	for _, files := range fileLists {
 		for _, file := range files {
+			if abs, err := filepath.Abs(file); err == nil {
+				file = abs
+			}
 			if filepath.Dir(file) != workflowDir {
 				continue
 			}
@@ -1095,8 +1147,11 @@ func autoCommitUpgrade(targetDir string, extraPaths []string) error {
 		return fmt.Errorf("not a git repository")
 	}
 
-	// Add awkit-related files + any extra paths (e.g. scaffold files)
-	addArgs := []string{"add", ".ai/", ".claude/", "CLAUDE.md", "AGENTS.md"}
+	// What an upgrade writes or moves, and any extra paths (scaffold files,
+	// CI workflows). The ignore file is one of them: its awkit section follows
+	// where a run's files are. So is the attributes file, which an install
+	// writes where there is none.
+	addArgs := []string{"add", ".ai/", ".claude/", "CLAUDE.md", "AGENTS.md", ".gitignore", ".gitattributes"}
 	addArgs = append(addArgs, extraPaths...)
 	addCmd := exec.Command(gitPath, addArgs...)
 	addCmd.Dir = targetDir
@@ -1154,13 +1209,16 @@ func cmdUninstall(args []string) int {
 		}
 	}
 
-	aiDir := targetDir + "/.ai"
-	claudeDir := targetDir + "/.claude"
-	worktreesDir := targetDir + "/.worktrees"
-
 	// Check if AWK is installed
-	if _, err := os.Stat(aiDir); os.IsNotExist(err) {
+	if _, err := os.Stat(targetDir + "/.ai"); os.IsNotExist(err) {
 		errorf("AWK is not installed in %s\n", targetDir)
+		return 1
+	}
+	// What an earlier awkit installed is elsewhere, mixed with copies this
+	// command cannot tell from the project's own files.
+	if migrate.UsesOldLayout(targetDir) {
+		errorf("%s still keeps its files where an earlier awkit put them\n", targetDir)
+		fmt.Fprintln(os.Stderr, "Run 'awkit upgrade' there first; 'awkit uninstall' then removes what awkit installed and nothing else.")
 		return 1
 	}
 
@@ -1171,50 +1229,26 @@ func cmdUninstall(args []string) int {
 		fmt.Println("Removing AWK...")
 	}
 
-	toRemove := []string{}
-
-	// List what will be removed
-	if !*keepConfig {
-		toRemove = append(toRemove, aiDir)
-		fmt.Printf("  %s\n", aiDir)
-	} else {
-		// Remove everything except config
-		entries := []string{"scripts", "templates", "rules", "commands", "docs", "tests", "specs", "state", "results", "runs", "exe-logs"}
-		for _, e := range entries {
-			path := aiDir + "/" + e
-			if _, err := os.Stat(path); err == nil {
-				toRemove = append(toRemove, path)
-				fmt.Printf("  %s\n", path)
-			}
-		}
-		fmt.Printf("  %s (keeping .ai/config/)\n", cyan("partial"))
+	removed, err := install.Uninstall(awkit.KitFS, targetDir, *keepConfig, *dryRun)
+	for _, location := range removed {
+		fmt.Printf("  %s\n", location)
 	}
-
-	if _, err := os.Stat(claudeDir); err == nil {
-		toRemove = append(toRemove, claudeDir)
-		fmt.Printf("  %s\n", claudeDir)
+	if *keepConfig {
+		fmt.Printf("  %s (keeping %s and %s)\n", cyan("partial"), layout.ConfigFile, layout.RosterFile)
 	}
-
-	if _, err := os.Stat(worktreesDir); err == nil {
-		toRemove = append(toRemove, worktreesDir)
-		fmt.Printf("  %s\n", worktreesDir)
-	}
-
 	fmt.Println("")
+	if err != nil {
+		errorf("%v\n", err)
+		return 1
+	}
 
 	if *dryRun {
 		success("Dry run complete. No changes made.\n")
 		return 0
 	}
 
-	// Actually remove
-	for _, path := range toRemove {
-		if err := os.RemoveAll(path); err != nil {
-			errorf("Failed to remove %s: %v\n", path, err)
-		}
-	}
-
 	success("AWK removed from %s\n", targetDir)
+	fmt.Println("  Left in place: CLAUDE.md, AGENTS.md, what else the project keeps under .claude/, and awkit's section of .gitignore.")
 	return 0
 }
 
@@ -1379,7 +1413,7 @@ _awkit() {
                         '--preset[Project preset]:preset:(generic godot-go)' \
                         '--scaffold[Create project structure]' \
                         '--force[Overwrite all existing files]' \
-                        '--force-config[Overwrite only workflow.yaml]' \
+                        '--force-config[Overwrite only the configuration]' \
                         '--dry-run[Show what would be done]' \
                         '--no-generate[Skip awkit generate]' \
                         '--project-name[Override project name]:name:' \
@@ -1389,7 +1423,7 @@ _awkit() {
                     _arguments \
                         '--scaffold[Supplement scaffold files]' \
                         '--preset[Preset for scaffold]:preset:(generic godot-go)' \
-                        '--force-config[Overwrite only workflow.yaml]' \
+                        '--force-config[Overwrite only the configuration]' \
                         '--force[Overwrite scaffold files]' \
                         '--dry-run[Show what would be done]' \
                         '--no-generate[Skip awkit generate]' \
@@ -1399,7 +1433,7 @@ _awkit() {
                 uninstall)
                     _arguments \
                         '--dry-run[Show what would be removed]' \
-                        '--keep-config[Keep workflow.yaml]' \
+                        '--keep-config[Keep the configuration and the roster]' \
                         '*:directory:_files -/'
                     ;;
                 completion)
@@ -1458,7 +1492,7 @@ complete -c awkit -n __fish_use_subcommand -a help -d 'Show help'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic godot-go'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l scaffold -d 'Create project structure'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Overwrite all existing files'
-complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only workflow.yaml'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only the configuration'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l dry-run -d 'Show what would be done'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l no-generate -d 'Skip awkit generate'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name -d 'Override project name'
@@ -1466,7 +1500,7 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name 
 # upgrade options
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l scaffold -d 'Supplement scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset for scaffold' -xa 'generic godot-go'
-complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force-config -d 'Overwrite only workflow.yaml'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force-config -d 'Overwrite only the configuration'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force -d 'Overwrite scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-generate -d 'Skip awkit generate'
@@ -1474,7 +1508,7 @@ complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l no-commit -d 'Skip
 
 # uninstall options
 complete -c awkit -n '__fish_seen_subcommand_from uninstall' -l dry-run -d 'Show what would be removed'
-complete -c awkit -n '__fish_seen_subcommand_from uninstall' -l keep-config -d 'Keep workflow.yaml'
+complete -c awkit -n '__fish_seen_subcommand_from uninstall' -l keep-config -d 'Keep the configuration and the roster'
 
 # completion shells
 complete -c awkit -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'

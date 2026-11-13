@@ -35,7 +35,7 @@ curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/downl
 # Windows PowerShell
 irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.ps1 | iex
 
-# 升級專案內的 kit 檔案（保留你的 workflow.yaml）
+# 升級專案內的 kit 檔案（保留你的 config.yaml）
 awkit upgrade
 
 # 重新生成輔助檔案
@@ -44,9 +44,9 @@ awkit generate
 
 ---
 
-### Q: workflow.yaml 可以放在其他位置嗎？
+### Q: config.yaml 可以放在其他位置嗎？
 
-**A:** 目前不支援。必須放在 `.ai/config/workflow.yaml`。
+**A:** 目前不支援。必須放在 `.ai/config.yaml`。
 
 ---
 
@@ -55,7 +55,7 @@ awkit generate
 ### Q: awkit run 和 awkit generate 有什麼差別？
 
 **A:**
-- `awkit generate` - 根據 workflow.yaml 生成設定檔 (CLAUDE.md, AGENTS.md 等)
+- `awkit generate` - 根據 config.yaml 生成設定檔 (CLAUDE.md, AGENTS.md 等)
 - `awkit run` - 啟動完整的 AI 工作流程 (審計、建立 Issue、執行任務)
 - `kickoff.sh` - legacy bash 版本，建議使用 `awkit run` 取代
 
@@ -96,7 +96,7 @@ depends_on: [12, 15]
 ```
 ````
 
-`repo` 是 `workflow.yaml` 裡的 repo 名稱或 `root`；`depends_on` 是必須先完成的 Issue，可省略。用 `awkit create-task --title ... --body-file ...` 建立，內文不合格時不會建立。完整說明見 `.ai/skills/principal-workflow/tasks/create-task.md`。
+`repo` 是 `config.yaml` 裡的 repo 名稱或 `root`；`depends_on` 是必須先完成的 Issue，可省略。用 `awkit create-task --title ... --body-file ...` 建立，內文不合格時不會建立。完整說明見 `.claude/skills/principal-workflow/tasks/create-task.md`。
 
 ---
 
@@ -125,8 +125,8 @@ depends_on: [12, 15]
 ### Q: 如何自訂規則？
 
 **A:**
-1. 建立規則檔案：`.ai/rules/my-rule.md`
-2. 在 workflow.yaml 中啟用：
+1. 建立規則檔案：`.claude/rules/my-rule.md`
+2. 在 config.yaml 中啟用：
 ```yaml
 rules:
   custom:
@@ -167,26 +167,26 @@ rules:
 
 ### Q: 如何查看執行日誌？
 
-**A:** 日誌存放在 `.ai/exe-logs/` 目錄（`principal.log` 與 `issue-{N}.worker.log`）。結構化事件流在 `.ai/state/events/`，可用 `awkit events` 查詢。
+**A:** 日誌存放在 `.ai/state/logs/` 目錄（`principal.log` 與 `issue-{N}.worker.log`）。結構化事件流在 `.ai/state/events/`，可用 `awkit events` 查詢。
 
 ---
 
 ### Q: 如何查詢失敗的執行記錄？
 
-**A:** 查看日誌目錄 `.ai/exe-logs/` 中的 Worker 日誌：
+**A:** 查看日誌目錄 `.ai/state/logs/` 中的 Worker 日誌：
 ```bash
 # 查看 Principal 日誌
-cat .ai/exe-logs/principal.log
+cat .ai/state/logs/principal.log
 
 # 查看特定 Issue 的 Worker 日誌
-cat .ai/exe-logs/issue-<N>.worker.log
+cat .ai/state/logs/issue-<N>.worker.log
 ```
 
 ---
 
 ### Q: 連續失敗後工作流程會停止嗎？
 
-**A:** 會。預設連續失敗 3 次後暫停，可在 workflow.yaml 調整：
+**A:** 會。預設連續失敗 3 次後暫停，可在 config.yaml 調整：
 ```yaml
 escalation:
   max_consecutive_failures: 5
@@ -196,7 +196,7 @@ escalation:
 
 ### Q: 如何啟用自動重試？
 
-**A:** 在 workflow.yaml 設定：
+**A:** 在 config.yaml 設定：
 ```yaml
 escalation:
   retry_count: 2
@@ -209,7 +209,7 @@ escalation:
 
 ### Q: Token 應該怎麼管理？
 
-**A:** 不要在 workflow.yaml 中硬編碼 token。使用環境變數：
+**A:** 不要在 config.yaml 中硬編碼 token。使用環境變數：
 ```bash
 export GH_TOKEN=ghp_xxxx
 ```

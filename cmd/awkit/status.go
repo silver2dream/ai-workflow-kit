@@ -9,6 +9,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	status "github.com/silver2dream/ai-workflow-kit/internal/status"
 )
 
@@ -67,6 +68,12 @@ func cmdStatus(args []string) int {
 	}
 
 	fmt.Println("")
+
+	// What follows is read from where awkit keeps a project's files now. In a
+	// project that has not been upgraded it would read as "nothing has run".
+	if migrate.UsesOldLayout(".") {
+		output.Warning("This project keeps files where an earlier awkit put them: what is shown below does not see them. Run 'awkit upgrade'.")
+	}
 
 	// Run
 	runLine := fmt.Sprintf("Run: %s", report.Run.State)

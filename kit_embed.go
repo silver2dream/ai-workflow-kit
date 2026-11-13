@@ -2,14 +2,13 @@ package awkit
 
 import "embed"
 
-// KitFS contains the AWK kit files to be installed into a target project.
+// KitFS holds what AWK installs into a project: the kit's rules, skills and
+// subagents, at the paths they have in a project (see internal/layout).
 //
-// NOTE: This embeds only tracked files. Runtime state under `.ai/state/` is ignored by git
-// and should not be embedded into release binaries.
+// This repository is a project of its own, so the kit is its own .claude
+// directory. Only what is named here ships. The repository's configuration
+// and roster under .ai do not: a project gets those from a preset. Nor do
+// skills that are only of use here (create-issues).
 //
-// Specs: none ship to user projects. What is under .ai/specs in this
-// repository are AWK's own design documents; copies that older releases
-// installed are removed via internal/install/deprecated.txt.
-//
-//go:embed .ai/config/* .ai/rules/_kit/*.md .ai/rules/_examples/*.md .ai/skills/principal-workflow/*.md .ai/skills/principal-workflow/*/*.md .ai/skills/post-mortem/*.md .ai/skills/post-mortem/*/*.md .ai/skills/release-checklist/*.md .ai/skills/release-checklist/*/*.md .claude/agents/*.md
+//go:embed .claude/rules/_kit/*.md .claude/skills/principal-workflow/*.md .claude/skills/principal-workflow/*/*.md .claude/skills/post-mortem/*.md .claude/skills/post-mortem/*/*.md .claude/skills/release-checklist/*.md .claude/skills/release-checklist/*/*.md .claude/agents/*.md
 var KitFS embed.FS

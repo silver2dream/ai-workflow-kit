@@ -62,13 +62,13 @@ awkit init --preset godot-go --scaffold
 awkit init --preset godot-go --scaffold --dry-run
 ```
 
-There are two presets, `generic` (the default) and `godot-go`; `awkit list-presets` describes them. With `generic`, set `verify.build` and `verify.test` in `.ai/config/workflow.yaml` before the first run.
+There are two presets, `generic` (the default) and `godot-go`; `awkit list-presets` describes them. With `generic`, set `verify.build` and `verify.test` in `.ai/config.yaml` before the first run.
 
 ---
 
-## Step 3: Configure workflow.yaml
+## Step 3: Configure config.yaml
 
-Open `.ai/config/workflow.yaml` and verify the basics:
+Open `.ai/config.yaml` and verify the basics:
 
 ```yaml
 project:
@@ -137,7 +137,7 @@ The `yaml awk-ticket` block:
 | Field | |
 |-------|---|
 | `schema` | always `1` |
-| `repo` | a repo name from `workflow.yaml`, or `root` |
+| `repo` | a repo name from `config.yaml`, or `root` |
 | `depends_on` | optional: issues that must be done first, e.g. `[12, 15]` |
 
 Acceptance criteria describe behaviour, not test names: the review checks that each one is covered by a test that ran.
@@ -148,7 +148,7 @@ Acceptance criteria describe behaviour, not test names: the review checks that e
 
 ```bash
 awkit generate       # generates CLAUDE.md, AGENTS.md, rules, settings
-awkit validate       # checks workflow.yaml for errors
+awkit validate       # checks config.yaml for errors
 awkit doctor         # full health check (CLI tools, config, permissions)
 ```
 
@@ -207,7 +207,7 @@ awkit run
 | `Workflow stopped (invalid_ticket)` | The issue has a comment that says what is wrong with its block. Correct it, remove the `needs-human-review` label, run again |
 | `Workflow stopped (blocked_by_dependencies)` | Every ticket waits for an issue in its `depends_on` that is not done. Finish or reopen that issue, or correct `depends_on` |
 | `Workflow stopped (no_actionable_tasks)` | There is no open ticket to work on. Create one (Step 6) |
-| `repo path does not exist` | Check `repos[].path` in workflow.yaml |
+| `repo path does not exist` | Check `repos[].path` in config.yaml |
 | `Working directory not clean` | Commit or stash your changes |
 
 For more: [Troubleshooting](troubleshooting.md) | [FAQ](faq.md) | [Configuration Reference](configuration.md)

@@ -135,14 +135,15 @@ More details: `docs/ai-workflow-architecture.md`.
 
 ```
 .
-├── .ai/                         # the kit
-│   ├── config/workflow.yaml     # main config
+├── .ai/
+│   ├── config.yaml              # the project's configuration
 │   ├── roster.yaml              # who sits at the table when `awkit plan` plans
-│   ├── rules/                   # git workflow rules + optional rule packs
+│   └── state/                   # what a run leaves behind: results, logs (gitignored)
+├── .claude/                     # what agents read, where Claude Code looks for it
+│   ├── rules/_kit/              # the kit's rules; your own rules go next to this folder
 │   ├── skills/                  # what the Principal follows: the loop, the ticket format
-│   └── state/, results/         # runtime state (gitignored)
+│   └── agents/                  # the subagents the Principal hands work to
 ├── docs/                        # the council's documents, decisions.md and plans/
-├── .claude/                     # agents, rules and skills for Claude Code (generated)
 ├── CLAUDE.md, AGENTS.md         # instructions for the Principal and the Worker (generated)
 └── .github/workflows/           # CI, one workflow per repo, generated from the config
 ```
@@ -182,7 +183,7 @@ awkit init --preset godot-go --scaffold --dry-run
 
 | Preset | What you get |
 |--------|--------------|
-| `generic` (default) | A single repo of any stack. You set `verify.build` and `verify.test` in `.ai/config/workflow.yaml`; nothing else is assumed. |
+| `generic` (default) | A single repo of any stack. You set `verify.build` and `verify.test` in `.ai/config.yaml`; nothing else is assumed. |
 | `godot-go` | A monorepo: `backend/` in Go, `frontend/` in Godot C#. With `--scaffold`, a skeleton that builds and passes its tests (.NET 8 SDK to build, Godot 4 .NET to open the game). |
 
 Run `awkit list-presets` for details. See [Getting Started](docs/getting-started.md) for the skeleton's files.
@@ -208,23 +209,24 @@ Update the CLI:
 curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
 ```
 
-Update kit files inside a project (preserves your workflow.yaml):
+Update kit files inside a project (preserves your config.yaml):
 
 ```bash
 awkit upgrade
-awkit generate
 ```
+
+A project set up by an earlier awkit keeps its files elsewhere (`.ai/config/workflow.yaml`, `.ai/rules/`, `.ai/skills/`, `.ai/results/` and so on). `awkit upgrade` moves them to where they are kept now and commits the move; `awkit upgrade --dry-run` shows every step first. Until a project is upgraded, the other commands stop and say so.
 
 Other update options:
 
 ```bash
-# Apply a different preset to workflow.yaml only
+# Apply a different preset to config.yaml only
 awkit init --preset godot-go --force-config
 
-# Upgrade kit files and overwrite workflow.yaml (requires --preset)
+# Upgrade kit files and overwrite config.yaml (requires --preset)
 awkit upgrade --force-config --preset godot-go
 
-# Full reset: update kit files AND apply preset to workflow.yaml
+# Full reset: update kit files AND apply preset to config.yaml
 awkit init --preset godot-go --force
 ```
 
@@ -286,7 +288,7 @@ Add a health endpoint.
 
 ```yaml awk-ticket
 schema: 1
-repo: backend          # a repo of .ai/config/workflow.yaml, or root
+repo: backend          # a repo of .ai/config.yaml, or root
 depends_on: [12]       # optional: issues that must be done first
 ```
 ````
@@ -312,11 +314,11 @@ touch .ai/state/STOP
 
 ## ⚙️ Configuration
 
-Main config: `.ai/config/workflow.yaml`
+Main config: `.ai/config.yaml`
 
 ### Repo type
 
-AWK supports three repository types configured in `.ai/config/workflow.yaml`:
+AWK supports three repository types configured in `.ai/config.yaml`:
 
 | Type | Description | Use Case |
 |------|-------------|----------|
@@ -348,17 +350,17 @@ A ticket's `yaml awk-ticket` block is read strictly. An unknown field, or a repo
 | Field | Meaning |
 |-------|---------|
 | `schema` | always `1` |
-| `repo` | a repo of `workflow.yaml`, or `root` |
+| `repo` | a repo of `config.yaml`, or `root` |
 | `depends_on` | issues that must be done before this ticket starts |
 | `severity` | `P0` to `P3` (optional) |
 | `release` | `true` sends the PR to the release branch (root repo only) |
 | `allow_script_changes`, `allow_parent_changes`, `allow_secrets` | safety flags; off unless the ticket sets them |
 
-Full description: `.ai/skills/principal-workflow/tasks/create-task.md`.
+Full description: `.claude/skills/principal-workflow/tasks/create-task.md`.
 
 ### Config sections
 
-`workflow.yaml` has these top-level sections (full reference: [docs/user/configuration.md](docs/user/configuration.md)):
+`config.yaml` has these top-level sections (full reference: [docs/user/configuration.md](docs/user/configuration.md)):
 
 | Section | Purpose |
 |---------|---------|
@@ -417,7 +419,7 @@ This repository's own CI initializes such a project on every push and runs its g
 ## 🔁 CI
 
 **For user projects:**
-- `awkit init` writes a CI workflow for every repo that has build or test commands, from the commands in `workflow.yaml`
+- `awkit init` writes a CI workflow for every repo that has build or test commands, from the commands in `config.yaml`
 - `awkit upgrade` and `awkit generate` keep those workflows in step with the config. A workflow whose first-line comment you delete is yours, and awkit leaves it alone
 
 **For this repo (awkit itself):**
@@ -444,7 +446,7 @@ This repository's own CI initializes such a project on every push and runs its g
 |----------|-------------|
 | [Quick Start](docs/user/quick-start.md) | 5-minute setup guide |
 | [Getting Started](docs/user/getting-started.md) | Detailed setup guide |
-| [Configuration](docs/user/configuration.md) | Complete `workflow.yaml` reference |
+| [Configuration](docs/user/configuration.md) | Complete `config.yaml` reference |
 | [Skills](docs/user/skills.md) | Slash-command skills reference |
 | [Troubleshooting](docs/user/troubleshooting.md) | Error solutions (incl. Windows) |
 | [FAQ](docs/user/faq.md) | Common questions |
@@ -472,7 +474,7 @@ See [Contributing Guide](docs/developer/contributing.md) for:
 - PR workflow
 
 Quick reference:
-- Branch model and commit format: `.ai/rules/_kit/git-workflow.md`
+- Branch model and commit format: `.claude/rules/_kit/git-workflow.md`
 - PRs target `develop`; `main` is for releases.
 
 ---

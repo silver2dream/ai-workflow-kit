@@ -1,6 +1,6 @@
 # Configuration Guide
 
-本文件詳細說明 `.ai/config/workflow.yaml` 的所有配置選項。
+本文件詳細說明 `.ai/config.yaml` 的所有配置選項。
 
 ---
 
@@ -195,16 +195,17 @@ rules:
 
 ### 規則查找順序
 
-1. `.ai/rules/{rule}.md` (使用者自訂優先)
-2. `.ai/rules/_kit/{rule}.md` (Kit 核心)
+1. `.claude/rules/{rule}.md` (使用者自訂優先)
+2. `.claude/rules/_kit/{rule}.md` (Kit 核心)
 
 ### 使用範例規則
 
 ```bash
 # 複製範例規則
-cp .ai/rules/_examples/testing-strategy.md .ai/rules/
+# 規則包在 AWK repo 的 docs/examples/rules/，把要用的那一份複製進專案
+cp <ai-workflow-kit>/docs/examples/rules/testing-strategy.md .claude/rules/
 
-# 在 workflow.yaml 中啟用
+# 在 config.yaml 中啟用
 rules:
   custom:
     - testing-strategy
@@ -559,7 +560,7 @@ escalation:
 
 ## 議會名冊：`.ai/roster.yaml`
 
-`awkit plan` 規劃時坐在桌邊的角色，寫在 `.ai/roster.yaml`，不在 `workflow.yaml` 裡。`awkit init` 會依 preset 寫出一份（`godot-go` 是小型遊戲工作室：producer、game-designer、numerical-designer、tech-lead、qa；其他 preset 是 product-owner、user-advocate、architect、skeptic）；專案沒有名冊時，第一次執行 `awkit plan` 也會寫一份。這個檔案是專案自己的，升級不會覆寫它。
+`awkit plan` 規劃時坐在桌邊的角色，寫在 `.ai/roster.yaml`，不在 `config.yaml` 裡。`awkit init` 會依 preset 寫出一份（`godot-go` 是小型遊戲工作室：producer、game-designer、numerical-designer、tech-lead、qa；其他 preset 是 product-owner、user-advocate、architect、skeptic）；專案沒有名冊時，第一次執行 `awkit plan` 也會寫一份。這個檔案是專案自己的，升級不會覆寫它。
 
 ```yaml
 # language: 繁體中文      # 議會書寫的語言；不寫就跟著需求的語言
@@ -608,7 +609,7 @@ AWK 升級時可能引入 config 格式變更。Migration 系統會自動處理�
 
 ### 自動遷移
 
-`awkit upgrade` 會自動偵測 `workflow.yaml` 的版本並執行所需的 migration：
+`awkit upgrade` 會自動偵測 `config.yaml` 的版本並執行所需的 migration：
 
 ```bash
 # 升級 AWK 並自動遷移 config
@@ -656,10 +657,10 @@ awkit doctor
 
 ### 備份
 
-Migration 執行前會自動建立 `workflow.yaml.bak` 備份。如果遷移結果有問題，可以還原：
+Migration 執行前會自動建立 `config.yaml.bak` 備份。如果遷移結果有問題，可以還原：
 
 ```bash
-cp .ai/config/workflow.yaml.bak .ai/config/workflow.yaml
+cp .ai/config.yaml.bak .ai/config.yaml
 ```
 
 ---

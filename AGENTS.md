@@ -18,7 +18,7 @@ Default priority: correctness > minimal diff > speed.
 
 ## MUST-READ (before any work)
 
-- Read and obey: `.ai/rules/_kit/git-workflow.md` (branch and PR conventions; the runner makes the commits, you do not)
+- Read and obey: `.claude/rules/_kit/git-workflow.md` (branch and PR conventions; the runner makes the commits, you do not)
 
 Do not proceed if these files are missing—stop and report what you cannot find.
 
@@ -52,7 +52,7 @@ Do not proceed if these files are missing—stop and report what you cannot find
 
 ### 4. Implementation plan (REQUIRED before coding)
 Before making any code changes, you MUST create an implementation plan file at:
-`.ai/runs/issue-{ISSUE_ID}/plan.md`
+`.ai/state/runs/issue-{ISSUE_ID}/plan.md`
 
 The plan MUST contain:
 - `## Summary` — brief description of the approach (1-3 sentences)
@@ -123,7 +123,7 @@ If a review has zero `Critical:` or `Important:` items, it should be approval-tr
 
 ## REPO TYPE SUPPORT
 
-AWK supports three repository types configured in `.ai/config/workflow.yaml`:
+AWK supports three repository types configured in `.ai/config.yaml`:
 
 | Type | Description | Use Case |
 |------|-------------|----------|

@@ -9,63 +9,6 @@ import (
 	"testing"
 )
 
-// TestKitFSContainsRequiredFiles verifies that all required files are embedded.
-// This prevents issues where awkit init fails because files are missing.
-func TestKitFSContainsRequiredFiles(t *testing.T) {
-	requiredFiles := []string{
-		// Config files
-		".ai/config/workflow.schema.json",
-
-		// Rules
-		".ai/rules/_kit/git-workflow.md",
-
-		// Skills
-		".ai/skills/principal-workflow/SKILL.md",
-		".ai/skills/principal-workflow/phases/main-loop.md",
-
-		// Subagents
-		".claude/agents/pr-reviewer.md",
-	}
-
-	for _, path := range requiredFiles {
-		_, err := fs.Stat(KitFS, path)
-		if err != nil {
-			t.Errorf("required file not embedded: %s", path)
-		}
-	}
-}
-
-// TestKitFSContainsRequiredDirectories verifies directory structure is embedded.
-func TestKitFSContainsRequiredDirectories(t *testing.T) {
-	requiredDirs := []string{
-		".ai/config",
-		".ai/rules/_kit",
-		".ai/rules/_examples",
-		// Skills
-		".ai/skills/principal-workflow",
-		".ai/skills/principal-workflow/phases",
-		".ai/skills/principal-workflow/tasks",
-		".ai/skills/principal-workflow/references",
-		".ai/skills/post-mortem",
-		".ai/skills/post-mortem/phases",
-		".ai/skills/release-checklist",
-		".ai/skills/release-checklist/phases",
-		// Subagents
-		".claude/agents",
-	}
-
-	for _, dir := range requiredDirs {
-		entries, err := fs.ReadDir(KitFS, dir)
-		if err != nil {
-			t.Errorf("required directory not embedded or empty: %s (error: %v)", dir, err)
-			continue
-		}
-		if len(entries) == 0 {
-			t.Errorf("required directory is empty: %s", dir)
-		}
-	}
-}
-
 // TestKitFSPythonLibModuleComplete was removed - Python lib module migrated to Go implementations.
 
 // A path on the deprecated list is removed from a project on every init and
@@ -92,33 +35,91 @@ func TestKitFSShipsNothingOnTheDeprecatedList(t *testing.T) {
 	}
 }
 
-// The rule examples the kit ships are the ones their README lists, and the
-// other way round.
+// What the kit ships is what an install writes into a project, at the same
+// paths: the kit's rules, skills and subagents, where Claude Code looks for
+// them.
+func TestKitFSHoldsTheKit(t *testing.T) {
+	required := []string{
+		".claude/rules/_kit/git-workflow.md",
+		".claude/skills/principal-workflow/SKILL.md",
+		".claude/skills/principal-workflow/phases/main-loop.md",
+		".claude/skills/principal-workflow/phases/dispatch.md",
+		".claude/skills/principal-workflow/phases/review.md",
+		".claude/skills/principal-workflow/tasks/create-task.md",
+		".claude/skills/principal-workflow/references/contracts.md",
+		".claude/skills/post-mortem/SKILL.md",
+		".claude/skills/release-checklist/SKILL.md",
+		".claude/agents/pr-reviewer.md",
+		".claude/agents/conflict-resolver.md",
+	}
+	for _, path := range required {
+		if _, err := fs.Stat(KitFS, path); err != nil {
+			t.Errorf("the kit does not hold %s", path)
+		}
+	}
+}
+
+// Only the kit ships. The repository's own configuration and roster, the
+// skills that are of use here alone and the rule examples stay behind: a
+// project gets its configuration from a preset, and Claude Code would read
+// an example under .claude/rules as a rule of the project.
+func TestKitFSHoldsNothingElse(t *testing.T) {
+	kit := []string{
+		".claude/rules/_kit/",
+		".claude/skills/principal-workflow/",
+		".claude/skills/post-mortem/",
+		".claude/skills/release-checklist/",
+		".claude/agents/",
+	}
+	files := 0
+	err := fs.WalkDir(KitFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		files++
+		for _, prefix := range kit {
+			if strings.HasPrefix(path, prefix) {
+				return nil
+			}
+		}
+		t.Errorf("the kit ships %s, which is not part of it", path)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files == 0 {
+		t.Error("the kit is empty")
+	}
+}
+
+// The rule examples are documents of this repository. The ones there are the
+// ones their README lists, and the other way round.
 func TestRuleExamplesMatchTheirReadme(t *testing.T) {
-	const dir = ".ai/rules/_examples"
-	readme, err := fs.ReadFile(KitFS, dir+"/README.md")
+	dir := filepath.Join("docs", "examples", "rules")
+	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries, err := fs.ReadDir(KitFS, dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	shipped := map[string]bool{}
+	kept := map[string]bool{}
 	for _, entry := range entries {
 		if name := entry.Name(); name != "README.md" {
-			shipped[name] = true
+			kept[name] = true
 			if !strings.Contains(string(readme), "`"+name+"`") {
-				t.Errorf("%s is shipped but the README does not list it", name)
+				t.Errorf("%s is there but the README does not list it", name)
 			}
 		}
 	}
 	for _, match := range regexp.MustCompile("- `([a-z0-9-]+[.]md)`").FindAllStringSubmatch(string(readme), -1) {
-		if !shipped[match[1]] {
-			t.Errorf("the README lists %s, which the kit does not ship", match[1])
+		if !kept[match[1]] {
+			t.Errorf("the README lists %s, which is not there", match[1])
 		}
 	}
-	if len(shipped) == 0 {
-		t.Error("no rule examples are shipped")
+	if len(kept) == 0 {
+		t.Error("there are no rule examples")
 	}
 }

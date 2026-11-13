@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
@@ -49,7 +50,7 @@ func TestCmdRunIssue_TimeoutsComeFromTheConfiguration(t *testing.T) {
 	}
 
 	// The help says where a timeout comes from when no flag gives it.
-	if help := captureStderr(usageRunIssue); !strings.Contains(help, "timeouts.gh_seconds of workflow.yaml") || !strings.Contains(help, "timeouts.codex_minutes") {
+	if help := captureStderr(usageRunIssue); !strings.Contains(help, "timeouts.gh_seconds of "+layout.ConfigFile) || !strings.Contains(help, "timeouts.codex_minutes") {
 		t.Errorf("the help does not name the configuration:\n%s", help)
 	}
 }

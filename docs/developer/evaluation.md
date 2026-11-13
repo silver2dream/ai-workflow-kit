@@ -150,9 +150,9 @@ final_grade = grade(min(total_score, cap))
 | ID | 驗證內容 | PASS 條件 |
 |----|----------|-----------|
 | O0.1 | `.ai/state/` | Git 會忽略 |
-| O0.2 | `.ai/results/` | Git 會忽略 |
-| O0.3 | `.ai/runs/` | Git 會忽略 |
-| O0.4 | `.ai/exe-logs/` | Git 會忽略 |
+| O0.2 | `.ai/state/results/` | Git 會忽略 |
+| O0.3 | `.ai/state/runs/` | Git 會忽略 |
+| O0.4 | `.ai/state/logs/` | Git 會忽略 |
 | O0.5 | `.worktrees/` | Git 會忽略 |
 
 ### O1-O4: scan_repo 與 audit_project
@@ -167,7 +167,7 @@ final_grade = grade(min(total_score, cap))
 
 | ID | 驗證內容 | PASS 條件 |
 |----|----------|-----------|
-| O5 | 驗證 workflow.yaml 配置 | 配置有效 |
+| O5 | 驗證 config.yaml 配置 | 配置有效 |
 
 ### O7: 版本同步（P0 強制）
 

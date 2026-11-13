@@ -11,6 +11,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func usageJiTTest() {
@@ -124,7 +125,7 @@ func cmdJiTTest(args []string) int {
 
 	jitCfg := cfg.Review.JiTTest
 	if !jitCfg.IsEnabled() {
-		errorf("jittest is not enabled in workflow.yaml (set review.jittest.enabled: true)\n")
+		errorf("jittest is not enabled in " + layout.ConfigFile + " (set review.jittest.enabled: true)\n")
 		return 1
 	}
 

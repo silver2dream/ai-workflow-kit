@@ -2,6 +2,7 @@ package evaluate
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -412,14 +413,14 @@ func TestOfflineGate_O5_IsTheSharedValidation(t *testing.T) {
 		name, content, wantStatus, wantReason string
 	}{
 		// A project is one repo, its root, when the file names none.
-		{"no repos", valid, "PASS", "workflow.yaml is valid"},
+		{"no repos", valid, "PASS", layout.ConfigFile + " is valid"},
 		{"a value that is there and wrong", "project: {name: demo, type: multi}\ngit: {integration_branch: develop}\n", "FAIL",
-			"workflow.yaml is not valid: project.type: invalid value: multi (expected: monorepo or single-repo)"},
+			layout.ConfigFile + " is not valid: project.type: invalid value: multi (expected: monorepo or single-repo)"},
 		{"every problem is named", "repos: [{name: backend}]\n", "FAIL",
-			"workflow.yaml is not valid: project.name: required field is missing; project.type: required field is missing (expected: monorepo or single-repo); git.integration_branch: required field is missing; repos[0].path: required field is missing"},
+			layout.ConfigFile + " is not valid: project.name: required field is missing; project.type: required field is missing (expected: monorepo or single-repo); git.integration_branch: required field is missing; repos[0].path: required field is missing"},
 		{"a custom agent that is not well formed", valid + "agents: {custom: [{name: Sec, description: d}]}\n", "FAIL", "agents.custom[0].name: invalid name: Sec"},
-		{"a value of the wrong kind", valid + "timeouts: {gh_seconds: soon}\n", "FAIL", "workflow.yaml is not valid: "},
-		{"not YAML", "project: [unclosed\n", "FAIL", "workflow.yaml is not valid: "},
+		{"a value of the wrong kind", valid + "timeouts: {gh_seconds: soon}\n", "FAIL", layout.ConfigFile + " is not valid: "},
+		{"not YAML", "project: [unclosed\n", "FAIL", layout.ConfigFile + " is not valid: "},
 	}
 	for _, tt := range tests {
 		result := CheckO5ConfigValidation(write(tt.content))
@@ -427,7 +428,39 @@ func TestOfflineGate_O5_IsTheSharedValidation(t *testing.T) {
 			t.Errorf("%s: %s (%s), want %s with %q", tt.name, result.Status, result.Reason, tt.wantStatus, tt.wantReason)
 		}
 	}
-	if result := CheckO5ConfigValidation(t.TempDir()); result.Status != "FAIL" || result.Reason != "workflow.yaml not found" {
+	if result := CheckO5ConfigValidation(t.TempDir()); result.Status != "FAIL" || result.Reason != layout.ConfigFile+" not found" {
 		t.Errorf("a project without a configuration: %s (%s)", result.Status, result.Reason)
+	}
+}
+
+// What a run leaves behind, and the Workers' worktrees, must be ignored by
+// git. One line covers the first now: everything a run writes is below the
+// state directory.
+func TestOfflineGate_O0_WhatMustBeIgnored(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	tests := []struct {
+		name, ignore, wantStatus, wantReason string
+	}{
+		{"what awkit writes into a project", ".ai/state/\n.worktrees/\n", "PASS", ""},
+		{"the worktrees are not ignored", ".ai/state/\n", "FAIL", "paths not ignored: .worktrees"},
+		{"the lines of an earlier awkit, without the state directory", ".ai/results/\n.ai/runs/\n.ai/exe-logs/\n.worktrees/\n", "FAIL", "paths not ignored: .ai/state"},
+		{"nothing is ignored", "", "FAIL", "paths not ignored: .ai/state, .worktrees"},
+	}
+	for _, tt := range tests {
+		dir := t.TempDir()
+		if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v\n%s", err, out)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(tt.ignore), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		result := CheckO0GitIgnore(dir)
+
+		if result.Status != tt.wantStatus || !strings.Contains(result.Reason, tt.wantReason) {
+			t.Errorf("%s: %s (%s), want %s with %q", tt.name, result.Status, result.Reason, tt.wantStatus, tt.wantReason)
+		}
 	}
 }

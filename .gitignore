@@ -1,17 +1,9 @@
-# AI Workflow Kit - State and Output Directories
+# AI Workflow Kit: what a run leaves behind (results, logs, state)
 .ai/state/
-.ai/results/
-.ai/runs/
-.ai/exe-logs/
-.ai/logs/
 
-# Same runtime dirs when created under a package dir by tests running there
-# (the patterns above are root-anchored due to their internal slash)
+# The same, where a test that runs in a package directory creates it
+# (the pattern above is anchored at the root by its inner slash)
 **/.ai/state/
-**/.ai/results/
-**/.ai/runs/
-**/.ai/exe-logs/
-**/.ai/logs/
 
 # Worktrees
 .worktrees/
@@ -34,10 +26,6 @@ Thumbs.db
 
 # Claude Code local settings (do not commit)
 .claude/settings.local.json
-# Symlinks generated locally by `awkit install` (ensureClaudeLinks); ignoring
-# them also stops Windows git from warning while trying to traverse them
-.claude/rules
-.claude/skills
 .claude/worktrees/
 
 # Kiro IDE local workspace

@@ -15,7 +15,7 @@ func CheckN1KickoffDryRun(rootPath string) GateResult {
 	// Placeholder: check if essential files exist for kickoff
 	configPath := config.Path(rootPath)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return Fail("workflow.yaml not found for kickoff")
+		return Fail(layout.ConfigFile + " not found")
 	}
 
 	skillPath := filepath.Join(layout.Skills(rootPath), "principal-workflow", "SKILL.md")

@@ -51,7 +51,7 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 ### 結構
 
 ```
-.ai/skills/<skill-name>/
+.claude/skills/<skill-name>/
 ├── SKILL.md           # 技能入口與說明
 ├── phases/            # 流程階段
 │   └── *.md           # 各階段指令

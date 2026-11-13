@@ -12,7 +12,7 @@ func TestBuildWorkerPrompt_Minimal(t *testing.T) {
 		"You are an automated coding agent running inside a git worktree.",
 		"- Read and follow AGENTS.md.",
 		"Ticket:\n# Task\n\nDo something\n",
-		".ai/runs/issue-7/plan.md",
+		".ai/state/runs/issue-7/plan.md",
 		"FORBIDDEN OPERATIONS",
 		".ai/state/principal/",
 	} {

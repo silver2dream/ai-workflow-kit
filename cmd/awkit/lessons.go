@@ -22,7 +22,7 @@ func usageLessons() {
 	fmt.Fprint(os.Stderr, `Usage: awkit lessons <subcommand> [options]
 
 Manage the learning loop's lesson store (.ai/state/lessons.json).
-Full design: https://github.com/silver2dream/ai-workflow-kit/blob/main/.ai/specs/learning-loop/design.md
+Full design: https://github.com/silver2dream/ai-workflow-kit/blob/main/docs/developer/specs/learning-loop/design.md
 
 Subcommands:
   list [--all]           List lessons (--all includes retired)
@@ -210,7 +210,7 @@ func lessonsAdd(stateRoot, title, content, categories, scope string, issue, pr i
 func lessonsDistill(stateRoot string, maxEntries int) int {
 	cfg := loadLessonsConfig(stateRoot)
 	if !cfg.IsEnabled() {
-		fmt.Println("lessons: disabled in workflow.yaml (lessons.enabled: false)")
+		fmt.Println("lessons: disabled in " + layout.ConfigFile + " (lessons.enabled: false)")
 		return 0
 	}
 	timeout := 60 * time.Second
@@ -313,7 +313,7 @@ Harden proven lesson **%s** into an enforced gate so this failure pattern can no
 %s
 ## Proposed enforcement (pick the first form that can express the lesson)
 A check that runs by itself holds on every ticket and costs no prompt space. A rule file is read by every Worker on every ticket and is still only text, so it comes last.
-- [ ] audit.custom check in workflow.yaml (deterministic gate)
+- [ ] audit.custom check in `+layout.ConfigFile+` (deterministic gate)
 - [ ] lifecycle hook (pre_dispatch / pre_review command)
 - [ ] escalation trigger (pause/approval pattern)
 - [ ] Rule file under `+layout.RulesDir+`/ (worker-facing constraint), when the lesson cannot be checked mechanically

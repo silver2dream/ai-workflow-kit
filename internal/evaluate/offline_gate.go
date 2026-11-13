@@ -36,12 +36,11 @@ func CheckO3Audit(rootPath string) GateResult {
 	return Pass(fmt.Sprintf("no P0 findings (P1: %d, P2: %d)", s.P1Count, s.P2Count))
 }
 
-// requiredIgnoredPaths lists paths that must be ignored by git.
+// requiredIgnoredPaths lists paths that must be ignored by git: what a run
+// leaves behind, and the Workers' worktrees.
 var requiredIgnoredPaths = []string{
-	".ai/state",
-	layout.ResultsDir,
-	layout.RunsDir,
-	layout.LogsDir,
+	layout.StateDir,
+	".worktrees",
 }
 
 // CheckO0GitIgnore checks if required paths are ignored by git.
@@ -84,11 +83,11 @@ func CheckO5ConfigValidation(rootPath string) GateResult {
 		var parse *config.ParseError
 		switch {
 		case os.IsNotExist(err):
-			return Fail("workflow.yaml not found")
+			return Fail(layout.ConfigFile + " not found")
 		case errors.As(err, &parse):
 			return Fail(err.Error())
 		default:
-			return Fail("cannot read workflow.yaml: " + err.Error())
+			return Fail("cannot read " + layout.ConfigFile + ": " + err.Error())
 		}
 	}
 	if problems := cfg.Validate(); len(problems) > 0 {
@@ -96,9 +95,9 @@ func CheckO5ConfigValidation(rootPath string) GateResult {
 		for i, problem := range problems {
 			reasons[i] = problem.Error()
 		}
-		return Fail("workflow.yaml is not valid: " + strings.Join(reasons, "; "))
+		return Fail(layout.ConfigFile + " is not valid: " + strings.Join(reasons, "; "))
 	}
-	return Pass("workflow.yaml is valid")
+	return Pass(layout.ConfigFile + " is valid")
 }
 
 // CheckO7VersionSync checks version synchronization.

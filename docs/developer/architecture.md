@@ -55,62 +55,45 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 
 ## 目錄結構
 
+一個專案裡，AWK 的東西只在兩個地方：`.ai/`（專案自己說的話，以及執行留下的東西）與 `.claude/`（agent 讀的東西，放在 Claude Code 會找的位置）。位置由 `internal/layout` 統一決定。
+
 ```
 .ai/
-├── config/
-│   ├── workflow.yaml              # 主配置檔
-│   └── workflow.schema.json       # 配置 Schema
-│
-├── skills/                        # Agent Skills (Principal/Worker 技能)
-│   ├── principal-workflow/        # Principal 工作流程技能
-│   │   ├── SKILL.md               # 技能入口
-│   │   ├── phases/                # 流程階段
-│   │   │   └── main-loop.md       # 主迴圈邏輯
-│   │   ├── references/            # 參考文件
-│   │   └── tasks/                 # 任務範本
-│   └── create-issues/             # Issue 建立技能
-│       ├── SKILL.md
-│       └── phases/                # 分析、分解、建立階段
-│
+├── config.yaml                    # 專案的設定檔
+├── roster.yaml                    # `awkit plan` 規劃時坐在桌邊的角色
+└── state/                         # 執行留下的東西 (runtime, gitignored)
+    ├── results/issue-*.json       # 每個 Issue 的 Worker 執行結果
+    ├── runs/issue-*/              # 每個 Issue 的 prompt、plan、summary
+    ├── logs/                      # principal.log、issue-*.worker.log
+    ├── tmp/                       # 派工時交給 Worker 的 ticket 檔
+    ├── principal/                 # Principal 會話狀態 (session.json、sessions/)
+    ├── traces/                    # 執行追蹤
+    ├── events/                    # 統一事件流 (含 session_usage token/成本)
+    ├── reviews/                   # 各 PR 的審查記錄
+    ├── council/                   # `awkit plan` 每次呼叫的 prompt 與回答
+    ├── lessons.json               # 學習迴圈的教訓
+    ├── review_feedback.jsonl      # 審查回饋記錄
+    ├── consecutive_failures       # 連續失敗計數
+    └── loop_count                 # 迴圈計數
+
+.claude/
 ├── rules/
-│   ├── _kit/                      # Kit 核心規則
-│   │   └── git-workflow.md        # Git 工作流程規則
-│   └── _examples/                 # 範例規則 (可選啟用)
-│
-├── specs/                         # Spec 規格目錄
-│   └── example/                   # 範例 spec
-│
-├── docs/                          # Kit 內部文件
-│   └── evaluate.md                # 評估指南
-│
-├── state/                         # 狀態檔案 (runtime, gitignored)
-│   ├── principal/                 # Principal 會話狀態
-│   │   ├── session.json           # 當前會話
-│   │   └── sessions/              # 歷史會話記錄
-│   ├── traces/                    # 執行追蹤
-│   ├── events/                    # 統一事件流 (含 session_usage token/成本)
-│   ├── reviews/                   # 各 PR 的審查記錄
-│   ├── lessons.json               # 學習迴圈教訓 (committable)
-│   ├── review_feedback.jsonl      # 審查回饋記錄
-│   ├── consecutive_failures       # 連續失敗計數
-│   └── loop_count                 # 迴圈計數
-│
-├── results/                       # 執行結果
-│   └── issue-*.json
-│
-├── runs/                          # 執行記錄 (Worker runs)
-│
-├── logs/                          # 結構化日誌
-│   └── <command>-<date>.log
-│
-├── exe-logs/                      # 執行日誌
-│   └── principal.log              # Principal 執行日誌
-│
-├── analysis/                      # 分析結果 (掃描/審計輸出)
-│
-└── tests/                         # 測試 fixtures
-    └── fixtures/                  # 測試資料
+│   ├── _kit/git-workflow.md       # kit 的規則 (awkit generate 產生、upgrade 會更新)
+│   └── <你的規則>.md              # 專案自己的規則 (rules.custom)
+├── skills/
+│   ├── principal-workflow/        # Principal 工作流程：SKILL.md、phases/、tasks/、references/
+│   ├── post-mortem/
+│   └── release-checklist/
+└── agents/
+    ├── pr-reviewer.md             # 內建 subagent
+    └── conflict-resolver.md
+
+.worktrees/                        # Worker 的 git worktree (gitignored)
 ```
+
+在 AWK 這個 repo 裡，kit 就是 repo 自己的 `.claude/`：`kit_embed.go` 只把上面列出的 kit 檔案嵌進 binary。範例規則包在 `docs/examples/rules/`，設定檔的 JSON Schema 在 `docs/reference/config.schema.json`，兩者都不會裝進專案。
+
+舊版把設定放在 `.ai/config/workflow.yaml`、規則與技能放在 `.ai/rules/`、`.ai/skills/`，執行期資料分散在 `.ai/results/`、`.ai/runs/`、`.ai/exe-logs/`、`.ai/temp/`。`awkit upgrade` 會把舊專案搬到上面的位置。
 
 > **Note:** 原有的 Python 腳本 (`scan_repo.py`, `audit_project.py`, `parse_tasks.py` 等)
 > 已整合至 `awkit` CLI。請使用 `awkit <command>` 取代直接呼叫腳本。
@@ -199,7 +182,7 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 ### 配置
 
 ```yaml
-# workflow.yaml
+# config.yaml
 escalation:
   retry_count: 2
   retry_delay_seconds: 5
@@ -241,11 +224,7 @@ escalation:
 
 ## Schema 驗證
 
-所有輸出檔案都有對應的 JSON Schema：
-
-| 檔案 | Schema |
-|------|--------|
-| workflow.yaml | workflow.schema.json |
+設定檔的 JSON Schema 在 repo 的 `docs/reference/config.schema.json`，供編輯器使用；`awkit validate` 的檢查寫在 `internal/config`，不讀這份 Schema。
 
 ---
 
@@ -253,7 +232,7 @@ escalation:
 
 ```
                     ┌─────────────────────┐
-                    │   workflow.yaml     │
+                    │   config.yaml     │
                     │   (配置中心)         │
                     └──────────┬──────────┘
                                │

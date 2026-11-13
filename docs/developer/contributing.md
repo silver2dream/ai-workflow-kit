@@ -28,13 +28,9 @@ go test ./...
 .
 ├── cmd/awkit/        # CLI 進入點
 ├── internal/         # 核心套件（analyzer, reviewer, worker, lessons, kickoff, ...）
-├── .ai/
-│   ├── config/       # 配置檔與 Schema
-│   ├── rules/        # 規則檔案（_kit / _examples）
-│   ├── skills/       # Principal/post-mortem/release-checklist 技能
-│   └── specs/        # AWK 自己的設計文件（不隨 kit 發佈）
-├── .claude/agents/   # 內建 subagents（pr-reviewer, conflict-resolver）
-└── docs/             # 文件 (你正在讀的)
+├── .ai/              # 這個 repo 自己的 config.yaml（不隨 kit 發佈）
+├── .claude/          # kit 本體：rules/_kit、skills（principal-workflow、post-mortem、release-checklist）、agents
+└── docs/             # 文件 (你正在讀的)；examples/rules 是範例規則包，developer/specs 是 AWK 自己的設計文件
 ```
 
 ---
