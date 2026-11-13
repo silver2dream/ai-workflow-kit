@@ -182,7 +182,7 @@ repo: root
 ```
 ````
 
-`yaml awk-ticket` 區塊的欄位：`schema` 固定為 `1`；`repo` 是 `config.yaml` 裡的 repo 名稱或 `root`；需要等其他 Issue 先完成時，加上 `depends_on: [12, 15]`。完整說明見 `.claude/skills/principal-workflow/tasks/create-task.md`。
+`yaml awk-ticket` 區塊的欄位：`schema` 固定為 `1`；`repo` 是 `config.yaml` 裡的 repo 名稱或 `root`；需要等其他 Issue 先完成時，加上 `depends_on: [12, 15]`。完整說明見 `.claude/skills/principal-workflow/references/ticket.md`。
 
 ### 2. 建立 Issue
 

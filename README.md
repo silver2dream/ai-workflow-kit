@@ -356,7 +356,7 @@ A ticket's `yaml awk-ticket` block is read strictly. An unknown field, or a repo
 | `release` | `true` sends the PR to the release branch (root repo only) |
 | `allow_script_changes`, `allow_parent_changes`, `allow_secrets` | safety flags; off unless the ticket sets them |
 
-Full description: `.claude/skills/principal-workflow/tasks/create-task.md`.
+Full description: `.claude/skills/principal-workflow/references/ticket.md`.
 
 ### Config sections
 

@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	awkit "github.com/silver2dream/ai-workflow-kit"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
@@ -645,11 +647,30 @@ func TestCmdContextSnapshot_WithLoopCount(t *testing.T) {
 	tmpDir := t.TempDir()
 	stateDir := filepath.Join(tmpDir, ".ai", "state")
 	os.MkdirAll(stateDir, 0o755)
-	os.WriteFile(filepath.Join(stateDir, "loop_count.txt"), []byte("5"), 0o644)
+	os.WriteFile(filepath.Join(stateDir, "loop_count"), []byte("5\n"), 0o644)
 
-	exitCode := cmdContextSnapshot([]string{tmpDir})
+	var exitCode int
+	out := captureStdout(t, func() { exitCode = cmdContextSnapshot([]string{tmpDir}) })
 	if exitCode != 0 {
 		t.Errorf("cmdContextSnapshot(with loop_count) = %d, want 0", exitCode)
+	}
+	// The counter is the file the decision engine writes (loop_count). The
+	// snapshot looked for loop_count.txt, which nothing writes, and so never
+	// showed a count.
+	if !strings.Contains(out, "- Loop count: 5\n") {
+		t.Errorf("the snapshot does not show the loop count:\n%s", out)
+	}
+}
+
+// The snapshot names the text to read again after a compaction. It is one the
+// kit ships.
+func TestCmdContextSnapshot_NamesAFileTheKitShips(t *testing.T) {
+	out := captureStdout(t, func() { cmdContextSnapshot([]string{t.TempDir()}) })
+	if !strings.Contains(out, "`"+principalSkillFile+"`") {
+		t.Errorf("the snapshot does not name %s:\n%s", principalSkillFile, out)
+	}
+	if _, err := fs.Stat(awkit.KitFS, principalSkillFile); err != nil {
+		t.Errorf("the snapshot names %s, which the kit does not ship", principalSkillFile)
 	}
 }
 

@@ -52,11 +52,8 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 
 ```
 .claude/skills/<skill-name>/
-├── SKILL.md           # 技能入口與說明
-├── phases/            # 流程階段
-│   └── *.md           # 各階段指令
-├── references/        # 參考文件
-└── tasks/             # 任務範本
+├── SKILL.md           # 步驟與界線；開頭的 name 與 description 決定何時載入
+└── references/        # 範本、檢查清單、查閱用的表；SKILL.md 點名，需要時才讀
 ```
 
 ### 內建 Skills
@@ -64,7 +61,6 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 | Skill | 說明 |
 |-------|------|
 | `principal-workflow` | Principal Agent 主工作流程 |
-| `create-issues` | Issue 建立技能 |
 | `post-mortem` | 失敗事後分析（唯讀）；學習迴圈的手動入口 |
 | `release-checklist` | 發布前 go/no-go 驗證 |
 

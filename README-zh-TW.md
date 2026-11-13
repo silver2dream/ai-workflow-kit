@@ -354,7 +354,7 @@ repos:
 | `release` | `true` 表示 PR 送往 release 分支（僅限 root repo） |
 | `allow_script_changes`、`allow_parent_changes`、`allow_secrets` | 安全旗標；票沒有明確設定就是關閉 |
 
-完整說明：`.claude/skills/principal-workflow/tasks/create-task.md`。
+完整說明：`.claude/skills/principal-workflow/references/ticket.md`。
 
 ### Config 區段
 

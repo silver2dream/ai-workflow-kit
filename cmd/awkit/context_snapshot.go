@@ -34,7 +34,7 @@ func cmdContextSnapshot(args []string) int {
 
 	// State files summary
 	fmt.Println("## State")
-	stateDir := filepath.Join(stateRoot, ".ai", "state")
+	stateDir := layout.State(stateRoot)
 	if entries, err := os.ReadDir(stateDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
@@ -45,7 +45,7 @@ func cmdContextSnapshot(args []string) int {
 				fmt.Printf("- Lock: `%s`\n", name)
 			} else if name == "STOP" {
 				fmt.Println("- **STOP file present** (workflow halted)")
-			} else if name == "loop_count.txt" {
+			} else if name == "loop_count" {
 				if data, err := os.ReadFile(filepath.Join(stateDir, name)); err == nil {
 					fmt.Printf("- Loop count: %s\n", strings.TrimSpace(string(data)))
 				}
@@ -80,7 +80,7 @@ func cmdContextSnapshot(args []string) int {
 	// Key files to re-read after compaction
 	fmt.Println("## Key Files")
 	fmt.Println("After context compaction, re-read these files:")
-	fmt.Println("- `" + layout.SkillsDir + "/principal-workflow/phases/main-loop.md`")
+	fmt.Println("- `" + principalSkillFile + "`")
 	fmt.Println("- `" + layout.ConfigFile + "`")
 	fmt.Println("- Run `awkit status` for current workflow state")
 	fmt.Println("- Run `awkit analyze-next --json` to determine next action")
@@ -88,6 +88,10 @@ func cmdContextSnapshot(args []string) int {
 
 	return 0
 }
+
+// principalSkillFile is the text a Principal goes on from when its
+// conversation was compacted: the loop, and the names of the rest.
+const principalSkillFile = layout.SkillsDir + "/principal-workflow/SKILL.md"
 
 func usageContextSnapshot() {
 	fmt.Fprint(os.Stderr, `Generate a compact context snapshot for rebuilding after compaction

@@ -1,66 +1,30 @@
 ---
 name: post-mortem
-description: Structured failure analysis for debugging workflow issues. Collects context, identifies root cause, determines blast radius, and generates remediation and prevention measures. Triggers: /post-mortem, failure analysis, debug workflow, incident review.
+description: 工作流程出錯之後的失敗分析：收集證據 → 判定根因 → 評估影響範圍 → 提出復原步驟與預防措施，產出一份報告。Worker 失敗或逾時、審查卡住、合併失敗、awkit run 異常停止之後使用；只讀不改，要修的事另外開票。
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
-# Post-Mortem Skill
+# Post-Mortem
 
-Structured failure analysis workflow for diagnosing and learning from workflow failures, build breaks, and operational incidents.
+流程留下的紀錄以 `awkit status`、`awkit events` 與 `.ai/state/` 為準。這個 skill 固定分析的順序，讓結論站在證據上。
 
-## Overview
+## Read this reference
 
-This skill provides a systematic approach to failure analysis when something goes wrong in the AWK workflow pipeline. It walks through evidence collection, root cause identification, impact assessment, and actionable remediation -- producing a structured report that can be referenced for future prevention.
-
-## When to Use
-
-Use this skill when:
-- A Worker dispatch fails or times out
-- A PR is rejected due to unexpected errors
-- CI/CD pipeline breaks
-- `awkit run` encounters unrecoverable errors
-- Any workflow step produces unexpected results
-- User invokes `/post-mortem`
+`references/analyze-failure.md`：證據在哪裡、根因的分類與徵兆、報告範本。
 
 ## Workflow
 
-### Phase 1: Analyze Failure
+1. **界定**：什麼失敗、什麼時候、預期與實際各是什麼。問不到就從 `awkit status` 與最近的事件推定，並在報告裡標明是推定。
+2. **收集證據**：照 reference 的清單收集；錯誤訊息逐字記下，不改寫。
+3. **根因**：歸到一個類別（設定、程式、環境、外部），寫出元件、說明、把握程度，以及支持它的那一筆證據。把握不高時，列出其他假設與各自要查什麼才能排除。
+4. **影響範圍**：哪些 issue、PR、分支受影響；有沒有做到一半的變更已經進去；流程現在是不是卡住。
+5. **復原**：給出確切的指令與順序，以及怎麼確認復原成功。只列出，不執行。
+6. **預防**：這一類失敗怎樣才不會再發生；每一條寫類型、要改的位置、優先度。
+7. 用 reference 的範本回報。
 
-**Read** `phases/analyze-failure.md`
+## Guardrails
 
-Walk through the structured failure analysis:
-1. Collect failure context (trace files, logs, error messages)
-2. Identify root cause (categorize: config, code, environment, external)
-3. Determine blast radius (what was affected)
-4. Generate remediation steps
-5. Create prevention measures
-6. Output structured report
-
-## Critical Rules
-
-1. **DO NOT modify any files during analysis** -- this is a read-only diagnostic skill
-2. **Collect evidence first** -- never jump to conclusions without supporting data
-3. **Categorize accurately** -- misclassification leads to wrong remediation
-4. **Be specific in remediation** -- vague advice is not actionable
-5. **Always produce the structured report** -- even if root cause is uncertain
-
-## Integration with AWK Workflow
-
-This skill is used after a failure has occurred. It does not interfere with active workflows.
-
-- Safe to run while `awkit run` is active (read-only)
-- Results can inform new issues created via `/create-issues`
-- Prevention measures may lead to config or rule updates
-
-## Self-Check
-
-On each phase entry, output:
-```
-[POST-MORTEM] <timestamp> | <phase> | loaded: <filename>
-```
-
-## Quick Reference
-
-| Phase | Action | File |
-|-------|--------|------|
-| 1. Analyze Failure | Full structured failure analysis | `phases/analyze-failure.md` |
+- 分析期間不改任何檔案、標籤或分支，所以 `awkit run` 還在跑的時候也可以做。
+- 先有證據才下結論；沒有證據支持的寫成假設。
+- 復原步驟做不做由 owner 決定。要修程式或設定的事寫成票券（格式見 `.claude/skills/principal-workflow/references/ticket.md`），不在這裡動手。
+- 根因不確定也要交報告，把還不知道什麼寫清楚。

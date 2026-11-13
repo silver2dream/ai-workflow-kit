@@ -1237,26 +1237,28 @@ func TestValidateCustomRules_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestValidateCustomRules_MissingRoleGoal(t *testing.T) {
+// A rule file holds rules. It is not asked for a `Role:` and a `Goal:` line,
+// as the rule examples of earlier kits had: a file of requirements and checks
+// has neither. An empty file is still worth a word.
+func TestValidateCustomRules_AsksForNoRoleOrGoal(t *testing.T) {
 	tmpDir := t.TempDir()
 	rulesDir := layout.Rules(tmpDir)
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {
 		t.Fatalf("mkdir error: %v", err)
 	}
-
-	// Create rule file missing Role: and Goal:
-	rulePath := filepath.Join(rulesDir, "bad-rule.md")
-	if err := os.WriteFile(rulePath, []byte("# Bad Rule\n\nNo role or goal here.\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rulesDir, "backend.md"), []byte("# Backend Rules\n\n- Errors are handled or returned.\n"), 0644); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rulesDir, "empty.md"), []byte(" \n\n"), 0644); err != nil {
 		t.Fatalf("write error: %v", err)
 	}
 
-	rules := RulesConfig{
-		Custom: []string{"bad-rule"},
+	if warnings := validateCustomRules(tmpDir, RulesConfig{Custom: []string{"backend"}}); len(warnings) != 0 {
+		t.Errorf("a rule file of plain rules: %v, want no warning", warnings)
 	}
-
-	warnings := validateCustomRules(tmpDir, rules)
-	if len(warnings) < 2 {
-		t.Errorf("expected at least 2 warnings (missing Role + Goal), got %d: %v", len(warnings), warnings)
+	warnings := validateCustomRules(tmpDir, RulesConfig{Custom: []string{"empty"}})
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "'empty' is empty") {
+		t.Errorf("an empty rule file: %v, want one warning that says so", warnings)
 	}
 }
 

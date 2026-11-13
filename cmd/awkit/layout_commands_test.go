@@ -125,7 +125,7 @@ func TestCmdUpgrade_MovesAProjectOfAnEarlierAwkit(t *testing.T) {
 		".claude/rules/_kit/git-workflow.md",
 		".claude/rules/backend.md",
 		".claude/skills/principal-workflow/SKILL.md",
-		".claude/skills/principal-workflow/phases/main-loop.md",
+		".claude/skills/principal-workflow/references/ticket.md",
 		".claude/skills/release-notes/SKILL.md",
 		".claude/agents/pr-reviewer.md",
 		".claude/agents/conflict-resolver.md",
