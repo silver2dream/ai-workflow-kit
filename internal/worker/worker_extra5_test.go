@@ -104,7 +104,7 @@ func TestBackendRegistry_GetUnknown_Error(t *testing.T) {
 func TestBackendRegistry_Names_Sorted(t *testing.T) {
 	reg := NewBackendRegistry()
 	reg.Register(NewCodexBackend())
-	reg.Register(NewClaudeCodeBackend("claude-sonnet-4-5", 10, false))
+	reg.Register(NewClaudeCodeBackend("claude-sonnet-5-5", 10, false))
 
 	names := reg.Names()
 	if len(names) < 2 {
@@ -118,7 +118,7 @@ func TestBackendRegistry_Names_Sorted(t *testing.T) {
 }
 
 func TestDefaultRegistry_HasBothBackends(t *testing.T) {
-	reg := DefaultRegistry("claude-sonnet-4-5", 10, false)
+	reg := DefaultRegistry("claude-sonnet-5-5", 10, false)
 	names := reg.Names()
 	if len(names) < 2 {
 		t.Errorf("DefaultRegistry names = %v, want at least 2", names)
