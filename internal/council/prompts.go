@@ -530,7 +530,9 @@ func (p *planner) ticketRules(earlier bool) string {
 	rules := fmt.Sprintf(`Rules for the list:
 - %s
 - The list covers what this meeting decided, and no more.
-- Each ticket is a piece one developer can build, test and merge alone.
+- Each ticket is a piece one developer can build, test and merge alone. A ticket costs a pull request and a review: what one developer builds in a day is one ticket, not three.
+- Cut the work by what somebody can see working once the ticket is merged, not by function or by file. A helper is built by the ticket that first needs it.
+- Tests come with the ticket that builds what they test. A ticket of tests alone is for what only shows once several tickets are in, an end-to-end run for instance.
 - Each ticket is for exactly one repo: %s.
 - A ticket that needs another ticket's work first names it in depends_on, by key. No circles.
 - The order of the list is the order the tickets should be worked on.

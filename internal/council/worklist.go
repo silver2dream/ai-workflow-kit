@@ -291,8 +291,11 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 		role := reviewers[i]
 		got, err := settleJSON(ctx, p.session, "work list review "+role.ID, role.Model, p.worklistReviewPrompt(role, plan, draft.Tickets), func(got *review) error {
 			for _, objection := range got.Objections {
-				if !keys[strings.TrimSpace(objection.Ticket)] {
-					return fmt.Errorf("an objection names the ticket %q, which is not in the list", objection.Ticket)
+				// One objection may be about several tickets: "t5, t7".
+				for _, named := range strings.Split(objection.Ticket, ",") {
+					if !keys[strings.TrimSpace(named)] {
+						return fmt.Errorf("an objection names the ticket %q, which is not in the list", strings.TrimSpace(named))
+					}
 				}
 				if strings.TrimSpace(objection.Point) == "" {
 					return errors.New("an objection has no point")
@@ -305,7 +308,13 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 		}
 		for _, objection := range got.Objections {
 			objection.From = role.ID
-			objection.Ticket = strings.TrimSpace(objection.Ticket)
+			var named []string
+			for _, key := range strings.Split(objection.Ticket, ",") {
+				if key = strings.TrimSpace(key); key != "" {
+					named = append(named, key)
+				}
+			}
+			objection.Ticket = strings.Join(named, ", ")
 			perRole[i] = append(perRole[i], objection)
 		}
 		return nil
