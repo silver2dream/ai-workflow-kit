@@ -152,11 +152,7 @@ AWK supports three repository types configured in `.ai/config/workflow.yaml`:
 
 ## DEFAULT VERIFY COMMANDS
 
-### backend
+### root
 - Build: `go build ./...`
 - Test: `go test ./...`
-
-### frontend
-- Build: `echo 'Unity build via Editor'`
-- Test: `echo 'Unity tests via Editor'`
 
