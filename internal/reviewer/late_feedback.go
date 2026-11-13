@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
@@ -329,7 +330,7 @@ func distillOptions(cfg analyzer.LessonsConfig, maxEntries int) lessons.DistillO
 // Best effort: progress goes to log (the caller's stdout is parsed), and no
 // failure here stops the dispatch.
 func LearnBeforeDispatch(ctx context.Context, stateRoot string, ghTimeout time.Duration, log io.Writer) {
-	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(stateRoot))
 	if err != nil || !cfg.Lessons.IsEnabled() {
 		return
 	}

@@ -11,58 +11,6 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// workflowFeedback.isEnabled
-// ---------------------------------------------------------------------------
-
-func TestWorkflowFeedback_IsEnabled_NilPointer(t *testing.T) {
-	f := &workflowFeedback{Enabled: nil}
-	if !f.isEnabled() {
-		t.Error("isEnabled() with nil Enabled should return true (default on)")
-	}
-}
-
-func TestWorkflowFeedback_IsEnabled_False(t *testing.T) {
-	v := false
-	f := &workflowFeedback{Enabled: &v}
-	if f.isEnabled() {
-		t.Error("isEnabled() with Enabled=false should return false")
-	}
-}
-
-func TestWorkflowFeedback_IsEnabled_True(t *testing.T) {
-	v := true
-	f := &workflowFeedback{Enabled: &v}
-	if !f.isEnabled() {
-		t.Error("isEnabled() with Enabled=true should return true")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// workflowFeedback.maxHistory
-// ---------------------------------------------------------------------------
-
-func TestWorkflowFeedback_MaxHistory_Zero(t *testing.T) {
-	f := &workflowFeedback{MaxHistoryInPrompt: 0}
-	if got := f.maxHistory(); got != 10 {
-		t.Errorf("maxHistory() with 0 = %d, want 10", got)
-	}
-}
-
-func TestWorkflowFeedback_MaxHistory_Negative(t *testing.T) {
-	f := &workflowFeedback{MaxHistoryInPrompt: -5}
-	if got := f.maxHistory(); got != 10 {
-		t.Errorf("maxHistory() with -5 = %d, want 10", got)
-	}
-}
-
-func TestWorkflowFeedback_MaxHistory_Positive(t *testing.T) {
-	f := &workflowFeedback{MaxHistoryInPrompt: 7}
-	if got := f.maxHistory(); got != 7 {
-		t.Errorf("maxHistory() with 7 = %d, want 7", got)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // buildValidRepos
 // ---------------------------------------------------------------------------
 

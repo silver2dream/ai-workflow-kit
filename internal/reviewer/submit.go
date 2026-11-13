@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
@@ -709,7 +710,7 @@ func cleanupWorktree(stateRoot string, issueNumber int) error {
 // runJiTTestIfEnabled runs JiT tests if enabled in config.
 // Returns nil if disabled or config cannot be loaded (graceful skip).
 func runJiTTestIfEnabled(ctx context.Context, opts SubmitReviewOptions) *jittest.Result {
-	cfg, err := analyzer.LoadConfig(filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(opts.StateRoot))
 	if err != nil {
 		return nil
 	}
@@ -720,12 +721,8 @@ func runJiTTestIfEnabled(ctx context.Context, opts SubmitReviewOptions) *jittest
 
 	fmt.Printf("[REVIEW] Running JiT tests...\n")
 
-	// Determine base branch from config
-	baseBranch := "main"
-	if len(cfg.Repos) > 0 {
-		// Use the integration branch from git-workflow rules if available
-		// For now, detect from PR
-	}
+	// What the pull request changes is what it adds to the branch it goes to.
+	baseBranch := jittest.DiffBase(ctx, opts.WorktreePath, cfg.BaseBranch())
 
 	input := jittest.Input{
 		PRNumber:    opts.PRNumber,
@@ -751,7 +748,7 @@ func runJiTTestIfEnabled(ctx context.Context, opts SubmitReviewOptions) *jittest
 
 // jitFailurePolicy loads the JiTTest failure policy from config.
 func jitFailurePolicy(stateRoot string) string {
-	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(stateRoot))
 	if err != nil {
 		return "warn"
 	}
@@ -761,7 +758,7 @@ func jitFailurePolicy(stateRoot string) string {
 // severityCheckEnabled reports whether the severity/verdict consistency gate
 // is enabled (review.severity_consistency, default: true).
 func severityCheckEnabled(stateRoot string) bool {
-	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(stateRoot))
 	if err != nil {
 		return true
 	}
@@ -785,7 +782,7 @@ func handleJiTTestBlock(ctx context.Context, opts SubmitReviewOptions, sessionID
 	}
 
 	// Label issue as review-failed
-	cfg, _ := analyzer.LoadConfig(filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, _ := analyzer.LoadConfig(config.Path(opts.StateRoot))
 	reviewFailedLabel := "review-failed"
 	if cfg != nil && cfg.GitHub.Labels.ReviewFailed != "" {
 		reviewFailedLabel = cfg.GitHub.Labels.ReviewFailed

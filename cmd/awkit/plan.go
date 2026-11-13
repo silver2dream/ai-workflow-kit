@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
@@ -359,7 +360,7 @@ func planRoot(flagValue string) (string, int) {
 // planRepos lists the repos a ticket can be for: the ones of the config, and
 // the repository root.
 func planRepos(root string) ([]council.Repo, error) {
-	cfg, err := analyzer.LoadConfig(filepath.Join(root, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(root))
 	if err != nil {
 		return nil, fmt.Errorf("the project's config cannot be read (.ai/config/workflow.yaml): %w\nRun `awkit init` first", err)
 	}
@@ -428,7 +429,7 @@ func rosterPresetFor(repos []council.Repo) string {
 
 // integrationBranch names the branch pull requests go to, for a message.
 func integrationBranch(root string) string {
-	if cfg, err := kickoff.LoadConfig(filepath.Join(root, ".ai", "config", "workflow.yaml")); err == nil && cfg.Git.IntegrationBranch != "" {
+	if cfg, err := kickoff.LoadConfig(config.Path(root)); err == nil && cfg.Git.IntegrationBranch != "" {
 		return "the integration branch (" + cfg.Git.IntegrationBranch + ")"
 	}
 	return "the integration branch"

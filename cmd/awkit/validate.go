@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 )
@@ -33,7 +34,7 @@ func cmdValidate(args []string) int {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = usageValidate
 
-	configPath := fs.String("config", filepath.Join(".ai", "config", "workflow.yaml"), "")
+	configPath := fs.String("config", config.Path("."), "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 

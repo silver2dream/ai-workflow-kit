@@ -3,6 +3,7 @@ package evaluate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -387,5 +388,44 @@ func TestGradeDescription(t *testing.T) {
 				t.Errorf("GradeDescription(%q) = %q, want %q", tt.grade, got, tt.want)
 			}
 		})
+	}
+}
+
+// The gate says what `awkit validate` says: the same reader, the same rules.
+func TestOfflineGate_O5_IsTheSharedValidation(t *testing.T) {
+	write := func(content string) string {
+		t.Helper()
+		dir := t.TempDir()
+		configDir := filepath.Join(dir, ".ai", "config")
+		if err := os.MkdirAll(configDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	const valid = "project: {name: demo, type: single-repo}\ngit: {integration_branch: develop}\n"
+	tests := []struct {
+		name, content, wantStatus, wantReason string
+	}{
+		// A project is one repo, its root, when the file names none.
+		{"no repos", valid, "PASS", "workflow.yaml is valid"},
+		{"a value that is there and wrong", "project: {name: demo, type: multi}\ngit: {integration_branch: develop}\n", "FAIL",
+			"workflow.yaml is not valid: project.type: invalid value: multi (expected: monorepo or single-repo)"},
+		{"every problem is named", "repos: [{name: backend}]\n", "FAIL",
+			"workflow.yaml is not valid: project.name: required field is missing; project.type: required field is missing (expected: monorepo or single-repo); git.integration_branch: required field is missing; repos[0].path: required field is missing"},
+		{"a custom agent that is not well formed", valid + "agents: {custom: [{name: Sec, description: d}]}\n", "FAIL", "agents.custom[0].name: invalid name: Sec"},
+		{"a value of the wrong kind", valid + "timeouts: {gh_seconds: soon}\n", "FAIL", "workflow.yaml is not valid: "},
+		{"not YAML", "project: [unclosed\n", "FAIL", "workflow.yaml is not valid: "},
+	}
+	for _, tt := range tests {
+		result := CheckO5ConfigValidation(write(tt.content))
+		if result.Status != tt.wantStatus || !strings.Contains(result.Reason, tt.wantReason) {
+			t.Errorf("%s: %s (%s), want %s with %q", tt.name, result.Status, result.Reason, tt.wantStatus, tt.wantReason)
+		}
+	}
+	if result := CheckO5ConfigValidation(t.TempDir()); result.Status != "FAIL" || result.Reason != "workflow.yaml not found" {
+		t.Errorf("a project without a configuration: %s (%s)", result.Status, result.Reason)
 	}
 }

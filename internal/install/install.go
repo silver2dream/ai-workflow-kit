@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 )
@@ -105,7 +106,7 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		return nil, err
 	}
 	result.ConfigSkipped = configSkipped
-	result.ConfigPath = filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
+	result.ConfigPath = config.Path(targetDir)
 
 	// A new project gets the roster of its preset: who sits at the table when
 	// `awkit plan` turns a brief into documents and tickets. An upgrade writes
@@ -476,7 +477,7 @@ func copyOSDir(src, dst string) error {
 }
 
 func ensureWorkflowConfig(targetDir, projectName string, forceOverwrite bool, preset func(projectName string) []byte) (skipped bool, err error) {
-	path := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
+	path := config.Path(targetDir)
 	if _, err := os.Stat(path); err == nil {
 		if !forceOverwrite {
 			return true, nil // File exists, skip

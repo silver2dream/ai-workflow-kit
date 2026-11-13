@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
@@ -56,7 +57,7 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 		return nil, err
 	}
 
-	configPath := filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml")
+	configPath := config.Path(opts.StateRoot)
 	cfg, err := analyzer.LoadConfig(configPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
