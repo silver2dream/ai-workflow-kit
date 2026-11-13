@@ -440,10 +440,8 @@ func uncommittedDocs(root string) string {
 	if err != nil {
 		return ""
 	}
+	// Nothing to report is one empty line, and comes back as nothing.
 	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		return ""
-	}
 	const show = 8
 	if len(lines) > show {
 		lines = append(lines[:show], fmt.Sprintf("  ... and %d more", len(lines)-show))
