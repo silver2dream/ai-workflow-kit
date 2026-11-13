@@ -37,7 +37,7 @@ awkit analyze-next --json
 |------|------|----------|
 | `success` | Worker 成功完成 | 繼續 review_pr |
 | `crashed` | Worker 異常終止 | 自動移除 in-progress，可重試 |
-| `timeout` | Worker 超時 (30分鐘) | 自動移除 in-progress，可重試 |
+| `timeout` | Worker 超時 | 自動移除 in-progress，可重試 |
 | `not_found` | 結果未就緒 | 已等待 30 秒，回到 Step 1 |
 | `failed_will_retry` | 失敗但未超過重試上限 | 移除 in-progress，下輪重試 |
 | `failed_max_retries` | 超過重試上限 (3次) | 標記 worker-failed，需人工介入 |

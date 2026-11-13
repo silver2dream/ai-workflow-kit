@@ -1178,7 +1178,7 @@ func TestCov_WorkflowConfigClaudeCode(t *testing.T) {
 worker:
   backend: claude-code
   claude_code:
-    model: claude-sonnet-4-20250514
+    model: claude-sonnet-5-5
     max_turns: 50
     dangerously_skip_permissions: true
 `
@@ -1193,7 +1193,7 @@ worker:
 	if cfg.Worker.Backend != "claude-code" {
 		t.Errorf("expected backend 'claude-code', got %q", cfg.Worker.Backend)
 	}
-	if cfg.Worker.ClaudeCode.Model != "claude-sonnet-4-20250514" {
+	if cfg.Worker.ClaudeCode.Model != "claude-sonnet-5-5" {
 		t.Errorf("expected model, got %q", cfg.Worker.ClaudeCode.Model)
 	}
 	if cfg.Worker.ClaudeCode.MaxTurns != 50 {

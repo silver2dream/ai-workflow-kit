@@ -93,21 +93,21 @@ func TestSplitLines_OnlyNewlines(t *testing.T) {
 
 func TestFindProtectedChanges_DetectsProtected(t *testing.T) {
 	files := []string{
-		".ai/scripts/run.sh",
+		".ai/skills/run.sh",
 		"backend/main.go",
 	}
 	violations := findProtectedChanges(files, "")
 	if len(violations) != 1 {
 		t.Fatalf("len = %d, want 1", len(violations))
 	}
-	if violations[0] != ".ai/scripts/run.sh" {
-		t.Errorf("violation = %q, want .ai/scripts/run.sh", violations[0])
+	if violations[0] != ".ai/skills/run.sh" {
+		t.Errorf("violation = %q, want .ai/skills/run.sh", violations[0])
 	}
 }
 
 func TestFindProtectedChanges_WhitelistedSkipped(t *testing.T) {
-	files := []string{".ai/scripts/run.sh"}
-	violations := findProtectedChanges(files, ".ai/scripts/run.sh")
+	files := []string{".ai/skills/run.sh"}
+	violations := findProtectedChanges(files, ".ai/skills/run.sh")
 	if len(violations) != 0 {
 		t.Errorf("expected 0 violations with whitelist, got %v", violations)
 	}
@@ -123,7 +123,7 @@ func TestFindProtectedChanges_NormalFile(t *testing.T) {
 
 func TestFindProtectedChanges_EmptyFile_Skipped(t *testing.T) {
 	// Empty string in file list should be skipped
-	files := []string{"", ".ai/commands/cmd.sh", ""}
+	files := []string{"", ".ai/config/cmd.sh", ""}
 	violations := findProtectedChanges(files, "")
 	if len(violations) != 1 {
 		t.Fatalf("len = %d, want 1", len(violations))

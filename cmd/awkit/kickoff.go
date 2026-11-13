@@ -265,7 +265,7 @@ func cmdKickoff(args []string) int {
 		"--output-format", "stream-json",
 		"--verbose",
 		"--permission-mode", permissionMode,
-		"-p", "Run the AWK principal workflow.",
+		"-p", principalPrompt,
 	}
 
 	fmt.Println("")
@@ -311,7 +311,7 @@ func cmdKickoff(args []string) int {
 
 		if fileExists(stopMarker) {
 			fmt.Println("")
-			output.Warning("Workflow stopped (STOP marker present)")
+			output.Warning(stopMarkerMessage(stopMarker))
 			endPrincipalSession("stopped")
 			return 0
 		}
@@ -345,7 +345,7 @@ func cmdKickoff(args []string) int {
 
 		if fileExists(stopMarker) {
 			fmt.Println("")
-			output.Warning("Workflow stopped (STOP marker present)")
+			output.Warning(stopMarkerMessage(stopMarker))
 			endPrincipalSession("stopped")
 			return 0
 		}
@@ -872,4 +872,33 @@ func runClaudeSession(args runClaudeSessionArgs) (int, error) {
 	}
 
 	return exitCode, nil
+}
+
+// principalPrompt starts every Principal session. kickoff runs unattended, and
+// the prompt is the only place the session can learn that: a step that needs
+// a human decision has to stop the workflow, because a question would go
+// unanswered and the session would simply be restarted.
+const principalPrompt = "Run the AWK principal workflow. This run is unattended: nobody can answer questions, so when a step needs a human decision, stop the workflow with `awkit stop-workflow` as the skill describes instead of asking."
+
+// stopMarkerReason returns the reason `awkit stop-workflow` recorded in the
+// STOP marker, or "" when the marker has none (a marker created by hand).
+func stopMarkerReason(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if reason, ok := strings.CutPrefix(strings.TrimSpace(line), "Reason:"); ok {
+			return strings.TrimSpace(reason)
+		}
+	}
+	return ""
+}
+
+// stopMarkerMessage is what kickoff prints when it halts on the STOP marker.
+func stopMarkerMessage(path string) string {
+	if reason := stopMarkerReason(path); reason != "" {
+		return fmt.Sprintf("Workflow stopped (STOP marker present, reason: %s). The latest .ai/state/workflow-report-*.md says what to do next.", reason)
+	}
+	return "Workflow stopped (STOP marker present)"
 }

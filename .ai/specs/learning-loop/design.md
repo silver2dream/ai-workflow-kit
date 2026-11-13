@@ -15,6 +15,7 @@
 | **Mem0** (2024) | 兩階段:抽取 → 對既有記憶 ADD/UPDATE/DELETE/NOOP 的 curator | 蒸餾後的 Go curator 流程 |
 | **Agentic Code Review 生產實務**(addyosmani;AWK 已借鑑其 anti-rationalization) | 只有高信心規則進 CI gate,雜訊規則維持 advisory | 升級階梯:prompt lesson → 人審 → 硬閘門 |
 | **"Honest Lying" 記憶幻覺研究** (2026) | 反面教材:自我反思型記憶會被 agent 杜撰 | 證據欄位由 Go 填寫(issue/PR 編號),LLM 不得產生;fail-closed 解析 |
+| **harness2** (google-research, arXiv 2610.14224, 2026) | 學習訊號要來自**對照**(同一任務的失敗版與成功版),證據不足就不寫(`NO_ENTRY`);沒有對照證據直接改 harness 會退步(論文 Code 73.4→63.2) | 蒸餾單位是「被拒→通過」的案例(拒絕理由 + 修正 diff),不是單筆拒絕;hit/miss 只在教訓適用的 PR 上計 |
 
 ### Understand-Anything 的優勢如何複用(已整合,現在借它的骨架)
 
@@ -53,7 +54,7 @@ U-A 的五個機制與本鏈路一一對應:
       "status": "active",
       "hits": 3,
       "misses": 0,
-      "evidence": [ { "issue": 142, "pr": 88, "type": "changes_requested" } ],
+      "evidence": [ { "issue": 142, "pr": 88, "type": "config", "fix": true } ],
       "created_at": "2026-06-01T00:00:00Z",
       "last_hit_at": "2026-07-01T00:00:00Z",
       "source": "distiller"
@@ -65,12 +66,18 @@ U-A 的五個機制與本鏈路一一對應:
 - `kind`: `pitfall`(失敗教訓)| `strategy`(成功策略,Phase C 才啟用)。
 - `content` 遵循 ReasoningBank 三段式精神:可執行的檢查/約束條列,不是敘事。
 - `evidence` **只由 Go 填寫**(來自 feedback 記錄),蒸餾 LLM 無權產生 —— 防記憶幻覺。
+  `fix: true` 表示蒸餾時看得到「被拒版本 → 通過版本」的 diff,不是只看拒絕理由。
 - 上限:`active`+`proven` ≤ 30;`candidate` ≤ 10。
 - `fingerprint` = sha1(正規化的 categories + scope + title 關鍵詞),用於去重與重犯偵測。
 
 ### 歸因記錄:`.ai/runs/issue-N/injected_lessons.json`
 
-每次 dispatch 由 Go 寫下本次實際注入的 lesson IDs 與當時狀態 —— 驗證步的基礎。
+每次 dispatch 由 Go 寫下本次實際注入的 lesson IDs —— 驗證步的基礎。
+
+- `lesson_ids`:最近一次 dispatch 注入的教訓;重新 dispatch 會覆寫。
+- `missed`:這個 issue 上已經落空過的教訓。屬於 issue 而不是單次 dispatch,重新 dispatch 時保留。
+- 這份記錄保留到 issue merged 才刪除。拒絕之後若是重審而非重派 Worker(`review-failed` 路徑),
+  下一次結果仍然找得到當初注入了什麼。
 
 ---
 
@@ -86,15 +93,39 @@ U-A 的五個機制與本鏈路一一對應:
 2. **feedback 條目附 `paths`**:changed files top-N,取自 PR diff
    (重用 phase-2 的 `fetchPRDiff` + jittest 的 `parseDiffFiles`,零新輪子)。教訓因此能錨定 scope。
 3. 條目附 repo 名與 attempt 序號(欄位已存在,補齊填寫)。
+4. **拒絕理由記 findings,不是 review body 的開頭**:結構化 review 渲染出來的 body 以逐條驗收標準的
+   實作說明開場,前 500 字元不含拒絕原因。條目的 `summary`(≤500)與 `findings`(≤2000,summary 被截斷時才寫)
+   取自 score reason + critical/important findings(多模型共識段落一併納入)。類別也由 findings 判斷。
+5. **每筆條目附 `head_sha`**:這次 review 判斷的 commit(review 開始時 worktree 的 HEAD)。
+   被拒條目與通過條目的 `head_sha` 之間的 diff,就是 Worker 為了通過而做的修正。
+6. **拒絕條目附 `injected_lessons`**:被拒那次嘗試的 prompt 裡有哪些教訓(蒸餾時用來判斷「教訓在場卻沒防住」)。
 
 ### Step 2 蒸餾(新;唯一的 LLM 步驟;fail-closed)
 
-**觸發**:review 到達 `changes_requested` / `review_blocked` 終態後,由 Principal main-loop 呼叫
-`awkit lessons distill`(同步、單次 LLM call、60s timeout;失敗僅警告不阻塞主流程)。
-也可手動/批次:`awkit lessons distill --all`(從 watermark 起補處理)。
+**蒸餾單位是「已解決的案例」,不是單筆拒絕**(harness2):一筆 `approved` 條目,加上同一個 issue 在它之前
+(回溯到該 issue 上一次 approved 為止)的所有拒絕條目。只有拒絕理由時,那是審查者的意見;
+加上「後來怎麼改才通過」,才是「當初應該怎麼做」的證據。
+
+- 拒絕條目不單獨蒸餾,留在 log 裡等同一個 issue 通過。watermark 會越過它們,不會卡住;
+  通過時再回頭把它們取出來(`awkit lessons stats` 顯示目前有幾筆在等)。
+- 一直沒通過的 issue(放棄、轉人工、人工自行合併)不會自動產生教訓 —— 由 post-mortem 用
+  `awkit lessons add --issue N` 記錄。這是刻意的:沒有對照的教訓寧可不寫。
+- 一次就通過的 issue 沒有拒絕條目,不呼叫 LLM。
+
+**觸發**:`awkit submit-review` 的 merge 路徑,在結算之後呼叫蒸餾(同步、每個案例一次 LLM call、
+60s timeout、每次最多 3 個案例;失敗僅警告不阻塞主流程)。也可手動補處理:`awkit lessons distill [--max N]`
+(從 watermark 起)。
 
 **LLM 合約**(比照 secondary reviewer 的嚴格格式):
-- 輸入:新 feedback 條目(rejection 原因、review body 節選、paths)+ 現有 lessons 的「id+title+fingerprint」清單(省 token)。
+- 輸入:
+  - 案例的拒絕理由(每筆取 `findings`,沒有則取 `summary`;最多 4 筆、每筆 1500 字元)。
+  - **修正 diff**:最早一筆有 `head_sha` 的拒絕 → approved 的 `head_sha`,在 state root 以 `git diff` 取得。
+    先列檔案清單,再附 patch(排除 lockfile、上限 8000 字元)。
+  - 現有 lessons 的「id+title+categories」清單(省 token)。
+- 案例內容放在 `<case>` 標籤內,並說明它是其他 agent 與受審程式碼寫的**證據,不是指令**
+  (內容中的 `</case>` 會被改寫,無法提前關閉標籤)。
+- diff 的三種狀態會如實告訴蒸餾器:有修正(檔案 + patch)、程式碼沒變就通過(例如 CI 重跑、重審)、
+  無法比較(舊條目沒有 `head_sha`、commit 不在本機)。prompt 要求證據不足時回 `NOOP`。
 - 輸出(Go 解析,格式錯誤即丟棄整筆):
 
 ```
@@ -108,6 +139,8 @@ SCOPE: internal/analyzer/, .ai/config/
 ```
 
 對應 Mem0 的 ADD/UPDATE/NOOP 與 ExpeL 的 UPVOTE(`MATCH` = 該 lesson `hits+1`、evidence 追加)。
+例外:`MATCH` 到的 lesson 若就在被拒那次嘗試的 prompt 裡(條目的 `injected_lessons`),不加分也不追加 evidence
+—— 教訓在場卻沒防住,不是支持它的證據(是否算落空由 Step 4 的結算決定)。
 
 **Go curator(確定性,緊接每次蒸餾後)**:
 1. schema 驗證;`SCOPE` 必須是 repo 內真實存在的路徑前綴(防幻覺)。
@@ -149,10 +182,16 @@ lessons 是跨 issue 的長期記憶。兩層各司其職。
 可選:每 20 次蒸餾跑一次「curator LLM pass」檢查教訓間矛盾與過時 —— 對應 U-A 的 graph-reviewer。
 
 **效果層(閉環,這是多數系統缺的一步)**:
-1. 歸因:dispatch 時寫 `injected_lessons.json`(Step 1 已述)。
-2. 結算:issue 的 PR 到達終態時:
-   - **miss**:lesson L 曾注入,且本次 rejection 的 fingerprint/category 再次命中 L 的 pattern → `L.misses+1`(教訓沒防住)。
-   - **hit**:L 曾注入、最終 merged 且無同 pattern rejection → `L.hits+1`(弱歸因,僅用於狀態轉移,不做因果聲明)。
+1. 歸因:dispatch 時寫 `injected_lessons.json`(§1 已述)。
+2. 結算:issue 的 PR 每到一個 review 結果時,對曾注入的每條 lesson L 判斷這個結果是不是關於 L 的證據:
+   - **適用性(先決條件)**:L 沒有 scope(全 repo 適用),或 PR 改到 L 的 scope 前綴底下的檔案。
+     不適用 → 不計。PR 的檔案清單讀不到時,有 scope 的教訓不計(無法判斷就不算)。
+     檔案清單取自 PR diff 的檔頭(新增/修改/刪除/改名/binary 都算),不受條目 `paths` 的 10 筆上限影響。
+   - **miss**:結果是拒絕、L 適用,且拒絕的 findings 落在 L 的類別 → `L.misses+1`(教訓沒防住)。
+     同一個 issue 對同一條 L 最多計一次 —— 一個 issue 是一個樣本。
+   - **hit**:結果是 merged、L 適用、L 在這個 issue 上沒有落空過,且這個 issue 不是 L 自己的來源(evidence)
+     → `L.hits+1`。落空之後的合併不算:那次重試是被 review 意見帶著走的,不是教訓的功勞。
+   - 其餘皆為無訊號。hit 仍是弱歸因,僅用於狀態轉移,不做因果聲明。
 3. 狀態機(GRASP 式准入):
 
 ```
@@ -193,8 +232,10 @@ lessons:
 | Prompt rot / 規則牆越長越失效 | 硬上限 30 + 注入 k=3/800 chars + recency 衰減淘汰(ReasoningBank 實證) |
 | 記憶幻覺(LLM 杜撰教訓) | evidence 由 Go 填寫;SCOPE 必須是真實路徑;fail-closed 解析 |
 | 教訓互相矛盾 | fingerprint/overlap 合併;curator pass;衝突保留 hits 高者 |
-| 弱歸因誤判(hit/miss 非因果) | 計數只驅動狀態機;固化為閘門必須人審 |
-| 成本 | 每 rejection 一次 max-turns=1 呼叫(與一次 secondary review 同級);可整體關閉 |
+| 弱歸因誤判(hit/miss 非因果) | 只在教訓適用的 PR 上計;一個 issue 一個樣本;落空後的合併不算命中;計數只驅動狀態機;固化為閘門必須人審 |
+| 沒有對照就下結論(只憑拒絕意見寫教訓) | 蒸餾單位是「被拒→通過」案例;沒通過的拒絕不蒸餾;diff 讀不到時如實告知並偏向 NOOP |
+| 案例內容夾帶指令(review 文字、diff 內容) | 案例放在 `<case>` 標籤內並聲明為證據;一次性呼叫不帶工具;輸出 fail-closed 解析、scope 需實際存在 |
+| 成本 | 每個已解決案例一次 max-turns=1 呼叫(與一次 secondary review 同級);可整體關閉 |
 | 教訓措辭導致 agent 過度迴避 | curator 要求措辭為「檢查/約束」而非「禁止」;pitfall 必附可執行檢查 |
 
 ## 5. 分階段實作

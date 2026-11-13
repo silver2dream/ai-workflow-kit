@@ -76,7 +76,7 @@ func TestCov_FindProtectedChanges_Additional(t *testing.T) {
 	})
 
 	t.Run("empty string in file list", func(t *testing.T) {
-		files := []string{"", ".ai/scripts/test.sh", ""}
+		files := []string{"", ".ai/skills/test.sh", ""}
 		violations := findProtectedChanges(files, "")
 		if len(violations) != 1 {
 			t.Errorf("expected 1 violation, got %d", len(violations))
@@ -92,7 +92,7 @@ func TestCov_FindProtectedChanges_Additional(t *testing.T) {
 	})
 
 	t.Run("all protected", func(t *testing.T) {
-		files := []string{".ai/scripts/a.sh", ".ai/commands/b.md"}
+		files := []string{".ai/skills/a.sh", ".ai/config/b.md"}
 		violations := findProtectedChanges(files, "")
 		if len(violations) != 2 {
 			t.Errorf("expected 2 violations, got %d", len(violations))

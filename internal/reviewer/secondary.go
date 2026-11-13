@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 )
 
 // SecondaryReviewResult holds the output of a secondary reviewer.
@@ -117,11 +118,7 @@ func runClaudeCLI(ctx context.Context, prompt, model string) (string, error) {
 		return "", fmt.Errorf("claude CLI not found in PATH")
 	}
 
-	args := []string{
-		"--print",
-		"--model", model,
-		"--max-turns", "1",
-	}
+	args := claudecli.OneShotArgs(model)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(prompt)

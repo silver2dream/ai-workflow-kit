@@ -105,12 +105,6 @@ Some acceptance criteria are meta-level (e.g., "all tests pass", "unit tests add
 - `N/A` ❌
 - `Various tests` ❌
 
-**MATCHING CRITERIA TO TESTS:**
-- Acceptance Criteria describe INTENT, not test function names
-- Find tests that COVER the described behavior
-- A criterion like "Wall collision ends game" should map to whichever test covers that behavior
-- The test may be named differently from the criterion — any valid test name is fine if it tests the behavior
-
 **KEY ASSERTION FORMAT:**
 - MUST be copied from the actual test file (open the file, find the assertion, copy it)
 - Do NOT write assertions from memory — open the test file and copy the exact line
@@ -135,9 +129,20 @@ Some acceptance criteria are meta-level (e.g., "all tests pass", "unit tests add
 
 ### Step 6: Write and Submit the Structured Review
 
-Write your review as JSON to `.ai/state/reviews/pr-{PR_NUMBER}/review.json`
-(use the Write tool — do NOT format a markdown review body; the system
-renders the human-readable comment from your JSON):
+Write your review as JSON to `.ai/state/reviews/pr-{PR_NUMBER}/review.json`.
+You have no Write tool, so create the file with Bash, using a quoted heredoc
+(`<<'EOF'`) so that `$`, backticks and quotes in an assertion reach the file
+verbatim:
+
+```bash
+mkdir -p .ai/state/reviews/pr-$PR_NUMBER
+cat > .ai/state/reviews/pr-$PR_NUMBER/review.json <<'EOF'
+{ ...the review, in the shape shown below... }
+EOF
+```
+
+Do NOT format a markdown review body; the system renders the human-readable
+comment from your JSON, which has this shape:
 
 ```json
 {

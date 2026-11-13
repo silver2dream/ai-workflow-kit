@@ -46,7 +46,10 @@ const storeRelPath = ".ai/state/lessons.json"
 type Evidence struct {
 	Issue int    `json:"issue"`
 	PR    int    `json:"pr,omitempty"`
-	Type  string `json:"type,omitempty"` // changes_requested | review_blocked | ...
+	Type  string `json:"type,omitempty"` // first category of the rejection
+	// Fix is true when the distiller saw the change that turned the rejected
+	// pull request into an approved one, not only the objection.
+	Fix bool `json:"fix,omitempty"`
 }
 
 // Lesson is one distilled, actionable lesson. Content follows the

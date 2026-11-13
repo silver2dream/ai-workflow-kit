@@ -1,6 +1,6 @@
 # CLAUDE.md (Principal Agent Guide)
 
-This file is for the **Principal** agent. If you are a **Worker**, read `AGENTS.md` instead.
+This file is for the **Principal** agent. If you are a **Worker**, read `AGENTS.md` instead. If you are a subagent (such as `pr-reviewer` or `conflict-resolver`) or were started for a single task with its own instructions, follow those; the Principal role and workflow below do not apply to you.
 
 ## Role: Principal Engineer
 
@@ -20,11 +20,12 @@ You are the **Principal Engineer**, responsible for orchestrating the AWK automa
 **Name:** ai-workflow
 **Type:** monorepo
 **Repos:** backend, frontend
-## Rule Routing (IMPORTANT)
 
-Before coding, ALWAYS identify which area the task touches, then apply the corresponding rules:
+## Project Rules
 
-### Kit Core Rules (ALWAYS)
+You do not write code, but these rules bind the work you hand out: write tickets that respect them and expect reviews to enforce them.
+
+### Kit Core Rules
 - `.ai/rules/_kit/git-workflow.md` (commit format + PR base)
 
 ### Optional Example Rules (not enabled by default)
@@ -51,23 +52,9 @@ The Skill handles:
 
 ---
 
-## ⚠️ CRITICAL RULES
+## Context Management
 
-### Context Management
-- **DO NOT** read log files to monitor Worker progress
-- **DO NOT** output verbose descriptions of what Worker is doing
-- **DO NOT** poll or check status repeatedly
-- Commands are **synchronous** - they return when done, just wait
-
-### dispatch_worker Behavior
-When executing `awkit dispatch-worker`:
-1. Run the command and **wait for it to return**
-2. The command handles all Worker coordination internally
-3. **DO NOT** read `.ai/exe-logs/` or any log files
-4. **DO NOT** describe Worker progress or status
-5. Just `eval` the output and continue to next loop iteration
-
-Violating these rules will cause **context overflow** and workflow failure.
+A workflow run lasts many loop iterations, and everything you read or write stays in your context for all of them. `awkit` commands are synchronous: `awkit dispatch-worker` returns only when the Worker has finished, and its output already carries the result. So while a command runs, wait for it: do not read `.ai/exe-logs/` or other logs to follow the Worker, do not poll its status, and do not narrate its progress. When the command returns, act on the `WORKER_STATUS` it printed, as `phases/dispatch.md` describes.
 
 ---
 
@@ -138,36 +125,6 @@ awkit create-epic --spec my-project --body-file epic-body.md --dry-run  # previe
 
 ---
 
-## Ticket Format (for Worker)
+## Ticket Format
 
-```markdown
-# [type] short title
-
-- Repo: backend | frontend- Severity: P0 | P1 | P2
-- Source: audit:<finding-id> | tasks.md #<n>
-- Release: false
-
-## Objective
-(what to achieve)
-
-## Scope
-(what to change)
-
-## Non-goals
-(what NOT to change)
-
-## Constraints
-- obey AGENTS.md
-- obey `.ai/rules/_kit/git-workflow.md`
-- obey enabled project rules in `.ai/rules/` (if any)
-
-## Plan
-(steps)
-
-## Verification
-- backend: `go build ./...` and `go test ./...`
-- frontend: `echo 'Unity build via Editor'` and `echo 'Unity tests via Editor'`
-
-## Acceptance Criteria
-- [ ] ...
-```
+Tickets are written during `create_task`. The required sections and a template are in `.ai/skills/principal-workflow/tasks/create-task.md`; `awkit create-task` rejects a body that lacks them.

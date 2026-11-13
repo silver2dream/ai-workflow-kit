@@ -131,6 +131,18 @@ func ValidExitReasons() []string {
 		"max_consecutive_failures",
 		"contract_violation",
 		"none",
+		// Reasons `awkit analyze-next` reports in exit_reason. The Principal is
+		// told to pass them straight to `awkit stop-workflow <exit_reason>`.
+		"worker_failed",
+		"needs_human_review",
+		"review_max_retries",
+		"no_actionable_tasks",
+		"config_not_found",
+		"loop_count_error",
+		"github_api_error",
+		// Raised by the Principal itself: task generation in an unattended run
+		// found risky assumptions and nobody is there to confirm them.
+		"risky_assumptions",
 	}
 }
 

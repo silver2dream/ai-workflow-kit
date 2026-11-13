@@ -17,7 +17,7 @@ type TicketMetadata struct {
 	SpecName           string // Spec name for task mapping
 	TaskLine           int    // Task line number for auto-marking
 	AllowParentChanges bool   // Allow changes outside submodule boundary
-	AllowScriptChanges bool   // Allow changes to .ai/scripts/
+	AllowScriptChanges bool   // Allow changes to the workflow's own files (protectedPaths)
 	AllowSecrets       bool   // Allow secrets in diff
 }
 

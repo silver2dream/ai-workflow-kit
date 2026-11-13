@@ -123,7 +123,7 @@ awkit evaluate [--offline] [--strict]
 awkit lessons list [--all]         # 列出教訓
 awkit lessons stats                # 狀態分布 + 命中/落空率
 awkit lessons add --title ... --content ...   # 手動新增（post-mortem 入口）
-awkit lessons distill [--max N]    # 從新的 review feedback 蒸餾教訓
+awkit lessons distill [--max N]    # 蒸餾已解決的案例（PR 先被拒、後通過）
 awkit lessons promote <L-xxx>      # 為已驗證教訓開一個人審 issue（固化成硬閘門）
 ```
 
@@ -141,8 +141,8 @@ awkit submit-review --pr N --issue M --ci-status passed --body-file review.json
 
 | 套件 | 職責 |
 |------|------|
-| `internal/lessons` | 學習迴圈:Store（`.ai/state/lessons.json`）、Select（相關性/注入預算）、Settle（命中/落空狀態機）、Distill（fail-closed LLM 蒸餾） |
-| `internal/reviewer` | 審查管線:`structured.go`（JSON 契約）、`severity.go`（severity/verdict 閘門）、`multi.go`/`secondary.go`/`consensus.go`（multi-model 共識,接進 `submit.go`）、`evidence.go`（證據驗證）、`feedback.go` |
+| `internal/lessons` | 學習迴圈:Store（`.ai/state/lessons.json`）、Select（相關性/注入預算）、Settle（只在教訓適用的 PR 上結算命中/落空 + 狀態機）、Distill（以「被拒→通過」案例為單位的 fail-closed LLM 蒸餾） |
+| `internal/reviewer` | 審查管線:`structured.go`（JSON 契約）、`severity.go`（severity/verdict 閘門）、`multi.go`/`secondary.go`/`consensus.go`（multi-model 共識,接進 `submit.go`）、`evidence.go`（證據驗證）、`feedback.go`、`learning.go`（每個 review 結果的記錄 → 結算 → 合併時蒸餾） |
 | `internal/worker` | Worker 執行:`knowledgegraph.go`（Understand-Anything 地圖注入）、`usage.go`（token/成本掃描）、`lessons_inject.go`（教訓注入 + 歸因） |
 | `internal/kickoff` | Principal 啟動器:PTY 執行（Windows ConPTY）、stream-json 解析、`session_usage` 事件 |
 | `internal/trace` | 統一事件流（`.ai/state/events/`），含 `session_usage`（token/成本）|

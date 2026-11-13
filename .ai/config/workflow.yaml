@@ -323,11 +323,12 @@ feedback:
 # ============================================================
 # Lessons Configuration (Learning Loop)
 # ============================================================
-# Record -> distill -> inject -> verify: review rejections are distilled
-# into compact lessons (.ai/state/lessons.json, committable) that are
-# injected into future Worker/Reviewer prompts and settled hit/miss
-# against outcomes. Proven lessons can be promoted to hard gates via
-# `awkit lessons promote <id>` (opens a human-gated issue).
+# Record -> distill -> inject -> verify: when a rejected pull request is
+# later approved, the objection and the change that fixed it are distilled
+# into a compact lesson (.ai/state/lessons.json, committable). Lessons are
+# injected into future Worker/Reviewer prompts and settled hit/miss against
+# the pull requests they applied to. Proven lessons can be promoted to hard
+# gates via `awkit lessons promote <id>` (opens a human-gated issue).
 # Design: https://github.com/silver2dream/ai-workflow-kit/blob/main/.ai/specs/learning-loop/design.md
 #
 # enabled: true (default) — set false to disable injection + distillation

@@ -23,7 +23,7 @@ Options:
   --help          Show this help
 
 Output Variables (bash):
-  NEXT_ACTION     generate_tasks | create_task | dispatch_worker | check_result | review_pr | all_complete | none
+  NEXT_ACTION     generate_tasks | create_task | dispatch_worker | check_result | review_pr | audit_epic | all_complete | none
   ISSUE_NUMBER    Issue number (if applicable)
   PR_NUMBER       PR number (if applicable)
   SPEC_NAME       Spec name (if applicable)

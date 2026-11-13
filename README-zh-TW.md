@@ -23,9 +23,9 @@
 
 AWK 會**從自己的審查歷史中學習**。每次拒絕都走一條四步迴圈 —— **記錄 → 蒸餾 → 注入 → 驗證**：
 
-- 被拒絕的 PR 由 LLM **蒸餾**成精簡、**可提交的教訓**（`.ai/state/lessons.json`）—— 是一條耐久的檢查,而非原始 log。
+- 被拒絕的 PR 最後通過時,LLM 把這個案例（審查者反對什麼、修正改了什麼）**蒸餾**成精簡、**可提交的教訓**（`.ai/state/lessons.json`）—— 是一條耐久的檢查,而非原始 log。
 - 相關教訓會**注入**後續 Worker/Reviewer prompt（依你正在動的檔案精準比對,重用與 knowledge-graph 接地相同的相關性引擎）。
-- 每條教訓依真實結果**結算命中/落空**,並經 `candidate → active → proven` 晉升 —— 無效的教訓自動退役。
+- 每條教訓依真實結果**結算命中/落空**（只計入有改到該教訓範圍的 PR）,並經 `candidate → active → proven` 晉升 —— 無效的教訓自動退役。
 - **已驗證（proven）**的教訓可用 `awkit lessons promote` 經人審 issue **升級為硬閘門**（rule / audit 檢查）。
 
 成果:**犯過一次的錯,會變成阻止它再犯的護欄。** 系統隨時間越來越難被騙 —— 而且因為教訓是可提交的 JSON,整個團隊共享這份學習(不像鎖在私有 runtime 裡的 agent 記憶)。
@@ -74,7 +74,7 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 - **JiT 測試**（選配）：審查時從 PR diff 生成獨立測試
 
 ### 學習迴圈
-- **記錄 → 蒸餾 → 注入 → 驗證**：審查拒絕被蒸餾成精簡、可提交的教訓（`.ai/state/lessons.json`）,注入後續 Worker/Reviewer prompt 並依結果結算命中/落空
+- **記錄 → 蒸餾 → 注入 → 驗證**：被拒後又通過的 PR,連同修正一起蒸餾成精簡、可提交的教訓（`.ai/state/lessons.json`）,注入後續 Worker/Reviewer prompt,並依教訓適用的 PR 結算命中/落空
 - **可升級為硬閘門**：`awkit lessons promote` 開一個人審 issue,把已驗證的教訓固化成 rule/audit 檢查
 
 ### 上下文接地

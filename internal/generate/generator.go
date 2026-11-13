@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	awkit "github.com/silver2dream/ai-workflow-kit"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
@@ -469,11 +470,11 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	var sb strings.Builder
 
 	sb.WriteString("# CLAUDE.md (Principal Agent Guide)\n\n")
-	sb.WriteString("This file is for the **Principal** agent. If you are a **Worker**, read " + bt + "AGENTS.md" + bt + " instead.\n\n")
+	sb.WriteString("This file is for the **Principal** agent. If you are a **Worker**, read " + bt + "AGENTS.md" + bt + " instead. If you are a subagent (such as " + bt + "pr-reviewer" + bt + " or " + bt + "conflict-resolver" + bt + ") or were started for a single task with its own instructions, follow those; the Principal role and workflow below do not apply to you.\n\n")
 	sb.WriteString("## Role: Principal Engineer\n\n")
 	sb.WriteString("You are the **Principal Engineer**, responsible for orchestrating the AWK automated workflow and ensuring quality.\n\n")
 	sb.WriteString("**Your responsibilities:**\n")
-	sb.WriteString("- Audit the project and generate tasks (audit → tasks.md)\n")
+	sb.WriteString("- Audit the project and generate tasks (audit → GitHub Epic)\n")
 	sb.WriteString("- Create Issues for Workers to execute\n")
 	sb.WriteString("- Dispatch Workers (Senior Engineers) to execute tasks\n")
 	sb.WriteString("- Review PRs submitted by Workers\n")
@@ -491,12 +492,12 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 		}
 		sb.WriteString(repo.Name)
 	}
-	sb.WriteString("\n")
+	sb.WriteString("\n\n")
 
-	// Rule Routing
-	sb.WriteString("## Rule Routing (IMPORTANT)\n\n")
-	sb.WriteString("Before coding, ALWAYS identify which area the task touches, then apply the corresponding rules:\n\n")
-	sb.WriteString("### Kit Core Rules (ALWAYS)\n")
+	// Project rules
+	sb.WriteString("## Project Rules\n\n")
+	sb.WriteString("You do not write code, but these rules bind the work you hand out: write tickets that respect them and expect reviews to enforce them.\n\n")
+	sb.WriteString("### Kit Core Rules\n")
 
 	for _, rule := range ctx.Rules.Kit {
 		if rule == "git-workflow" {
@@ -530,20 +531,8 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- PR review\n\n")
 	sb.WriteString("**DO NOT** manually implement the workflow steps. The Skill and " + bt + "awkit" + bt + " commands handle everything.\n\n")
 	sb.WriteString("---\n\n")
-	sb.WriteString("## ⚠️ CRITICAL RULES\n\n")
-	sb.WriteString("### Context Management\n")
-	sb.WriteString("- **DO NOT** read log files to monitor Worker progress\n")
-	sb.WriteString("- **DO NOT** output verbose descriptions of what Worker is doing\n")
-	sb.WriteString("- **DO NOT** poll or check status repeatedly\n")
-	sb.WriteString("- Commands are **synchronous** - they return when done, just wait\n\n")
-	sb.WriteString("### dispatch_worker Behavior\n")
-	sb.WriteString("When executing " + bt + "awkit dispatch-worker" + bt + ":\n")
-	sb.WriteString("1. Run the command and **wait for it to return**\n")
-	sb.WriteString("2. The command handles all Worker coordination internally\n")
-	sb.WriteString("3. **DO NOT** read " + bt + ".ai/exe-logs/" + bt + " or any log files\n")
-	sb.WriteString("4. **DO NOT** describe Worker progress or status\n")
-	sb.WriteString("5. Just " + bt + "eval" + bt + " the output and continue to next loop iteration\n\n")
-	sb.WriteString("Violating these rules will cause **context overflow** and workflow failure.\n\n")
+	sb.WriteString("## Context Management\n\n")
+	sb.WriteString("A workflow run lasts many loop iterations, and everything you read or write stays in your context for all of them. " + bt + "awkit" + bt + " commands are synchronous: " + bt + "awkit dispatch-worker" + bt + " returns only when the Worker has finished, and its output already carries the result. So while a command runs, wait for it: do not read " + bt + ".ai/exe-logs/" + bt + " or other logs to follow the Worker, do not poll its status, and do not narrate its progress. When the command returns, act on the " + bt + "WORKER_STATUS" + bt + " it printed, as " + bt + "phases/dispatch.md" + bt + " describes.\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## REPO TYPE SUPPORT\n\n")
 	sb.WriteString("AWK supports three repository types configured in " + bt + ".ai/config/workflow.yaml" + bt + ":\n\n")
@@ -564,6 +553,12 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("```bash\nawkit status\n```\n\n")
 	sb.WriteString("### Stop Work\n")
 	sb.WriteString("```bash\ntouch .ai/state/STOP\n```\n\n")
+	sb.WriteString("### Diagnose Issues\n")
+	sb.WriteString("```bash\nawkit doctor\n```\n\n")
+	sb.WriteString("### Reset State\n")
+	sb.WriteString("```bash\nawkit reset          # default cleanup\nawkit reset --all    # full cleanup\nawkit reset --dry-run # preview only\n```\n\n")
+	sb.WriteString("### Create Epic (GitHub Tracking Issue mode)\n")
+	sb.WriteString("```bash\nawkit create-epic --spec my-project --body-file epic-body.md  # REQUIRED: --body-file\nawkit create-epic --spec my-project --body-file epic-body.md --dry-run  # preview only\n```\n\n")
 	sb.WriteString("## File Locations\n\n")
 	sb.WriteString("| What | Where |\n")
 	sb.WriteString("|------|-------|\n")
@@ -575,40 +570,8 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("| Principal Log | " + bt + ".ai/exe-logs/principal.log" + bt + " |\n")
 	sb.WriteString("| Worker Logs | " + bt + ".ai/exe-logs/issue-{N}.worker.log" + bt + " |\n\n")
 	sb.WriteString("---\n\n")
-	sb.WriteString("## Ticket Format (for Worker)\n\n")
-	sb.WriteString("```markdown\n")
-	sb.WriteString("# [type] short title\n\n")
-
-	// Repo list for ticket
-	sb.WriteString("- Repo: ")
-	for i, repo := range ctx.Repos {
-		if i > 0 {
-			sb.WriteString(" | ")
-		}
-		sb.WriteString(repo.Name)
-	}
-	sb.WriteString("\n- Severity: P0 | P1 | P2\n")
-	sb.WriteString("- Source: audit:<finding-id> | tasks.md #<n>\n")
-	sb.WriteString("- Release: false\n\n")
-	sb.WriteString("## Objective\n(what to achieve)\n\n")
-	sb.WriteString("## Scope\n(what to change)\n\n")
-	sb.WriteString("## Non-goals\n(what NOT to change)\n\n")
-	sb.WriteString("## Constraints\n")
-	sb.WriteString("- obey AGENTS.md\n")
-	sb.WriteString("- obey " + bt + ".ai/rules/_kit/git-workflow.md" + bt + "\n")
-	sb.WriteString("- obey enabled project rules in " + bt + ".ai/rules/" + bt + " (if any)\n\n")
-	sb.WriteString("## Plan\n(steps)\n\n")
-	sb.WriteString("## Verification\n")
-
-	for _, repo := range ctx.Repos {
-		sb.WriteString(fmt.Sprintf("- %s: %s%s%s and %s%s%s\n", repo.Name, bt, repo.Verify.Build, bt, bt, repo.Verify.Test, bt))
-	}
-
-	sb.WriteString("\n## Acceptance Criteria\n")
-	sb.WriteString("- [ ] <describe expected behavior, NOT test function names>\n")
-	sb.WriteString("- [ ] Unit tests added for new functionality\n")
-	sb.WriteString("- [ ] All tests pass\n```\n")
-	sb.WriteString("\n**NOTE**: Acceptance Criteria should describe INTENT (expected behavior), NOT specific test function names. Worker decides test naming.\n")
+	sb.WriteString("## Ticket Format\n\n")
+	sb.WriteString("Tickets are written during " + bt + "create_task" + bt + ". The required sections and a template are in " + bt + ".ai/skills/principal-workflow/tasks/create-task.md" + bt + "; " + bt + "awkit create-task" + bt + " rejects a body that lacks them.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
@@ -625,7 +588,6 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- Run verification commands (build, test, lint)\n")
 	sb.WriteString("- Ensure code quality meets project standards\n\n")
 	sb.WriteString("**You do NOT handle git operations.** The runner script will automatically commit, push, and create PR.\n\n")
-	sb.WriteString("**If you receive Principal's review feedback (PREVIOUS REVIEW FEEDBACK), you MUST fix the code according to the feedback.**\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("Default priority: correctness > minimal diff > speed.\n\n")
 	sb.WriteString("## MUST-READ (before any work)\n\n")
@@ -633,7 +595,7 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	// Kit rules
 	for _, rule := range ctx.Rules.Kit {
 		if rule == "git-workflow" {
-			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s (CRITICAL for commit format)\n", bt, rule, bt))
+			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s (branch and PR conventions; the runner makes the commits, you do not)\n", bt, rule, bt))
 		} else {
 			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s\n", bt, rule, bt))
 		}
@@ -665,8 +627,7 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- Modify " + bt + ".git" + bt + " directory\n\n")
 	sb.WriteString("**Your job is ONLY to:**\n")
 	sb.WriteString("1. Write/modify code files\n")
-	sb.WriteString("2. Run verification commands (build, test, lint)\n")
-	sb.WriteString("3. Print " + bt + "git status --porcelain" + bt + " and " + bt + "git diff" + bt + " for the runner to see\n\n")
+	sb.WriteString("2. Run verification commands (build, test, lint)\n\n")
 	sb.WriteString("### 4. Implementation plan (REQUIRED before coding)\n")
 	sb.WriteString("Before making any code changes, you MUST create an implementation plan file at:\n")
 	sb.WriteString(bt + ".ai/runs/issue-{ISSUE_ID}/plan.md" + bt + "\n\n")
@@ -744,7 +705,7 @@ func writeWorkerGuardrails(sb *strings.Builder) {
 	sb.WriteString("- You couldn't run verify commands and decided \"it should work\".\n")
 	sb.WriteString("- You created a new pattern instead of extending the existing one because the existing one \"felt complicated\".\n")
 	sb.WriteString("- You introduced a new dependency without checking if a similar one already exists in the repo.\n\n")
-	sb.WriteString("If any red flag fires, fix it before printing " + bt + "git status" + bt + " / " + bt + "git diff" + bt + ". Reviewer enforces these and a " + bt + "changes_requested" + bt + " round-trip is far more expensive than slowing down now.\n\n")
+	sb.WriteString("If any red flag fires, fix it before you finish. Reviewer enforces these and a " + bt + "changes_requested" + bt + " round-trip is far more expensive than slowing down now.\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## Responding to severity-tagged feedback\n\n")
 	sb.WriteString("Reviewer comments may be prefixed with severity tags. Respond accordingly:\n\n")
@@ -858,313 +819,29 @@ func generateClaudeSettings(path string, agents AgentsConfig) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+// builtinAgentFiles lists the agent definitions installed from the kit.
+var builtinAgentFiles = []string{"pr-reviewer.md", "conflict-resolver.md"}
+
 func installAgentsDir(agentsDir string, agents AgentsConfig) error {
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
 		return err
 	}
 
-	// pr-reviewer agent definition (FULL version synced from .claude/agents/pr-reviewer.md)
-	prReviewer := `---
-name: pr-reviewer
-description: AWK PR Reviewer. Executes complete PR review flow: prepare -> review implementation -> verify tests -> submit. Used when analyze-next returns review_pr.
-tools: Read, Grep, Glob, Bash
-model: sonnet
----
-
-You are the AWK PR Review Expert. You are responsible for executing the **complete review flow**.
-
-## Input
-
-You will receive PR number and Issue number.
-
-## Execution Flow
-
-### Step 1: Prepare Review Context
-
-` + "```bash" + `
-awkit prepare-review --pr $PR_NUMBER --issue $ISSUE_NUMBER
-` + "```" + `
-
-Record the output:
-- ` + "`CI_STATUS`" + `: passed or failed
-- ` + "`WORKTREE_PATH`" + `: worktree path
-- ` + "`TEST_COMMAND`" + `: command to run tests
-- ` + "`TICKET`" + `: Issue body with acceptance criteria
-
-### Step 2: Extract Acceptance Criteria
-
-From the TICKET output, identify all acceptance criteria (lines like ` + "`- [ ] criteria`" + `).
-
-**These criteria are the foundation of your review.** Each criterion MUST be addressed.
-
-**IMPORTANT**: Acceptance Criteria describe INTENT (expected behavior), NOT specific test function names. When reviewing:
-- Find tests that COVER the described behavior, regardless of their naming
-- Do NOT expect test names to match criterion text exactly
-- Verify the behavior is tested, not that a specific function name exists
-
-### Step 3: Switch to Worktree and Review Implementation
-
-` + "```bash" + `
-cd $WORKTREE_PATH
-` + "```" + `
-
-**CRITICAL: You MUST actually review the implementation code.**
-
-For EACH acceptance criterion:
-
-1. **Find the implementation** - Use Grep/Read to locate the actual code that implements this criterion
-2. **Understand the logic** - Read the code and understand how it works
-3. **Write implementation description** - Describe the implementation in your own words (minimum 20 characters), including:
-   - Which function/method implements this
-   - What the key logic is
-   - How it satisfies the criterion
-
-**PROHIBITIONS:**
-- **DO NOT** copy criterion text as implementation description
-- **DO NOT** assume code structure from ticket requirements
-- **DO NOT** write generic descriptions like "implemented as expected"
-- **DO NOT** skip reading actual code
-
-### Step 4: Review Tests
-
-For EACH acceptance criterion:
-
-1. **Find the test** - Locate the test function that verifies this criterion
-2. **Read the test code** - Understand what the test is checking
-3. **Copy key assertion** - Copy an actual assertion line from the test code
-
-**MATCHING CRITERIA TO TESTS:**
-- Acceptance Criteria describe INTENT, not test function names
-- Find tests that COVER the described behavior
-- A criterion like "Wall collision ends game" should map to whichever test covers that behavior
-- The test may be named ` + "`TestCollision`" + `, ` + "`TestWallCollisionEndsGame`" + `, or ` + "`TestAdvanceTick/WallCollision`" + ` - any is valid if it tests the behavior
-
-**PROHIBITIONS:**
-- **DO NOT** invent test function names (must exist in code)
-- **DO NOT** assume assertion content
-- **DO NOT** copy assertions from other files
-- **DO NOT** fail review just because test name differs from criterion wording
-
-### Step 5: Additional Review Checks
-
-1. **Requirements Compliance**: Does PR complete ticket requirements?
-2. **Commit Format**: Is it ` + "`[type] subject`" + ` (lowercase)?
-3. **Scope Restriction**: Any changes beyond ticket scope?
-4. **Architecture Compliance**: Does it follow project conventions?
-5. **Code Quality**: Any debug code or obvious bugs?
-6. **Security Check**: Any sensitive information leakage?
-
-### Step 6: Submit Review
-
-` + "```bash" + `
-awkit submit-review \
-  --pr $PR_NUMBER \
-  --issue $ISSUE_NUMBER \
-  --score $SCORE \
-  --ci-status $CI_STATUS \
-  --body "$REVIEW_BODY"
-` + "```" + `
-
-Scoring criteria:
-- 9-10: Perfect completion
-- 7-8: Completed with good quality
-- 5-6: Partial completion, has issues
-- 1-4: Not completed or major issues
-
-### Step 7: Return Result
-
-**Immediately return** the submit-review result to Principal:
-
-| Result | Action |
-|--------|--------|
-| ` + "`merged`" + ` | PR merged, task complete |
-| ` + "`changes_requested`" + ` | Review failed, Worker needs to fix |
-| ` + "`review_blocked`" + ` | Verification failed, **DO NOT retry** |
-| ` + "`merge_failed`" + ` | Merge failed (e.g., conflict) |
-
----
-
-## Review Body Format
-
-Your review body MUST follow this exact format:
-
-` + "```markdown" + `
-### Implementation Review
-
-#### 1. [First Criterion Text]
-
-**Implementation**: [Describe the actual implementation. Must be 20+ chars, include function names and key logic.]
-
-**Code Location**: ` + "`path/to/file.go:LineNumber`" + `
-
-#### 2. [Second Criterion Text]
-
-**Implementation**: [Description...]
-
-**Code Location**: ` + "`path/to/file.go:LineNumber`" + `
-
-### Test Review
-
-| Criteria | Test | Key Assertion |
-|----------|------|---------------|
-| [FULL Criterion 1 text from ticket] | ` + "`TestFunctionName`" + ` | ` + "`assert.Equal(t, expected, actual)`" + ` |
-| [FULL Criterion 2 text from ticket] | ` + "`TestOtherFunction`" + ` | ` + "`require.NoError(t, err)`" + ` |
-
-**CRITICAL**: The Criteria column MUST contain the **exact full text** from the ticket's acceptance criteria. Do NOT use shortened or paraphrased versions.
-
-### Score Reason
-
-[Explain why you gave this score]
-
-### Suggested Improvements
-
-[List any improvement suggestions, or "None" if perfect]
-
-### Potential Risks
-
-[List any potential risks, or "None identified"]
-` + "```" + `
-
----
-
-## Verification Rules (System Enforced)
-
-The system will verify your submission:
-
-1. **Completeness Check**: Every acceptance criterion must have:
-   - Implementation description (minimum 20 characters)
-   - Test name mapping
-   - Key assertion
-
-2. **Test Execution**: System will execute ` + "`$TEST_COMMAND`" + ` in worktree
-   - All mapped tests must PASS
-   - Failed tests will block the review
-
-3. **Assertion Verification**: System will search test files
-   - Your quoted assertions must actually exist in test code
-   - Non-existent assertions will block the review
-
-**If verification fails, the review is blocked. A NEW session will retry.**
-
----
-
-## Common Mistakes to Avoid
-
-### Implementation Description
-
-Wrong:
-` + "```" + `
-**Implementation**: Implemented according to requirements
-` + "```" + `
-
-Wrong:
-` + "```" + `
-**Implementation**: The feature is complete
-` + "```" + `
-
-Correct:
-` + "```" + `
-**Implementation**: Implemented in ` + "`HandleCollision()`" + ` at engine.go:145. When snake head position matches wall boundary, sets ` + "`game.State = GameOver`" + ` and emits collision event.
-` + "```" + `
-
-### Test Assertion (Criteria Column)
-
-Wrong (shortened text):
-` + "```" + `
-| Wall collision ends game | TestCollision | assert passes |
-` + "```" + `
-
-Wrong (paraphrased text):
-` + "```" + `
-| Collision detection works | TestWallCollision | ` + "`t.Error(\"should end\")`" + ` |
-` + "```" + `
-
-Correct (FULL criteria text from ticket + actual assertion):
-` + "```" + `
-| Wall collision ends game and game state changes to GameOver | TestCollisionScenarios | ` + "`assert.Equal(t, GameOver, game.State)`" + ` |
-` + "```" + `
-
-**The Criteria column must match the EXACT text from the ticket's ` + "`- [ ]`" + ` lines.**
-
----
-
-## CRITICAL: No Retry Rule
-
-**When ` + "`submit-review`" + ` returns ` + "`review_blocked`" + `:**
-
-- **DO NOT** attempt to fix evidence and resubmit
-- **DO NOT** analyze failure reasons and retry
-- **MUST** immediately return ` + "`review_blocked`" + ` to Principal
-
-**Violating this rule causes "self-dealing" problem - same session self-correction is invalid.**
-`
-
-	prReviewerPath := filepath.Join(agentsDir, "pr-reviewer.md")
-	if err := os.WriteFile(prReviewerPath, []byte(prReviewer), 0644); err != nil {
-		return err
+	// Built-in agent definitions have a single source of truth: the files the
+	// kit ships under .claude/agents/ (embedded in KitFS). Hardcoded copies in
+	// this file drifted, and generate then overwrote the current definitions
+	// with stale ones.
+	for _, name := range builtinAgentFiles {
+		content, err := awkit.KitFS.ReadFile(".claude/agents/" + name)
+		if err != nil {
+			return fmt.Errorf("built-in agent %s is missing from the kit: %w", name, err)
+		}
+		agentPath := filepath.Join(agentsDir, name)
+		if err := os.WriteFile(agentPath, content, 0644); err != nil {
+			return err
+		}
+		fmt.Printf("[generate] Created: %s\n", agentPath)
 	}
-	fmt.Printf("[generate] Created: %s\n", prReviewerPath)
-
-	// conflict-resolver agent definition
-	conflictResolver := `---
-name: conflict-resolver
-description: AWK Merge Conflict Resolver. Resolves git merge conflicts in a worktree.
-tools: Read, Grep, Glob, Bash, Edit
-model: sonnet
----
-
-You are the AWK Conflict Resolution Expert.
-
-## Input
-You will receive: WORKTREE_PATH, ISSUE_NUMBER, PR_NUMBER
-
-## Execution Flow
-
-### Step 1: Navigate to Worktree
-` + "```bash" + `
-cd $WORKTREE_PATH
-` + "```" + `
-
-### Step 2: Identify Conflicts
-` + "```bash" + `
-git status
-git diff --name-only --diff-filter=U
-` + "```" + `
-
-### Step 3: Resolve Each Conflict
-For each conflicted file:
-1. Read the file to understand context
-2. Identify conflict markers (<<<<<<, ======, >>>>>>)
-3. Determine correct resolution based on:
-   - Intent from both branches
-   - Code logic
-   - Project conventions
-4. Edit to resolve (remove markers, keep correct code)
-5. Stage the resolved file
-
-### Step 4: Complete Resolution
-` + "```bash" + `
-git add .
-git rebase --continue
-` + "```" + `
-
-Or if conflict is too complex:
-` + "```bash" + `
-git rebase --abort
-` + "```" + `
-
-### Step 5: Return Result
-Return one of:
-- RESOLVED: Conflict resolved successfully
-- TOO_COMPLEX: Conflict requires human intervention
-- FAILED: Resolution failed
-`
-
-	conflictResolverPath := filepath.Join(agentsDir, "conflict-resolver.md")
-	if err := os.WriteFile(conflictResolverPath, []byte(conflictResolver), 0644); err != nil {
-		return err
-	}
-	fmt.Printf("[generate] Created: %s\n", conflictResolverPath)
 
 	// Generate custom agent definitions
 	for _, agent := range agents.Custom {

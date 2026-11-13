@@ -31,8 +31,9 @@ Subcommands:
       --scope <p/,q/>    Comma-separated repo path prefixes
       --issue <N>        Evidence issue number
       --pr <N>           Evidence PR number
-  distill [--max N]      Distill new review feedback into lessons via LLM
-                         (processes at most N entries, default 5)
+  distill [--max N]      Distill resolved review cases into lessons via LLM.
+                         A case is a pull request that was rejected and
+                         later approved (at most N cases per run, default 5)
   promote <L-xxx>        Open a GitHub issue proposing to harden a proven
                          lesson into a rule/audit check (human-gated)
 
@@ -106,7 +107,7 @@ func lessonsList(stateRoot string, all bool) int {
 		return 1
 	}
 	if len(s.Lessons) == 0 {
-		fmt.Println("No lessons yet. They accumulate as reviews reject PRs (or add one with 'awkit lessons add').")
+		fmt.Println("No lessons yet. They are distilled when a rejected PR is later approved (or add one with 'awkit lessons add').")
 		return 0
 	}
 	fmt.Printf("%-7s %-10s %4s %4s  %s\n", "ID", "STATUS", "HIT", "MISS", "TITLE")
@@ -133,7 +134,9 @@ func lessonsStats(stateRoot string) int {
 	fmt.Printf("Lessons: %d total — candidate: %d, active: %d, proven: %d, retired: %d\n",
 		len(s.Lessons), counts[lessons.StatusCandidate], counts[lessons.StatusActive],
 		counts[lessons.StatusProven], counts[lessons.StatusRetired])
-	fmt.Printf("Feedback watermark: line %d (updated %s)\n\n", s.Watermark.FeedbackLine, s.Watermark.UpdatedAt)
+	fmt.Printf("Feedback watermark: line %d (updated %s)\n", s.Watermark.FeedbackLine, s.Watermark.UpdatedAt)
+	printPendingRejections(stateRoot)
+	fmt.Println()
 
 	sorted := make([]lessons.Lesson, len(s.Lessons))
 	copy(sorted, s.Lessons)
@@ -222,7 +225,7 @@ func lessonsDistill(stateRoot string, maxEntries int) int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	fmt.Printf("Distilled %d entr(ies): %d new, %d matched, %d skipped\n",
+	fmt.Printf("Distilled %d case(s): %d new, %d matched, %d skipped\n",
 		report.Processed, len(report.Created), len(report.Matched), report.Skipped)
 	for _, id := range report.Created {
 		fmt.Printf("  new: %s\n", id)
@@ -230,7 +233,21 @@ func lessonsDistill(stateRoot string, maxEntries int) int {
 	for _, id := range report.Matched {
 		fmt.Printf("  upvoted: %s\n", id)
 	}
+	for _, id := range report.Recurred {
+		fmt.Printf("  not upvoted (was already in the Worker's prompt): %s\n", id)
+	}
+	printPendingRejections(stateRoot)
 	return 0
+}
+
+// printPendingRejections says how many rejections are not distilled yet
+// because their issue has not been approved.
+func printPendingRejections(stateRoot string) {
+	rejections, issues, err := lessons.Pending(stateRoot)
+	if err != nil || rejections == 0 {
+		return
+	}
+	fmt.Printf("Waiting: %d rejection(s) on %d open issue(s); each is distilled once its issue is approved\n", rejections, issues)
 }
 
 func lessonsPromote(stateRoot, id string) int {
@@ -259,6 +276,9 @@ func lessonsPromote(stateRoot, id string) int {
 		if ev.PR > 0 {
 			evidence.WriteString(fmt.Sprintf(" / PR #%d", ev.PR))
 		}
+		if ev.Fix {
+			evidence.WriteString(" (distilled from the rejected-to-approved change)")
+		}
 		evidence.WriteString("\n")
 	}
 
@@ -276,11 +296,12 @@ Harden proven lesson **%s** into an enforced gate so this failure pattern can no
 
 ## Evidence
 %s
-## Proposed enforcement (pick one)
-- [ ] Rule file under .ai/rules/ (worker-facing constraint)
+## Proposed enforcement (pick the first form that can express the lesson)
+A check that runs by itself holds on every ticket and costs no prompt space. A rule file is read by every Worker on every ticket and is still only text, so it comes last.
 - [ ] audit.custom check in workflow.yaml (deterministic gate)
-- [ ] escalation trigger (pause/approval pattern)
 - [ ] lifecycle hook (pre_dispatch / pre_review command)
+- [ ] escalation trigger (pause/approval pattern)
+- [ ] Rule file under .ai/rules/ (worker-facing constraint), when the lesson cannot be checked mechanically
 
 ## Constraints
 - This promotion was proposed automatically by the learning loop; the enforcement change itself MUST be reviewed by a human before merge.

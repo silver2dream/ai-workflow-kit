@@ -440,15 +440,13 @@ func TestFormatTopCategoriesForPrompt_UnknownCategory(t *testing.T) {
 }
 
 func TestDiffPaths_ExtractsAndCaps(t *testing.T) {
-	diff := `diff --git a/internal/a.go b/internal/a.go
-+++ b/internal/a.go
-@@ -1 +1 @@
-+++ b/internal/b.go
-+++ b//dev/null
-+++ b/internal/a.go
-`
-	got := DiffPaths(diff)
-	if len(got) != 2 || got[0] != "internal/a.go" || got[1] != "internal/b.go" {
-		t.Errorf("DiffPaths = %v, want [internal/a.go internal/b.go]", got)
+	var diff strings.Builder
+	for i := 0; i < maxFeedbackPaths+2; i++ {
+		name := "internal/" + string(rune('a'+i)) + ".go"
+		diff.WriteString("diff --git a/" + name + " b/" + name + "\n--- a/" + name + "\n+++ b/" + name + "\n@@ -1 +1 @@\n-old\n+new\n")
+	}
+	got := DiffPaths(diff.String())
+	if len(got) != maxFeedbackPaths || got[0] != "internal/a.go" || got[maxFeedbackPaths-1] != "internal/j.go" {
+		t.Errorf("DiffPaths = %v, want the first %d paths", got, maxFeedbackPaths)
 	}
 }

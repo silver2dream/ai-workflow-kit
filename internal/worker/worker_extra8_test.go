@@ -66,18 +66,18 @@ func TestNormalizePath_MultipleTrailingSlashes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFindProtectedChanges_CommandsViolation(t *testing.T) {
-	files := []string{".ai/commands/run.sh"}
+	files := []string{".ai/config/run.sh"}
 	violations := findProtectedChanges(files, "")
 	if len(violations) == 0 {
-		t.Error("findProtectedChanges should detect .ai/commands/ path as violation")
+		t.Error("findProtectedChanges should detect .ai/config/ path as violation")
 	}
 }
 
 func TestFindProtectedChanges_PartialMatch(t *testing.T) {
 	// File that partially matches but doesn't start with protected path
-	files := []string{"other/.ai/scripts/deploy.sh"}
+	files := []string{"other/.ai/skills/deploy.sh"}
 	violations := findProtectedChanges(files, "")
-	// This should NOT be a violation (it doesn't start with .ai/scripts/)
+	// This should NOT be a violation (it doesn't start with .ai/skills/)
 	if len(violations) != 0 {
 		t.Errorf("partial path match should not be a violation, got: %v", violations)
 	}

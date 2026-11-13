@@ -38,7 +38,7 @@ awkit audit-epic --spec "$SPEC_NAME"
 1. 讀取 `<specs.base_path>/<spec>/design.md` 作為參考
 2. 比對 gap_hints 與 design.md 內容，判斷哪些是真正的缺口
 3. 對於確認的缺口，產生補充 task 文字（每個 task 一行 `- [ ] <description>`）
-4. 使用 `awkit append-epic-tasks` 更新 Epic body（若不可用，使用以下方式）：
+4. 更新 Epic body：
    ```bash
    gh issue view <epic_issue> --json body --jq .body > /tmp/epic-body.md
    # 手動附加新 task 行到 Tasks section

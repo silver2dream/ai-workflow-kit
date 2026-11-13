@@ -180,7 +180,7 @@ func TestNewCodexBackend_ReturnsNonNil(t *testing.T) {
 }
 
 func TestNewClaudeCodeBackend_ReturnsNonNil(t *testing.T) {
-	b := NewClaudeCodeBackend("claude-sonnet-4-5", 10, false)
+	b := NewClaudeCodeBackend("claude-sonnet-5-5", 10, false)
 	if b == nil {
 		t.Error("NewClaudeCodeBackend should return non-nil")
 	}

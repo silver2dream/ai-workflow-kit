@@ -13,31 +13,12 @@ func GenerateWorkDirInstruction(repoType, repoPath, workDir string) string {
 	return buildWorkDirInstruction(repoType, repoPath, workDir, repoPath)
 }
 
-// BuildWorkerPrompt builds complete worker prompt with repo context.
+// BuildWorkerPrompt renders the real Worker prompt for a ticket.
 func BuildWorkerPrompt(repoType, repoPath, workDir, taskContent string) string {
-	workDirInstruction := GenerateWorkDirInstruction(repoType, repoPath, workDir)
-
-	var builder strings.Builder
-	builder.WriteString("You are an automated coding agent running inside a git worktree.\n\n")
-	builder.WriteString("Repo rules:\n")
-	builder.WriteString("- Read and follow CLAUDE.md and AGENTS.md.\n")
-	builder.WriteString("- Keep changes minimal and strictly within ticket scope.\n")
-	builder.WriteString(workDirInstruction)
-	builder.WriteString("IMPORTANT: Do NOT run any git commands (commit, push, etc.) or create PRs.\n")
-	builder.WriteString("The runner script will handle git operations after you complete the code changes.\n")
-	builder.WriteString("Your job is ONLY to:\n")
-	builder.WriteString("1. Write/modify code files\n")
-	builder.WriteString("2. Run verification commands\n")
-	builder.WriteString("3. Report the results\n\n")
-	builder.WriteString("Ticket:\n")
-	builder.WriteString(taskContent)
-	builder.WriteString("\n\nAfter making changes:\n")
-	builder.WriteString("- Print: git status --porcelain\n")
-	builder.WriteString("- Print: git diff\n")
-	builder.WriteString("- Run verification commands from the ticket.\n")
-	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
-
-	return builder.String()
+	return buildWorkerPrompt(workerPromptInputs{
+		WorkDirInstruction: GenerateWorkDirInstruction(repoType, repoPath, workDir),
+		Ticket:             taskContent,
+	})
 }
 
 // TestWorkerPromptRepoContext tests worker prompt contains repo context.
@@ -136,9 +117,6 @@ func TestWorkerPromptComplete(t *testing.T) {
 		if !strings.Contains(prompt, "Repo rules:") {
 			t.Error("Expected prompt to contain 'Repo rules:'")
 		}
-		if !strings.Contains(prompt, "CLAUDE.md") {
-			t.Error("Expected prompt to reference CLAUDE.md")
-		}
 		if !strings.Contains(prompt, "AGENTS.md") {
 			t.Error("Expected prompt to reference AGENTS.md")
 		}
@@ -173,12 +151,6 @@ func TestWorkerPromptComplete(t *testing.T) {
 		// Test prompt includes verification instructions
 		prompt := BuildWorkerPrompt("root", "./", "/worktree", "Test task")
 
-		if !strings.Contains(prompt, "git status --porcelain") {
-			t.Error("Expected prompt to contain 'git status --porcelain'")
-		}
-		if !strings.Contains(prompt, "git diff") {
-			t.Error("Expected prompt to contain 'git diff'")
-		}
 		if !strings.Contains(prompt, "verification commands") {
 			t.Error("Expected prompt to mention verification commands")
 		}

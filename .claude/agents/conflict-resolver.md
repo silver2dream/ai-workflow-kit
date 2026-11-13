@@ -22,9 +22,9 @@ You will receive:
 cd $WORKTREE_PATH
 ```
 
-Verify the worktree is in rebase state:
+Verify that a rebase is in progress. In a worktree `.git` is a file, so ask git where the rebase state lives instead of listing `.git/`:
 ```bash
-ls -la .git/rebase-merge/
+test -d "$(git rev-parse --git-path rebase-merge)" || test -d "$(git rev-parse --git-path rebase-apply)"
 ```
 
 ### Step 2: List Conflicted Files
@@ -39,11 +39,11 @@ Record all conflicted file paths.
 
 1. **Read the file** - Use Read tool to see the full content
 2. **Identify conflicts** - Find `<<<<<<< HEAD`, `=======`, and `>>>>>>>` markers
-3. **Understand both sides**:
-   - `<<<<<<< HEAD` to `=======`: Our changes (current branch)
-   - `=======` to `>>>>>>>`: Their changes (rebasing onto)
+3. **Understand both sides** — during a rebase they are the reverse of a merge:
+   - `<<<<<<< HEAD` to `=======`: the base branch being rebased onto, plus this PR's commits already replayed (git calls this side `--ours`)
+   - `=======` to `>>>>>>>`: the commit from this PR being replayed (git calls this side `--theirs`)
 4. **Resolve the conflict** - Use Edit tool to:
-   - Keep the correct code (may be our side, their side, or a merge of both)
+   - Keep the correct code (either side, or a merge of both)
    - Remove ALL conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
 5. **Stage the fix**:
    ```bash
@@ -72,9 +72,10 @@ If push is **rejected** (e.g. `[rejected]`, `stale info`, or `failed to push`), 
    ```bash
    git fetch origin
    ```
-2. Re-rebase onto the updated branch:
+2. Re-rebase onto the PR's base branch. It is not part of your input, so look it up:
    ```bash
-   git rebase origin/<base-branch>
+   BASE=$(gh pr view $PR_NUMBER --json baseRefName --jq .baseRefName)
+   git rebase "origin/$BASE"
    ```
    If new conflicts appear, resolve them (repeat Steps 2-4).
 3. Push again:
@@ -115,8 +116,8 @@ Then output `TOO_COMPLEX` or `FAILED`.
 ### Simple Conflicts
 
 For most conflicts (whitespace, imports, variable renames):
-- Prefer the upstream (their) version for formatting/style
-- Prefer our version for new features being added
+- Prefer the base branch's version for formatting/style
+- Prefer this PR's version for the feature it adds
 - Merge both if they touch different parts
 
 ### Complex Conflicts
@@ -154,10 +155,10 @@ func Calculate(x int) int {
     // Performance improvement
     return x << 1
 }
->>>>>>> main
+>>>>>>> a1b2c3d ([perf] faster calculate)
 ```
 
-**Resolution** (keeping the performance improvement):
+**Resolution** (keeping this PR's performance improvement):
 ```
 func Calculate(x int) int {
     // Performance improvement
@@ -181,7 +182,7 @@ import (
     "fmt"
     "strings"
 )
->>>>>>> main
+>>>>>>> a1b2c3d ([feat] add string helpers)
 ```
 
 **Resolution**: Merge both imports (if both are needed).
@@ -193,11 +194,15 @@ go mod tidy
 git add go.mod go.sum
 ```
 
-### package.json/yarn.lock Conflicts
+### package.json / lockfile Conflicts
+
+Resolve `package.json` by hand, then regenerate the lockfile with the package manager the repository uses (its lockfile tells you which) instead of merging the lockfile by hand:
 
 ```bash
-yarn install
-git add package.json yarn.lock
+npm install     # package-lock.json
+yarn install    # yarn.lock
+pnpm install    # pnpm-lock.yaml
+git add package.json <the lockfile>
 ```
 
 ---

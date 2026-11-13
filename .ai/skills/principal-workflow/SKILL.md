@@ -1,6 +1,6 @@
 ---
 name: principal-workflow
-description: Run the AWK principal workflow (awkit kickoff, principal loop, dispatch worker, check results, review/merge PR). Triggers: awkit kickoff, start-work, NEXT_ACTION, review pr, dispatch worker, autonomous workflow, generate tasks, create task.
+description: Run the AWK principal workflow (awkit kickoff, principal loop, dispatch worker, check results, review/merge PR). Triggers: awkit kickoff, review pr, dispatch worker, autonomous workflow, generate tasks, create task.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -22,8 +22,8 @@ Preflight 已由 `awkit kickoff` 完成，Session 已初始化。
 |------------|------|
 | `phases/main-loop.md` | 主循環：決策路由 + loop safety + context management |
 | `phases/dispatch.md` | dispatch_worker：命令格式、merge_issue 檢查、行為規範、結果處理 |
-| `phases/review.md` | review_pr：Task tool 調用 pr-reviewer subagent |
-| `phases/conflict-resolution.md` | needs_conflict_resolution：Task tool 調用 conflict-resolver subagent |
+| `phases/review.md` | review_pr：委派 pr-reviewer subagent |
+| `phases/conflict-resolution.md` | needs_conflict_resolution：委派 conflict-resolver subagent |
 
 | Task 檔案 | 說明 |
 |-----------|------|

@@ -51,7 +51,7 @@
 
 ### Section A.0: Step Dependency Extraction
 
-Before generating the task list draft, check design.md for a `## Step Dependencies` section.
+Check design.md for a `## Step Dependencies` section and order the task list draft by it.
 
 #### A.0.1 Parse the dependency table
 
@@ -74,7 +74,7 @@ From the parsed table, construct an ordered task list:
 
 #### A.0.3 Annotate task list draft
 
-When writing the epic body (step 5), include dependency information in each task line:
+When writing the epic body (step 6), include dependency information in each task line:
 
 - Tasks with no dependencies: plain text, no annotation.
 - Tasks with dependencies: append `(depends on: Step N)` or `(depends on: Steps N,M)` to the task description.
@@ -93,11 +93,11 @@ extraction and generate the task list in the order they appear in design.md
 
 ### Section A.0.5: Assumption Surfacing (MANDATORY)
 
-**Purpose**: prevent silent default propagation. The Tennis project failure
-(scaffold defaulted to React when the user wanted Phaser) shows that any
-ambiguity in design.md becomes a permanent assumption baked into every
-downstream task. Surface assumptions BEFORE the gap check so the user can
-correct them before a 15-issue Epic is created.
+**Purpose**: prevent silent default propagation. Any ambiguity in design.md
+becomes a permanent assumption baked into every downstream task — for
+example, a scaffold that defaults to React when the design meant Phaser.
+Surface assumptions before the gap check so they can be corrected before
+the Epic and its issues are created.
 
 This step runs after Section A.0 (Step Dependency Extraction) and before
 Section A.1 (Gap Verification).
@@ -156,14 +156,21 @@ Mark an assumption as **RISKY** if any of these are true:
    → Correct any of these now or I'll proceed with these assumptions.
    ```
 
-3. **If RISKY ASSUMPTIONS list is non-empty**, STOP and wait for user response
-   in this turn. Do NOT proceed to Section A.1 until the user confirms or
-   corrects.
+3. **If RISKY ASSUMPTIONS list is non-empty**, do NOT proceed to Section A.1
+   on your own. What happens next depends on whether anyone can answer:
+   - **A user is in this conversation**: STOP and wait for their response in
+     this turn, then follow A.0.5.4.
+   - **Unattended run** (`awkit kickoff`; its prompt says nobody can answer):
+     do not wait. A question would never be seen, and the session would only
+     be restarted into the same question. Run
+     `awkit stop-workflow risky_assumptions` and end. The stop report tells
+     the human to state the intended choice in design.md; an axis design.md
+     states is no longer an assumption, so the next run passes this step.
 
 4. **If RISKY ASSUMPTIONS list is empty**, you may proceed directly to
    Section A.1 in the same turn (no user pause needed).
 
-#### A.0.5.4 After user response
+#### A.0.5.4 After user response (interactive sessions)
 
 - User confirms: continue to Section A.1.
 - User corrects: update `.ai/temp/assumptions-<spec>.md` and the design.md if
@@ -225,7 +232,7 @@ Mark an assumption as **RISKY** if any of these are true:
 
 #### A.1.4 修正流程
 
-- **PASS** → 繼續到步驟 4
+- **PASS** → 繼續到步驟 6（寫入 epic body）
 - **FAIL** →
   1. 補充遺漏的 task 到 task list draft
   2. 重新執行 A.1.2 比對
