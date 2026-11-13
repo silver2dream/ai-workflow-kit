@@ -1603,27 +1603,16 @@ func fetchReviewComments(issueID int, ghTimeout time.Duration) string {
 	}
 
 	var payload struct {
-		Comments []struct {
-			Body      string `json:"body"`
-			CreatedAt string `json:"createdAt"`
-		} `json:"comments"`
+		Comments []issueComment `json:"comments"`
 	}
 	if err := json.Unmarshal(output, &payload); err != nil {
 		return ""
 	}
 
-	builder := strings.Builder{}
-	for _, comment := range payload.Comments {
-		if strings.Contains(comment.Body, "AWK Review") {
-			builder.WriteString("---\n")
-			builder.WriteString(comment.CreatedAt)
-			builder.WriteString(":\n")
-			builder.WriteString(comment.Body)
-			builder.WriteString("\n")
-		}
+	result, ignored := selectReviewFeedback(payload.Comments)
+	if ignored > 0 {
+		fmt.Fprintf(os.Stderr, "[WORKER] ignored %d 'AWK Review' comment(s) on issue #%d from accounts without write access\n", ignored, issueID)
 	}
-
-	result := builder.String()
 	if len(result) > 4000 {
 		result = result[len(result)-4000:]
 	}
@@ -1715,13 +1704,31 @@ func fetchPRReviewComments(prNumber int, ghTimeout time.Duration) string {
 
 	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "api",
 		fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", prNumber),
-		"--jq", `.[] | "\(.path)\t\(.original_line // .line // 0)\t\(.body)"`,
 	)
 	if err != nil {
 		return ""
 	}
 
-	return formatPRReviewComments(string(output))
+	var comments []prReviewComment
+	if err := json.Unmarshal(output, &comments); err != nil {
+		return ""
+	}
+
+	// The viewer's login is only needed to vouch for a comment whose author
+	// association alone is not enough (an app token, for instance).
+	viewer := ""
+	for _, c := range comments {
+		if !trustedAuthorAssociation(c.AuthorAssociation) {
+			viewer = ghViewerLogin(ctx)
+			break
+		}
+	}
+
+	lines, ignored := trustedPRReviewLines(comments, viewer)
+	if ignored > 0 {
+		fmt.Fprintf(os.Stderr, "[WORKER] ignored %d review comment(s) on PR #%d from accounts without write access\n", ignored, prNumber)
+	}
+	return formatPRReviewComments(lines)
 }
 
 // formatPRReviewComments parses raw tab-delimited PR review comment lines
