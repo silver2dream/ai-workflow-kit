@@ -1033,7 +1033,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if trace != nil {
 		trace.StepStart("create_pr")
 	}
-	planContent := readPlanFile(runDir)
+	planContent := resolvePlanContent(workDir, runDir, opts.IssueID)
 	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout, ghRetryConfig, planContent)
 	if err != nil {
 		runErr = err
@@ -1895,6 +1895,19 @@ func readPlanFile(runDir string) string {
 		return ""
 	}
 	return plan
+}
+
+// resolvePlanContent finds the Worker's plan.md. The prompt names a path
+// relative to the Worker's working directory, which is inside the worktree,
+// so look there first; runDir (under the state root) stays as a fallback.
+func resolvePlanContent(workDir, runDir string, issueID int) string {
+	if workDir != "" {
+		inWorktree := filepath.Join(workDir, ".ai", "runs", fmt.Sprintf("issue-%d", issueID))
+		if plan := readPlanFile(inWorktree); plan != "" {
+			return plan
+		}
+	}
+	return readPlanFile(runDir)
 }
 
 // buildPRBody constructs the PR body with optional implementation plan.
