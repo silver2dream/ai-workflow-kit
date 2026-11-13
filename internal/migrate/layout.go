@@ -177,10 +177,10 @@ func (m *layoutMove) rules() error {
 		}
 	}
 	// Where .claude/rules was a copy, it holds copies of the kit's files too.
-	// The examples are no longer installed into a project at all: Claude Code
-	// read them as rules of the project. The kit's own rules are installed
+	// The kit has no examples any more, and Claude Code read the ones in a
+	// project as rules of the project. The kit's own rules are installed
 	// anew.
-	if err := m.remove(layout.RulesDir+"/_examples", "a copy of the kit's examples; they are documents of the AWK repository now"); err != nil {
+	if err := m.remove(layout.RulesDir+"/_examples", "a copy of the kit's examples, which Claude Code read as rules of the project"); err != nil {
 		return err
 	}
 	if err := m.remove(layout.KitRulesDir, "a copy of the kit's; installed anew"); err != nil {

@@ -106,24 +106,21 @@ repos:
 
 If you don't use an integration/release branch split, set `git.integration_branch` to the same value as `git.release_branch` (for example: both `main`).
 
-## 2) (Optional) Enable rule packs
+## 2) (Optional) Write the project's rules
 
-AWK defaults to a minimal rule set under `.claude/rules/_kit/`.
+AWK comes with one rule file, `.claude/rules/_kit/git-workflow.md`. The `godot-go` preset adds three starter rules for its stack (`backend`, `frontend`, `testing`) and lists them in the configuration; they are the project's own from then on.
 
-If you want stricter rules, copy a rule pack from the AWK repository ([docs/examples/rules](https://github.com/silver2dream/ai-workflow-kit/tree/main/docs/examples/rules)) into `.claude/rules/`, then enable it in `.ai/config.yaml` under `rules.custom`.
-
-Example:
-
-- Copy `docs/examples/rules/testing-strategy.md` of the AWK repository → `.claude/rules/testing-strategy.md`
-- Update `.ai/config.yaml`:
+To add a rule of your own, write `.claude/rules/<name>.md` and list the name in `.ai/config.yaml`:
 
 ```yaml
 rules:
   kit:
     - git-workflow
   custom:
-    - testing-strategy
+    - <name>
 ```
+
+A rule file holds rules (what is required, what is forbidden, what to check), and a `paths:` block at its top says which files it is about. See [Skills and rules](user/skills.md).
 
 Then regenerate helper docs (recommended):
 
@@ -137,7 +134,7 @@ This will also generate `.claude/settings.local.json` with pre-approved permissi
 
 For anything larger than one ticket, let the council plan it: `awkit plan "<what you want built>"` has the roles of `.ai/roster.yaml` argue the brief out, write the documents under `docs/`, record their decisions and propose the tickets; `awkit plan approve <plan>` creates the issues once you have read the list. See "Plan the work: the council" in the README.
 
-The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block that names its repo and the issues it waits for. Write the body to a file (the template is in `.claude/skills/principal-workflow/tasks/create-task.md`) and create the issue:
+The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block that names its repo and the issues it waits for. Write the body to a file (the template is in `.claude/skills/principal-workflow/references/ticket.md`) and create the issue:
 
 ```bash
 awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md

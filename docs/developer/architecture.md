@@ -79,9 +79,9 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 .claude/
 ├── rules/
 │   ├── _kit/git-workflow.md       # kit 的規則 (awkit generate 產生、upgrade 會更新)
-│   └── <你的規則>.md              # 專案自己的規則 (rules.custom)
+│   └── <你的規則>.md              # 專案自己的規則 (rules.custom)；godot-go preset 會寫下三份起始規則
 ├── skills/
-│   ├── principal-workflow/        # Principal 工作流程：SKILL.md、phases/、tasks/、references/
+│   ├── principal-workflow/        # Principal 工作流程：SKILL.md（主迴圈）與 references/
 │   ├── post-mortem/
 │   └── release-checklist/
 └── agents/
@@ -91,7 +91,7 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 .worktrees/                        # Worker 的 git worktree (gitignored)
 ```
 
-在 AWK 這個 repo 裡，kit 就是 repo 自己的 `.claude/`：`kit_embed.go` 只把上面列出的 kit 檔案嵌進 binary。範例規則包在 `docs/examples/rules/`，設定檔的 JSON Schema 在 `docs/reference/config.schema.json`，兩者都不會裝進專案。
+在 AWK 這個 repo 裡，kit 就是 repo 自己的 `.claude/`：`kit_embed.go` 只把上面列出的 kit 檔案嵌進 binary。preset 的起始規則在 `internal/install/starter-rules/<preset>/`，建立專案時寫進 `.claude/rules/`，之後歸專案所有。設定檔的 JSON Schema 在 `docs/reference/config.schema.json`，不會裝進專案。
 
 舊版把設定放在 `.ai/config/workflow.yaml`、規則與技能放在 `.ai/rules/`、`.ai/skills/`，執行期資料分散在 `.ai/results/`、`.ai/runs/`、`.ai/exe-logs/`、`.ai/temp/`。`awkit upgrade` 會把舊專案搬到上面的位置。
 

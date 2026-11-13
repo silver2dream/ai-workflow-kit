@@ -31,6 +31,7 @@ type presetConfig struct {
 		} `yaml:"verify"`
 	} `yaml:"repos"`
 	Rules struct {
+		Kit    []string `yaml:"kit"`
 		Custom []string `yaml:"custom"`
 	} `yaml:"rules"`
 	Worker struct {
@@ -77,6 +78,9 @@ func TestPreset_GenericAssumesNoStack(t *testing.T) {
 		if len(cfg.Rules.Custom) != 0 {
 			t.Errorf("preset %q: rules.custom = %v, want none", preset, cfg.Rules.Custom)
 		}
+		if want := []string{"git-workflow"}; !reflect.DeepEqual(cfg.Rules.Kit, want) {
+			t.Errorf("preset %q: rules.kit = %v, want %v: the guides point at the kit's git rule only when it is listed", preset, cfg.Rules.Kit, want)
+		}
 	}
 }
 
@@ -99,9 +103,13 @@ func TestPreset_GodotGoIsGoBackendAndCSharpFrontend(t *testing.T) {
 	if frontend.Verify.Build != "dotnet build" || frontend.Verify.Test != "dotnet test" {
 		t.Errorf("frontend verify = %+v, want the dotnet commands", frontend.Verify)
 	}
-	// A listed rule that does not exist makes the Worker stop; none ship yet.
-	if len(cfg.Rules.Custom) != 0 {
-		t.Errorf("rules.custom = %v, want none until the rule files exist", cfg.Rules.Custom)
+	// A listed rule that does not exist makes the Worker stop: the ones listed
+	// are the ones the preset writes (starter_rules_test.go).
+	if want := []string{"backend", "frontend", "testing"}; !reflect.DeepEqual(cfg.Rules.Custom, want) {
+		t.Errorf("rules.custom = %v, want %v", cfg.Rules.Custom, want)
+	}
+	if want := []string{"git-workflow"}; !reflect.DeepEqual(cfg.Rules.Kit, want) {
+		t.Errorf("rules.kit = %v, want %v", cfg.Rules.Kit, want)
 	}
 	if cfg.Worker.Backend != "codex" {
 		t.Errorf("worker.backend = %q, want the shared default", cfg.Worker.Backend)
