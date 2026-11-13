@@ -41,6 +41,9 @@ type ReviewContext struct {
 	TaskContent        string `json:"task_content,omitempty"`
 	CommitsJSON        string `json:"commits_json,omitempty"`
 	LessonsSection     string `json:"lessons_section,omitempty"` // reviewer-facing lessons
+	// MaintainerFeedback is the review feedback a person left on this pull
+	// request, for the reviewer to check against the current code.
+	MaintainerFeedback string `json:"maintainer_feedback,omitempty"`
 }
 
 // CommitInfo represents a single commit
@@ -113,6 +116,14 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 	// 9. Reviewer-facing lessons: past review-process failures (blocked
 	// verifications, severity inconsistencies) distilled into checks.
 	rc.LessonsSection = loadReviewerLessons(opts.StateRoot)
+
+	// 10. Maintainer review feedback. The Worker may have pushed since it was
+	// written; whether it was addressed is for the reviewer to verify.
+	if humanFeedbackEnabled(opts.StateRoot) {
+		if state, err := fetchPRStateFunc(ctx, opts.PRNumber, opts.GHTimeout); err == nil {
+			rc.MaintainerFeedback = maintainerFeedbackForReviewer(state)
+		}
+	}
 
 	return rc, nil
 }
@@ -417,6 +428,18 @@ func (rc *ReviewContext) FormatOutput() string {
 	sb.WriteString("============================================================\n\n")
 	sb.WriteString(rc.CommitsJSON)
 	sb.WriteString("\n")
+
+	// Maintainer review feedback outranks the reviewer's own judgement.
+	if rc.MaintainerFeedback != "" {
+		sb.WriteString("\n============================================================\n")
+		sb.WriteString("## MAINTAINER REVIEW FEEDBACK (check each item against the current code)\n")
+		sb.WriteString("============================================================\n\n")
+		sb.WriteString("A maintainer wrote these comments on this pull request. They outrank your own\n")
+		sb.WriteString("judgement of the change. Check each one against the code as it is now: an item\n")
+		sb.WriteString("that is not addressed is a `critical` improvement, quoted with its location.\n\n")
+		sb.WriteString(rc.MaintainerFeedback)
+		sb.WriteString("\n")
+	}
 
 	// Reviewer-facing lessons (past review-process mistakes to avoid)
 	if rc.LessonsSection != "" {

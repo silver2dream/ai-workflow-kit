@@ -262,6 +262,11 @@
           "default": "squash",
           "description": "Git merge strategy used when merging approved PRs"
         },
+        "human_feedback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let a maintainer's review of a pull request outrank the automated verdict: do not merge over open feedback, send the Worker back with it, and record it as human evidence for the learning loop. Merging never waits for a review; feedback written after the merge is picked up before the next dispatch and turned into lessons"
+        },
         "jittest": {
           "type": "object",
           "description": "JiT (Just-in-Time) test generation and execution at review time",

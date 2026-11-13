@@ -15,6 +15,7 @@
 | **Mem0** (2024) | 兩階段:抽取 → 對既有記憶 ADD/UPDATE/DELETE/NOOP 的 curator | 蒸餾後的 Go curator 流程 |
 | **Agentic Code Review 生產實務**(addyosmani;AWK 已借鑑其 anti-rationalization) | 只有高信心規則進 CI gate,雜訊規則維持 advisory | 升級階梯:prompt lesson → 人審 → 硬閘門 |
 | **"Honest Lying" 記憶幻覺研究** (2026) | 反面教材:自我反思型記憶會被 agent 杜撰 | 證據欄位由 Go 填寫(issue/PR 編號),LLM 不得產生;fail-closed 解析 |
+| **Hermes Agent** (Nous Research, `agent/background_review.py`, 2026-11) | 使用者的糾正是一等學習訊號;沒找到可行做法的失敗不寫成指引 | 維護者在 PR 上的審查意見是最高等級的訊號,合併前後都算:合併前擋合併並交給 Worker,合併後直接蒸餾;教訓直接 `active`(§2.5) |
 | **harness2** (google-research, arXiv 2610.14224, 2026) | 學習訊號要來自**對照**(同一任務的失敗版與成功版),證據不足就不寫(`NO_ENTRY`);沒有對照證據直接改 harness 會退步(論文 Code 73.4→63.2) | 蒸餾單位是「被拒→通過」的案例(拒絕理由 + 修正 diff),不是單筆拒絕;hit/miss 只在教訓適用的 PR 上計 |
 
 ### Understand-Anything 的優勢如何複用(已整合,現在借它的骨架)
@@ -211,9 +212,76 @@ prompt 會被 rationalize,閘門不會忘記;而閘門的變更必須過人)。
 
 ---
 
+## 2.5 人的糾正是一等訊號
+
+AWK 是無人值守的管線,人不在對話裡。人能說話的地方是 GitHub 上的 PR。這一節把那裡的人工審查接成
+控制與學習兩端的最高等級訊號(`review.human_feedback`,預設開)。
+
+**合併不等人**(2026-11-13 定案):合併的條件是測試充足且 CI 綠燈 —— 自動審查通過、證據閘門通過、CI 通過就合併。
+沒有「合併前先等人看」的開關,也不打算做:品質靠測試把關,不靠人守門。所以人的意見有兩種時機,兩種都要算數:
+
+| 意見出現時 | 處理 |
+|---|---|
+| PR 還沒合併 | 控制 + 學習:擋合併、交給 Worker、之後與修正一起蒸餾(本節「控制」「學習」) |
+| PR 已經合併(常態) | 只有學習:記錄後立刻蒸餾,下一次派工前生效(本節「合併後的意見」) |
+
+**什麼算維護者的審查意見**:有寫入權限的帳號(OWNER / MEMBER / COLLABORATOR,或執行工作流的帳號本身)
+透過審查介面寫的內容 —— review 的說明與 diff 上的行內留言。排除:bot、空白、尚未送出 / 已撤銷 / 單純 approve 的 review、
+AWK 自己貼的文字(維護者與 AWK 常共用同一個帳號,作者分不出來,所以靠文字標記分)。一般對話留言不算。
+
+**控制(`submit-review`,自動審查給出通過分數時)**:
+
+| PR 目前 commit 上的意見 | 動作 |
+|---|---|
+| 沒有,或對話已被標為已解決 | 照常 approve + merge |
+| 有,且還沒交給過 Worker | 不 approve。issue 退回 `ai-task`,意見原文貼成 issue 留言(Worker prompt 會讀到),結果 `changes_requested` |
+| 有,已交給過 Worker,但之後沒有任何新 commit | 不再退、也不合併:標 `needs-human-review`,結果 `merge_failed` |
+
+- 自動審查本來就不通過時,不另外擋:意見附在同一則退回留言裡,排在自動審查的發現之前。
+- 寫在較早 commit 上的意見,Worker 可能已經處理,也可能沒看到。這無法確定地判斷,所以交給審查者:
+  `prepare-review` 的情境會列出所有未解決的意見,要求逐一對照目前的程式碼,沒處理的列為 Critical。
+- 讀不到 GitHub 的審查資料時視為沒有意見(fail-open):這是額外的保護,不該因為 API 失敗讓管線停擺。
+
+**學習**:
+
+- 每則意見寫入 feedback log 一次(`source: human`,`refs` 記 review / comment 的 id,`head_sha` 是它針對的 commit)。
+- 案例蒸餾時,維護者的意見在 prompt 裡有標示,並說明它是糾正而非意見;修正 diff 改從「維護者針對的 commit」算起。
+- 由含人工意見(或人工合併)的案例產生的教訓:`source: human-correction`,直接 `active`,不經 `candidate`;
+  命中既有的 `candidate` 教訓時,直接把它升為 `active`。之後仍會因落空被淘汰。
+- **人工合併也是解決**:蒸餾前會檢查「還在等通過的 issue」的 PR,已被人在工作流之外合併的,補記一筆
+  `approved`(`source: human`)並抓回該 PR 的 head,讓「被拒 → 人修好」的 diff 成為案例。
+
+**合併後的意見**(`internal/reviewer/late_feedback.go`):
+
+- **找哪些 PR**:一次清單查詢(最近更新的 30 個已關閉 PR)。符合三個條件才讀:已合併;head 分支是
+  `feat/ai-issue-<N>`(Worker 的分支命名,用來把 PR 對回 issue,submodule 型專案中不同 repo 的 PR 編號相同也不會認錯);
+  feedback log 裡有 issue N 的合併紀錄。每個 PR 記下上次讀取時 GitHub 的 `updated_at`
+  (`.ai/state/late_feedback_scan.json`),沒變就不再讀。一次最多讀 10 個,其餘留到下次。
+- **哪些意見算**:發佈時間晚於 `merged_at`(兩者都是 GitHub 的時間,不受本機時鐘影響),還沒記錄過,且對話沒有被標為已解決。
+  行內留言的發佈時間取它所屬 review 的送出時間 —— 合併前開始寫、合併後才送出的 review 算合併後的意見。
+  合併前就發佈、但 log 裡沒有的意見不補記:無法判斷 Worker 後來有沒有處理。
+- **記錄**:一個 PR 一筆,`source: human`、`after_merge: true`,`context` 是每則行內留言所在 diff hunk 的最後 12 行。
+- **蒸餾**:這種紀錄自成一個案例,不等之後的通過紀錄(那個 PR 不會再有修正)。prompt 是另一個版本:
+  說明這是合併後的人工審查、沒有修正可對照、以維護者的話為依據;提問、稱讚、只跟這次修改有關的意見一律 NOOP。
+  產生的教訓與其他人工案例相同(`active`、`source: human-correction`)。合併紀錄會保存當次注入的教訓,
+  所以命中「合併那一版 prompt 裡已有的教訓」時不加分(列為 recurred)。
+- **時機**:每次派工前(`awkit dispatch-worker`,有新東西才蒸餾)、每次合併後、`awkit lessons distill`。
+  派工前那一次是關鍵:人在 AWK 忙別張票時留的意見,下一個 Worker 就用得上,而管線從頭到尾沒有等人。
+- 讀取失敗一律略過不擋流程;`lessons.enabled: false` 或 `review.human_feedback: false` 時不查。
+
+**刻意不做**:
+
+- 「合併前先等人看」的開關(見上:合併不等人)。
+- 已合併的程式不因合併後的意見自動重開 issue 或開修正票;要修由人另開票。
+- 合併後的意見不回頭修正該次合併已結算的 hit。
+- 關閉未合併的 PR 上的意見不單獨蒸餾(沒有修正可對照,也不是被接受的成果)。
+
 ## 3. 設定
 
 ```yaml
+review:
+  human_feedback: true     # 維護者的審查意見優先於自動審查(§2.5)
+
 lessons:
   enabled: true            # false 完全關閉(記錄仍照舊)
   max_active: 30

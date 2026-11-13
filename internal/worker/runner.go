@@ -1662,7 +1662,7 @@ func replyToReviewComments(ctx context.Context, prURL string, ghTimeout time.Dur
 			"gh", "api",
 			"--method", "POST",
 			fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments/%d/replies", prNumber, commentID),
-			"-f", "body=Addressed in the latest push. Please re-review.",
+			"-f", "body="+reviewer.AddressedReplyBody,
 		); err != nil {
 			fmt.Fprintf(os.Stderr, "[WARN] replyToReviewComments: failed to reply to comment %d on PR #%d: %v\n", commentID, prNumber, err)
 			// Continue to next comment; don't block on individual failures

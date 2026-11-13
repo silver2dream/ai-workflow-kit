@@ -326,6 +326,13 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		return handleJiTTestBlock(ctx, opts, sessionID, jitResult)
 	}
 
+	// A maintainer's review outranks the automated verdict: a pull request
+	// the automated review would approve is not merged over open feedback.
+	human, held := applyHumanGate(ctx, opts)
+	if held != nil {
+		return held, nil
+	}
+
 	// Submit GitHub Review
 	if opts.Score >= opts.ScoreThreshold {
 		// Approve (critical operation - must succeed)
@@ -416,13 +423,17 @@ PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHT
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 	}
 
+	// Open maintainer feedback goes to the Worker in the same round, ahead
+	// of the automated findings.
+	humanSection := human.sectionForRejection(opts)
+
 	if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 不通過 (score: %d/10)
 
-%s
+%s%s
 
 ---
 **Worker 請根據以上意見修改後重新提交。**
-PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != nil {
+PR: #%d`, opts.Score, humanSection, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 

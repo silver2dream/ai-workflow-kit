@@ -36,12 +36,29 @@ type FeedbackEntry struct {
 	// and an approved HeadSHA is what the Worker changed to get approved.
 	HeadSHA string `json:"head_sha,omitempty"`
 	// InjectedLessons are the lessons that were in the Worker's prompt for
-	// the attempt a rejection judged.
+	// the attempt this entry judged.
 	InjectedLessons []string `json:"injected_lessons,omitempty"`
+	// Source is "human" when the entry records a maintainer's action: review
+	// feedback they wrote (a rejection) or a merge they made outside the
+	// workflow (an approval). Empty for the automated review.
+	Source string `json:"source,omitempty"`
+	// Refs identify the maintainer review items a human rejection records
+	// ("review:<id>", "comment:<id>"), so each is recorded once.
+	Refs []string `json:"refs,omitempty"`
+	// AfterMerge marks maintainer feedback written when the pull request was
+	// already merged. No fix follows in that pull request, so the learning
+	// loop treats the entry as a case of its own. Context is the code the
+	// feedback was written on.
+	AfterMerge bool   `json:"after_merge,omitempty"`
+	Context    string `json:"context,omitempty"`
 }
 
 // feedbackFile is the JSONL file path relative to state root.
 const feedbackFile = ".ai/state/review_feedback.jsonl"
+
+// outcomeApproved is the Outcome of the entry written when a pull request
+// merges.
+const outcomeApproved = "approved"
 
 // RecordFeedback appends a feedback entry to the JSONL file.
 func RecordFeedback(stateRoot string, entry FeedbackEntry) (err error) {

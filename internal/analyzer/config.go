@@ -98,6 +98,13 @@ type ReviewConfig struct {
 	// finding, and a passing score must not carry Critical findings.
 	// nil = enabled (default).
 	SeverityConsistency *bool `yaml:"severity_consistency"`
+	// HumanFeedback makes a maintainer's review of a pull request outrank
+	// the automated verdict: the pull request is not merged over open
+	// feedback, the Worker is sent back with it, and it is recorded as
+	// human evidence for the learning loop. Merging never waits for a
+	// review; feedback written after the merge is picked up before the next
+	// dispatch and distilled into lessons. nil = enabled (default).
+	HumanFeedback *bool `yaml:"human_feedback"`
 }
 
 // SeverityCheckEnabled returns whether the severity/verdict consistency
@@ -107,6 +114,15 @@ func (c *ReviewConfig) SeverityCheckEnabled() bool {
 		return true
 	}
 	return *c.SeverityConsistency
+}
+
+// HumanFeedbackEnabled returns whether maintainer review feedback is read
+// and acted on (default: true).
+func (c *ReviewConfig) HumanFeedbackEnabled() bool {
+	if c.HumanFeedback == nil {
+		return true
+	}
+	return *c.HumanFeedback
 }
 
 // LessonsConfig configures the learning loop (record -> distill -> inject ->

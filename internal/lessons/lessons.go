@@ -50,7 +50,14 @@ type Evidence struct {
 	// Fix is true when the distiller saw the change that turned the rejected
 	// pull request into an approved one, not only the objection.
 	Fix bool `json:"fix,omitempty"`
+	// Human is true when a maintainer took part in the case: reviewed the
+	// pull request, or merged it by hand.
+	Human bool `json:"human,omitempty"`
 }
+
+// SourceHumanCorrection is the Source of a lesson distilled from a case a
+// maintainer took part in. Such a lesson starts active.
+const SourceHumanCorrection = "human-correction"
 
 // Lesson is one distilled, actionable lesson. Content follows the
 // ReasoningBank three-part shape: title, one-line description, and

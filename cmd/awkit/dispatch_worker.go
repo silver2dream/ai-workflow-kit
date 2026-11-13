@@ -10,6 +10,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
+	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
@@ -130,8 +131,15 @@ func cmdDispatchWorker(args []string) int {
 		hookRunner = hooks.NewHookRunner(cfg.Hooks, *stateRoot, os.Stderr)
 	}
 
-	// Run the dispatch
 	ctx := cleanupMgr.Context()
+
+	// Maintainers review on their own schedule, often after the merge. Take
+	// in what they wrote since the last look before the Worker's prompt is
+	// built, so this Worker already works from it. Reported on stderr: stdout
+	// carries the result the caller evaluates.
+	reviewer.LearnBeforeDispatch(ctx, *stateRoot, *ghTimeout, os.Stderr)
+
+	// Run the dispatch
 	opts := worker.DispatchOptions{
 		IssueNumber:        *issueNumber,
 		PRNumber:           *prNumber,
