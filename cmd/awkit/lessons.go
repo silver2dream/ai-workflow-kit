@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
+	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 )
 
 func usageLessons() {
@@ -213,6 +214,12 @@ func lessonsDistill(stateRoot string, maxEntries int) int {
 	timeout := 60 * time.Second
 	if cfg.Distiller.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.Distiller.TimeoutSeconds) * time.Second
+	}
+
+	// A pull request a maintainer merged outside the workflow resolves its
+	// case too; record those merges before distilling.
+	if n := reviewer.SyncHumanResolutions(context.Background(), stateRoot, 60*time.Second); n > 0 {
+		fmt.Printf("Found %d issue(s) merged by a maintainer outside the workflow\n", n)
 	}
 
 	report, err := lessons.Distill(context.Background(), stateRoot, lessons.DistillOptions{

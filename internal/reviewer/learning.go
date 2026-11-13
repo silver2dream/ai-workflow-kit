@@ -24,6 +24,10 @@ type learningOutcome struct {
 	Categories []string
 	// Findings is what was objected to; empty for a merge.
 	Findings string
+	// Source is sourceHuman when the objection is a maintainer's review, and
+	// Refs then identify the review items it records.
+	Source string
+	Refs   []string
 }
 
 // Size limits of a rejection reason in the feedback log.
@@ -70,6 +74,8 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 		if rec := lessons.LoadInjection(opts.StateRoot, opts.IssueNumber); rec != nil {
 			entry.InjectedLessons = rec.LessonIDs
 		}
+		entry.Source = o.Source
+		entry.Refs = o.Refs
 	}
 	entry.HeadSHA = opts.headSHA
 	entry.Paths = changed
@@ -109,6 +115,11 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 	if cfg.Lessons.Distiller.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.Lessons.Distiller.TimeoutSeconds) * time.Second
 	}
+	// Cases a maintainer closed by merging outside the workflow are resolved
+	// too; pick them up before distilling.
+	if n := SyncHumanResolutions(ctx, opts.StateRoot, opts.GHTimeout); n > 0 {
+		fmt.Printf("[REVIEW] Lessons: %d issue(s) were merged by a maintainer outside the workflow\n", n)
+	}
 	distilled, err := lessons.Distill(context.Background(), opts.StateRoot, lessons.DistillOptions{
 		Model:      cfg.Lessons.Distiller.Model,
 		Timeout:    timeout,
@@ -123,6 +134,64 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 		fmt.Printf("[REVIEW] Lessons: %d case(s) distilled (%d new, %d upvoted, %d skipped)\n",
 			distilled.Processed, len(distilled.Created), len(distilled.Matched), distilled.Skipped)
 	}
+}
+
+// maxSyncedIssues bounds the GitHub lookups of one SyncHumanResolutions run.
+const maxSyncedIssues = 20
+
+// SyncHumanResolutions finds the issues whose rejections still wait for an
+// approval although a maintainer has merged their pull request outside the
+// workflow, and records that merge — with any review feedback the maintainer
+// left — so the case is distilled like any other. The maintainer's fix is the
+// strongest contrast a rejected pull request can have. It returns how many
+// issues it resolved.
+func SyncHumanResolutions(ctx context.Context, stateRoot string, ghTimeout time.Duration) int {
+	if !humanFeedbackEnabled(stateRoot) {
+		return 0
+	}
+	pending, err := lessons.PendingIssues(stateRoot)
+	if err != nil {
+		return 0
+	}
+	if len(pending) > maxSyncedIssues {
+		pending = pending[:maxSyncedIssues]
+	}
+
+	resolved := 0
+	for _, p := range pending {
+		if p.PRNumber <= 0 {
+			continue
+		}
+		state, err := fetchPRStateFunc(ctx, p.PRNumber, ghTimeout)
+		if err != nil || !state.Merged {
+			continue
+		}
+		// Feedback first, approval last: the log order is the case order.
+		recorded := recordedFeedbackRefs(stateRoot, p.IssueID)
+		var fresh []humanFeedback
+		for _, f := range state.Feedback {
+			if !recorded[f.Ref] {
+				fresh = append(fresh, f)
+			}
+		}
+		recordHumanFeedback(stateRoot, p.IssueID, p.PRNumber, fresh)
+
+		fetchPRHeadFunc(stateRoot, p.PRNumber)
+		err = RecordFeedback(stateRoot, FeedbackEntry{
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			IssueID:   p.IssueID,
+			PRNumber:  p.PRNumber,
+			Outcome:   "approved",
+			Source:    sourceHuman,
+			HeadSHA:   state.HeadSHA,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[REVIEW] warning: could not record the merge of PR #%d: %v\n", p.PRNumber, err)
+			continue
+		}
+		resolved++
+	}
+	return resolved
 }
 
 // rejectionFindings is what the reviewer objected to: the score reason and

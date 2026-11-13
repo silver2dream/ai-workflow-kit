@@ -294,6 +294,126 @@ func TestPending(t *testing.T) {
 	}
 }
 
+func TestPendingIssues(t *testing.T) {
+	root := t.TempDir()
+	writeFeedback(t, root,
+		rejection(3, 30, "a"), rejection(1, 10, "b"), rejection(3, 31, "c"), approval(2, 20), rejection(1, 10, "d"), approval(1, 10))
+
+	pending, err := PendingIssues(root)
+
+	want := []PendingIssue{{IssueID: 3, PRNumber: 31, Rejections: 2}}
+	if err != nil || !reflect.DeepEqual(pending, want) {
+		t.Errorf("PendingIssues = %+v (err %v), want %+v", pending, err, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A maintainer's correction is first-class evidence
+// ---------------------------------------------------------------------------
+
+func humanRejection(issue, pr int, reason, sha string) FeedbackRecord {
+	r := rejection(issue, pr, reason)
+	r.Score, r.Source, r.HeadSHA = 0, sourceHuman, sha
+	return r
+}
+
+func TestDistill_MaintainerCorrectionBecomesAnActiveLesson(t *testing.T) {
+	root := t.TempDir()
+	automated := rejection(42, 9, "no test covers the retry path")
+	automated.HeadSHA = shaRejected
+	approved := approval(42, 9)
+	approved.HeadSHA = shaApproved
+	writeFeedback(t, root, automated,
+		humanRejection(42, 9, "- maintainer, internal/client/retry.go:42: wrap the error, never drop it", shaRetried),
+		approved)
+	calls := stubFixDiff(t, fixDiff{Known: true, Files: []string{"M internal/client/retry.go"}, Paths: []string{"internal/client/retry.go"}, Patch: "+return fmt.Errorf(\"retry: %w\", err)"})
+	prompts := stubDistiller(t, answerWith(`DECISION: NEW
+TITLE: wrap errors on the retry path
+DESCRIPTION: the last error was dropped
+CONTENT:
+- wrap and return the last error when retries are exhausted
+CATEGORIES: error-handling
+SCOPE: internal/client/`))
+
+	report := distill(t, root, DistillOptions{})
+
+	if len(report.Created) != 1 {
+		t.Fatalf("report = %+v, want 1 new lesson", report)
+	}
+	// The fix is read from the commit the maintainer objected to.
+	if !reflect.DeepEqual(*calls, [][2]string{{shaRetried, shaApproved}}) {
+		t.Errorf("compared %v, want the commit the maintainer reviewed against the approved one", *calls)
+	}
+	prompt := (*prompts)[0]
+	for _, want := range []string{
+		"Rejection 1 of 2 (automated review, score 5/10; categories: config):",
+		"Rejection 2 of 2 (review by a maintainer; categories: config):",
+		"wrap the error, never drop it",
+		`An objection marked "review by a maintainer" was written by a person`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+	if strings.Contains(prompt, "merged this pull request by hand") {
+		t.Error("the workflow merged this one; the prompt must not say a maintainer did")
+	}
+
+	l := storedLesson(t, root, report.Created[0])
+	if l.Status != StatusActive || l.Source != SourceHumanCorrection {
+		t.Errorf("status=%s source=%s, want an active lesson marked as a human correction", l.Status, l.Source)
+	}
+	if len(l.Evidence) != 1 || !l.Evidence[0].Human || !l.Evidence[0].Fix {
+		t.Errorf("evidence = %+v, want it to say a maintainer took part and the fix was seen", l.Evidence)
+	}
+}
+
+func TestDistill_MaintainerMergeResolvesTheCase(t *testing.T) {
+	root := t.TempDir()
+	automated := rejection(42, 9, "no test covers the retry path")
+	automated.HeadSHA = shaRejected
+	merged := approval(42, 9)
+	merged.Source, merged.HeadSHA = sourceHuman, shaApproved
+	writeFeedback(t, root, automated, merged)
+	stubFixDiff(t, fixDiff{Known: true, Files: []string{"A internal/client/retry_test.go"}, Paths: []string{"internal/client/retry_test.go"}, Patch: "+func TestRetryExhausted(t *testing.T) {"})
+	prompts := stubDistiller(t, answerWith(newLessonAnswer))
+
+	report := distill(t, root, DistillOptions{})
+
+	if len(report.Created) != 1 || !strings.Contains((*prompts)[0], "A maintainer merged this pull request by hand, outside the automated workflow.") {
+		t.Fatalf("a maintainer's merge should resolve the case and be stated in the prompt: %+v", report)
+	}
+	if l := storedLesson(t, root, report.Created[0]); l.Status != StatusActive || !l.Evidence[0].Human {
+		t.Errorf("status=%s evidence=%+v, want an active lesson backed by a maintainer", l.Status, l.Evidence)
+	}
+}
+
+func TestDistill_MaintainerCaseVouchesForACandidate(t *testing.T) {
+	root := settleRoot(t,
+		testLesson("L-001", "wrap errors on the retry path", StatusCandidate, []string{"error-handling"}, nil),
+		testLesson("L-002", "cover handlers with tests", StatusCandidate, []string{"test"}, nil),
+	)
+	writeFeedback(t, root,
+		humanRejection(50, 10, "- maintainer, review: wrap the error", shaRejected), approval(50, 10),
+		rejection(51, 11, "no tests for the handler"), approval(51, 11))
+	stubFixDiff(t, fixDiff{})
+	stubDistiller(t, func(prompt string) (string, error) {
+		if strings.Contains(prompt, "Issue #50") {
+			return "DECISION: MATCH L-001", nil
+		}
+		return "DECISION: MATCH L-002", nil
+	})
+
+	distill(t, root, DistillOptions{})
+
+	if l := storedLesson(t, root, "L-001"); l.Status != StatusActive || l.Hits != 1 || !l.Evidence[0].Human {
+		t.Errorf("L-001: status=%s hits=%d evidence=%+v, want it promoted by the maintainer's case", l.Status, l.Hits, l.Evidence)
+	}
+	if l := storedLesson(t, root, "L-002"); l.Status != StatusCandidate || l.Hits != 1 || l.Evidence[0].Human {
+		t.Errorf("L-002: status=%s hits=%d evidence=%+v, want an ordinary upvote that leaves it a candidate", l.Status, l.Hits, l.Evidence)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Curator
 // ---------------------------------------------------------------------------
