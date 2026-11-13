@@ -513,7 +513,7 @@ cat .ai/state/results/*.json            # 查看執行結果
 
 ### A.1 Issue Template
 
-票券內文（完整說明見 `.claude/skills/principal-workflow/tasks/create-task.md`；用 `awkit create-task` 建立）：
+票券內文（完整說明見 `.claude/skills/principal-workflow/references/ticket.md`；用 `awkit create-task` 建立）：
 
 ````markdown
 ## Summary

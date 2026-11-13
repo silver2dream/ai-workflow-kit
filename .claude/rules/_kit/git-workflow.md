@@ -1,46 +1,29 @@
-# Git & Workflow Rules (STRICT)
+# Git & Workflow Rules
 
-## 0. Branch Model
+Scope: every branch, commit and pull request of this project. `awkit generate` writes this file from `.ai/config.yaml`: change the configuration, not this file.
 
+## 1. Branches
 
-Branches:
-- **Integration branch**: `develop` (daily development, **target for all PRs**)
-- **Release branch**: `main` (release-only; merge from `develop` when releasing)
+- Integration branch: `develop`. Every pull request targets it, whichever repo the change is in.
+- Release branch: `main`. Nothing targets it except a release: a pull request from `develop`, or the pull request of a ticket whose `awk-ticket` block sets `release: true`.
+- Working branches: `feat/<topic>` or `fix/<topic>`. The workflow names its own `feat/ai-issue-<id>`.
 
-PR base rules:
-- root repo PR base: `develop` (default)
+## 2. Commit messages
 
-Release rule (root only):
-- Only create PR from `develop` -> `main` for release tickets.
-- Do NOT target `main` unless the ticket's awk-ticket block sets `release: true`.
+- Format: `[type] subject`
+- `type` is one of `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`.
+- The type is in square brackets with no colon after them, and the subject is lowercase. Conventional Commits (`feat: add feature`) is not the format here.
+- Example: `[feat] add login endpoint`
 
-## 1. Branching Strategy
+## 3. Pull requests
 
-- **Feature branches**: `feat/<topic>`
-- **Fix branches**: `fix/<topic>`
-- **Automation branches** (AI): `feat/ai-issue-<id>`
+- A change reaches `develop` or `main` through a pull request, never by a direct push.
+- The title is in the commit format.
+- The body contains `Closes #<issue>`, which ties the pull request to its ticket.
+- It is merged once the required checks have passed.
 
-## 2. Commit Message Format (CUSTOM & STRICT)
+## 4. Rule files
 
-You MUST use the bracket `[]` format. Do not use standard Conventional Commits (no colons).
-
-- **Format**: `[type] subject`
-- **Rules**:
-  1. Type MUST be inside square brackets `[]`.
-  2. Subject MUST be lowercase.
-  3. NO colon after the bracket.
-- **Allowed Types**:
-  - `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`
-- **Examples**:
-  - ✅ `[feat] add new feature`
-  - ✅ `[refactor] update module structure`
-  - ✅ `[chore] add configuration file`
-  - ❌ `feat: add feature` (Forbidden)
-
-## 3. Pull Requests (MANDATORY)
-
-- Any code change MUST go through a PR (no push-only changes).
-- PR title SHOULD match commit style: `[type] subject`.
-- PR body MUST include: `Closes #<IssueID>`
-- Required checks must pass before merge (branch protection / rulesets).
-
+- The files under `.claude/rules/_kit/` come with AWK and are rewritten when it is upgraded. The files beside that directory are the project's own.
+- A rule file holds rules: what is required, what is forbidden, what to check. The state of the project is not a rule; point to where it is defined.
+- When a rule disagrees with the code or the git log, the code and the log are right, and the rule file is corrected.

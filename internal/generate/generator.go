@@ -264,106 +264,74 @@ func buildContext(config *Config) *TemplateContext {
 
 func generateClaudeMd(path string, ctx *TemplateContext) error {
 	var sb strings.Builder
+	code := func(s string) string { return bt + s + bt }
 
-	sb.WriteString("# CLAUDE.md (Principal Agent Guide)\n\n")
-	sb.WriteString("This file is for the **Principal** agent. If you are a **Worker**, read " + bt + "AGENTS.md" + bt + " instead. If you are a subagent (such as " + bt + "pr-reviewer" + bt + " or " + bt + "conflict-resolver" + bt + ") or were started for a single task with its own instructions, follow those; the Principal role and workflow below do not apply to you.\n\n")
-	sb.WriteString("## Role: Principal Engineer\n\n")
-	sb.WriteString("You are the **Principal Engineer**, responsible for orchestrating the AWK automated workflow and ensuring quality.\n\n")
-	sb.WriteString("**Your responsibilities:**\n")
-	sb.WriteString("- Work through the open tickets: the GitHub issues that carry the task label\n")
-	sb.WriteString("- Dispatch Workers (Senior Engineers) to execute tasks\n")
-	sb.WriteString("- Review PRs submitted by Workers\n")
-	sb.WriteString("- Decide approve/reject and merge approved PRs\n\n")
-	sb.WriteString("**You do NOT write code directly.** You delegate coding tasks to Workers.\n\n")
-	sb.WriteString("## Project Overview\n\n")
-	sb.WriteString(fmt.Sprintf("**Name:** %s\n", ctx.Project.Name))
-	sb.WriteString(fmt.Sprintf("**Type:** %s\n", ctx.Project.Type))
+	sb.WriteString("# CLAUDE.md\n\n")
+	sb.WriteString("AWK (AI Workflow Kit) works on this project: a ticket is a GitHub issue, a Principal hands each ticket to a Worker, a reviewer checks the pull request, and what passes is merged. This file is a map. What it points to is where each thing is defined.\n\n")
 
-	// Repos list
-	sb.WriteString("**Repos:** ")
+	sb.WriteString("## Who you are\n\n")
+	sb.WriteString("- Your task is to run the AWK principal workflow (" + code("awkit run") + " starts a session with exactly that): you are the **Principal**. Use the " + code("principal-workflow") + " skill and follow its loop. You hand out work and act on what comes back. You do not write code, review a pull request or merge one yourself.\n")
+	sb.WriteString("- You were given one ticket to implement: you are a **Worker**. Read " + code("AGENTS.md") + " instead of this file.\n")
+	sb.WriteString("- You are a subagent (" + code("pr-reviewer") + ", " + code("conflict-resolver") + "), or were started for one task with instructions of its own: follow those.\n")
+	sb.WriteString("- Otherwise you are working with a person, and none of these roles is yours. The rules in the table below still hold for what you change.\n\n")
+
+	sb.WriteString("## Where things are defined\n\n")
+	sb.WriteString("Each topic has one place of definition. When another file disagrees with it, that place is right and the other file is corrected.\n\n")
+	sb.WriteString("| Topic | Defined in |\n")
+	sb.WriteString("|---|---|\n")
+	sb.WriteString("| Repos, branches, verify commands, labels, review and retry settings | " + code(layout.ConfigFile) + " |\n")
+	sb.WriteString("| The workflow loop: what to do for each next action, and when to stop | " + code(layout.SkillsDir+"/principal-workflow/SKILL.md") + " |\n")
+	sb.WriteString("| What a ticket must contain | " + code(layout.SkillsDir+"/principal-workflow/references/ticket.md") + " |\n")
+
+	// The kit's git rule has a row of its own; every other rule file says how
+	// code is written here.
+	var codeRules []string
+	for _, rule := range ctx.Rules.Kit {
+		if rule == "git-workflow" {
+			sb.WriteString("| Branches, commit format, pull requests | " + code(layout.KitRulesDir+"/git-workflow.md") + " |\n")
+			continue
+		}
+		codeRules = append(codeRules, code(layout.KitRulesDir+"/"+rule+".md"))
+	}
+	for _, rule := range ctx.Rules.Custom {
+		codeRules = append(codeRules, code(layout.RulesDir+"/"+rule+".md"))
+	}
+	if len(codeRules) > 0 {
+		sb.WriteString("| How code is written here | " + strings.Join(codeRules, ", ") + " |\n")
+	} else {
+		sb.WriteString("| How code is written here | No rule file yet. One goes in " + code(layout.RulesDir+"/") + " and is listed under " + code("rules.custom") + " in the configuration |\n")
+	}
+
+	sb.WriteString("| What a Worker is told | " + code("AGENTS.md") + " |\n")
+	sb.WriteString("| Plans, design documents and decisions | " + code("docs/README.md") + " (the index) and " + code("docs/decisions.md") + " (append-only), once " + code("awkit plan") + " has written them |\n")
+	sb.WriteString("| Who sits on the planning council | " + code(layout.RosterFile) + " |\n")
+	sb.WriteString("| What runs left behind: results, logs, events | " + code(layout.StateDir+"/") + "; read it with " + code("awkit status") + " and " + code("awkit events") + ", not file by file |\n\n")
+	sb.WriteString(code("CLAUDE.md") + ", " + code("AGENTS.md") + " and the files under " + code(layout.KitRulesDir+"/") + " are written by " + code("awkit generate") + " from the configuration. Change the configuration and run it again: an edit made in them is overwritten.\n\n")
+
+	sb.WriteString("## Project\n\n")
+	sb.WriteString(fmt.Sprintf("- Name: %s (%s)\n", ctx.Project.Name, ctx.Project.Type))
+	sb.WriteString("- Repos: ")
 	for i, repo := range ctx.Repos {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(repo.Name)
-	}
-	sb.WriteString("\n\n")
-
-	// Project rules
-	sb.WriteString("## Project Rules\n\n")
-	sb.WriteString("You do not write code, but these rules bind the work you hand out: write tickets that respect them and expect reviews to enforce them.\n\n")
-	sb.WriteString("### Kit Core Rules\n")
-
-	for _, rule := range ctx.Rules.Kit {
-		if rule == "git-workflow" {
-			sb.WriteString(fmt.Sprintf("- %s"+layout.KitRulesDir+"/%s.md%s (commit format + PR base)\n", bt, rule, bt))
-		} else {
-			sb.WriteString(fmt.Sprintf("- %s"+layout.KitRulesDir+"/%s.md%s\n", bt, rule, bt))
+		sb.WriteString(code(repo.Name))
+		if repo.Path != "" || repo.Language != "" {
+			var about []string
+			if repo.Path != "" {
+				about = append(about, code(repo.Path))
+			}
+			if repo.Language != "" {
+				about = append(about, repo.Language)
+			}
+			sb.WriteString(" (" + strings.Join(about, ", ") + ")")
 		}
 	}
+	sb.WriteString("\n")
+	sb.WriteString("- Branches: pull requests are merged into " + code(ctx.Git.IntegrationBranch) + "; " + code(ctx.Git.ReleaseBranch) + " is the release branch\n\n")
 
-	if len(ctx.Rules.Custom) > 0 {
-		sb.WriteString("\n### Project-Specific Rules (enabled)\n")
-		for _, rule := range ctx.Rules.Custom {
-			sb.WriteString(fmt.Sprintf("- %s"+layout.RulesDir+"/%s.md%s\n", bt, rule, bt))
-		}
-	} else {
-		sb.WriteString("\n### Optional Example Rules (not enabled by default)\n")
-		sb.WriteString("Rule packs for common concerns (testing, API design, security and others) are in the AWK repository: " + ExampleRulesURL + ". To use one, copy it into " + bt + layout.RulesDir + "/" + bt + ", then add its name under " + bt + "rules.custom" + bt + " in " + bt + layout.ConfigFile + bt + ".\n")
-	}
-
-	sb.WriteString("\n---\n\n")
-	sb.WriteString("## Principal Workflow (MUST FOLLOW)\n\n")
-	sb.WriteString("When " + bt + "awkit run" + bt + " starts, use the **principal-workflow** Skill:\n\n")
-	sb.WriteString("1. **Read** " + bt + layout.SkillsDir + "/principal-workflow/SKILL.md" + bt + "\n")
-	sb.WriteString("2. **Read** " + bt + layout.SkillsDir + "/principal-workflow/phases/main-loop.md" + bt + "\n")
-	sb.WriteString("3. Follow the main loop instructions\n\n")
-	sb.WriteString("The Skill handles:\n")
-	sb.WriteString("- Project audit (built into kickoff)\n")
-	sb.WriteString("- Task selection and Issue creation\n")
-	sb.WriteString("- Worker dispatch\n")
-	sb.WriteString("- Result checking\n")
-	sb.WriteString("- PR review\n\n")
-	sb.WriteString("**DO NOT** manually implement the workflow steps. The Skill and " + bt + "awkit" + bt + " commands handle everything.\n\n")
-	sb.WriteString("---\n\n")
-	sb.WriteString("## Context Management\n\n")
-	sb.WriteString("A workflow run lasts many loop iterations, and everything you read or write stays in your context for all of them. " + bt + "awkit" + bt + " commands are synchronous: " + bt + "awkit dispatch-worker" + bt + " returns only when the Worker has finished, and its output already carries the result. So while a command runs, wait for it: do not read " + bt + layout.LogsDir + "/" + bt + " or other logs to follow the Worker, do not poll its status, and do not narrate its progress. When the command returns, act on the " + bt + "WORKER_STATUS" + bt + " it printed, as " + bt + "phases/dispatch.md" + bt + " describes.\n\n")
-	sb.WriteString("---\n\n")
-	sb.WriteString("## REPO TYPE SUPPORT\n\n")
-	sb.WriteString("AWK supports three repository types configured in " + bt + layout.ConfigFile + bt + ":\n\n")
-	sb.WriteString("| Type | Description | Use Case |\n")
-	sb.WriteString("|------|-------------|----------|\n")
-	sb.WriteString("| " + bt + "root" + bt + " | Single repository | Standalone projects |\n")
-	sb.WriteString("| " + bt + "directory" + bt + " | Subdirectory in monorepo | Monorepo with shared .git |\n")
-	sb.WriteString("| " + bt + "submodule" + bt + " | Git submodule | Monorepo with independent repos |\n\n")
-	sb.WriteString("### Type-Specific Behavior\n\n")
-	sb.WriteString("- **root**: All operations run from repo root. Path must be " + bt + "./" + bt + ".\n")
-	sb.WriteString("- **directory**: Operations run from worktree root, changes scoped to subdirectory.\n")
-	sb.WriteString("- **submodule**: Commits/pushes happen in submodule first, then parent updates reference.\n\n")
-	sb.WriteString("---\n\n")
-	sb.WriteString("## Quick Reference\n\n")
-	sb.WriteString("### Start Work\n")
-	sb.WriteString("```bash\nawkit run\n```\n\n")
-	sb.WriteString("### Check Status\n")
-	sb.WriteString("```bash\nawkit status\n```\n\n")
-	sb.WriteString("### Stop Work\n")
-	sb.WriteString("```bash\ntouch .ai/state/STOP\n```\n\n")
-	sb.WriteString("### Diagnose Issues\n")
-	sb.WriteString("```bash\nawkit doctor\n```\n\n")
-	sb.WriteString("### Reset State\n")
-	sb.WriteString("```bash\nawkit reset          # default cleanup\nawkit reset --all    # full cleanup\nawkit reset --dry-run # preview only\n```\n\n")
-	sb.WriteString("## File Locations\n\n")
-	sb.WriteString("| What | Where |\n")
-	sb.WriteString("|------|-------|\n")
-	sb.WriteString("| Config | " + bt + layout.ConfigFile + bt + " |\n")
-	sb.WriteString("| Skills | " + bt + layout.SkillsDir + "/" + bt + " |\n")
-	sb.WriteString("| Rules | " + bt + layout.RulesDir + "/" + bt + " |\n")
-	sb.WriteString("| Results | " + bt + layout.ResultsDir + "/" + bt + " |\n")
-	sb.WriteString("| Principal Log | " + bt + layout.LogsDir + "/principal.log" + bt + " |\n")
-	sb.WriteString("| Worker Logs | " + bt + layout.LogsDir + "/issue-{N}.worker.log" + bt + " |\n\n")
-	sb.WriteString("---\n\n")
-	sb.WriteString("## Ticket Format\n\n")
-	sb.WriteString("A ticket is a GitHub issue that carries the task label. The required sections and a template are in " + bt + layout.SkillsDir + "/principal-workflow/tasks/create-task.md" + bt + "; " + bt + "awkit create-task" + bt + " rejects a body that lacks them.\n")
+	sb.WriteString("## While a command runs (Principal)\n\n")
+	sb.WriteString("A run lasts many loop iterations, and everything you read or write stays in your context for all of them. " + code("awkit") + " commands do their own waiting: " + code("awkit dispatch-worker") + " returns when the Worker has finished, and its output carries the result. So while a command runs, wait for it: do not read " + code(layout.LogsDir+"/") + " to follow the Worker, do not poll, do not narrate progress. When it returns, act on what it printed, as the skill describes.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
@@ -509,68 +477,63 @@ func writeWorkerGuardrails(sb *strings.Builder) {
 
 func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 	var sb strings.Builder
+	code := func(s string) string { return bt + s + bt }
+	integration, release := code(ctx.Git.IntegrationBranch), code(ctx.Git.ReleaseBranch)
 
-	sb.WriteString("# Git & Workflow Rules (STRICT)\n\n## 0. Branch Model\n\n")
+	sb.WriteString("# Git & Workflow Rules\n\n")
+	sb.WriteString("Scope: every branch, commit and pull request of this project. " + code("awkit generate") + " writes this file from " + code(layout.ConfigFile) + ": change the configuration, not this file.\n\n")
 
+	sb.WriteString("## 1. Branches\n\n")
 	if ctx.Project.Type == "monorepo" {
 		if ctx.HasSubmodules {
 			sb.WriteString("This project uses submodules:\n")
 			for _, repo := range ctx.Repos {
 				if repo.Type == "submodule" {
-					sb.WriteString(fmt.Sprintf("- %s%s%s (%s)\n", bt, repo.Name, bt, repo.Language))
+					sb.WriteString(fmt.Sprintf("- %s (%s)\n", code(repo.Name), repo.Language))
 				}
 			}
+			sb.WriteString("\n")
 		} else if ctx.HasDirectories {
-			sb.WriteString("This project uses directories (monorepo without submodules):\n")
+			sb.WriteString("This project keeps its repos as directories of one repository:\n")
 			for _, repo := range ctx.Repos {
 				if repo.Type == "directory" {
-					sb.WriteString(fmt.Sprintf("- %s%s%s - %s (%s)\n", bt, repo.Path, bt, repo.Name, repo.Language))
+					sb.WriteString(fmt.Sprintf("- %s: %s (%s)\n", code(repo.Path), repo.Name, repo.Language))
 				}
 			}
+			sb.WriteString("\n")
 		}
 	}
+	sb.WriteString("- Integration branch: " + integration + ". Every pull request targets it, whichever repo the change is in.\n")
+	sb.WriteString("- Release branch: " + release + ". Nothing targets it except a release: a pull request from " + integration + ", or the pull request of a ticket whose " + code("awk-ticket") + " block sets " + code("release: true") + ".\n")
+	sb.WriteString("- Working branches: " + code("feat/<topic>") + " or " + code("fix/<topic>") + ". The workflow names its own " + code("feat/ai-issue-<id>") + ".\n\n")
 
-	sb.WriteString("\nBranches:\n")
-	sb.WriteString(fmt.Sprintf("- **Integration branch**: %s%s%s (daily development, **target for all PRs**)\n", bt, ctx.Git.IntegrationBranch, bt))
-	sb.WriteString(fmt.Sprintf("- **Release branch**: %s%s%s (release-only; merge from %s%s%s when releasing)\n\n", bt, ctx.Git.ReleaseBranch, bt, bt, ctx.Git.IntegrationBranch, bt))
-	sb.WriteString("PR base rules:\n")
-
-	for _, repo := range ctx.Repos {
-		sb.WriteString(fmt.Sprintf("- %s repo PR base: %s%s%s (default)\n", repo.Name, bt, ctx.Git.IntegrationBranch, bt))
+	sb.WriteString("## 2. Commit messages\n\n")
+	sb.WriteString("- Format: " + code(ctx.Git.CommitFormat) + "\n")
+	sb.WriteString("- " + code("type") + " is one of " + code("feat") + ", " + code("fix") + ", " + code("docs") + ", " + code("style") + ", " + code("refactor") + ", " + code("perf") + ", " + code("test") + ", " + code("chore") + ".\n")
+	if ctx.Git.CommitFormat == "[type] subject" {
+		sb.WriteString("- The type is in square brackets with no colon after them, and the subject is lowercase. Conventional Commits (" + code("feat: add feature") + ") is not the format here.\n")
+		sb.WriteString("- Example: " + code("[feat] add login endpoint") + "\n")
 	}
+	sb.WriteString("\n")
 
-	sb.WriteString("\nRelease rule (root only):\n")
-	sb.WriteString(fmt.Sprintf("- Only create PR from %s%s%s -> %s%s%s for release tickets.\n", bt, ctx.Git.IntegrationBranch, bt, bt, ctx.Git.ReleaseBranch, bt))
-	sb.WriteString(fmt.Sprintf("- Do NOT target %s%s%s unless the ticket's awk-ticket block sets %srelease: true%s.\n\n", bt, ctx.Git.ReleaseBranch, bt, bt, bt))
-	sb.WriteString("## 1. Branching Strategy\n\n")
-	sb.WriteString("- **Feature branches**: " + bt + "feat/<topic>" + bt + "\n")
-	sb.WriteString("- **Fix branches**: " + bt + "fix/<topic>" + bt + "\n")
-	sb.WriteString("- **Automation branches** (AI): " + bt + "feat/ai-issue-<id>" + bt + "\n\n")
-	sb.WriteString("## 2. Commit Message Format (CUSTOM & STRICT)\n\n")
-	sb.WriteString("You MUST use the bracket " + bt + "[]" + bt + " format. Do not use standard Conventional Commits (no colons).\n\n")
-	sb.WriteString(fmt.Sprintf("- **Format**: %s%s%s\n", bt, ctx.Git.CommitFormat, bt))
-	sb.WriteString("- **Rules**:\n")
-	sb.WriteString("  1. Type MUST be inside square brackets " + bt + "[]" + bt + ".\n")
-	sb.WriteString("  2. Subject MUST be lowercase.\n")
-	sb.WriteString("  3. NO colon after the bracket.\n")
-	sb.WriteString("- **Allowed Types**:\n")
-	sb.WriteString("  - " + bt + "feat" + bt + ", " + bt + "fix" + bt + ", " + bt + "docs" + bt + ", " + bt + "style" + bt + ", " + bt + "refactor" + bt + ", " + bt + "perf" + bt + ", " + bt + "test" + bt + ", " + bt + "chore" + bt + "\n")
-	sb.WriteString("- **Examples**:\n")
-	sb.WriteString("  - ✅ " + bt + "[feat] add new feature" + bt + "\n")
-	sb.WriteString("  - ✅ " + bt + "[refactor] update module structure" + bt + "\n")
-	sb.WriteString("  - ✅ " + bt + "[chore] add configuration file" + bt + "\n")
-	sb.WriteString("  - ❌ " + bt + "feat: add feature" + bt + " (Forbidden)\n\n")
-	sb.WriteString("## 3. Pull Requests (MANDATORY)\n\n")
-	sb.WriteString("- Any code change MUST go through a PR (no push-only changes).\n")
-	sb.WriteString(fmt.Sprintf("- PR title SHOULD match commit style: %s%s%s.\n", bt, ctx.Git.CommitFormat, bt))
-	sb.WriteString("- PR body MUST include: " + bt + "Closes #<IssueID>" + bt + "\n")
-	sb.WriteString("- Required checks must pass before merge (branch protection / rulesets).\n\n")
+	sb.WriteString("## 3. Pull requests\n\n")
+	sb.WriteString("- A change reaches " + integration + " or " + release + " through a pull request, never by a direct push.\n")
+	sb.WriteString("- The title is in the commit format.\n")
+	sb.WriteString("- The body contains " + code("Closes #<issue>") + ", which ties the pull request to its ticket.\n")
+	sb.WriteString("- It is merged once the required checks have passed.\n\n")
 
+	section := 4
 	if ctx.HasSubmodules {
-		sb.WriteString("## 4. Submodule Safety\n\n")
-		sb.WriteString(fmt.Sprintf("- Root repo should not point submodules to commits that are not reachable from the submodule's allowed branches (normally %s%s%s).\n", bt, ctx.Git.IntegrationBranch, bt))
-		sb.WriteString("- Do NOT change submodule pinned commits unless the ticket explicitly requires it.\n")
+		sb.WriteString(fmt.Sprintf("## %d. Submodules\n\n", section))
+		sb.WriteString("- The commit a submodule is pinned to is reachable from that submodule's " + integration + ".\n")
+		sb.WriteString("- A pinned commit changes only when the ticket asks for it.\n\n")
+		section++
 	}
+
+	sb.WriteString(fmt.Sprintf("## %d. Rule files\n\n", section))
+	sb.WriteString("- The files under " + code(layout.KitRulesDir+"/") + " come with AWK and are rewritten when it is upgraded. The files beside that directory are the project's own.\n")
+	sb.WriteString("- A rule file holds rules: what is required, what is forbidden, what to check. The state of the project is not a rule; point to where it is defined.\n")
+	sb.WriteString("- When a rule disagrees with the code or the git log, the code and the log are right, and the rule file is corrected.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
@@ -692,10 +655,6 @@ func generateCustomAgentBody(agent CustomAgentDef) string {
 	return sb.String()
 }
 
-// ExampleRulesURL is where the rule packs a project can adopt are kept. They
-// are documents of the AWK repository, not files of a project.
-const ExampleRulesURL = "https://github.com/silver2dream/ai-workflow-kit/tree/main/docs/examples/rules"
-
 // GeneratedAgentMark is in every subagent file the generator writes for a
 // custom agent of the configuration. A file in the agents directory without
 // it is the project's own.
@@ -744,12 +703,8 @@ func validateCustomRules(stateRoot string, rules RulesConfig) []string {
 			warnings = append(warnings, fmt.Sprintf("custom rule '%s' not found: %s", rule, rulePath))
 			continue
 		}
-		content := string(data)
-		if !strings.Contains(content, "Role:") {
-			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is missing 'Role:' directive", rule))
-		}
-		if !strings.Contains(content, "Goal:") {
-			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is missing 'Goal:' directive", rule))
+		if strings.TrimSpace(string(data)) == "" {
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is empty: %s", rule, rulePath))
 		}
 	}
 	return warnings
