@@ -342,7 +342,7 @@ awkit generate
 
 方法三：使用 `--dangerously-skip-permissions` flag（不推薦）
 ```bash
-claude --print --dangerously-skip-permissions -p "awkit kickoff"
+claude --print --dangerously-skip-permissions -p "awkit run"
 ```
 
 ---
@@ -354,7 +354,7 @@ claude --print --dangerously-skip-permissions -p "awkit kickoff"
 **原因：** Principal 在執行前置檢查和分析，但沒有輸出進度
 
 **解決：**
-1. 使用 `awkit kickoff` 取代 `kickoff.sh`（提供 PTY 即時輸出和 Spinner 動畫）
+1. 使用 `awkit run` 取代 `kickoff.sh`（提供 PTY 即時輸出和 Spinner 動畫）
 2. 或升級到最新版本：`awkit upgrade && awkit generate`
 
 ---

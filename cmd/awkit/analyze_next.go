@@ -19,6 +19,8 @@ Usage:
 
 Options:
   --json          Output as JSON instead of bash variables
+  --issue N       Decide for ticket N only. Inside "awkit run --issue N" this
+                  is already so: the run passes its limit on (AWKIT_RUN_ISSUE)
   --state-root    Override state root (default: current directory)
   --help          Show this help
 
@@ -36,12 +38,29 @@ Examples:
 `)
 }
 
+// analyzerFor returns the decision engine for a project. It decides for one
+// ticket only when the caller names one, or else when the run this command
+// was started in is limited to one (analyzer.ScopeEnv).
+func analyzerFor(stateRoot string, issue int) (*analyzer.Analyzer, error) {
+	if issue <= 0 {
+		fromRun, err := analyzer.ScopeFromEnv()
+		if err != nil {
+			return nil, err
+		}
+		issue = fromRun
+	}
+	a := analyzer.New(stateRoot, nil)
+	a.LimitTo(issue)
+	return a, nil
+}
+
 func cmdAnalyzeNext(args []string) int {
 	fs := flag.NewFlagSet("analyze-next", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = usageAnalyzeNext
 
 	jsonOutput := fs.Bool("json", false, "")
+	issue := fs.Int("issue", 0, "")
 	stateRoot := fs.String("state-root", "", "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
@@ -55,6 +74,11 @@ func cmdAnalyzeNext(args []string) int {
 		return 0
 	}
 
+	if *issue < 0 {
+		errorf("--issue takes an issue number, got %d\n", *issue)
+		return 2
+	}
+
 	if *stateRoot == "" {
 		root, err := resolveGitRoot()
 		if err != nil {
@@ -62,6 +86,14 @@ func cmdAnalyzeNext(args []string) int {
 			return 1
 		}
 		*stateRoot = root
+	}
+
+	// The decision engine, limited to one ticket when the flag names one or
+	// when the run this command was started in is.
+	a, err := analyzerFor(*stateRoot, *issue)
+	if err != nil {
+		errorf("%v\n", err)
+		return 1
 	}
 
 	// Initialize event writer for tracing
@@ -81,9 +113,6 @@ func cmdAnalyzeNext(args []string) int {
 	// Output is confined to stderr/trace so it never corrupts the decision on
 	// stdout that the principal evals.
 	reconcileStructuralState(*stateRoot)
-
-	// Create analyzer
-	a := analyzer.New(*stateRoot, nil)
 
 	// Decide next action
 	ctx := context.Background()

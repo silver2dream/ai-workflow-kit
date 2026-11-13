@@ -107,8 +107,9 @@ func run() int {
 		return cmdUninstall(os.Args[2:])
 	case "upgrade":
 		return cmdUpgrade(os.Args[2:])
-	case "kickoff":
-		return cmdKickoff(os.Args[2:])
+	case "run", "kickoff":
+		// kickoff is the former name of run.
+		return cmdRun(os.Args[2:])
 	case "validate":
 		return cmdValidate(os.Args[2:])
 	case "status":
@@ -176,34 +177,43 @@ func usage() {
 Usage:
   awkit <command> [options]
 
-Commands:
+Set up a project:
   init          Initialize AWK in a project (or current directory)
   upgrade       Upgrade AWK kit files (preserves workflow.yaml by default)
   uninstall     Remove AWK from a project
-  kickoff       Start the AI workflow with PTY and progress monitoring
+  generate      Generate helper docs and scaffolding
   validate      Validate workflow configuration
+  list-presets  Show available project presets
+
+Run the workflow:
+  create-task   Create a ticket: a GitHub issue the workflow picks up
+  run           Start the workflow: work through the open tickets
+                (--issue N for one ticket only)
   status        Show offline workflow status
   next          Show suggested next actions (offline)
-  check-result    Check worker execution result for an issue
-  dispatch-worker Dispatch an issue to a worker
-  run-issue       Run a worker for a single issue
-  analyze-next    Analyze and determine next workflow action
-  reconcile       Self-heal structural drift (e.g. integration-branch scaffold)
-  stop-workflow   Stop the workflow and generate a report
-  prepare-review  Prepare PR review context
-  submit-review   Submit PR review and handle result
-  create-task     Create a ticket: a GitHub issue the workflow picks up
-  jittest         Run JiT (Just-in-Time) tests for a PR
-  doctor          Check project health and identify issues
-  reset           Reset project state for fresh start
-  generate        Generate helper docs and scaffolding
-  list-presets    Show available project presets
-  hooks           Manage lifecycle hooks
+  doctor        Check project health and identify issues
+  reset         Reset project state for fresh start
+
+Look into what happened:
   events          Query unified event stream for debugging
   feedback-stats  Show review feedback statistics
-  evaluate        Run evaluation gates (--offline, --strict)
   lessons         Manage the learning loop (list/stats/add/distill/promote)
+  evaluate        Run evaluation gates (--offline, --strict)
+  hooks           Manage lifecycle hooks
+
+What the workflow itself runs (the Principal and its agents call these):
+  analyze-next     Analyze and determine next workflow action
+  dispatch-worker  Dispatch an issue to a worker
+  check-result     Check worker execution result for an issue
+  run-issue        Run a worker for a single issue
+  prepare-review   Prepare PR review context
+  submit-review    Submit PR review and handle result
+  jittest          Run JiT (Just-in-Time) tests for a PR
+  stop-workflow    Stop the workflow and generate a report
+  reconcile        Self-heal structural drift (e.g. integration-branch scaffold)
   context-snapshot Generate compact context snapshot
+
+The CLI itself:
   check-update  Check for CLI updates
   completion    Generate shell completion script
   version       Show version
@@ -212,13 +222,12 @@ Commands:
 Examples:
   awkit init
   awkit init --preset godot-go
-  awkit kickoff
-  awkit kickoff --dry-run
-  awkit validate
+  awkit create-task --title "[feat] add login" --body-file ticket.md
+  awkit run
+  awkit run --issue 42
+  awkit run --dry-run
+  awkit status
   awkit upgrade
-  awkit init /path/to/project
-  awkit uninstall .
-  awkit check-update
 
 Run 'awkit help <command>' for more information.
 `)
@@ -257,8 +266,8 @@ func cmdHelp(command string) int {
 		usageUpgrade()
 	case "uninstall":
 		usageUninstall()
-	case "kickoff":
-		usageKickoff()
+	case "run", "kickoff":
+		usageRun()
 	case "validate":
 		usageValidate()
 	case "status":
@@ -353,8 +362,8 @@ Run 'awkit list-presets' to see available presets.
 func usageUpgrade() {
 	fmt.Fprint(os.Stderr, `Upgrade AWK kit files in a project
 
-This command updates scripts, templates, commands, rules, and docs
-while preserving your workflow.yaml configuration by default.
+This command updates the kit's rules, skills and agents while preserving
+your workflow.yaml configuration by default.
 
 The CI workflows awkit generated follow the new kit. A workflow the project
 wrote or took over is left alone, apart from an old ci.yml losing the
@@ -545,7 +554,6 @@ func cmdInit(args []string) int {
 	if *dryRun {
 		fmt.Println(bold("AWK Kit files:"))
 		fmt.Println("  .ai/config/workflow.yaml")
-		fmt.Println("  .ai/templates/")
 		fmt.Println("  .ai/rules/")
 		fmt.Println("  .ai/skills/")
 		fmt.Println("  .ai/state/ (runtime, gitignored)")
@@ -811,7 +819,6 @@ func cmdUpgrade(args []string) int {
 
 	if *dryRun {
 		fmt.Println("Would update:")
-		fmt.Println("  .ai/templates/")
 		fmt.Println("  .ai/rules/_kit/")
 		fmt.Println("  .ai/rules/_examples/")
 		fmt.Println("  .ai/skills/")
@@ -1037,7 +1044,7 @@ func cmdUpgrade(args []string) int {
 
 	fmt.Println("")
 	fmt.Println(bold("Next steps:"))
-	fmt.Printf("  %s\n", cyan("awkit kickoff"))
+	fmt.Printf("  %s\n", cyan("awkit run"))
 	fmt.Println("")
 
 	warnUpdateAvailable()
@@ -1254,7 +1261,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall run validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1269,6 +1276,11 @@ _awkit() {
         upgrade)
             local opts="--scaffold --preset --force-config --force --dry-run --no-generate --no-commit --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
+            return 0
+            ;;
+        run|kickoff)
+            local opts="--issue --dry-run --background --force --help"
+            COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
             return 0
             ;;
         uninstall)
@@ -1302,7 +1314,7 @@ _awkit() {
         'install:Alias for init'
         'upgrade:Upgrade AWK kit files (preserves config by default)'
         'uninstall:Remove AWK from a project'
-        'kickoff:Start the AI workflow'
+        'run:Start the workflow: work through the open tickets'
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
         'next:Show suggested next actions (offline)'
@@ -1395,7 +1407,7 @@ complete -c awkit -n __fish_use_subcommand -a init -d 'Initialize AWK in a proje
 complete -c awkit -n __fish_use_subcommand -a install -d 'Alias for init'
 complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files (preserves config by default)'
 complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a project'
-complete -c awkit -n __fish_use_subcommand -a kickoff -d 'Start the AI workflow'
+complete -c awkit -n __fish_use_subcommand -a run -d 'Start the workflow: work through the open tickets'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'
 complete -c awkit -n __fish_use_subcommand -a next -d 'Show suggested next actions (offline)'

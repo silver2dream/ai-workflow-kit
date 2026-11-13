@@ -76,8 +76,8 @@ Edit `.ai/config/workflow.yaml`:
   - `root`: Single repository (path must be `./`)
   - `directory`: Subdirectory in monorepo (shared .git)
   - `submodule`: Git submodule (independent .git)
-- Set `git.integration_branch` (default: `feat/example`)
-- Keep `specs.active: []` until you add your own spec
+- Set `git.integration_branch`: the branch pull requests target
+- Set `repos[].verify`: the commands the Worker, the review and CI run
 
 Example configurations:
 
@@ -133,11 +133,15 @@ awkit generate
 
 This will also generate `.claude/settings.local.json` with pre-approved permissions for `gh`, `git`, `codex`, and your verify commands. This enables true autopilot mode without manual approval prompts.
 
-## 3) Add your first spec
+## 3) Add your first ticket
 
-Create a new folder under `.ai/specs/<your-feature>/` and add at least `tasks.md`.
+The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block that names its repo and the issues it waits for. Write the body to a file (the template is in `.ai/skills/principal-workflow/tasks/create-task.md`) and create the issue:
 
-You can use `.ai/specs/example/` as a template (it includes `requirements.md`, `design.md`, and `tasks.md`).
+```bash
+awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
+awkit run              # work through every open ticket
+awkit run --issue 42   # or one ticket only
+```
 
 ## 4) Run offline verification
 

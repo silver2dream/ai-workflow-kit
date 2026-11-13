@@ -145,49 +145,49 @@ awkit validate
 
 ## 第一個工作流程
 
-### 1. 建立 Spec
+### 1. 寫一張票券
 
-在 `.ai/specs/` 下建立你的第一個 spec：
+工作就是一串票券：帶有 task 標籤（`ai-task`）的 GitHub Issue。內文說明要做什麼，並用一個小區塊寫明這張票屬於哪個 repo。
+
+把內文寫進檔案，例如 `ticket.md`：
+
+````markdown
+## Summary
+新增 health endpoint。
+
+## Scope
+- API server 的 GET /healthz
+
+## Acceptance Criteria
+- [ ] GET /healthz 回 200，並帶上 build 版本
+- [ ] Unit tests added for new functionality
+
+## Testing Requirements
+- handler 要有單元測試，涵蓋正常與錯誤情況
+
+```yaml awk-ticket
+schema: 1
+repo: root
+```
+````
+
+`yaml awk-ticket` 區塊的欄位：`schema` 固定為 `1`；`repo` 是 `workflow.yaml` 裡的 repo 名稱或 `root`；需要等其他 Issue 先完成時，加上 `depends_on: [12, 15]`。完整說明見 `.ai/skills/principal-workflow/tasks/create-task.md`。
+
+### 2. 建立 Issue
 
 ```bash
-mkdir -p .ai/specs/my-feature
+awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
 ```
 
-建立 `tasks.md`：
+內文不合格（缺少 section、沒有區塊、repo 不在設定檔裡）時不會建立 Issue，並說明原因。
 
-```markdown
-# My Feature
-
-Repo: root
-Coordination: sequential
-
-## Tasks
-
-- [ ] 1. Implement feature X
-  - [ ] 1.1 Create data model
-  - [ ] 1.2 Add API endpoint
-  - [ ] 1.3 Write unit tests
-
-- [ ] 2. Update documentation
-```
-
-### 2. 啟用 Spec
-
-編輯 `.ai/config/workflow.yaml`：
-
-```yaml
-specs:
-  active:
-    - my-feature
-```
-
-### 3. 執行審計
+### 3. 啟動前檢查
 
 ```bash
-awkit kickoff --dry-run
+awkit run --dry-run
 ```
 
-`--dry-run` 會顯示將執行的操作，但不會實際執行。
+`--dry-run` 只做啟動前檢查，不會開始工作。
 
 ### 4. 開始工作流程
 
@@ -197,9 +197,14 @@ awkit kickoff --dry-run
 # 先登入 GitHub CLI
 gh auth login
 
-# 啟動工作流程
-awkit kickoff
+# 啟動工作流程：處理所有未完成的票券
+awkit run
+
+# 或只做一張票
+awkit run --issue 42
 ```
+
+票券依 Issue 編號由小到大處理，`depends_on` 裡的 Issue 都完成後才會開始。沒有票券可做、或有事情需要人處理時，執行就會停下；`awkit status` 會顯示目前的狀況。
 
 ### 5. 停止工作流程
 
@@ -254,8 +259,8 @@ brew install bash
 | `awkit check-update` | 檢查 CLI 更新 |
 | `awkit version` | 顯示版本 |
 | `awkit help <command>` | 顯示命令說明 |
-| `awkit kickoff` | 啟動工作流程 |
-| `awkit kickoff --dry-run` | 預覽工作流程 |
+| `awkit run` | 啟動工作流程 |
+| `awkit run --dry-run` | 預覽工作流程 |
 | `awkit validate` | 驗證配置 |
 | `awkit doctor` | 檢查專案健康狀態，報告問題 |
 | `awkit reset` | 重設專案狀態（支援 `--all`、`--dry-run` 等 flags） |

@@ -30,10 +30,9 @@ go test ./...
 ├── internal/         # 核心套件（analyzer, reviewer, worker, lessons, kickoff, ...）
 ├── .ai/
 │   ├── config/       # 配置檔與 Schema
-│   ├── templates/    # 範例模板（design.md.example）
 │   ├── rules/        # 規則檔案（_kit / _examples）
 │   ├── skills/       # Principal/post-mortem/release-checklist 技能
-│   └── specs/        # Kiro-style specs
+│   └── specs/        # AWK 自己的設計文件（不隨 kit 發佈）
 ├── .claude/agents/   # 內建 subagents（pr-reviewer, conflict-resolver）
 └── docs/             # 文件 (你正在讀的)
 ```
@@ -334,7 +333,7 @@ go test ./internal/reviewer/ -run TestParseStructuredReview -v
 
 ```bash
 # 使用 awkit CLI
-awkit kickoff --dry-run
+awkit run --dry-run
 
 # 啟用 debug 輸出
 awkit generate

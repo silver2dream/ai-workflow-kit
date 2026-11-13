@@ -74,6 +74,11 @@ func (s IssueStatus) Closed() bool { return s.State == "CLOSED" || s.State == "M
 // decided the work will not be done.
 func (s IssueStatus) Dropped() bool { return s.Closed() && s.Reason == "NOT_PLANNED" }
 
+// ticketListLimit is how many issues a list of tickets may hold. gh lists the
+// newest first, so a list cut short loses the oldest tickets: the ones a run
+// takes first, and the one a limited run may be about.
+const ticketListLimit = "1000"
+
 // GitHubClient wraps GitHub CLI operations
 type GitHubClient struct {
 	Timeout time.Duration
@@ -102,7 +107,7 @@ func (c *GitHubClient) ListIssuesByLabel(ctx context.Context, label string) ([]I
 	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
 		"--label", label,
 		"--state", "open",
-		"--limit", "200",
+		"--limit", ticketListLimit,
 		"--json", "number,body,labels,state")
 	if err != nil {
 		return nil, err
@@ -125,7 +130,7 @@ func (c *GitHubClient) ListPendingIssues(ctx context.Context, labels LabelsConfi
 	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
 		"--label", labels.Task,
 		"--state", "open",
-		"--limit", "200",
+		"--limit", ticketListLimit,
 		"--json", "number,body,labels,state")
 	if err != nil {
 		return nil, err
@@ -162,7 +167,7 @@ func (c *GitHubClient) CountOpenIssues(ctx context.Context, taskLabel string) (i
 	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
 		"--label", taskLabel,
 		"--state", "open",
-		"--limit", "200",
+		"--limit", ticketListLimit,
 		"--json", "number",
 		"--jq", ". | length")
 	if err != nil {
@@ -403,7 +408,7 @@ func (c *GitHubClient) TaskIssueStatuses(ctx context.Context, taskLabel string) 
 	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "list",
 		"--label", taskLabel,
 		"--state", "all",
-		"--limit", "500",
+		"--limit", ticketListLimit,
 		"--json", "number,state,stateReason")
 	if err != nil {
 		return nil, err

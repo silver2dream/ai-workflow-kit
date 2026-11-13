@@ -110,7 +110,7 @@ once #46 is.
 
 To run the workflow:
 
-    awkit kickoff
+    awkit run
 ```
 
 ## Error Handling
@@ -175,7 +175,7 @@ All {N} issues have been created successfully.
 Quick links:
 {list of issue URLs}
 
-The issues are ready for the AWK workflow. Run `awkit kickoff` to start processing them.
+The issues are ready for the AWK workflow. Run `awkit run` to start processing them.
 ```
 
 ## Self-Check Output

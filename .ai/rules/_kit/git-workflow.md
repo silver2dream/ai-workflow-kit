@@ -12,7 +12,7 @@ PR base rules:
 
 Release rule (root only):
 - Only create PR from `develop` -> `main` for release tickets.
-- Do NOT target `main` unless the ticket explicitly says `Release: true`.
+- Do NOT target `main` unless the ticket's awk-ticket block sets `release: true`.
 
 ## 1. Branching Strategy
 

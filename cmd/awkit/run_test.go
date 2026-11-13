@@ -245,3 +245,119 @@ func TestFormatAnalyzeNextContextWithMergeIssue(t *testing.T) {
 		t.Fatalf("formatAnalyzeNextContext() = %q, want %q", ctx, " (issue=27 pr=30 merge=conflict)")
 	}
 }
+
+// A run for one ticket says so to the Principal. A run for all of them says
+// nothing about a limit.
+func TestPrincipalPromptFor(t *testing.T) {
+	if got := principalPromptFor(0); got != principalPrompt {
+		t.Errorf("principalPromptFor(0) = %q, want the plain prompt", got)
+	}
+	got := principalPromptFor(42)
+	if !strings.HasPrefix(got, principalPrompt) {
+		t.Errorf("the prompt of a limited run lost the plain prompt: %q", got)
+	}
+	for _, want := range []string{"limited to issue #42", "awkit analyze-next"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the prompt of a limited run should say %q: %q", want, got)
+		}
+	}
+}
+
+// A run can be limited to an open issue that is a ticket, and to nothing else.
+func TestRunTicketProblem(t *testing.T) {
+	tests := []struct {
+		name        string
+		info        worker.IssueInfo
+		wantProblem string
+	}{
+		{"an open ticket", worker.IssueInfo{Number: 7, State: "OPEN", Labels: []string{"bug", "ai-task"}}, ""},
+		{"a ticket in any state of the workflow", worker.IssueInfo{Number: 7, State: "OPEN", Labels: []string{"ai-task", "pr-ready"}}, ""},
+		{"a closed ticket", worker.IssueInfo{Number: 7, State: "CLOSED", Labels: []string{"ai-task"}}, "issue #7 is closed"},
+		{"an issue that is not a ticket", worker.IssueInfo{Number: 7, State: "OPEN", Labels: []string{"bug"}}, "issue #7 is not a ticket: it does not carry the `ai-task` label"},
+		{"an issue without labels", worker.IssueInfo{Number: 7, State: "OPEN"}, "is not a ticket"},
+	}
+	for _, tt := range tests {
+		got := runTicketProblem(&tt.info, "ai-task")
+		if (tt.wantProblem == "") != (got == "") || !strings.Contains(got, tt.wantProblem) {
+			t.Errorf("%s: problem = %q, want %q", tt.name, got, tt.wantProblem)
+		}
+	}
+	// The label is the project's own.
+	custom := worker.IssueInfo{Number: 7, State: "OPEN", Labels: []string{"work-item"}}
+	if got := runTicketProblem(&custom, "work-item"); got != "" {
+		t.Errorf("a ticket under the project's own label was refused: %q", got)
+	}
+	if got := runTicketProblem(&custom, "ai-task"); !strings.Contains(got, "`ai-task` label") {
+		t.Errorf("problem = %q, want it to name the label that is missing", got)
+	}
+}
+
+// analyze-next refuses a limit it cannot read, from the flag or from the run
+// it was started in, before it decides anything.
+func TestCmdAnalyzeNext_LimitMustBeAnIssueNumber(t *testing.T) {
+	dir := t.TempDir()
+	if exitCode := cmdAnalyzeNext([]string{"--issue", "-1", "--state-root", dir}); exitCode != 2 {
+		t.Errorf("cmdAnalyzeNext(--issue -1) = %d, want 2", exitCode)
+	}
+	if exitCode := cmdAnalyzeNext([]string{"--issue", "abc", "--state-root", dir}); exitCode != 2 {
+		t.Errorf("cmdAnalyzeNext(--issue abc) = %d, want 2", exitCode)
+	}
+	t.Setenv(analyzer.ScopeEnv, "not-a-number")
+	if exitCode := cmdAnalyzeNext([]string{"--state-root", dir}); exitCode != 1 {
+		t.Errorf("cmdAnalyzeNext with %s=not-a-number = %d, want 1", analyzer.ScopeEnv, exitCode)
+	}
+}
+
+// The limit of a run reaches the decision engine from the flag, or from the
+// run the command was started in. The flag has the last word.
+func TestAnalyzerFor(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name      string
+		env       string
+		flag      int
+		wantLimit int
+	}{
+		{"no limit", "", 0, 0},
+		{"the limit of the run", "12", 0, 12},
+		{"the flag", "", 7, 7},
+		{"the flag over the run's", "12", 7, 7},
+	}
+	for _, tt := range tests {
+		t.Setenv(analyzer.ScopeEnv, tt.env)
+		a, err := analyzerFor(dir, tt.flag)
+		if err != nil {
+			t.Errorf("%s: %v", tt.name, err)
+			continue
+		}
+		if got := a.Limit(); got != tt.wantLimit {
+			t.Errorf("%s: the engine decides for #%d, want #%d", tt.name, got, tt.wantLimit)
+		}
+	}
+
+	// A limit that cannot be read is an error, not a run without one.
+	t.Setenv(analyzer.ScopeEnv, "twelve")
+	if a, err := analyzerFor(dir, 0); err == nil {
+		t.Errorf("an unreadable limit was taken for #%d", a.Limit())
+	}
+	// The flag does not need the environment to make sense.
+	if a, err := analyzerFor(dir, 7); err != nil || a.Limit() != 7 {
+		t.Errorf("with the flag: %v", err)
+	}
+}
+
+// awkit run --issue N tells the commands it starts; a run without the flag
+// tells them there is no limit, whatever the shell had set.
+func TestSetRunScope(t *testing.T) {
+	t.Setenv(analyzer.ScopeEnv, "99")
+
+	setRunScope(42)
+	if got, err := analyzer.ScopeFromEnv(); err != nil || got != 42 {
+		t.Errorf("after setRunScope(42): the limit is %d, %v", got, err)
+	}
+
+	setRunScope(0)
+	if got, err := analyzer.ScopeFromEnv(); err != nil || got != 0 {
+		t.Errorf("after setRunScope(0): the limit is %d, %v; want none", got, err)
+	}
+}

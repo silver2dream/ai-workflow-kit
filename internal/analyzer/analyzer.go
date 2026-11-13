@@ -25,6 +25,7 @@ type Analyzer struct {
 	Config    *Config
 	GHClient  GitHubClientInterface
 	GHTimeout time.Duration
+	only      int        // the one issue the run is limited to, 0 for every ticket (see LimitTo)
 	mu        sync.Mutex // protects loop counter updates
 }
 

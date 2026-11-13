@@ -192,8 +192,12 @@ func (a *Analyzer) falseCompletion(ctx context.Context, lookup *ticketLookup) (r
 		if err != nil {
 			return nil, err
 		}
-		if !landed {
-			return a.redoFalseCompletion(ctx, issue)
+		if landed {
+			continue
+		}
+		// A limited run leaves an issue outside it alone: look further.
+		if redo, err := a.redoFalseCompletion(ctx, issue); redo != nil || err != nil {
+			return redo, err
 		}
 	}
 	return nil, nil
@@ -202,7 +206,13 @@ func (a *Analyzer) falseCompletion(ctx context.Context, lookup *ticketLookup) (r
 // redoFalseCompletion reopens an issue that was closed without its work
 // landing and returns the decision to dispatch it. An issue that cannot be
 // reopened is an error: dispatching a closed issue fails, again and again.
+// A run limited to another ticket leaves the issue as it is, and decides
+// nothing: whatever depends on it waits.
 func (a *Analyzer) redoFalseCompletion(ctx context.Context, issue int) (*Decision, error) {
+	if a.outOfScope(issue) {
+		fmt.Fprintf(os.Stderr, "[analyzer] issue #%d is closed but has no merged pull request; this run is limited to #%d and leaves it as it is\n", issue, a.only)
+		return nil, nil
+	}
 	fmt.Fprintf(os.Stderr, "[analyzer] false completion: issue #%d is closed but has no merged pull request; reopening and dispatching it again\n", issue)
 	if err := a.GHClient.ReopenIssue(ctx, issue); err != nil {
 		return nil, fmt.Errorf("issue #%d was closed without its work landing, and could not be reopened: %w", issue, err)

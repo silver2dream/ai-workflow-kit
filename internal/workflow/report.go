@@ -69,7 +69,7 @@ func GenerateReport(reason string, stats *WorkflowStats, sessionID string) *Repo
 
 	if stats.PRReady > 0 {
 		sb.WriteString("### PRs Ready for Review\n\n")
-		sb.WriteString(fmt.Sprintf("There are **%d** PRs ready for review. Run `awkit kickoff` to continue processing.\n\n", stats.PRReady))
+		sb.WriteString(fmt.Sprintf("There are **%d** PRs ready for review. Run `awkit run` to continue processing.\n\n", stats.PRReady))
 	}
 
 	return &Report{
@@ -84,7 +84,7 @@ func formatExitReasonDetails(reason string) string {
 	case "all_tasks_complete":
 		return "✓ **All tasks completed successfully!**\n\nNo further action required.\n"
 	case "user_stopped":
-		return "⏸ **Workflow was stopped by user.**\n\nTo resume:\n1. Remove stop marker: `rm .ai/state/STOP`\n2. Run: `awkit kickoff`\n"
+		return "⏸ **Workflow was stopped by user.**\n\nTo resume:\n1. Remove stop marker: `rm .ai/state/STOP`\n2. Run: `awkit run`\n"
 	case "max_loop_reached":
 		return "⚠ **Workflow stopped: maximum loop count reached (1000).**\n\nThis may indicate an infinite loop or stuck state. Please investigate.\n"
 	case "max_consecutive_failures":
@@ -98,21 +98,21 @@ func formatExitReasonDetails(reason string) string {
 	case "escalation_triggered":
 		return "⚠ **Workflow stopped: escalation triggered.**\n\nHuman intervention required.\n"
 	case "interrupted":
-		return "⏸ **Workflow was interrupted.**\n\nRun `awkit kickoff` to resume.\n"
+		return "⏸ **Workflow was interrupted.**\n\nRun `awkit run` to resume.\n"
 	case "worker_failed":
-		return "⚠ **Workflow stopped: a Worker failed and exhausted its retries.**\n\nReview the failed issue, fix the cause, then run `awkit kickoff`.\n"
+		return "⚠ **Workflow stopped: a Worker failed and exhausted its retries.**\n\nReview the failed issue, fix the cause, then run `awkit run`.\n"
 	case "needs_human_review", "review_max_retries":
-		return "⚠ **Workflow stopped: an issue needs human review.**\n\nResolve the flagged issue, then run `awkit kickoff`.\n"
+		return "⚠ **Workflow stopped: an issue needs human review.**\n\nResolve the flagged issue, then run `awkit run`.\n"
 	case "no_actionable_tasks":
-		return "⏸ **Workflow stopped: no actionable tasks.**\n\nNothing is ready to work on. Check the open issues, then run `awkit kickoff`.\n"
+		return "⏸ **Workflow stopped: no actionable tasks.**\n\nNothing is ready to work on. Check the open issues, then run `awkit run`.\n"
 	case "invalid_ticket":
-		return "⚠ **Workflow stopped: a ticket cannot be read.**\n\nThe issue has a comment that says what is wrong with its `yaml awk-ticket` block. Correct the block, remove the `needs-human-review` label, then run `awkit kickoff`.\n"
+		return "⚠ **Workflow stopped: a ticket cannot be used.**\n\nThe issue has a comment that says what is wrong with its `yaml awk-ticket` block. Correct the block, remove the `needs-human-review` label, then run `awkit run`.\n"
 	case "blocked_by_dependencies":
-		return "⏸ **Workflow stopped: every pending ticket waits for another issue.**\n\nA ticket starts once every issue in its `depends_on` is closed as completed. What the tickets wait for is still open and not pending, was closed as not planned, or the tickets wait for each other. Reopen or finish that issue, or correct `depends_on`, then run `awkit kickoff`.\n"
+		return "⏸ **Workflow stopped: every pending ticket waits for another issue.**\n\nA ticket starts once every issue in its `depends_on` is closed as completed. What the tickets wait for is still open and not pending, was closed as not planned, or the tickets wait for each other. Reopen or finish that issue, or correct `depends_on`, then run `awkit run`.\n"
 	case "config_not_found":
 		return "✗ **Workflow stopped: workflow config not found.**\n\nCheck `.ai/config/workflow.yaml`, or run `awkit doctor`.\n"
 	case "loop_count_error", "github_api_error":
-		return "✗ **Workflow stopped: the analyzer could not read its state.**\n\nRun `awkit doctor` and check GitHub CLI access, then run `awkit kickoff`.\n"
+		return "✗ **Workflow stopped: the analyzer could not read its state.**\n\nRun `awkit doctor` and check GitHub CLI access, then run `awkit run`.\n"
 	default:
 		return fmt.Sprintf("? **Workflow stopped for reason: %s**\n\nPlease check logs for details.\n", reason)
 	}

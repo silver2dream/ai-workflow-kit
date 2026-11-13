@@ -11,5 +11,5 @@ import "embed"
 // repository are AWK's own design documents; copies that older releases
 // installed are removed via internal/install/deprecated.txt.
 //
-//go:embed .ai/config/* .ai/rules/_kit/*.md .ai/rules/_examples/*.md .ai/skills/principal-workflow/*.md .ai/skills/principal-workflow/*/*.md .ai/skills/post-mortem/*.md .ai/skills/post-mortem/*/*.md .ai/skills/release-checklist/*.md .ai/skills/release-checklist/*/*.md .ai/templates/*.example .claude/agents/*.md
+//go:embed .ai/config/* .ai/rules/_kit/*.md .ai/rules/_examples/*.md .ai/skills/principal-workflow/*.md .ai/skills/principal-workflow/*/*.md .ai/skills/post-mortem/*.md .ai/skills/post-mortem/*/*.md .ai/skills/release-checklist/*.md .ai/skills/release-checklist/*/*.md .claude/agents/*.md
 var KitFS embed.FS

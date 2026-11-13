@@ -1,4 +1,5 @@
-// Package kickoff provides the implementation for the awkit kickoff command.
+// Package kickoff implements `awkit run`, the command that starts the workflow
+// (it was called `awkit kickoff`, a name that still works).
 // It handles PTY execution of Claude CLI, Issue Monitor for Worker progress,
 // and various UX improvements for the AI workflow.
 package kickoff

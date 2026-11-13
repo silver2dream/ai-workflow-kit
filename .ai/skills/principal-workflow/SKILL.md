@@ -1,6 +1,6 @@
 ---
 name: principal-workflow
-description: Run the AWK principal workflow (awkit kickoff, principal loop, dispatch worker, check results, review/merge PR). Triggers: awkit kickoff, review pr, dispatch worker, autonomous workflow, create task.
+description: Run the AWK principal workflow (awkit run, principal loop, dispatch worker, check results, review/merge PR). Triggers: awkit run, review pr, dispatch worker, autonomous workflow, create task.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -10,7 +10,7 @@ AWK 自動化工作流的主控 Skill。
 
 ## 前提
 
-Preflight 已由 `awkit kickoff` 完成，Session 已初始化。
+Preflight 已由 `awkit run` 完成，Session 已初始化。
 
 ## 啟動
 

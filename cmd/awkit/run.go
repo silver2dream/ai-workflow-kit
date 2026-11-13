@@ -22,30 +22,40 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
-func usageKickoff() {
-	fmt.Fprint(os.Stderr, `Start the AI workflow with PTY and progress monitoring
+func usageRun() {
+	fmt.Fprint(os.Stderr, `Start the workflow: work through the open tickets
+
+A ticket is an open issue with the task label. The run takes them in the order
+of their numbers, each one once the issues it depends on are done: a Worker
+writes the change, the review checks it, and what passes is merged. It stops
+when no ticket is left, or when something needs a person.
 
 Usage:
-  awkit kickoff [options]
+  awkit run [options]
 
 Options:
+  --issue N     Work on ticket N only, then stop. No other issue is touched,
+                not even one that N waits for
   --dry-run     Only perform pre-flight checks without starting the workflow
   --background  Run the workflow in background mode (output to log file)
   --force       Auto-delete STOP marker without asking
 
 Examples:
-  awkit kickoff
-  awkit kickoff --dry-run
-  awkit kickoff --background
-  awkit kickoff --force
+  awkit run
+  awkit run --issue 42
+  awkit run --dry-run
+  awkit run --background
+
+"awkit kickoff" is the former name of this command and still works.
 `)
 }
 
-func cmdKickoff(args []string) int {
-	fs := flag.NewFlagSet("kickoff", flag.ContinueOnError)
+func cmdRun(args []string) int {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.Usage = usageKickoff
+	fs.Usage = usageRun
 
+	issue := fs.Int("issue", 0, "")
 	dryRun := fs.Bool("dry-run", false, "")
 	background := fs.Bool("background", false, "")
 	force := fs.Bool("force", false, "")
@@ -57,8 +67,12 @@ func cmdKickoff(args []string) int {
 	}
 
 	if *showHelp || *showHelpShort {
-		usageKickoff()
+		usageRun()
 		return 0
+	}
+	if *issue < 0 {
+		errorf("--issue takes an issue number, got %d\n", *issue)
+		return 2
 	}
 
 	// Paths
@@ -69,7 +83,7 @@ func cmdKickoff(args []string) int {
 	output := kickoff.NewOutputFormatter(os.Stdout)
 
 	fmt.Println("")
-	fmt.Println("AWK Kickoff")
+	fmt.Println("AWK Run")
 	fmt.Println("")
 
 	// Pre-flight checks
@@ -95,11 +109,25 @@ func cmdKickoff(args []string) int {
 		return 1
 	}
 
+	// A run for one ticket: that issue must be a ticket the run can work on.
+	if *issue > 0 {
+		title, err := checkRunTicket(context.Background(), configPath, *issue)
+		if err != nil {
+			output.Error(fmt.Sprintf("Ticket: %v", err))
+			fmt.Println("")
+			output.Error("Pre-flight check failed: the run was asked for one ticket and cannot work on it")
+			return 1
+		}
+		output.Success(fmt.Sprintf("Ticket: #%d %s (the run is limited to it)", *issue, title))
+	}
+
 	if *dryRun {
 		fmt.Println("")
 		output.Success("Dry run complete. All pre-flight checks passed.")
 		return 0
 	}
+
+	setRunScope(*issue)
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		output.Error(fmt.Sprintf("Failed to create log directory: %v", err))
@@ -206,7 +234,7 @@ func cmdKickoff(args []string) int {
 	// Use stream-json format for real-time streaming output
 	// Use principal-workflow Skill for deterministic workflow execution
 	//
-	// The Principal runs fully autonomously: `awkit kickoff` has no human to
+	// The Principal runs fully autonomously: `awkit run` has no human to
 	// answer permission prompts. It therefore MUST run with a non-interactive
 	// permission mode, or the first tool call requiring approval hangs forever.
 	// Default to `auto` (Claude Code v2.1.83+): a background classifier
@@ -222,11 +250,15 @@ func cmdKickoff(args []string) int {
 		"--output-format", "stream-json",
 		"--verbose",
 		"--permission-mode", permissionMode,
-		"-p", principalPrompt,
+		"-p", principalPromptFor(*issue),
 	}
 
 	fmt.Println("")
-	output.Info(fmt.Sprintf("Starting workflow for project: %s", config.Project.Name))
+	if *issue > 0 {
+		output.Info(fmt.Sprintf("Starting workflow for project: %s (ticket #%d only)", config.Project.Name, *issue))
+	} else {
+		output.Info(fmt.Sprintf("Starting workflow for project: %s", config.Project.Name))
+	}
 	fmt.Println("")
 
 	// Multi-session loop: restart Principal when pending work remains.
@@ -300,6 +332,7 @@ func cmdKickoff(args []string) int {
 		next, err := runAnalyzeNext(context.Background(), analyzeNextArgs{
 			Timeout:            30 * time.Second,
 			PrincipalSessionID: principalSessionID,
+			Issue:              *issue,
 		})
 		if err != nil {
 			// Write loop_decision event for error case
@@ -522,13 +555,17 @@ type analyzeNextVars struct {
 type analyzeNextArgs struct {
 	Timeout            time.Duration
 	PrincipalSessionID string
+	Issue              int // the one ticket the run is limited to, or 0
 }
 
 func runAnalyzeNext(ctx context.Context, args analyzeNextArgs) (analyzeNextVars, error) {
 	ctx, cancel := context.WithTimeout(ctx, args.Timeout)
 	defer cancel()
 
-	a := analyzer.New(".", nil)
+	a, err := analyzerFor(".", args.Issue)
+	if err != nil {
+		return analyzeNextVars{}, fmt.Errorf("analyze-next failed: %w", err)
+	}
 	decision, err := a.Decide(ctx)
 	if err != nil {
 		return analyzeNextVars{}, fmt.Errorf("analyze-next failed: %w", err)
@@ -773,11 +810,61 @@ func runClaudeSession(args runClaudeSessionArgs) (int, error) {
 	return exitCode, nil
 }
 
-// principalPrompt starts every Principal session. kickoff runs unattended, and
+// principalPrompt starts every Principal session. A run is unattended, and
 // the prompt is the only place the session can learn that: a step that needs
 // a human decision has to stop the workflow, because a question would go
 // unanswered and the session would simply be restarted.
 const principalPrompt = "Run the AWK principal workflow. This run is unattended: nobody can answer questions, so when a step needs a human decision, stop the workflow with `awkit stop-workflow` as the skill describes instead of asking."
+
+// principalPromptFor is the prompt of a run, which may be limited to one
+// ticket. The limit itself is not the Principal's to keep: `awkit analyze-next`
+// applies it. The prompt only says what to expect.
+func principalPromptFor(issue int) string {
+	if issue <= 0 {
+		return principalPrompt
+	}
+	return principalPrompt + fmt.Sprintf(" This run is limited to issue #%d: `awkit analyze-next` reports work for that ticket only, and the run is over when that ticket is done or needs a person.", issue)
+}
+
+// setRunScope passes the limit of a run on to every awkit command the run
+// starts, the Principal's included: they read it from the environment. A run
+// without --issue has no limit, whatever the shell that started it had set.
+func setRunScope(issue int) {
+	if issue > 0 {
+		_ = os.Setenv(analyzer.ScopeEnv, strconv.Itoa(issue))
+		return
+	}
+	_ = os.Unsetenv(analyzer.ScopeEnv)
+}
+
+// checkRunTicket checks that an issue is a ticket a run can be limited to, and
+// returns its title.
+func checkRunTicket(ctx context.Context, configPath string, issue int) (string, error) {
+	taskLabel := analyzer.DefaultLabels().Task
+	if cfg, err := analyzer.LoadConfig(configPath); err == nil && cfg.GitHub.Labels.Task != "" {
+		taskLabel = cfg.GitHub.Labels.Task
+	}
+	info, err := worker.NewGitHubClient(30*time.Second).GetIssue(ctx, issue)
+	if err != nil {
+		return "", fmt.Errorf("issue #%d could not be read: %w", issue, err)
+	}
+	if problem := runTicketProblem(info, taskLabel); problem != "" {
+		return "", fmt.Errorf("%s", problem)
+	}
+	return info.Title, nil
+}
+
+// runTicketProblem says why a run cannot be limited to an issue, or nothing
+// when it can.
+func runTicketProblem(info *worker.IssueInfo, taskLabel string) string {
+	switch {
+	case !info.IsOpen():
+		return fmt.Sprintf("issue #%d is closed; reopen it to have it worked on", info.Number)
+	case !info.HasLabel(taskLabel):
+		return fmt.Sprintf("issue #%d is not a ticket: it does not carry the `%s` label", info.Number, taskLabel)
+	}
+	return ""
+}
 
 // stopMarkerReason returns the reason `awkit stop-workflow` recorded in the
 // STOP marker, or "" when the marker has none (a marker created by hand).

@@ -7,7 +7,7 @@
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
-> An AI-assisted development workflow kit that drives **Spec → Implement → PR → Merge** with a **self-improving** review loop. A **Principal** (Claude Code) orchestrates a **Worker** (Codex or Claude Code), and quality is enforced by deterministic Go gates — not by trusting LLM prose. Compatible with **Kiro-style specs**.
+> An AI-assisted development workflow kit that drives **Ticket → Implement → Review → Merge** with a **self-improving** review loop. The work is a queue of GitHub issues; a **Principal** (Claude Code) orchestrates a **Worker** (Codex or Claude Code), and quality is enforced by deterministic Go gates — not by trusting LLM prose.
 
 [![Download](https://img.shields.io/badge/Download-Latest%20Release-brightgreen?style=for-the-badge&logo=github)](https://github.com/silver2dream/ai-workflow-kit/releases/latest)
 
@@ -62,9 +62,10 @@ AWK treats its agents as first-class users of a real interface, not prose-in / r
 ## ✨ Features
 
 ### Core Workflow
-- **Spec-driven**: reads `.ai/specs/<name>/tasks.md` (Kiro-compatible) to decide what to do next
+- **Issues are the work**: a ticket is a GitHub issue with the task label and a small `yaml awk-ticket` block that names its repo and the tickets it waits for. No spec files, no task lists to keep in sync
+- **In order, by dependency**: tickets run in the order of their numbers, each once what it depends on has landed; `awkit run --issue N` does one ticket and stops
 - **GitHub as state machine**: uses issues/PRs + labels to track progress
-- **Dispatch + review loop**: dispatches implementation to Worker, then reviews/merges or creates fix issues
+- **Dispatch + review loop**: dispatches the implementation to a Worker, reviews the PR, then merges it or sends the Worker back with what the review found
 - **Worker backend selection**: `codex` (default) or `claude-code` via `worker.backend`
 
 ### Review Quality
@@ -79,7 +80,6 @@ AWK treats its agents as first-class users of a real interface, not prose-in / r
 - **Promotable to hard gates**: `awkit lessons promote` opens a human-gated issue to harden a proven lesson into a rule/audit check
 
 ### Context Grounding
-- **Design-doc injection**: relevant `design.md` context is added to the Worker prompt
 - **Knowledge-graph injection**: when `.understand-anything/knowledge-graph.json` exists, a ticket-relevant slice of the codebase map (files + dependents) is injected (`worker.knowledge_graph`)
 
 ### Kit Quality & Ops
@@ -96,10 +96,9 @@ AWK treats its agents as first-class users of a real interface, not prose-in / r
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│  You ──► awkit kickoff ──► Claude Code (Principal)            │
+│  You ──► awkit run ──► Claude Code (Principal)                │
 │                              │                               │
-│                              ├─► read specs/tasks.md          │
-│                              ├─► create GitHub Issue          │
+│                              ├─► pick the next ticket         │
 │                              ├─► dispatch to Codex (Worker)   │
 │                              ├─► review PR                    │
 │                              ├─► merge or reject              │
@@ -135,11 +134,13 @@ More details: `docs/ai-workflow-architecture.md`.
 
 ```
 .
-├── .ai/                         # kit (config/templates/rules/specs)
+├── .ai/                         # the kit
 │   ├── config/workflow.yaml     # main config
-│   ├── templates/               # generators (CLAUDE/AGENTS/CI)
-│   ├── rules/                   # architecture + git workflow rules
-│   └── specs/                   # Kiro-style specs
+│   ├── rules/                   # git workflow rules + optional rule packs
+│   ├── skills/                  # what the Principal follows: the loop, the ticket format
+│   └── state/, results/         # runtime state (gitignored)
+├── .claude/                     # agents, rules and skills for Claude Code (generated)
+├── CLAUDE.md, AGENTS.md         # instructions for the Principal and the Worker (generated)
 └── .github/workflows/           # CI, one workflow per repo, generated from the config
 ```
 
@@ -230,18 +231,40 @@ awkit init --preset godot-go --force
 awkit generate
 ```
 
-### 2) (Optional) Run the full workflow
+### 2) Create tickets and run the workflow
+
+The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block in its body.
+
+````markdown
+## Summary
+Add a health endpoint.
+
+## Scope
+- GET /healthz in the backend
+
+## Acceptance Criteria
+- [ ] GET /healthz answers 200 with the build version
+
+## Testing Requirements
+- A unit test covers the handler
+
+```yaml awk-ticket
+schema: 1
+repo: backend          # a repo of .ai/config/workflow.yaml, or root
+depends_on: [12]       # optional: issues that must be done first
+```
+````
 
 ```bash
 gh auth login
 
-# Using awkit CLI (recommended)
-awkit kickoff --dry-run    # Preview what would happen
-awkit kickoff              # Start the workflow
-awkit validate             # Validate config only
-
-# Legacy bash scripts have been removed; use awkit commands above
+awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
+awkit run --dry-run    # pre-flight checks only
+awkit run              # work through every open ticket
+awkit run --issue 42   # or one ticket only
 ```
+
+The run stops when no ticket is left, or when something needs a person: a ticket whose block cannot be used, a Worker that gave up, a ticket that waits for an issue that will not be done. `awkit status` says where things stand.
 
 Stop:
 
@@ -282,18 +305,20 @@ repos:
       test: "go test ./..."
 ```
 
-### Specs
+### Tickets
 
-Spec folder structure (Kiro compatible):
+A ticket's `yaml awk-ticket` block is read strictly. An unknown field, or a repo the config does not have, is refused: by `awkit create-task` before the issue exists, by the workflow with a comment on the issue otherwise.
 
-```
-.ai/specs/<feature-name>/
-├── requirements.md   # optional
-├── design.md         # optional
-└── tasks.md          # required
-```
+| Field | Meaning |
+|-------|---------|
+| `schema` | always `1` |
+| `repo` | a repo of `workflow.yaml`, or `root` |
+| `depends_on` | issues that must be done before this ticket starts |
+| `severity` | `P0` to `P3` (optional) |
+| `release` | `true` sends the PR to the release branch (root repo only) |
+| `allow_script_changes`, `allow_parent_changes`, `allow_secrets` | safety flags; off unless the ticket sets them |
 
-To enable a spec, add its folder name to `specs.active` in `.ai/config/workflow.yaml`.
+Full description: `.ai/skills/principal-workflow/tasks/create-task.md`.
 
 ### Config sections
 
@@ -303,7 +328,7 @@ To enable a spec, add its folder name to `specs.active` in `.ai/config/workflow.
 |---------|---------|
 | `project` / `repos` | Repo layout, types, per-repo `verify` commands |
 | `git` | Integration/release branches, commit format, PR template |
-| `specs` / `tasks` / `audit` | Spec sources, task format, audit checks |
+| `audit` | Audit checks |
 | `github` | Issue/PR labels, repo override |
 | `rules` / `agents` | Enabled kit/custom rules and subagents |
 | `timeouts` / `escalation` | Operation timeouts, retry/failure limits, PR-size caps |
@@ -349,27 +374,21 @@ lessons:
 
 This repository's own CI initializes such a project on every push and runs its generated workflows' commands, so the skeleton, the preset and the CI generator cannot drift apart.
 
-- Spec example: `.ai/specs/example/`
 - Guide: `docs/getting-started.md`
 
 ---
 
 ## 🔁 CI
 
-Root CI workflow: `.github/workflows/ci.yml`
-
 **For user projects:**
-- `awkit init` automatically creates a CI workflow for your project
-- `awkit upgrade` automatically migrates deprecated CI configurations (removes old `awk` job)
+- `awkit init` writes a CI workflow for every repo that has build or test commands, from the commands in `workflow.yaml`
+- `awkit upgrade` and `awkit generate` keep those workflows in step with the config. A workflow whose first-line comment you delete is yours, and awkit leaves it alone
 
 **For this repo (awkit itself):**
-This repo ships a hand-maintained CI example. `awkit generate` does **not** modify workflows unless you pass `--generate-ci`.
-
-It runs four jobs:
+`.github/workflows/ci.yml` is written by hand, so `awkit generate` does not touch it. It runs three jobs:
 - `awkit_cli` (ubuntu): `go vet`, `go test -race` with a 60% coverage threshold gate, and AWK evaluation (`awkit evaluate --offline` and `--offline --strict`)
 - `awkit_cli_windows` (**windows-latest**): the full `go test ./...` suite on Windows, guarding native path/ConPTY/process behavior
-- `backend` (ubuntu): `go test -race ./...` in `backend/`
-- `frontend` (ubuntu): `frontend/Packages/manifest.json` JSON validation + folder checks
+- `skeleton` (ubuntu): initializes a `godot-go` project with `--scaffold`, then builds and tests it with the commands of the workflows awkit generated for it
 
 ---
 
@@ -418,7 +437,7 @@ See [Contributing Guide](docs/developer/contributing.md) for:
 
 Quick reference:
 - Branch model and commit format: `.ai/rules/_kit/git-workflow.md`
-- PR base should target `feat/example` by default.
+- PRs target `develop`; `main` is for releases.
 
 ---
 
