@@ -79,6 +79,10 @@ func (o *MultiReviewOrchestrator) RunAll(diff string) []ReviewResult {
 	return results
 }
 
+// consensusHeading opens the consensus section that is appended to the
+// primary review body.
+const consensusHeading = "## Multi-Model Review Consensus"
+
 // BuildConsensusReport merges all review results into a structured report
 // and computes the final consensus score.
 func (o *MultiReviewOrchestrator) BuildConsensusReport(results []ReviewResult) (finalScore int, mergedBody string) {
@@ -122,7 +126,7 @@ func (o *MultiReviewOrchestrator) BuildConsensusReport(results []ReviewResult) (
 
 	// Build merged body
 	var sb strings.Builder
-	sb.WriteString("## Multi-Model Review Consensus\n\n")
+	sb.WriteString(consensusHeading + "\n\n")
 	sb.WriteString(fmt.Sprintf("**Consensus Score: %d/10**\n\n", finalScore))
 
 	if hasErrors {

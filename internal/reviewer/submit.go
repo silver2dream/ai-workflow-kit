@@ -48,6 +48,11 @@ type SubmitReviewOptions struct {
 	// severity counts and criteria verifications come straight from it
 	// (no prose parsing), and ReviewBody carries its rendered markdown.
 	Structured *StructuredReview
+
+	// headSHA is the commit checked out in the worktree when the review
+	// started: the version this review judges. SubmitReview fills it in
+	// before anything can merge or remove the worktree.
+	headSHA string
 }
 
 // SubmitReviewResult holds the result of submitting a review
@@ -178,6 +183,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	if opts.WorktreePath == "" {
 		opts.WorktreePath = filepath.Join(opts.StateRoot, ".worktrees", fmt.Sprintf("issue-%d", opts.IssueNumber))
 	}
+	opts.headSHA = worktreeHeadFunc(opts.WorktreePath)
 
 	// Get test command and language if not provided
 	if opts.TestCommand == "" || opts.Language == "" {
@@ -358,15 +364,9 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: %v\n", err)
 			}
 
-			// Learning loop: record the approval and settle injected lessons.
-			_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
-				Timestamp: time.Now().UTC().Format(time.RFC3339),
-				IssueID:   opts.IssueNumber,
-				PRNumber:  opts.PRNumber,
-				Score:     opts.Score,
-				Outcome:   "approved",
-			})
-			settleAndDistill(opts, lessons.OutcomeMerged, "")
+			// Learning loop: record the approval, settle injected lessons,
+			// and distill the rejections this merge resolved.
+			closeLearningLoop(ctx, opts, learningOutcome{Outcome: lessons.OutcomeMerged})
 
 			return &SubmitReviewResult{Result: "merged"}, nil
 		}
@@ -398,17 +398,12 @@ PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHT
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 		}
 
-		// Record feedback for CI failure rejection (fire-and-forget)
-		_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
-			Timestamp:  time.Now().UTC().Format(time.RFC3339),
-			IssueID:    opts.IssueNumber,
-			PRNumber:   opts.PRNumber,
-			Score:      opts.Score,
+		// Learning loop: record the CI failure (fire-and-forget)
+		closeLearningLoop(ctx, opts, learningOutcome{
+			Outcome:    lessons.OutcomeChangesRequested,
 			Categories: []string{"ci-failure"},
-			Summary:    truncateSummary(ciReason, 500),
-			Paths:      prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout),
+			Findings:   ciReason,
 		})
-		settleAndDistill(opts, lessons.OutcomeChangesRequested, ciReason)
 
 		return &SubmitReviewResult{Result: "changes_requested", Reason: ciReason}, nil
 	}
@@ -431,11 +426,11 @@ PR: #%d`, opts.Score, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != n
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 
-	// Record feedback for score-based rejection (fire-and-forget)
-	entry := BuildFeedbackEntry(opts.IssueNumber, opts.PRNumber, opts.Score, opts.ReviewBody)
-	entry.Paths = prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout)
-	_ = RecordFeedback(opts.StateRoot, entry)
-	settleAndDistill(opts, lessons.OutcomeChangesRequested, opts.ReviewBody)
+	// Learning loop: record the score-based rejection (fire-and-forget)
+	closeLearningLoop(ctx, opts, learningOutcome{
+		Outcome:  lessons.OutcomeChangesRequested,
+		Findings: rejectionFindings(opts),
+	})
 
 	return &SubmitReviewResult{Result: "changes_requested"}, nil
 }
@@ -457,16 +452,15 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 	case 4:
 		verifyCategory = "severity-consistency"
 	}
-	_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		IssueID:    opts.IssueNumber,
-		PRNumber:   opts.PRNumber,
-		Score:      opts.Score,
+	findings := err.Message
+	if len(err.Details) > 0 {
+		findings += "\n- " + strings.Join(err.Details, "\n- ")
+	}
+	closeLearningLoop(ctx, opts, learningOutcome{
+		Outcome:    lessons.OutcomeReviewBlocked,
 		Categories: []string{verifyCategory},
-		Summary:    truncateSummary(err.Message, 500),
-		Paths:      prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout),
+		Findings:   findings,
 	})
-	settleAndDistill(opts, lessons.OutcomeReviewBlocked, err.Message)
 
 	var details string
 	if err.Details != nil {
@@ -835,64 +829,14 @@ func severityCheckEnabled(stateRoot string) bool {
 	return cfg.Review.SeverityCheckEnabled()
 }
 
-// prChangedPaths returns the PR's changed-file paths (best-effort, capped).
-func prChangedPaths(ctx context.Context, prNumber int, timeout time.Duration) []string {
-	diff, err := fetchPRDiffFunc(ctx, prNumber, timeout)
-	if err != nil {
-		return nil
-	}
-	return DiffPaths(diff)
-}
-
-// settleAndDistill closes the learning loop for a terminal review outcome:
-// lessons injected into this issue's run are settled (hit/miss), then — for
-// rejections — new feedback is distilled into lessons. Both steps are
-// best-effort and never affect the review verdict.
-func settleAndDistill(opts SubmitReviewOptions, outcome, rejectionText string) {
-	if err := lessons.Settle(opts.StateRoot, opts.IssueNumber, outcome, rejectionText); err != nil {
-		fmt.Fprintf(os.Stderr, "[REVIEW] warning: lesson settlement failed: %v\n", err)
-	}
-	if outcome == lessons.OutcomeMerged {
-		return // successes feed settlement only; pitfalls come from failures
-	}
-
-	cfg, err := analyzer.LoadConfig(filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml"))
-	if err != nil || !cfg.Lessons.IsEnabled() {
-		return
-	}
-	timeout := 60 * time.Second
-	if cfg.Lessons.Distiller.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.Lessons.Distiller.TimeoutSeconds) * time.Second
-	}
-	report, err := lessons.Distill(context.Background(), opts.StateRoot, lessons.DistillOptions{
-		Model:      cfg.Lessons.Distiller.Model,
-		Timeout:    timeout,
-		MaxActive:  cfg.Lessons.MaxActive,
-		MaxEntries: 3,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[REVIEW] warning: lesson distillation failed: %v\n", err)
-		return
-	}
-	if report.Processed > 0 {
-		fmt.Printf("[REVIEW] Lessons: %d distilled (%d new, %d upvoted, %d skipped)\n",
-			report.Processed, len(report.Created), len(report.Matched), report.Skipped)
-	}
-}
-
 // handleJiTTestBlock handles JiT test failure in block mode.
 func handleJiTTestBlock(ctx context.Context, opts SubmitReviewOptions, sessionID string, result *jittest.Result) (*SubmitReviewResult, error) {
 	// Record feedback for re-dispatch
-	_ = RecordFeedback(opts.StateRoot, FeedbackEntry{
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		IssueID:    opts.IssueNumber,
-		PRNumber:   opts.PRNumber,
-		Score:      opts.Score,
+	closeLearningLoop(ctx, opts, learningOutcome{
+		Outcome:    lessons.OutcomeChangesRequested,
 		Categories: []string{"jittest"},
-		Summary:    truncateSummary(result.FormatFeedback(), 500),
-		Paths:      prChangedPaths(ctx, opts.PRNumber, opts.GHTimeout),
+		Findings:   result.FormatFeedback(),
 	})
-	settleAndDistill(opts, lessons.OutcomeChangesRequested, result.FormatFeedback())
 
 	// Post comment on issue
 	comment := fmt.Sprintf("## AWK Review blocked (JiT Test)\n\nJiT tests failed with block policy.\n\nPR: #%d\n\n%s\n\nMarked review-failed. Worker will be re-dispatched.",

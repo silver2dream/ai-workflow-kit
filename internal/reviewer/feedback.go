@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // FeedbackEntry represents a single review feedback record.
@@ -24,9 +26,18 @@ type FeedbackEntry struct {
 	// lessons can carry a scope.
 	Paths []string `json:"paths,omitempty"`
 	// Outcome distinguishes approvals ("approved") from rejections (empty
-	// or the rejection kind). Approved entries feed settlement denominators
-	// and are never distilled into pitfalls.
+	// or the rejection kind). An approval closes the case its issue's
+	// earlier rejections opened; the learning loop distills the two together.
 	Outcome string `json:"outcome,omitempty"`
+	// Findings is the longer form of Summary, written when the summary had
+	// to be cut.
+	Findings string `json:"findings,omitempty"`
+	// HeadSHA is the commit this review judged. The diff between a rejected
+	// and an approved HeadSHA is what the Worker changed to get approved.
+	HeadSHA string `json:"head_sha,omitempty"`
+	// InjectedLessons are the lessons that were in the Worker's prompt for
+	// the attempt a rejection judged.
+	InjectedLessons []string `json:"injected_lessons,omitempty"`
 }
 
 // feedbackFile is the JSONL file path relative to state root.
@@ -342,7 +353,8 @@ func FormatFeedbackForPrompt(entries []FeedbackEntry, maxChars int) string {
 	return b.String()
 }
 
-// truncateSummary truncates a string to maxLen, adding "..." if truncated.
+// truncateSummary truncates a string to maxLen bytes, adding "..." if
+// truncated. The cut never splits a multi-byte character.
 func truncateSummary(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -350,7 +362,11 @@ func truncateSummary(s string, maxLen int) string {
 	if maxLen <= 3 {
 		return s[:maxLen]
 	}
-	return s[:maxLen-3] + "..."
+	cut := maxLen - 3
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
 }
 
 // BuildFeedbackEntry creates a FeedbackEntry with common defaults.
@@ -368,25 +384,86 @@ func BuildFeedbackEntry(issueID, prNumber, score int, reviewBody string) Feedbac
 // maxFeedbackPaths caps how many changed-file paths a feedback entry keeps.
 const maxFeedbackPaths = 10
 
-// DiffPaths extracts changed-file paths from a unified diff ("+++ b/" lines),
-// capped at maxFeedbackPaths.
+// DiffPaths extracts changed-file paths from a unified diff, capped at
+// maxFeedbackPaths.
 func DiffPaths(diff string) []string {
+	paths := ChangedPaths(diff)
+	if len(paths) > maxFeedbackPaths {
+		paths = paths[:maxFeedbackPaths]
+	}
+	return paths
+}
+
+// ChangedPaths lists every file a git diff touches: added, modified,
+// deleted, renamed (both names) and binary files. Only file headers are
+// read, so diff content that happens to look like a header is not a path.
+func ChangedPaths(diff string) []string {
 	var paths []string
 	seen := make(map[string]bool)
-	for _, line := range strings.Split(diff, "\n") {
-		path, ok := strings.CutPrefix(line, "+++ b/")
-		if !ok || path == "/dev/null" {
-			continue
-		}
-		path = strings.TrimSpace(path)
-		if path == "" || seen[path] {
-			continue
+	add := func(path string) {
+		if path == "" || path == "/dev/null" || seen[path] {
+			return
 		}
 		seen[path] = true
 		paths = append(paths, path)
-		if len(paths) >= maxFeedbackPaths {
-			break
+	}
+
+	inHeader := true
+	for _, line := range strings.Split(diff, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if rest, ok := strings.CutPrefix(line, "diff --git "); ok {
+			inHeader = true
+			add(sameNameHeaderPath(rest))
+			continue
+		}
+		if strings.HasPrefix(line, "@@") {
+			inHeader = false
+			continue
+		}
+		if !inHeader {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(line, "+++ "); ok {
+			if path, ok := strings.CutPrefix(gitHeaderPath(rest), "b/"); ok {
+				add(path)
+			}
+		} else if rest, ok := strings.CutPrefix(line, "--- "); ok {
+			if path, ok := strings.CutPrefix(gitHeaderPath(rest), "a/"); ok {
+				add(path)
+			}
+		} else if rest, ok := strings.CutPrefix(line, "rename from "); ok {
+			add(gitHeaderPath(rest))
+		} else if rest, ok := strings.CutPrefix(line, "rename to "); ok {
+			add(gitHeaderPath(rest))
 		}
 	}
 	return paths
+}
+
+// sameNameHeaderPath reads the path from the rest of a "diff --git a/P b/P"
+// line. That line is the only header a binary or mode-only change has. When
+// the two names differ (a rename) it cannot be split reliably and "" is
+// returned; the rename lines carry the names instead.
+func sameNameHeaderPath(rest string) string {
+	n := len(rest) - len("a/ b/")
+	if n <= 0 || n%2 != 0 {
+		return ""
+	}
+	path := rest[len("a/") : len("a/")+n/2]
+	if rest != "a/"+path+" b/"+path {
+		return ""
+	}
+	return path
+}
+
+// gitHeaderPath cleans a path taken from a diff header: git appends a tab
+// to names with spaces and C-quotes names with special or non-ASCII bytes.
+func gitHeaderPath(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, `"`) {
+		if unquoted, err := strconv.Unquote(s); err == nil {
+			return unquoted
+		}
+	}
+	return s
 }
