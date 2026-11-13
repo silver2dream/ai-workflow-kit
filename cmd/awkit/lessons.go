@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 )
@@ -315,7 +316,7 @@ A check that runs by itself holds on every ticket and costs no prompt space. A r
 - [ ] audit.custom check in workflow.yaml (deterministic gate)
 - [ ] lifecycle hook (pre_dispatch / pre_review command)
 - [ ] escalation trigger (pause/approval pattern)
-- [ ] Rule file under .ai/rules/ (worker-facing constraint), when the lesson cannot be checked mechanically
+- [ ] Rule file under `+layout.RulesDir+`/ (worker-facing constraint), when the lesson cannot be checked mechanically
 
 ## Constraints
 - This promotion was proposed automatically by the learning loop; the enforcement change itself MUST be reviewed by a human before merge.

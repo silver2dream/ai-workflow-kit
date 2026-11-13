@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // Constants for loop safety
@@ -426,7 +427,7 @@ func (a *Analyzer) readConsecutiveFailures() int {
 // extractPRNumberForIssue extracts PR number from result file, issue body, or branch lookup
 func (a *Analyzer) extractPRNumberForIssue(issueNumber int, issueBody string) int {
 	// Try result file first (most reliable: has pr_url from worker)
-	resultFile := filepath.Join(a.StateRoot, ".ai", "results", "issue-"+strconv.Itoa(issueNumber)+".json")
+	resultFile := layout.Result(a.StateRoot, issueNumber)
 	if data, err := os.ReadFile(resultFile); err == nil {
 		var result struct {
 			PRURL    string `json:"pr_url"`

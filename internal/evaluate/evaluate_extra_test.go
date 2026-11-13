@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -74,7 +76,7 @@ func TestGateScore_FailCase(t *testing.T) {
 func TestCheckO5ConfigValidation_NoWorkflowYaml(t *testing.T) {
 	dir := t.TempDir()
 	// Create .ai/config but no workflow.yaml
-	os.MkdirAll(filepath.Join(dir, ".ai", "config"), 0755)
+	os.MkdirAll(filepath.Dir(layout.Config(dir)), 0755)
 
 	result := CheckO5ConfigValidation(dir)
 	if result.Status == "" {
@@ -98,7 +100,7 @@ func TestCheckO5ConfigValidation_MissingConfigDir(t *testing.T) {
 
 func TestEvaluator_RunOffline_HasAllGates(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".ai", "config"), 0755)
+	os.MkdirAll(filepath.Dir(layout.Config(dir)), 0755)
 
 	e := New(dir)
 	result := e.RunOffline()

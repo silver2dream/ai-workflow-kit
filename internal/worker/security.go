@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path"
 	"regexp"
 	"runtime"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
@@ -17,9 +19,9 @@ import (
 // so the runner rejects such a change unless the ticket allows it
 // (`allow_script_changes: true` in its awk-ticket block).
 var protectedPaths = []string{
-	".ai/config/",
-	".ai/rules/",
-	".ai/skills/",
+	path.Dir(layout.ConfigFile) + "/",
+	layout.RulesDir + "/",
+	layout.SkillsDir + "/",
 	".claude/agents/",
 }
 

@@ -4,24 +4,24 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func usageValidate() {
 	fmt.Fprint(os.Stderr, `Validate workflow configuration
 
-Checks .ai/config/workflow.yaml and, when the project has one, the roster of
-the planning council (.ai/roster.yaml).
+Checks `+layout.ConfigFile+` and, when the project has one, the roster of
+the planning council (`+layout.RosterFile+`).
 
 Usage:
   awkit validate [options]
 
 Options:
-  --config      Path to workflow.yaml (default: .ai/config/workflow.yaml)
+  --config      Path to workflow.yaml (default: `+layout.ConfigFile+`)
 
 Examples:
   awkit validate
@@ -77,7 +77,7 @@ func cmdValidate(args []string) int {
 
 	// Validate paths
 	// baseDir should be the project root (parent of .ai directory)
-	baseDir := filepath.Dir(filepath.Dir(filepath.Dir(*configPath))) // Go up from .ai/config/workflow.yaml
+	baseDir := layout.ProjectOf(*configPath)
 	if baseDir == "." || baseDir == "" {
 		baseDir, _ = os.Getwd()
 	}
@@ -95,7 +95,7 @@ func cmdValidate(args []string) int {
 
 	// The roster of the planning council, when the project has one: a roster
 	// that cannot hold a meeting is found here, not ten minutes into a plan.
-	rosterFile := filepath.Join(baseDir, filepath.FromSlash(council.RosterPath))
+	rosterFile := layout.Roster(baseDir)
 	if _, err := os.Stat(rosterFile); err == nil {
 		roster, err := council.LoadRoster(rosterFile)
 		if err != nil {

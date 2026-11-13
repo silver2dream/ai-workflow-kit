@@ -19,11 +19,12 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"gopkg.in/yaml.v3"
 )
 
 // RosterPath is where a project keeps its roster, relative to its root.
-const RosterPath = ".ai/roster.yaml"
+const RosterPath = layout.RosterFile
 
 // Roster says who sits at the table.
 type Roster struct {

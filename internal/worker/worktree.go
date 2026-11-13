@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
 
@@ -108,9 +109,9 @@ func SetupWorktree(ctx context.Context, opts WorktreeOptions) (*WorktreeInfo, er
 func ensureWorktreeDirs(stateRoot string) error {
 	dirs := []string{
 		filepath.Join(stateRoot, ".worktrees"),
-		filepath.Join(stateRoot, ".ai", "runs"),
-		filepath.Join(stateRoot, ".ai", "results"),
-		filepath.Join(stateRoot, ".ai", "exe-logs"),
+		layout.Runs(stateRoot),
+		layout.Results(stateRoot),
+		layout.Logs(stateRoot),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {

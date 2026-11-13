@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@ func TestCov_GetStartedAtTime(t *testing.T) {
 func TestCov_LoadResult_Extended(t *testing.T) {
 	t.Run("valid result", func(t *testing.T) {
 		dir := t.TempDir()
-		resultDir := filepath.Join(dir, ".ai", "results")
+		resultDir := layout.Results(dir)
 		os.MkdirAll(resultDir, 0700)
 
 		result := &IssueResult{
@@ -94,7 +96,7 @@ func TestCov_LoadResult_Extended(t *testing.T) {
 
 	t.Run("invalid json", func(t *testing.T) {
 		dir := t.TempDir()
-		resultDir := filepath.Join(dir, ".ai", "results")
+		resultDir := layout.Results(dir)
 		os.MkdirAll(resultDir, 0700)
 		os.WriteFile(filepath.Join(resultDir, "issue-1.json"), []byte("not json"), 0600)
 
@@ -161,7 +163,7 @@ func TestCov_ReadFailCount_Extended(t *testing.T) {
 
 	t.Run("valid count", func(t *testing.T) {
 		dir := t.TempDir()
-		runDir := filepath.Join(dir, ".ai", "runs", "issue-5")
+		runDir := layout.Run(dir, 5)
 		os.MkdirAll(runDir, 0755)
 		os.WriteFile(filepath.Join(runDir, "fail_count.txt"), []byte("3"), 0644)
 
@@ -173,7 +175,7 @@ func TestCov_ReadFailCount_Extended(t *testing.T) {
 
 	t.Run("invalid content returns 0", func(t *testing.T) {
 		dir := t.TempDir()
-		runDir := filepath.Join(dir, ".ai", "runs", "issue-5")
+		runDir := layout.Run(dir, 5)
 		os.MkdirAll(runDir, 0755)
 		os.WriteFile(filepath.Join(runDir, "fail_count.txt"), []byte("not-a-number"), 0644)
 
@@ -187,7 +189,7 @@ func TestCov_ReadFailCount_Extended(t *testing.T) {
 func TestCov_ResetFailCount_Extended(t *testing.T) {
 	t.Run("removes file", func(t *testing.T) {
 		dir := t.TempDir()
-		runDir := filepath.Join(dir, ".ai", "runs", "issue-5")
+		runDir := layout.Run(dir, 5)
 		os.MkdirAll(runDir, 0755)
 		failPath := filepath.Join(runDir, "fail_count.txt")
 		os.WriteFile(failPath, []byte("3"), 0644)

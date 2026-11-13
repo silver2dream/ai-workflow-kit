@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
@@ -134,7 +135,7 @@ func Approve(ctx context.Context, opts ApproveOptions) (*Approval, error) {
 		}
 
 		body := ticketBody(item, opts.ID, dependsOn)
-		bodyFile := filepath.Join(opts.Root, ".ai", "temp", fmt.Sprintf("plan-%s-%s.md", opts.ID, unsafeInName.ReplaceAllString(item.Key, "-")))
+		bodyFile := filepath.Join(layout.Temp(opts.Root), fmt.Sprintf("plan-%s-%s.md", opts.ID, unsafeInName.ReplaceAllString(item.Key, "-")))
 		if err := os.MkdirAll(filepath.Dir(bodyFile), 0o755); err != nil {
 			return approval, err
 		}

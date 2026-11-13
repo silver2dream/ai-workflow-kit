@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	status "github.com/silver2dream/ai-workflow-kit/internal/status"
 )
 
@@ -129,7 +130,7 @@ func cmdStatus(args []string) int {
 		if report.Artifacts.Result != nil {
 			printArtifactLine("result", status.Artifact{Path: report.Artifacts.Result.Path, Exists: report.Artifacts.Result.Exists})
 		} else {
-			printArtifactLine("result", status.Artifact{Path: fmt.Sprintf(".ai/results/issue-%d.json", report.Artifacts.IssueID), Exists: false})
+			printArtifactLine("result", status.Artifact{Path: fmt.Sprintf(layout.ResultsDir+"/issue-%d.json", report.Artifacts.IssueID), Exists: false})
 		}
 
 		if report.Artifacts.Trace != nil {

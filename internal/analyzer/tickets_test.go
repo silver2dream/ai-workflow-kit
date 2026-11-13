@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 var (
@@ -46,7 +48,7 @@ func recordWorkedOn(t *testing.T, stateRoot string, issue int) {
 // recordResult writes the result file a Worker leaves for an issue.
 func recordResult(t *testing.T, stateRoot string, issue int, content string) {
 	t.Helper()
-	path := filepath.Join(stateRoot, ".ai", "results", fmt.Sprintf("issue-%d.json", issue))
+	path := layout.Result(stateRoot, issue)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +404,7 @@ func TestDecide_TicketThatCannotBeUsed(t *testing.T) {
 		{"no repo", "```yaml awk-ticket\nschema: 1\n```\n", "repo is missing"},
 		{"depends on itself", ticketBody(dependsOn(3, 7)), "depends_on lists the ticket itself (#7)"},
 		{"depends on an issue that does not exist", ticketBody(dependsOn(3, 99)), "depends_on lists #99, and the repository has no such issue"},
-		{"a repo the config does not have", ticketBodyFor("web"), `repo "web" is not a repo of .ai/config/workflow.yaml (it has: root)`},
+		{"a repo the config does not have", ticketBodyFor("web"), `repo "web" is not a repo of ` + layout.ConfigFile + ` (it has: root)`},
 		{"block not closed", "```yaml awk-ticket\nschema: 1\nrepo: root\n", "is not closed"},
 	}
 	for _, tt := range tests {

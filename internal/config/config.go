@@ -15,16 +15,15 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
 // File is where a project keeps its configuration, relative to its root.
-const File = ".ai/config/workflow.yaml"
+const File = layout.ConfigFile
 
 // Path returns the configuration file of the project at root.
-func Path(root string) string {
-	return filepath.Join(root, filepath.FromSlash(File))
-}
+func Path(root string) string { return layout.Config(root) }
 
 // Config is the configuration of a project.
 type Config struct {

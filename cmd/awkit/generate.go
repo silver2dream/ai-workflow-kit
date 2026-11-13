@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func usageGenerate() {
@@ -17,7 +18,7 @@ Usage:
 Generates:
   - CLAUDE.md
   - AGENTS.md
-  - .ai/rules/_kit/git-workflow.md
+  - `+layout.KitRulesDir+`/git-workflow.md
   - .claude/settings.local.json
   - .claude/{rules,skills} (symlink or copy)
   - .github/workflows/: a CI workflow for every repo that has build or

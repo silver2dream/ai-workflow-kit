@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // The repository's own CLAUDE.md, AGENTS.md and git-workflow rule file are
@@ -15,7 +17,7 @@ import (
 func TestRepoInstructionFilesMatchGenerator(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 
-	config, err := loadConfig(filepath.Join(repoRoot, ".ai", "config", "workflow.yaml"))
+	config, err := loadConfig(layout.Config(repoRoot))
 	if err != nil {
 		t.Fatalf("load the kit's own workflow.yaml: %v", err)
 	}
@@ -27,7 +29,7 @@ func TestRepoInstructionFilesMatchGenerator(t *testing.T) {
 	}{
 		{"CLAUDE.md", generateClaudeMd},
 		{"AGENTS.md", generateAgentsMd},
-		{filepath.Join(".ai", "rules", "_kit", "git-workflow.md"), generateGitWorkflowMd},
+		{filepath.Join(layout.KitRules(""), "git-workflow.md"), generateGitWorkflowMd},
 	}
 
 	for _, f := range files {

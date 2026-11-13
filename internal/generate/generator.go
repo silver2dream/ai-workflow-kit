@@ -9,6 +9,7 @@ import (
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
 	projectconfig "github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // Backtick for use in templates
@@ -160,7 +161,7 @@ func Generate(opts Options) (*Result, error) {
 	// Collect files to generate
 	claudePath := filepath.Join(opts.StateRoot, "CLAUDE.md")
 	agentsPath := filepath.Join(opts.StateRoot, "AGENTS.md")
-	kitRulesDir := filepath.Join(opts.StateRoot, ".ai", "rules", "_kit")
+	kitRulesDir := layout.KitRules(opts.StateRoot)
 	gitWorkflowPath := filepath.Join(kitRulesDir, "git-workflow.md")
 	claudeDir := filepath.Join(opts.StateRoot, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.local.json")
@@ -302,27 +303,27 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 
 	for _, rule := range ctx.Rules.Kit {
 		if rule == "git-workflow" {
-			sb.WriteString(fmt.Sprintf("- %s.ai/rules/_kit/%s.md%s (commit format + PR base)\n", bt, rule, bt))
+			sb.WriteString(fmt.Sprintf("- %s"+layout.KitRulesDir+"/%s.md%s (commit format + PR base)\n", bt, rule, bt))
 		} else {
-			sb.WriteString(fmt.Sprintf("- %s.ai/rules/_kit/%s.md%s\n", bt, rule, bt))
+			sb.WriteString(fmt.Sprintf("- %s"+layout.KitRulesDir+"/%s.md%s\n", bt, rule, bt))
 		}
 	}
 
 	if len(ctx.Rules.Custom) > 0 {
 		sb.WriteString("\n### Project-Specific Rules (enabled)\n")
 		for _, rule := range ctx.Rules.Custom {
-			sb.WriteString(fmt.Sprintf("- %s.ai/rules/%s.md%s\n", bt, rule, bt))
+			sb.WriteString(fmt.Sprintf("- %s"+layout.RulesDir+"/%s.md%s\n", bt, rule, bt))
 		}
 	} else {
 		sb.WriteString("\n### Optional Example Rules (not enabled by default)\n")
-		sb.WriteString("If you want stricter, tech-specific rules, copy from " + bt + ".ai/rules/_examples/" + bt + " into " + bt + ".ai/rules/" + bt + ", then add them under " + bt + "rules.custom" + bt + " in " + bt + ".ai/config/workflow.yaml" + bt + ".\n")
+		sb.WriteString("If you want stricter, tech-specific rules, copy from " + bt + layout.RulesDir + "/_examples/" + bt + " into " + bt + layout.RulesDir + "/" + bt + ", then add them under " + bt + "rules.custom" + bt + " in " + bt + layout.ConfigFile + bt + ".\n")
 	}
 
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## Principal Workflow (MUST FOLLOW)\n\n")
 	sb.WriteString("When " + bt + "awkit run" + bt + " starts, use the **principal-workflow** Skill:\n\n")
-	sb.WriteString("1. **Read** " + bt + ".ai/skills/principal-workflow/SKILL.md" + bt + "\n")
-	sb.WriteString("2. **Read** " + bt + ".ai/skills/principal-workflow/phases/main-loop.md" + bt + "\n")
+	sb.WriteString("1. **Read** " + bt + layout.SkillsDir + "/principal-workflow/SKILL.md" + bt + "\n")
+	sb.WriteString("2. **Read** " + bt + layout.SkillsDir + "/principal-workflow/phases/main-loop.md" + bt + "\n")
 	sb.WriteString("3. Follow the main loop instructions\n\n")
 	sb.WriteString("The Skill handles:\n")
 	sb.WriteString("- Project audit (built into kickoff)\n")
@@ -333,10 +334,10 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("**DO NOT** manually implement the workflow steps. The Skill and " + bt + "awkit" + bt + " commands handle everything.\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## Context Management\n\n")
-	sb.WriteString("A workflow run lasts many loop iterations, and everything you read or write stays in your context for all of them. " + bt + "awkit" + bt + " commands are synchronous: " + bt + "awkit dispatch-worker" + bt + " returns only when the Worker has finished, and its output already carries the result. So while a command runs, wait for it: do not read " + bt + ".ai/exe-logs/" + bt + " or other logs to follow the Worker, do not poll its status, and do not narrate its progress. When the command returns, act on the " + bt + "WORKER_STATUS" + bt + " it printed, as " + bt + "phases/dispatch.md" + bt + " describes.\n\n")
+	sb.WriteString("A workflow run lasts many loop iterations, and everything you read or write stays in your context for all of them. " + bt + "awkit" + bt + " commands are synchronous: " + bt + "awkit dispatch-worker" + bt + " returns only when the Worker has finished, and its output already carries the result. So while a command runs, wait for it: do not read " + bt + layout.LogsDir + "/" + bt + " or other logs to follow the Worker, do not poll its status, and do not narrate its progress. When the command returns, act on the " + bt + "WORKER_STATUS" + bt + " it printed, as " + bt + "phases/dispatch.md" + bt + " describes.\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## REPO TYPE SUPPORT\n\n")
-	sb.WriteString("AWK supports three repository types configured in " + bt + ".ai/config/workflow.yaml" + bt + ":\n\n")
+	sb.WriteString("AWK supports three repository types configured in " + bt + layout.ConfigFile + bt + ":\n\n")
 	sb.WriteString("| Type | Description | Use Case |\n")
 	sb.WriteString("|------|-------------|----------|\n")
 	sb.WriteString("| " + bt + "root" + bt + " | Single repository | Standalone projects |\n")
@@ -361,15 +362,15 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("## File Locations\n\n")
 	sb.WriteString("| What | Where |\n")
 	sb.WriteString("|------|-------|\n")
-	sb.WriteString("| Config | " + bt + ".ai/config/workflow.yaml" + bt + " |\n")
-	sb.WriteString("| Skills | " + bt + ".ai/skills/" + bt + " |\n")
-	sb.WriteString("| Rules | " + bt + ".ai/rules/" + bt + " |\n")
-	sb.WriteString("| Results | " + bt + ".ai/results/" + bt + " |\n")
-	sb.WriteString("| Principal Log | " + bt + ".ai/exe-logs/principal.log" + bt + " |\n")
-	sb.WriteString("| Worker Logs | " + bt + ".ai/exe-logs/issue-{N}.worker.log" + bt + " |\n\n")
+	sb.WriteString("| Config | " + bt + layout.ConfigFile + bt + " |\n")
+	sb.WriteString("| Skills | " + bt + layout.SkillsDir + "/" + bt + " |\n")
+	sb.WriteString("| Rules | " + bt + layout.RulesDir + "/" + bt + " |\n")
+	sb.WriteString("| Results | " + bt + layout.ResultsDir + "/" + bt + " |\n")
+	sb.WriteString("| Principal Log | " + bt + layout.LogsDir + "/principal.log" + bt + " |\n")
+	sb.WriteString("| Worker Logs | " + bt + layout.LogsDir + "/issue-{N}.worker.log" + bt + " |\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## Ticket Format\n\n")
-	sb.WriteString("A ticket is a GitHub issue that carries the task label. The required sections and a template are in " + bt + ".ai/skills/principal-workflow/tasks/create-task.md" + bt + "; " + bt + "awkit create-task" + bt + " rejects a body that lacks them.\n")
+	sb.WriteString("A ticket is a GitHub issue that carries the task label. The required sections and a template are in " + bt + layout.SkillsDir + "/principal-workflow/tasks/create-task.md" + bt + "; " + bt + "awkit create-task" + bt + " rejects a body that lacks them.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
@@ -393,15 +394,15 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	// Kit rules
 	for _, rule := range ctx.Rules.Kit {
 		if rule == "git-workflow" {
-			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s (branch and PR conventions; the runner makes the commits, you do not)\n", bt, rule, bt))
+			sb.WriteString(fmt.Sprintf("- Read and obey: %s"+layout.KitRulesDir+"/%s.md%s (branch and PR conventions; the runner makes the commits, you do not)\n", bt, rule, bt))
 		} else {
-			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s\n", bt, rule, bt))
+			sb.WriteString(fmt.Sprintf("- Read and obey: %s"+layout.KitRulesDir+"/%s.md%s\n", bt, rule, bt))
 		}
 	}
 
 	// Custom rules
 	for _, rule := range ctx.Rules.Custom {
-		sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/%s.md%s\n", bt, rule, bt))
+		sb.WriteString(fmt.Sprintf("- Read and obey: %s"+layout.RulesDir+"/%s.md%s\n", bt, rule, bt))
 	}
 
 	sb.WriteString("\nDo not proceed if these files are missing—stop and report what you cannot find.\n\n")
@@ -428,7 +429,7 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("2. Run verification commands (build, test, lint)\n\n")
 	sb.WriteString("### 4. Implementation plan (REQUIRED before coding)\n")
 	sb.WriteString("Before making any code changes, you MUST create an implementation plan file at:\n")
-	sb.WriteString(bt + ".ai/runs/issue-{ISSUE_ID}/plan.md" + bt + "\n\n")
+	sb.WriteString(bt + layout.RunsDir + "/issue-{ISSUE_ID}/plan.md" + bt + "\n\n")
 	sb.WriteString("The plan MUST contain:\n")
 	sb.WriteString("- " + bt + "## Summary" + bt + " — brief description of the approach (1-3 sentences)\n")
 	sb.WriteString("- " + bt + "## Files to modify" + bt + " — list of files and what changes\n")
@@ -445,7 +446,7 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("---\n\n")
 	writeWorkerGuardrails(&sb)
 	sb.WriteString("## REPO TYPE SUPPORT\n\n")
-	sb.WriteString("AWK supports three repository types configured in " + bt + ".ai/config/workflow.yaml" + bt + ":\n\n")
+	sb.WriteString("AWK supports three repository types configured in " + bt + layout.ConfigFile + bt + ":\n\n")
 	sb.WriteString("| Type | Description | Use Case |\n")
 	sb.WriteString("|------|-------------|----------|\n")
 	sb.WriteString("| " + bt + "root" + bt + " | Single repository | Standalone projects |\n")
@@ -728,7 +729,7 @@ func cleanStaleAgents(agentsDir string, builtinNames, customNames map[string]boo
 func validateCustomRules(stateRoot string, rules RulesConfig) []string {
 	var warnings []string
 	for _, rule := range rules.Custom {
-		rulePath := filepath.Join(stateRoot, ".ai", "rules", rule+".md")
+		rulePath := filepath.Join(layout.Rules(stateRoot), rule+".md")
 		data, err := os.ReadFile(rulePath)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("custom rule '%s' not found: %s", rule, rulePath))

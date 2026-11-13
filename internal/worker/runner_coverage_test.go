@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -609,7 +611,7 @@ func TestCov_LoadAttemptInfo(t *testing.T) {
 
 	t.Run("with fail count", func(t *testing.T) {
 		dir := t.TempDir()
-		runDir := filepath.Join(dir, ".ai", "runs", "issue-42")
+		runDir := layout.Run(dir, 42)
 		os.MkdirAll(runDir, 0755)
 		os.WriteFile(filepath.Join(runDir, "fail_count.txt"), []byte("2"), 0644)
 
@@ -621,7 +623,7 @@ func TestCov_LoadAttemptInfo(t *testing.T) {
 
 	t.Run("with previous result", func(t *testing.T) {
 		dir := t.TempDir()
-		resultDir := filepath.Join(dir, ".ai", "results")
+		resultDir := layout.Results(dir)
 		os.MkdirAll(resultDir, 0700)
 
 		result := &IssueResult{
@@ -643,7 +645,7 @@ func TestCov_LoadAttemptInfo(t *testing.T) {
 
 	t.Run("caps previous session IDs", func(t *testing.T) {
 		dir := t.TempDir()
-		resultDir := filepath.Join(dir, ".ai", "results")
+		resultDir := layout.Results(dir)
 		os.MkdirAll(resultDir, 0700)
 
 		// Create a result with many previous session IDs
@@ -1085,9 +1087,9 @@ func TestCov_RunIssue_ReleaseOnlyForRoot(t *testing.T) {
 	os.WriteFile(ticketPath, []byte("# [feat] release\n- Repo: backend\n- Release: true"), 0644)
 
 	// Create minimal config
-	configDir := filepath.Join(dir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(dir))
 	os.MkdirAll(configDir, 0755)
-	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(`
+	os.WriteFile(layout.Config(dir), []byte(`
 repos:
   - name: backend
     path: backend/
@@ -1114,9 +1116,9 @@ func TestCov_RunIssue_InvalidRepo(t *testing.T) {
 	ticketPath := filepath.Join(dir, "ticket.md")
 	os.WriteFile(ticketPath, []byte("# [feat] task\n- Repo: nonexistent"), 0644)
 
-	configDir := filepath.Join(dir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(dir))
 	os.MkdirAll(configDir, 0755)
-	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(`
+	os.WriteFile(layout.Config(dir), []byte(`
 repos:
   - name: backend
     path: backend/
@@ -1176,11 +1178,11 @@ func TestRepoIsFoundWhateverTheCaseOfItsName(t *testing.T) {
 // have is refused, with the names as the configuration writes them.
 func TestRunIssue_ARepoNamedWithCapitals(t *testing.T) {
 	dir := t.TempDir()
-	configDir := filepath.Join(dir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(dir))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("repos:\n  - {name: Backend, path: backend/, type: directory}\n"), 0o644); err != nil {
+	if err := os.WriteFile(layout.Config(dir), []byte("repos:\n  - {name: Backend, path: backend/, type: directory}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for repo, wantInError := range map[string]string{

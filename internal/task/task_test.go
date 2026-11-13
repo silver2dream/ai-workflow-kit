@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 const validBody = `## Summary
@@ -39,7 +40,7 @@ func writeBody(t *testing.T, dir, body string) string {
 
 func writeConfig(t *testing.T, dir, content string) {
 	t.Helper()
-	path := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	path := layout.Config(dir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +173,7 @@ func TestCreateTask_RepoOfTheConfig(t *testing.T) {
 	body := writeBody(t, dir, strings.Replace(validBody, "repo: backend\n", "repo: web\n", 1))
 	calls := fakeGH(t, "https://github.com/acme/game/issues/8\n", nil)
 	_, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir, DryRun: true})
-	if err == nil || !strings.Contains(err.Error(), `repo "web", which is not a repo of .ai/config/workflow.yaml (it has: root, backend, frontend)`) {
+	if err == nil || !strings.Contains(err.Error(), `repo "web", which is not a repo of `+layout.ConfigFile+` (it has: root, backend, frontend)`) {
 		t.Errorf("error = %v, want it to name the repo and list the config's", err)
 	}
 	if len(*calls) != 0 {

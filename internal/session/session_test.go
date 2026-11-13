@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestNewManager(t *testing.T) {
@@ -34,7 +36,7 @@ func TestManagerPaths(t *testing.T) {
 		t.Errorf("SessionsDir() = %q, should end with sessions", m.SessionsDir())
 	}
 
-	if !strings.HasSuffix(m.ResultsDir(), filepath.Join(".ai", "results")) {
+	if !strings.HasSuffix(m.ResultsDir(), layout.Results("")) {
 		t.Errorf("ResultsDir() = %q, unexpected path", m.ResultsDir())
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // Result represents the result of a reset operation
@@ -130,7 +132,7 @@ func (c *Resetter) ResetAttempts() []Result {
 	}
 
 	// Clean runs directory (contains fail_count.txt per issue)
-	runsDir := filepath.Join(c.StateRoot, ".ai", "runs")
+	runsDir := layout.Runs(c.StateRoot)
 	if _, err := os.Stat(runsDir); err == nil {
 		if c.DryRun {
 			results = append(results, Result{
@@ -229,7 +231,7 @@ func (c *Resetter) ResetLock() Result {
 // ResetDeprecated removes deprecated files
 func (c *Resetter) ResetDeprecated() []Result {
 	deprecatedFiles := []string{
-		".ai/skills/principal-workflow/tasks/review-pr.md",
+		layout.SkillsDir + "/principal-workflow/tasks/review-pr.md",
 		".ai/docs/evaluate.md",
 	}
 
@@ -332,7 +334,7 @@ func (c *Resetter) ResetEvents() []Result {
 
 // Results removes result files
 func (c *Resetter) Results() []Result {
-	resultsDir := filepath.Join(c.StateRoot, ".ai", "results")
+	resultsDir := layout.Results(c.StateRoot)
 
 	entries, err := os.ReadDir(resultsDir)
 	if err != nil {
@@ -413,7 +415,7 @@ func (c *Resetter) cleanGlob(pattern, label string) []Result {
 
 // CleanTemp removes ticket temp files (.ai/temp/ticket-*.md)
 func (c *Resetter) CleanTemp() []Result {
-	pattern := filepath.Join(c.StateRoot, ".ai", "temp", "ticket-*.md")
+	pattern := filepath.Join(layout.Temp(c.StateRoot), "ticket-*.md")
 	return c.cleanGlob(pattern, "temp tickets")
 }
 
@@ -490,7 +492,7 @@ func (c *Resetter) CleanReports() []Result {
 func (c *Resetter) CleanOrphans() []Result {
 	dirs := []string{
 		filepath.Join(c.StateRoot, ".ai", "state"),
-		filepath.Join(c.StateRoot, ".ai", "results"),
+		layout.Results(c.StateRoot),
 	}
 
 	cutoff := time.Now().Add(-1 * time.Hour)

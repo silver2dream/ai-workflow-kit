@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -103,7 +105,7 @@ func TestCov_DispatchOutput_NoConflictFieldsForSuccess(t *testing.T) {
 func TestCov_DispatchLogger(t *testing.T) {
 	t.Run("logs to file", func(t *testing.T) {
 		dir := t.TempDir()
-		logDir := filepath.Join(dir, ".ai", "exe-logs")
+		logDir := layout.Logs(dir)
 		os.MkdirAll(logDir, 0755)
 
 		logger := NewDispatchLogger(dir, 42)
@@ -158,7 +160,7 @@ func TestCov_DispatchCleanup_RunOnce(t *testing.T) {
 
 func TestCov_DispatchCleanup_SkipsOnSuccess(t *testing.T) {
 	dir := t.TempDir()
-	resultDir := filepath.Join(dir, ".ai", "results")
+	resultDir := layout.Results(dir)
 	os.MkdirAll(resultDir, 0700)
 
 	// Write a success result

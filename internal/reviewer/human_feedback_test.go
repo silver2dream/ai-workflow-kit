@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
 
@@ -297,11 +298,11 @@ func TestLoadHumanReview_SwitchedOff(t *testing.T) {
 
 func writeWorkflowConfig(t *testing.T, root, content string) {
 	t.Helper()
-	dir := filepath.Join(root, ".ai", "config")
+	dir := filepath.Dir(layout.Config(root))
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(root), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 }

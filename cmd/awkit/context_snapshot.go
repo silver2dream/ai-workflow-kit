@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 )
@@ -79,8 +80,8 @@ func cmdContextSnapshot(args []string) int {
 	// Key files to re-read after compaction
 	fmt.Println("## Key Files")
 	fmt.Println("After context compaction, re-read these files:")
-	fmt.Println("- `.ai/skills/principal-workflow/phases/main-loop.md`")
-	fmt.Println("- `.ai/config/workflow.yaml`")
+	fmt.Println("- `" + layout.SkillsDir + "/principal-workflow/phases/main-loop.md`")
+	fmt.Println("- `" + layout.ConfigFile + "`")
 	fmt.Println("- Run `awkit status` for current workflow state")
 	fmt.Println("- Run `awkit analyze-next --json` to determine next action")
 	fmt.Println("")

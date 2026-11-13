@@ -1,5 +1,7 @@
 package audit
 
+import "github.com/silver2dream/ai-workflow-kit/internal/layout"
+
 // Severity represents the severity level of a finding.
 type Severity string
 
@@ -34,7 +36,7 @@ const (
 var findingMessages = map[string]string{
 	FindingMissingClaudeMD:         "Required file CLAUDE.md is missing",
 	FindingMissingAgentsMD:         "Required file AGENTS.md is missing",
-	FindingMissingWorkflowYAML:     "Required file .ai/config/workflow.yaml is missing",
+	FindingMissingWorkflowYAML:     "Required file " + layout.ConfigFile + " is missing",
 	FindingDirtyWorktree:           "Git worktree has uncommitted changes",
 	FindingMissingAIDir:            ".ai directory structure is incomplete",
 	FindingMissingREADME:           "README.md is missing",

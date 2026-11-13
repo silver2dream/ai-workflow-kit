@@ -6,13 +6,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // linkSource is a directory like .ai/skills: what .claude/skills must show.
 func linkSource(t *testing.T) (root, source string) {
 	t.Helper()
 	root = t.TempDir()
-	source = filepath.Join(root, ".ai", "skills")
+	source = layout.Skills(root)
 	if err := os.MkdirAll(filepath.Join(source, "principal-workflow"), 0o755); err != nil {
 		t.Fatal(err)
 	}

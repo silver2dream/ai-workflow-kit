@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/reset"
 )
 
@@ -88,7 +89,7 @@ func cmdReset(args []string) int {
 	traces := fs.Bool("traces", false, "Reset per-issue trace files (worker liveness records used by check-result)")
 	events := fs.Bool("events", false, "Reset event stream files")
 	labels := fs.Bool("labels", false, "Reset blocking labels (worker-failed, review-failed) on GitHub issues")
-	temp := fs.Bool("temp", false, "Clean ticket temp files (.ai/temp/ticket-*.md)")
+	temp := fs.Bool("temp", false, "Clean ticket temp files ("+layout.TempDir+"/ticket-*.md)")
 	sessions := fs.Bool("sessions", false, "Clean old session files (keep last 5)")
 	reports := fs.Bool("reports", false, "Clean old workflow reports")
 	orphans := fs.Bool("orphans", false, "Clean orphaned .tmp files older than 1 hour")
@@ -227,7 +228,7 @@ Options:
   --traces      Reset old trace files (.ai/state/traces/)
   --events      Reset event stream files (.ai/state/events/)
   --labels      Reset blocking labels (worker-failed, review-failed) on GitHub issues
-  --temp        Clean ticket temp files (.ai/temp/ticket-*.md)
+  --temp        Clean ticket temp files (`+layout.TempDir+`/ticket-*.md)
   --sessions    Clean old session files (keep last 5)
   --reports     Clean old workflow reports (.ai/state/workflow-report-*.md)
   --orphans     Clean orphaned .tmp files older than 1 hour

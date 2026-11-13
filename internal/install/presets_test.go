@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,7 +46,7 @@ func installedConfig(t *testing.T, preset string) presetConfig {
 	if _, err := Install(createMinimalMockFS(), dir, Options{Preset: preset, ProjectName: "demo", NoGenerate: true}); err != nil {
 		t.Fatalf("Install(%q): %v", preset, err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".ai", "config", "workflow.yaml"))
+	data, err := os.ReadFile(layout.Config(dir))
 	if err != nil {
 		t.Fatalf("read workflow.yaml: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestPreset_RemovedAndUnknownNamesAreRejected(t *testing.T) {
 				t.Errorf("Install(%q) error %q should name the available preset %q", preset, err, name)
 			}
 		}
-		if _, statErr := os.Stat(filepath.Join(dir, ".ai", "config", "workflow.yaml")); !os.IsNotExist(statErr) {
+		if _, statErr := os.Stat(layout.Config(dir)); !os.IsNotExist(statErr) {
 			t.Errorf("Install(%q) wrote a config for a preset that does not exist", preset)
 		}
 	}
@@ -457,7 +458,7 @@ func TestInstallCI_ReportsTheWorkflowsItRemoved(t *testing.T) {
 // written, and the caller is told why.
 func TestInstall_ReportsAFailedGenerate(t *testing.T) {
 	dir := t.TempDir()
-	config := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	config := layout.Config(dir)
 	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
 		t.Fatal(err)
 	}

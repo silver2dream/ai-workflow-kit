@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestExtractPRNumberForIssue(t *testing.T) {
@@ -61,7 +63,7 @@ func TestExtractPRNumberForIssue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup result file if needed
 			if tt.resultFile != nil {
-				resultDir := filepath.Join(tmpDir, ".ai", "results")
+				resultDir := layout.Results(tmpDir)
 				os.MkdirAll(resultDir, 0755)
 				data, _ := json.Marshal(tt.resultFile)
 				os.WriteFile(filepath.Join(resultDir, "issue-"+itoa(tt.issueNumber)+".json"), data, 0644)

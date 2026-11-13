@@ -18,6 +18,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
@@ -79,7 +80,7 @@ func cmdRun(args []string) int {
 	// Paths
 	configPath := config.Path(".")
 	lockFile := filepath.Join(".ai", "state", "kickoff.lock")
-	logDir := filepath.Join(".ai", "exe-logs")
+	logDir := layout.Logs("")
 
 	output := kickoff.NewOutputFormatter(os.Stdout)
 

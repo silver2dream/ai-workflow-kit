@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestCheckRequiredFiles_AllPresent(t *testing.T) {
@@ -22,11 +24,11 @@ func TestCheckRequiredFiles_AllPresent(t *testing.T) {
 	}
 
 	// Create .ai/config/workflow.yaml
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("MkdirAll config failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("version: 1"), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte("version: 1"), 0644); err != nil {
 		t.Fatalf("WriteFile workflow.yaml failed: %v", err)
 	}
 
@@ -45,11 +47,11 @@ func TestCheckRequiredFiles_MissingClaudeMD(t *testing.T) {
 		t.Fatalf("WriteFile AGENTS.md failed: %v", err)
 	}
 
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("MkdirAll config failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("version: 1"), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte("version: 1"), 0644); err != nil {
 		t.Fatalf("WriteFile workflow.yaml failed: %v", err)
 	}
 
@@ -76,11 +78,11 @@ func TestCheckRequiredFiles_MissingAgentsMD(t *testing.T) {
 		t.Fatalf("WriteFile CLAUDE.md failed: %v", err)
 	}
 
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("MkdirAll config failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("version: 1"), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte("version: 1"), 0644); err != nil {
 		t.Fatalf("WriteFile workflow.yaml failed: %v", err)
 	}
 
@@ -253,7 +255,7 @@ func TestAuditProject_CompleteRepo(t *testing.T) {
 	}
 
 	// Create workflow.yaml
-	if err := os.WriteFile(filepath.Join(tmpDir, ".ai", "config", "workflow.yaml"), []byte("version: 1"), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte("version: 1"), 0644); err != nil {
 		t.Fatalf("WriteFile workflow.yaml failed: %v", err)
 	}
 

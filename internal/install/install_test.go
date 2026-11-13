@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // createMinimalMockFS creates a mock FS with minimal required files
@@ -50,7 +51,7 @@ func TestInstall_CurrentDirectory(t *testing.T) {
 	}
 
 	// Verify config directory was created
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
 		t.Error(".ai/config directory was not created")
 	}
@@ -128,9 +129,9 @@ func TestInstall_ConfigSkipped(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create existing workflow.yaml
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	os.MkdirAll(configDir, 0o755)
-	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("existing: true"), 0o644)
+	os.WriteFile(layout.Config(tmpDir), []byte("existing: true"), 0o644)
 
 	mockFS := createMinimalMockFS()
 
@@ -149,7 +150,7 @@ func TestInstall_ConfigSkipped(t *testing.T) {
 	}
 
 	// Verify original content preserved
-	content, _ := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	content, _ := os.ReadFile(layout.Config(tmpDir))
 	if string(content) != "existing: true" {
 		t.Error("existing workflow.yaml was overwritten")
 	}
@@ -163,9 +164,9 @@ func TestInstall_ForceConfig(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create existing workflow.yaml
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	os.MkdirAll(configDir, 0o755)
-	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("existing: true"), 0o644)
+	os.WriteFile(layout.Config(tmpDir), []byte("existing: true"), 0o644)
 
 	mockFS := createMinimalMockFS()
 
@@ -185,7 +186,7 @@ func TestInstall_ForceConfig(t *testing.T) {
 	}
 
 	// Verify content was overwritten
-	content, _ := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	content, _ := os.ReadFile(layout.Config(tmpDir))
 	if string(content) == "existing: true" {
 		t.Error("workflow.yaml was not overwritten with --force-config")
 	}
@@ -228,7 +229,7 @@ func TestInstall_PresetConfigNotOverwrittenByCopyDir(t *testing.T) {
 	}
 
 	// Read the resulting workflow.yaml
-	content, err := os.ReadFile(filepath.Join(tmpDir, ".ai", "config", "workflow.yaml"))
+	content, err := os.ReadFile(layout.Config(tmpDir))
 	if err != nil {
 		t.Fatalf("failed to read workflow.yaml: %v", err)
 	}
@@ -251,10 +252,10 @@ func TestInstall_Upgrade(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create existing workflow.yaml with custom content
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	os.MkdirAll(configDir, 0o755)
 	customConfig := "project:\n  name: my-custom-project\n  type: monorepo\n"
-	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(customConfig), 0o644)
+	os.WriteFile(layout.Config(tmpDir), []byte(customConfig), 0o644)
 
 	// Create existing scripts directory with old content
 	scriptsDir := filepath.Join(tmpDir, ".ai", "scripts")
@@ -289,7 +290,7 @@ func TestInstall_Upgrade(t *testing.T) {
 	}
 
 	// Verify original config preserved
-	content, _ := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	content, _ := os.ReadFile(layout.Config(tmpDir))
 	if string(content) != customConfig {
 		t.Error("workflow.yaml was overwritten during upgrade")
 	}
@@ -618,7 +619,7 @@ jobs:
 // an upgrade writes none.
 func TestInstall_Roster(t *testing.T) {
 	rosterOf := func(dir string) string {
-		data, err := os.ReadFile(filepath.Join(dir, ".ai", "roster.yaml"))
+		data, err := os.ReadFile(layout.Roster(dir))
 		if err != nil {
 			return ""
 		}
@@ -633,7 +634,7 @@ func TestInstall_Roster(t *testing.T) {
 		if got := rosterOf(dir); got == "" || got != string(council.DefaultRoster(want)) {
 			t.Errorf("%s: the project did not get the %s roster (%d bytes)", preset, want, len(got))
 		}
-		if _, err := council.LoadRoster(filepath.Join(dir, ".ai", "roster.yaml")); err != nil {
+		if _, err := council.LoadRoster(layout.Roster(dir)); err != nil {
 			t.Errorf("%s: the roster that was written cannot hold a meeting: %v", preset, err)
 		}
 	}
@@ -647,7 +648,7 @@ func TestInstall_Roster(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, ".ai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".ai", "roster.yaml"), []byte(own), 0o644); err != nil {
+	if err := os.WriteFile(layout.Roster(dir), []byte(own), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Install(createMinimalMockFS(), dir, Options{Preset: "godot-go", NoGenerate: true, Force: true, ForceConfig: true}); err != nil {

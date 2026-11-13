@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestOfflineGate_O0_GitIgnore(t *testing.T) {
@@ -82,31 +84,31 @@ func TestOfflineGate_O5_ConfigValidation(t *testing.T) {
 		{
 			name: "invalid YAML",
 			setup: func(tmpDir string) error {
-				configDir := filepath.Join(tmpDir, ".ai", "config")
+				configDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(configDir, 0755); err != nil {
 					return err
 				}
-				return os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("invalid: yaml: :"), 0644)
+				return os.WriteFile(layout.Config(tmpDir), []byte("invalid: yaml: :"), 0644)
 			},
 			wantStatus: "FAIL",
 		},
 		{
 			name: "missing required fields",
 			setup: func(tmpDir string) error {
-				configDir := filepath.Join(tmpDir, ".ai", "config")
+				configDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(configDir, 0755); err != nil {
 					return err
 				}
 				config := `version: "1.0"
 `
-				return os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(config), 0644)
+				return os.WriteFile(layout.Config(tmpDir), []byte(config), 0644)
 			},
 			wantStatus: "FAIL",
 		},
 		{
 			name: "valid config",
 			setup: func(tmpDir string) error {
-				configDir := filepath.Join(tmpDir, ".ai", "config")
+				configDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(configDir, 0755); err != nil {
 					return err
 				}
@@ -120,7 +122,7 @@ repos:
 git:
   integration_branch: develop
 `
-				return os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(config), 0644)
+				return os.WriteFile(layout.Config(tmpDir), []byte(config), 0644)
 			},
 			wantStatus: "PASS",
 		},
@@ -158,7 +160,7 @@ func TestOfflineGate_O8_FileEncoding(t *testing.T) {
 		{
 			name: "clean files",
 			setup: func(tmpDir string) error {
-				aiDir := filepath.Join(tmpDir, ".ai", "config")
+				aiDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(aiDir, 0755); err != nil {
 					return err
 				}
@@ -170,7 +172,7 @@ func TestOfflineGate_O8_FileEncoding(t *testing.T) {
 		{
 			name: "file with CRLF",
 			setup: func(tmpDir string) error {
-				aiDir := filepath.Join(tmpDir, ".ai", "config")
+				aiDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(aiDir, 0755); err != nil {
 					return err
 				}
@@ -182,7 +184,7 @@ func TestOfflineGate_O8_FileEncoding(t *testing.T) {
 		{
 			name: "file with UTF-16 BOM",
 			setup: func(tmpDir string) error {
-				aiDir := filepath.Join(tmpDir, ".ai", "config")
+				aiDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(aiDir, 0755); err != nil {
 					return err
 				}
@@ -396,11 +398,11 @@ func TestOfflineGate_O5_IsTheSharedValidation(t *testing.T) {
 	write := func(content string) string {
 		t.Helper()
 		dir := t.TempDir()
-		configDir := filepath.Join(dir, ".ai", "config")
+		configDir := filepath.Dir(layout.Config(dir))
 		if err := os.MkdirAll(configDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(layout.Config(dir), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return dir

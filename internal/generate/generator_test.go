@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -227,7 +229,7 @@ func TestGenerateDryRun(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Setup config
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
@@ -247,7 +249,7 @@ repos:
       build: go build ./...
       test: go test ./...
 `
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte(configContent), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -274,7 +276,7 @@ func TestGenerateCreatesFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Setup config
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
@@ -298,7 +300,7 @@ rules:
   kit:
     - git-workflow
 `
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte(configContent), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -317,7 +319,7 @@ rules:
 	expectedFiles := []string{
 		filepath.Join(tmpDir, "CLAUDE.md"),
 		filepath.Join(tmpDir, "AGENTS.md"),
-		filepath.Join(tmpDir, ".ai", "rules", "_kit", "git-workflow.md"),
+		filepath.Join(layout.KitRules(tmpDir), "git-workflow.md"),
 		filepath.Join(tmpDir, ".claude", "settings.local.json"),
 	}
 
@@ -341,7 +343,7 @@ func TestGenerateRequiresStateRoot(t *testing.T) {
 func TestGenerateAgentsMdIncludesGuardrails(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
@@ -366,7 +368,7 @@ rules:
   kit:
     - git-workflow
 `
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte(configContent), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -406,7 +408,7 @@ func TestGenerateValidationFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Setup invalid config (missing required fields)
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
@@ -416,7 +418,7 @@ project:
   name: ""
   type: invalid
 `
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte(configContent), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -1270,7 +1272,7 @@ func TestValidateCustomRules_FileNotFound(t *testing.T) {
 
 func TestValidateCustomRules_MissingRoleGoal(t *testing.T) {
 	tmpDir := t.TempDir()
-	rulesDir := filepath.Join(tmpDir, ".ai", "rules")
+	rulesDir := layout.Rules(tmpDir)
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {
 		t.Fatalf("mkdir error: %v", err)
 	}
@@ -1293,7 +1295,7 @@ func TestValidateCustomRules_MissingRoleGoal(t *testing.T) {
 
 func TestValidateCustomRules_Valid(t *testing.T) {
 	tmpDir := t.TempDir()
-	rulesDir := filepath.Join(tmpDir, ".ai", "rules")
+	rulesDir := layout.Rules(tmpDir)
 	if err := os.MkdirAll(rulesDir, 0755); err != nil {
 		t.Fatalf("mkdir error: %v", err)
 	}

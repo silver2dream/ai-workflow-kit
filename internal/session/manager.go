@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // Manager handles session lifecycle operations.
@@ -45,7 +47,7 @@ func (m *Manager) SessionsDir() string {
 
 // ResultsDir returns the path to the results directory
 func (m *Manager) ResultsDir() string {
-	return filepath.Join(m.StateRoot, ".ai", "results")
+	return layout.Results(m.StateRoot)
 }
 
 // GenerateSessionID generates a unique session ID

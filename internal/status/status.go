@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 type Options struct {
@@ -193,7 +194,7 @@ func Collect(root string, opts Options) (Report, error) {
 			RunDir:  Artifact{},
 			Summary: Artifact{},
 			Logs: IssueLogs{
-				Principal: Artifact{Path: filepath.Join(root, ".ai", "exe-logs", "principal.log")},
+				Principal: Artifact{Path: layout.PrincipalLog(root)},
 			},
 		},
 	}
@@ -271,7 +272,7 @@ func Collect(root string, opts Options) (Report, error) {
 	} else if runningIssue, ok := findRunningTraceIssue(filepath.Join(root, ".ai", "state", "traces")); ok {
 		targetIssueID = runningIssue
 		targetSource = "trace"
-	} else if lastIssue, ok := findLatestResultIssue(filepath.Join(root, ".ai", "results")); ok {
+	} else if lastIssue, ok := findLatestResultIssue(layout.Results(root)); ok {
 		targetIssueID = lastIssue
 		targetSource = "result"
 	} else {
@@ -286,14 +287,14 @@ func Collect(root string, opts Options) (Report, error) {
 	// Populate issue artifacts
 	// -------------------------
 	if targetIssueID > 0 {
-		report.Artifacts.RunDir = artifact(filepath.Join(root, ".ai", "runs", fmt.Sprintf("issue-%d", targetIssueID)))
-		report.Artifacts.Summary = artifact(filepath.Join(root, ".ai", "runs", fmt.Sprintf("issue-%d", targetIssueID), "summary.txt"))
+		report.Artifacts.RunDir = artifact(layout.Run(root, targetIssueID))
+		report.Artifacts.Summary = artifact(filepath.Join(layout.Run(root, targetIssueID), "summary.txt"))
 
-		report.Artifacts.Logs.Worker = artifact(filepath.Join(root, ".ai", "exe-logs", fmt.Sprintf("issue-%d.worker.log", targetIssueID)))
-		report.Artifacts.Logs.Principal = artifact(filepath.Join(root, ".ai", "exe-logs", "principal.log"))
-		report.Artifacts.Logs.Codex = listCodexLogs(filepath.Join(root, ".ai", "exe-logs"), targetIssueID)
+		report.Artifacts.Logs.Worker = artifact(layout.WorkerLog(root, targetIssueID))
+		report.Artifacts.Logs.Principal = artifact(layout.PrincipalLog(root))
+		report.Artifacts.Logs.Codex = listCodexLogs(layout.Logs(root), targetIssueID)
 
-		resultPath := filepath.Join(root, ".ai", "results", fmt.Sprintf("issue-%d.json", targetIssueID))
+		resultPath := layout.Result(root, targetIssueID)
 		resultInfo := &ResultInfo{Path: resultPath, Exists: fileExists(resultPath)}
 		if resultInfo.Exists {
 			rawResult, err := readResultFile(resultPath)
@@ -332,7 +333,7 @@ func Collect(root string, opts Options) (Report, error) {
 		report.Artifacts.Trace = traceInfo
 	} else {
 		// still fill principal log existence
-		report.Artifacts.Logs.Principal = artifact(filepath.Join(root, ".ai", "exe-logs", "principal.log"))
+		report.Artifacts.Logs.Principal = artifact(layout.PrincipalLog(root))
 	}
 
 	// -------------------------

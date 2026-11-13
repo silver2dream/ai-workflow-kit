@@ -4,12 +4,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestLoadResult(t *testing.T) {
 	// Create a temp directory with test data
 	tmpDir := t.TempDir()
-	resultsDir := filepath.Join(tmpDir, ".ai", "results")
+	resultsDir := layout.Results(tmpDir)
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +86,7 @@ func TestExtractPRNumber(t *testing.T) {
 		expected int
 	}{
 		{"https://github.com/owner/repo/pull/123", 123},
-		{"https://github.com/owner/repo/pulls/456", 0},  // "pulls" is list endpoint, not a valid PR URL
+		{"https://github.com/owner/repo/pulls/456", 0}, // "pulls" is list endpoint, not a valid PR URL
 		{"https://github.com/owner/repo/pull/1", 1},
 		{"", 0},
 		{"https://github.com/owner/repo", 0},
@@ -203,7 +205,7 @@ func TestReadFailCount(t *testing.T) {
 	}
 
 	// Create fail count file
-	runsDir := filepath.Join(tmpDir, ".ai", "runs", "issue-123")
+	runsDir := layout.Run(tmpDir, 123)
 	if err := os.MkdirAll(runsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

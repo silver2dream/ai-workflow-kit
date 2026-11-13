@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func writePlanForTest(t *testing.T, dir, content string) {
@@ -20,8 +22,8 @@ func writePlanForTest(t *testing.T, dir, content string) {
 // working directory, which is inside the worktree - not under the state root.
 func TestResolvePlanContent_ReadsPlanFromWorktree(t *testing.T) {
 	workDir := t.TempDir()
-	runDir := filepath.Join(t.TempDir(), ".ai", "runs", "issue-7")
-	writePlanForTest(t, filepath.Join(workDir, ".ai", "runs", "issue-7"), "## Summary\nworktree plan")
+	runDir := layout.Run(t.TempDir(), 7)
+	writePlanForTest(t, layout.Run(workDir, 7), "## Summary\nworktree plan")
 
 	if got := resolvePlanContent(workDir, runDir, 7); got != "## Summary\nworktree plan" {
 		t.Errorf("resolvePlanContent() = %q, want the plan written in the worktree", got)
@@ -30,7 +32,7 @@ func TestResolvePlanContent_ReadsPlanFromWorktree(t *testing.T) {
 
 func TestResolvePlanContent_FallsBackToRunDir(t *testing.T) {
 	workDir := t.TempDir()
-	runDir := filepath.Join(t.TempDir(), ".ai", "runs", "issue-7")
+	runDir := layout.Run(t.TempDir(), 7)
 	writePlanForTest(t, runDir, "## Summary\nrun-dir plan")
 
 	if got := resolvePlanContent(workDir, runDir, 7); got != "## Summary\nrun-dir plan" {

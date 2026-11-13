@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestSplitFlags(t *testing.T) {
@@ -66,7 +67,7 @@ func TestCmdPlan_Arguments(t *testing.T) {
 
 func writePlanConfig(t *testing.T, dir, repos string) {
 	t.Helper()
-	path := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	path := layout.Config(dir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +144,7 @@ func TestPlanRoster(t *testing.T) {
 	if roster.Role("numerical-designer") == nil {
 		t.Errorf("a Go and Godot project did not get the game studio's roster: %v", roster.IDs())
 	}
-	file := filepath.Join(dir, ".ai", "roster.yaml")
+	file := layout.Roster(dir)
 	written, err := os.ReadFile(file)
 	if err != nil || string(written) != string(council.DefaultRoster("godot-go")) {
 		t.Errorf("the roster was not written to %s: %v", file, err)
@@ -290,7 +291,7 @@ func TestCmdPlan_FromABriefToIssues(t *testing.T) {
 		}
 	}
 	// The project had no roster: it got the generic one, and its documents.
-	if !fileExists(filepath.Join(dir, ".ai", "roster.yaml")) {
+	if !fileExists(layout.Roster(dir)) {
 		t.Error("no roster was written")
 	}
 	for _, doc := range []string{"docs/product/requirements.md", "docs/tech/architecture.md", "docs/qa/risks.md", "docs/decisions.md", "docs/README.md"} {
@@ -343,8 +344,8 @@ func TestCmdPlan_FromABriefToIssues(t *testing.T) {
 // an error, one that can is named, and a project without one is fine.
 func TestCmdValidate_Roster(t *testing.T) {
 	dir := t.TempDir()
-	config := filepath.Join(dir, ".ai", "config", "workflow.yaml")
-	if err := os.MkdirAll(filepath.Join(dir, ".ai", "config"), 0o755); err != nil {
+	config := layout.Config(dir)
+	if err := os.MkdirAll(filepath.Dir(layout.Config(dir)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "backend"), 0o755); err != nil {
@@ -364,7 +365,7 @@ func TestCmdValidate_Roster(t *testing.T) {
 		t.Fatalf("without a roster: validate = %d\n%s", code, out)
 	}
 
-	roster := filepath.Join(dir, ".ai", "roster.yaml")
+	roster := layout.Roster(dir)
 	if err := os.WriteFile(roster, council.DefaultRoster("godot-go"), 0o644); err != nil {
 		t.Fatal(err)
 	}
