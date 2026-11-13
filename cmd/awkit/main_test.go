@@ -11,6 +11,7 @@ import (
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestAvailablePresetNames(t *testing.T) {
@@ -163,7 +164,7 @@ func TestInitWithScaffold(t *testing.T) {
 	}
 
 	// Verify AWK kit was installed
-	if _, err := os.Stat(filepath.Join(tmpDir, ".ai", "config", "workflow.yaml")); os.IsNotExist(err) {
+	if _, err := os.Stat(layout.Config(tmpDir)); os.IsNotExist(err) {
 		t.Error("workflow.yaml should be created")
 	}
 
@@ -285,13 +286,13 @@ func TestUpgradeForceConfigOverwritesWorkflowYAML(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Minimal .ai directory so cmdUpgrade considers it installed.
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create .ai/config dir: %v", err)
 	}
 
 	original := "project:\n  name: original\n"
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(original), 0o644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte(original), 0o644); err != nil {
 		t.Fatalf("failed to write existing workflow.yaml: %v", err)
 	}
 
@@ -301,7 +302,7 @@ func TestUpgradeForceConfigOverwritesWorkflowYAML(t *testing.T) {
 		t.Fatalf("cmdUpgrade() exit code = %d, want 0", exitCode)
 	}
 
-	updated, err := os.ReadFile(filepath.Join(configDir, "workflow.yaml"))
+	updated, err := os.ReadFile(layout.Config(tmpDir))
 	if err != nil {
 		t.Fatalf("failed to read workflow.yaml: %v", err)
 	}
@@ -458,7 +459,7 @@ func TestGenerateKeepsCIWorkflowsInStepWithTheConfig(t *testing.T) {
 	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
 	tmpDir := t.TempDir()
 	ci := filepath.Join(tmpDir, ".github", "workflows", "ci.yml")
-	configPath := filepath.Join(tmpDir, ".ai", "config", "workflow.yaml")
+	configPath := layout.Config(tmpDir)
 	setTestCommand := func(from, to string) {
 		t.Helper()
 		config, err := os.ReadFile(configPath)

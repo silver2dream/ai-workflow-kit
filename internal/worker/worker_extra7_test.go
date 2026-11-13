@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -89,7 +91,7 @@ func TestWriteResultAtomic_Success(t *testing.T) {
 	}
 
 	// Verify file was created
-	resultPath := filepath.Join(dir, ".ai", "results", "issue-42.json")
+	resultPath := layout.Result(dir, 42)
 	if _, err := os.Stat(resultPath); err != nil {
 		t.Fatalf("result file not created: %v", err)
 	}
@@ -111,7 +113,7 @@ func TestWriteResultAtomic_Success(t *testing.T) {
 
 func TestResetFailCount_WithExistingFile(t *testing.T) {
 	dir := t.TempDir()
-	runDir := filepath.Join(dir, ".ai", "runs", "issue-7")
+	runDir := layout.Run(dir, 7)
 	os.MkdirAll(runDir, 0755)
 	failCountPath := filepath.Join(runDir, "fail_count.txt")
 	os.WriteFile(failCountPath, []byte("3"), 0644)

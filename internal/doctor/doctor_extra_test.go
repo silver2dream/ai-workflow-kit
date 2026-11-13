@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -98,7 +100,7 @@ func TestCheckTempTickets_NoTempDir(t *testing.T) {
 
 func TestCheckTempTickets_FewTickets(t *testing.T) {
 	dir := t.TempDir()
-	tempDir := filepath.Join(dir, ".ai", "temp")
+	tempDir := layout.Temp(dir)
 	os.MkdirAll(tempDir, 0755)
 	// Create fewer than threshold (10)
 	for i := 0; i < 5; i++ {
@@ -115,7 +117,7 @@ func TestCheckTempTickets_FewTickets(t *testing.T) {
 
 func TestCheckTempTickets_ManyTickets(t *testing.T) {
 	dir := t.TempDir()
-	tempDir := filepath.Join(dir, ".ai", "temp")
+	tempDir := layout.Temp(dir)
 	os.MkdirAll(tempDir, 0755)
 	// Create more than threshold (10)
 	for i := 0; i < 15; i++ {
@@ -224,7 +226,7 @@ func TestCheckConsecutiveFailures_ZeroCount(t *testing.T) {
 func TestCheckOrphanTmpFiles_NoOrphans(t *testing.T) {
 	dir := t.TempDir()
 	stateDir := filepath.Join(dir, ".ai", "state")
-	resultsDir := filepath.Join(dir, ".ai", "results")
+	resultsDir := layout.Results(dir)
 	os.MkdirAll(stateDir, 0755)
 	os.MkdirAll(resultsDir, 0755)
 

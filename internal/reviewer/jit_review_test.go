@@ -10,6 +10,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // The JiT tests of a review are generated from what the pull request adds to
@@ -32,7 +33,7 @@ func TestRunJiTTestIfEnabled_ComparesWithTheIntegrationBranch(t *testing.T) {
 	root := t.TempDir()
 	writeConfig := func(content string) {
 		t.Helper()
-		path := filepath.Join(root, ".ai", "config", "workflow.yaml")
+		path := layout.Config(root)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}

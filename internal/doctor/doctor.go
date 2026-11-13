@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
@@ -283,7 +284,7 @@ func (d *Doctor) countIssuesWithLabel(ctx context.Context, label string) (int, [
 // CheckDeprecatedFiles checks for deprecated files that should be removed
 func (d *Doctor) CheckDeprecatedFiles() []CheckResult {
 	deprecatedFiles := []string{
-		".ai/skills/principal-workflow/tasks/review-pr.md",
+		layout.SkillsDir + "/principal-workflow/tasks/review-pr.md",
 		".ai/docs/evaluate.md",
 	}
 
@@ -306,7 +307,7 @@ func (d *Doctor) CheckDeprecatedFiles() []CheckResult {
 
 // CheckTempTickets warns if there are too many ticket files in .ai/temp/
 func (d *Doctor) CheckTempTickets() []CheckResult {
-	pattern := filepath.Join(d.StateRoot, ".ai", "temp", "ticket-*.md")
+	pattern := filepath.Join(layout.Temp(d.StateRoot), "ticket-*.md")
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
 		return nil
@@ -316,7 +317,7 @@ func (d *Doctor) CheckTempTickets() []CheckResult {
 		return []CheckResult{{
 			Name:     "Temp Tickets",
 			Status:   "warning",
-			Message:  fmt.Sprintf("%d ticket file(s) in .ai/temp/ (run 'awkit reset --temp' to clean)", len(matches)),
+			Message:  fmt.Sprintf("%d ticket file(s) in "+layout.TempDir+"/ (run 'awkit reset --temp' to clean)", len(matches)),
 			CanClean: true,
 			CleanKey: "temp",
 		}}
@@ -355,7 +356,7 @@ func (d *Doctor) CheckSessionFiles() []CheckResult {
 func (d *Doctor) CheckOrphanTmpFiles() []CheckResult {
 	dirs := []string{
 		filepath.Join(d.StateRoot, ".ai", "state"),
-		filepath.Join(d.StateRoot, ".ai", "results"),
+		layout.Results(d.StateRoot),
 	}
 
 	cutoff := time.Now().Add(-orphanTmpMaxAge)

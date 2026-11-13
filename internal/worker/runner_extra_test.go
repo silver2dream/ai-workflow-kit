@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -381,7 +383,7 @@ func TestLoadAttemptInfo_NoResult_ReturnsAttempt1(t *testing.T) {
 func TestLoadAttemptInfo_WithFailCount(t *testing.T) {
 	dir := t.TempDir()
 	// Write fail count of 2
-	runsDir := filepath.Join(dir, ".ai", "runs", "issue-5")
+	runsDir := layout.Run(dir, 5)
 	if err := os.MkdirAll(runsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +422,7 @@ func TestAttemptGuard_MaxAttempts_BlocksProceed(t *testing.T) {
 	guard := &AttemptGuard{StateRoot: dir, IssueID: 2, MaxAttempts: 2}
 
 	// Fill up fail count
-	runsDir := filepath.Join(dir, ".ai", "runs", "issue-2")
+	runsDir := layout.Run(dir, 2)
 	if err := os.MkdirAll(runsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +457,7 @@ func TestAttemptGuard_Reset_SetsZero(t *testing.T) {
 	}
 
 	// After reset, the file should contain 0
-	countFile := filepath.Join(dir, ".ai", "runs", "issue-3", "fail_count.txt")
+	countFile := filepath.Join(layout.Run(dir, 3), "fail_count.txt")
 	data, err := os.ReadFile(countFile)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
@@ -471,7 +473,7 @@ func TestAttemptGuard_RecordFailure_CreatesEntry(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, ".ai", "state"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".ai", "runs", "issue-4"), 0755); err != nil {
+	if err := os.MkdirAll(layout.Run(dir, 4), 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -627,7 +629,7 @@ func TestDispatchLogger_LogAndClose(t *testing.T) {
 		t.Errorf("Close: %v", err)
 	}
 
-	logPath := filepath.Join(dir, ".ai", "exe-logs", "principal.log")
+	logPath := layout.PrincipalLog(dir)
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)

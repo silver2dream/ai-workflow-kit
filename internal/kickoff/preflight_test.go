@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // TestPreflightChecker_RunAll tests all pre-flight checks
@@ -25,11 +27,11 @@ func TestPreflightChecker_RunAll(t *testing.T) {
 
 	// Create valid config
 	// configPath must be nested under .ai/config/ so baseDir() resolves to tmpDir
-	aiConfigDir := filepath.Join(tmpDir, ".ai", "config")
+	aiConfigDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(aiConfigDir, 0755); err != nil {
 		t.Fatalf("Failed to create .ai/config dir: %v", err)
 	}
-	configPath := filepath.Join(aiConfigDir, "workflow.yaml")
+	configPath := layout.Config(tmpDir)
 	configContent := `version: "1.0"
 project:
   name: test-project
@@ -394,9 +396,9 @@ func TestCheckRepoPaths(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	aiConfigDir := filepath.Join(tmpDir, ".ai", "config")
+	aiConfigDir := filepath.Dir(layout.Config(tmpDir))
 	os.MkdirAll(aiConfigDir, 0755)
-	configPath := filepath.Join(aiConfigDir, "workflow.yaml")
+	configPath := layout.Config(tmpDir)
 
 	t.Run("valid_paths", func(t *testing.T) {
 		// Create the repo directory
@@ -955,7 +957,7 @@ func TestCheckCodexCLI_ChecksTheConfiguredBackend(t *testing.T) {
 	write := func(content string) string {
 		t.Helper()
 		dir := t.TempDir()
-		path := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+		path := layout.Config(dir)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}

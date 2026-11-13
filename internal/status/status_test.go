@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestCollect_NoFiles(t *testing.T) {
@@ -103,7 +104,7 @@ func TestCollect_TargetFromTrace(t *testing.T) {
 func TestCollect_TargetFromResult(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	resultsDir := filepath.Join(tmpDir, ".ai", "results")
+	resultsDir := layout.Results(tmpDir)
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestCollect_TargetFromResult(t *testing.T) {
 		t.Fatalf("WriteFile issue5 failed: %v", err)
 	}
 
-	exeLogsDir := filepath.Join(tmpDir, ".ai", "exe-logs")
+	exeLogsDir := layout.Logs(tmpDir)
 	if err := os.MkdirAll(exeLogsDir, 0755); err != nil {
 		t.Fatalf("MkdirAll exe-logs failed: %v", err)
 	}

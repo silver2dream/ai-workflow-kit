@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 )
 
@@ -24,7 +25,7 @@ Required:
 
                     `+"```"+`yaml awk-ticket
                     schema: 1
-                    repo: backend          # a repo of .ai/config/workflow.yaml, or root
+                    repo: backend          # a repo of `+layout.ConfigFile+`, or root
                     depends_on: [12, 15]   # optional: issues that must be done first
                     `+"```"+`
 
@@ -35,7 +36,7 @@ Options:
   --help        Show this help
 
 Examples:
-  awkit create-task --title "[feat] add login" --body-file .ai/temp/ticket.md
+  awkit create-task --title "[feat] add login" --body-file `+layout.TempDir+`/ticket.md
   awkit create-task --title "[feat] add login" --body-file ticket.md --dry-run
 `)
 }

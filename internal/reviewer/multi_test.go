@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func writeMultiModelConfig(t *testing.T, root, reviewYAML string) {
 	t.Helper()
-	dir := filepath.Join(root, ".ai", "config")
+	dir := filepath.Dir(layout.Config(root))
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -29,7 +30,7 @@ repos:
     language: go
 review:
 ` + reviewYAML
-	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(root), []byte(content), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 }

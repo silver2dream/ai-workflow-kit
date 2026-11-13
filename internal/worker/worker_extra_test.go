@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -101,7 +103,7 @@ func TestWriteFileAtomic_NoLeftoverBakFile(t *testing.T) {
 
 func TestReadFailCount_MalformedContent_ReturnsZero(t *testing.T) {
 	dir := t.TempDir()
-	runsDir := filepath.Join(dir, ".ai", "runs", "issue-7")
+	runsDir := layout.Run(dir, 7)
 	if err := os.MkdirAll(runsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +127,7 @@ func TestReadFailCount_MissingFile_ReturnsZero(t *testing.T) {
 
 func TestResetFailCount_RemovesFile(t *testing.T) {
 	dir := t.TempDir()
-	runsDir := filepath.Join(dir, ".ai", "runs", "issue-5")
+	runsDir := layout.Run(dir, 5)
 	if err := os.MkdirAll(runsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +327,7 @@ func TestWriteResultAtomic_JSONRoundTrip(t *testing.T) {
 
 func TestLoadResult_MalformedJSON_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	resultsDir := filepath.Join(dir, ".ai", "results")
+	resultsDir := layout.Results(dir)
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

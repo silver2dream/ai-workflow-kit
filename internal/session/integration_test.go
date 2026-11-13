@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // Integration tests for Session Manager
@@ -366,7 +368,7 @@ func setupIntegrationTestEnv(t *testing.T, dir string) {
 	// Create required directories
 	paths := []string{
 		filepath.Join(dir, ".ai", "state", "principal", "sessions"),
-		filepath.Join(dir, ".ai", "results"),
+		layout.Results(dir),
 	}
 
 	for _, p := range paths {

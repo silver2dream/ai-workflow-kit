@@ -2,11 +2,12 @@ package lessons
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // InjectionRecord captures which lessons were injected into a worker run —
@@ -23,7 +24,7 @@ type InjectionRecord struct {
 }
 
 func injectionPath(stateRoot string, issueID int) string {
-	return filepath.Join(stateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", issueID), "injected_lessons.json")
+	return filepath.Join(layout.Run(stateRoot, issueID), "injected_lessons.json")
 }
 
 // RecordInjection persists the injected lesson IDs for an issue run.

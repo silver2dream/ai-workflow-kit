@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"gopkg.in/yaml.v3"
 )
 
@@ -562,7 +563,7 @@ git:
 
 func writeCITestConfig(t *testing.T, dir, testCommand string) {
 	t.Helper()
-	path := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	path := layout.Config(dir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

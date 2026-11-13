@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func writeConfig(t *testing.T, content string) string {
@@ -24,7 +26,7 @@ func writeConfig(t *testing.T, content string) string {
 }
 
 func TestPath(t *testing.T) {
-	if got, want := Path("proj"), filepath.Join("proj", ".ai", "config", "workflow.yaml"); got != want {
+	if got, want := Path("proj"), layout.Config("proj"); got != want {
 		t.Errorf("Path = %q, want %q", got, want)
 	}
 }
@@ -301,7 +303,7 @@ func TestLoad_FilesThatCannotBeUsed(t *testing.T) {
 			t.Errorf("%s: err = %v (%T), want a *ParseError", name, err, err)
 			continue
 		}
-		if !strings.Contains(err.Error(), ".ai/config/workflow.yaml is not valid: ") || strings.Contains(err.Error(), "yaml: ") {
+		if !strings.Contains(err.Error(), File+" is not valid: ") || strings.Contains(err.Error(), "yaml: ") {
 			t.Errorf("%s: the error should name the file and say it is not valid: %v", name, err)
 		}
 		if parse.Unwrap() == nil {

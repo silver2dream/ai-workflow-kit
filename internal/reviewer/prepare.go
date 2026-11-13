@@ -12,6 +12,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
@@ -100,7 +101,7 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 	rc.Ticket = extractIssueBody(rc.IssueJSON)
 
 	// 6. Read task file
-	taskPath := filepath.Join(opts.StateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", opts.IssueNumber), "prompt.txt")
+	taskPath := filepath.Join(layout.Run(opts.StateRoot, opts.IssueNumber), "prompt.txt")
 	if content, err := os.ReadFile(taskPath); err == nil {
 		rc.TaskContent = string(content)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
@@ -30,7 +31,7 @@ Usage:
   awkit plan approve <plan> [--dry-run]
 
 What a plan does:
-  Every role of .ai/roster.yaml states where it stands on the brief. The roles
+  Every role of `+layout.RosterFile+` states where it stands on the brief. The roles
   object to each other, and the objections that matter most are argued out
   between the two roles concerned. A moderator who takes no side says where
   the meeting stands, the deciding role rules on what is still disputed, every
@@ -52,7 +53,7 @@ Options:
   --ask          Answer the council's questions before it argues (it waits for you)
   --brief-file   Read the brief from a file
   --resume       Go on with a plan that stopped; its name is its folder in docs/plans/
-  --roster       The roster to use (default: .ai/roster.yaml)
+  --roster       The roster to use (default: `+layout.RosterFile+`)
   --state-root   Project root (default: git root)
 
 Options of approve:
@@ -362,7 +363,7 @@ func planRoot(flagValue string) (string, int) {
 func planRepos(root string) ([]council.Repo, error) {
 	cfg, err := analyzer.LoadConfig(config.Path(root))
 	if err != nil {
-		return nil, fmt.Errorf("the project's config cannot be read (.ai/config/workflow.yaml): %w\nRun `awkit init` first", err)
+		return nil, fmt.Errorf("the project's config cannot be read ("+layout.ConfigFile+"): %w\nRun `awkit init` first", err)
 	}
 	var repos []council.Repo
 	for _, name := range cfg.TicketRepos() {
@@ -381,7 +382,7 @@ func rosterPath(root, flagValue string) string {
 	if flagValue != "" {
 		return flagValue
 	}
-	return filepath.Join(root, filepath.FromSlash(council.RosterPath))
+	return layout.Roster(root)
 }
 
 // planRoster reads the project's roster. A project that has none gets the one

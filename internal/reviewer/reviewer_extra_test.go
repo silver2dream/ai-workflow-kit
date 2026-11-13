@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,14 +26,14 @@ func TestGetReviewSettings_Defaults_NoFile(t *testing.T) {
 
 func TestGetReviewSettings_FromConfig(t *testing.T) {
 	dir := t.TempDir()
-	cfgDir := filepath.Join(dir, ".ai", "config")
+	cfgDir := filepath.Dir(layout.Config(dir))
 	os.MkdirAll(cfgDir, 0755)
 
 	yaml := `review:
   score_threshold: 9
   merge_strategy: merge
 `
-	os.WriteFile(filepath.Join(cfgDir, "workflow.yaml"), []byte(yaml), 0644)
+	os.WriteFile(layout.Config(dir), []byte(yaml), 0644)
 
 	settings := GetReviewSettings(dir)
 	if settings.ScoreThreshold != 9 {
@@ -44,14 +46,14 @@ func TestGetReviewSettings_FromConfig(t *testing.T) {
 
 func TestGetReviewSettings_InvalidMergeStrategy(t *testing.T) {
 	dir := t.TempDir()
-	cfgDir := filepath.Join(dir, ".ai", "config")
+	cfgDir := filepath.Dir(layout.Config(dir))
 	os.MkdirAll(cfgDir, 0755)
 
 	yaml := `review:
   score_threshold: 5
   merge_strategy: invalid_strategy
 `
-	os.WriteFile(filepath.Join(cfgDir, "workflow.yaml"), []byte(yaml), 0644)
+	os.WriteFile(layout.Config(dir), []byte(yaml), 0644)
 
 	settings := GetReviewSettings(dir)
 	if settings.ScoreThreshold != 5 {
@@ -67,11 +69,11 @@ func TestGetReviewSettings_ValidStrategies(t *testing.T) {
 	for _, strategy := range []string{"squash", "merge", "rebase"} {
 		t.Run(strategy, func(t *testing.T) {
 			dir := t.TempDir()
-			cfgDir := filepath.Join(dir, ".ai", "config")
+			cfgDir := filepath.Dir(layout.Config(dir))
 			os.MkdirAll(cfgDir, 0755)
 
 			yaml := "review:\n  merge_strategy: " + strategy + "\n"
-			os.WriteFile(filepath.Join(cfgDir, "workflow.yaml"), []byte(yaml), 0644)
+			os.WriteFile(layout.Config(dir), []byte(yaml), 0644)
 
 			settings := GetReviewSettings(dir)
 			if settings.MergeStrategy != strategy {
@@ -83,9 +85,9 @@ func TestGetReviewSettings_ValidStrategies(t *testing.T) {
 
 func TestGetReviewSettings_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
-	cfgDir := filepath.Join(dir, ".ai", "config")
+	cfgDir := filepath.Dir(layout.Config(dir))
 	os.MkdirAll(cfgDir, 0755)
-	os.WriteFile(filepath.Join(cfgDir, "workflow.yaml"), []byte("not: valid: yaml: ["), 0644)
+	os.WriteFile(layout.Config(dir), []byte("not: valid: yaml: ["), 0644)
 
 	// Should return defaults on invalid YAML
 	settings := GetReviewSettings(dir)

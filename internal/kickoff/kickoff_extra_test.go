@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // =============================================================================
@@ -659,9 +661,9 @@ func TestLogLine_Fields(t *testing.T) {
 // list causes CheckRepoPaths to pass (nothing to validate).
 func TestPreflightChecker_CheckRepoPaths_EmptyRepos(t *testing.T) {
 	tmpDir := t.TempDir()
-	aiConfigDir := filepath.Join(tmpDir, ".ai", "config")
+	aiConfigDir := filepath.Dir(layout.Config(tmpDir))
 	os.MkdirAll(aiConfigDir, 0755)
-	configPath := filepath.Join(aiConfigDir, "workflow.yaml")
+	configPath := layout.Config(tmpDir)
 
 	checker := NewPreflightChecker(configPath, "")
 	checker.config = &Config{Repos: []RepoConfig{}}
@@ -681,7 +683,7 @@ func TestCheckPermissions_MissingAll(t *testing.T) {
 	// Build a config path that resolves to dir as stateRoot:
 	// configPath = dir/.ai/config/workflow.yaml
 	// stateRoot = filepath.Dir(filepath.Dir(filepath.Dir(configPath))) = dir
-	configPath := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	configPath := layout.Config(dir)
 	os.MkdirAll(filepath.Dir(configPath), 0755)
 
 	p := NewPreflightChecker(configPath, "lock.pid")
@@ -697,7 +699,7 @@ func TestCheckPermissions_MissingAll(t *testing.T) {
 
 func TestCheckAgents_MissingAll(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	configPath := layout.Config(dir)
 	os.MkdirAll(filepath.Dir(configPath), 0755)
 
 	p := NewPreflightChecker(configPath, "lock.pid")
@@ -713,7 +715,7 @@ func TestCheckAgents_MissingAll(t *testing.T) {
 
 func TestCheckAgents_AllPresent(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	configPath := layout.Config(dir)
 	os.MkdirAll(filepath.Dir(configPath), 0755)
 
 	// Create both agent files

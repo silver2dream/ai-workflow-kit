@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -502,7 +503,7 @@ func TestReadFailCount_MissingFile(t *testing.T) {
 
 func TestReadFailCount_ValidFile(t *testing.T) {
 	dir := t.TempDir()
-	runDir := filepath.Join(dir, ".ai", "runs", "issue-5")
+	runDir := layout.Run(dir, 5)
 	os.MkdirAll(runDir, 0755)
 	os.WriteFile(filepath.Join(runDir, "fail_count.txt"), []byte("3"), 0644)
 
@@ -514,7 +515,7 @@ func TestReadFailCount_ValidFile(t *testing.T) {
 
 func TestResetFailCount_ResetsToZero(t *testing.T) {
 	dir := t.TempDir()
-	runDir := filepath.Join(dir, ".ai", "runs", "issue-7")
+	runDir := layout.Run(dir, 7)
 	os.MkdirAll(runDir, 0755)
 	os.WriteFile(filepath.Join(runDir, "fail_count.txt"), []byte("5"), 0644)
 

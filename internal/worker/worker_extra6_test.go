@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -15,7 +17,7 @@ import (
 
 func TestLoadAttemptInfo_WithPreviousSessionID(t *testing.T) {
 	dir := t.TempDir()
-	resultsDir := filepath.Join(dir, ".ai", "results")
+	resultsDir := layout.Results(dir)
 	os.MkdirAll(resultsDir, 0755)
 
 	result := &IssueResult{
@@ -38,7 +40,7 @@ func TestLoadAttemptInfo_WithPreviousSessionID(t *testing.T) {
 
 func TestLoadAttemptInfo_MaxPreviousSessionIDs(t *testing.T) {
 	dir := t.TempDir()
-	resultsDir := filepath.Join(dir, ".ai", "results")
+	resultsDir := layout.Results(dir)
 	os.MkdirAll(resultsDir, 0755)
 
 	// Create a result with more than maxPreviousSessionIDs session IDs

@@ -16,6 +16,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/updatecheck"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
@@ -386,7 +387,7 @@ Arguments:
 Options:
   --scaffold      Supplement scaffold files for a preset (requires --preset)
   --preset        Preset to use for scaffold (required with --scaffold)
-  --force-config  Overwrite .ai/config/workflow.yaml using the preset (requires --preset)
+  --force-config  Overwrite `+layout.ConfigFile+` using the preset (requires --preset)
   --force         Overwrite scaffold files (only affects scaffold, not kit files)
   --dry-run       Show what would be updated without making changes
   --no-generate   Skip running awkit generate after upgrade
@@ -413,7 +414,7 @@ Arguments:
 
 Options:
   --dry-run       Show what would be removed without making changes
-  --keep-config   Keep .ai/config/workflow.yaml
+  --keep-config   Keep `+layout.ConfigFile+`
 
 Examples:
   awkit uninstall
@@ -561,13 +562,13 @@ func cmdInit(args []string) int {
 
 	if *dryRun {
 		fmt.Println(bold("AWK Kit files:"))
-		fmt.Println("  .ai/config/workflow.yaml")
-		fmt.Println("  .ai/rules/")
-		fmt.Println("  .ai/skills/")
+		fmt.Println("  " + layout.ConfigFile)
+		fmt.Println("  " + layout.RulesDir + "/")
+		fmt.Println("  " + layout.SkillsDir + "/")
 		fmt.Println("  .ai/state/ (runtime, gitignored)")
-		fmt.Println("  .ai/results/ (runtime, gitignored)")
-		fmt.Println("  .ai/runs/ (runtime, gitignored)")
-		fmt.Println("  .ai/exe-logs/ (runtime, gitignored)")
+		fmt.Println("  " + layout.ResultsDir + "/ (runtime, gitignored)")
+		fmt.Println("  " + layout.RunsDir + "/ (runtime, gitignored)")
+		fmt.Println("  " + layout.LogsDir + "/ (runtime, gitignored)")
 		fmt.Println("  .worktrees/ (gitignored)")
 		fmt.Println("  .claude/agents/")
 		fmt.Println("  .github/workflows/ (a CI workflow per repo that has build or test commands)")
@@ -648,7 +649,7 @@ func cmdInit(args []string) int {
 	// Warn if config was skipped
 	if result != nil && result.ConfigSkipped {
 		fmt.Println("")
-		warn("Skipped: .ai/config/workflow.yaml (already exists)\n")
+		warn("Skipped: " + layout.ConfigFile + " (already exists)\n")
 		fmt.Printf("  Preset '%s' was NOT applied to config.\n", *preset)
 		fmt.Println("")
 		fmt.Println("  To apply preset config, use one of:")
@@ -693,15 +694,15 @@ func cmdInit(args []string) int {
 	if result != nil && result.GenerateError != nil {
 		fmt.Println("")
 		warn("CLAUDE.md, AGENTS.md and the CI workflows were not written: %v\n", result.GenerateError)
-		fmt.Println("  Fix .ai/config/workflow.yaml, then run awkit init again.")
+		fmt.Println("  Fix " + layout.ConfigFile + ", then run awkit init again.")
 	}
 
 	fmt.Println("")
 	fmt.Println(bold("Next steps:"))
 	fmt.Printf("  1. %s\n", cyan("cd "+displayTarget))
-	fmt.Printf("  2. %s\n", cyan("Edit .ai/config/workflow.yaml"))
+	fmt.Printf("  2. %s\n", cyan("Edit "+layout.ConfigFile))
 	fmt.Printf("  3. %s\n", cyan("awkit generate"))
-	fmt.Printf("  4. %s   the council (.ai/roster.yaml) writes the documents and proposes the tickets\n", cyan(`awkit plan "<what you want built>"`))
+	fmt.Printf("  4. %s   the council ("+layout.RosterFile+") writes the documents and proposes the tickets\n", cyan(`awkit plan "<what you want built>"`))
 	fmt.Printf("  5. %s   work through the tickets\n", cyan("awkit run"))
 	fmt.Println("")
 
@@ -829,20 +830,20 @@ func cmdUpgrade(args []string) int {
 
 	if *dryRun {
 		fmt.Println("Would update:")
-		fmt.Println("  .ai/rules/_kit/")
-		fmt.Println("  .ai/rules/_examples/")
-		fmt.Println("  .ai/skills/")
+		fmt.Println("  " + layout.KitRulesDir + "/")
+		fmt.Println("  " + layout.RulesDir + "/_examples/")
+		fmt.Println("  " + layout.SkillsDir + "/")
 		fmt.Println("  .claude/agents/")
 		fmt.Println("  .github/workflows/ (the workflows awkit generated; an old ci.yml loses the awk job)")
 		fmt.Println("")
 		if *forceConfig {
 			fmt.Println("Would overwrite:")
-			fmt.Printf("  .ai/config/workflow.yaml (preset: %s)\n", *preset)
+			fmt.Printf("  "+layout.ConfigFile+" (preset: %s)\n", *preset)
 		} else {
 			fmt.Println("Would preserve:")
-			fmt.Println("  .ai/config/workflow.yaml")
+			fmt.Println("  " + layout.ConfigFile)
 		}
-		fmt.Println("  .ai/rules/ (user rules)")
+		fmt.Println("  " + layout.RulesDir + "/ (user rules)")
 
 		// Scaffold dry-run
 		if *scaffold {
@@ -929,16 +930,16 @@ func cmdUpgrade(args []string) int {
 
 	if result != nil && result.ConfigSkipped {
 		fmt.Println("")
-		info("  Config preserved: .ai/config/workflow.yaml\n")
+		info("  Config preserved: " + layout.ConfigFile + "\n")
 	} else if *forceConfig {
 		fmt.Println("")
-		info("  Config overwritten: .ai/config/workflow.yaml\n")
+		info("  Config overwritten: " + layout.ConfigFile + "\n")
 	}
 
 	if result != nil && result.GenerateError != nil {
 		fmt.Println("")
 		warn("CLAUDE.md, AGENTS.md and the CI workflows were not regenerated: %v\n", result.GenerateError)
-		fmt.Println("  Fix .ai/config/workflow.yaml, then run awkit generate.")
+		fmt.Println("  Fix " + layout.ConfigFile + ", then run awkit generate.")
 	}
 
 	// Upgrade permissions in settings.local.json

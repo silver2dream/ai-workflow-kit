@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // What a meeting leaves on disk besides the roles' own documents: its minutes,
@@ -306,7 +308,7 @@ func planIDs(root string) []string {
 func writeIndex(root string, roster *Roster) error {
 	p := &planner{root: root, roster: roster}
 	var b strings.Builder
-	b.WriteString(indexOpen + "\n\n## Documents\n\nEach document has one owner: the role that writes it when the council plans (`.ai/roster.yaml`).\n\n| Document | Owner | Status |\n|---|---|---|\n")
+	b.WriteString(indexOpen + "\n\n## Documents\n\nEach document has one owner: the role that writes it when the council plans (`" + layout.RosterFile + "`).\n\n| Document | Owner | Status |\n|---|---|---|\n")
 	for _, role := range p.roster.Roles {
 		for _, doc := range role.Owns {
 			status := "not written"

@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // =============================================================================
@@ -52,11 +54,11 @@ func TestIntegration_PreflightToLockRelease(t *testing.T) {
 	// baseDir() resolves the state root by walking three levels up from the
 	// config path, so the fixture must mirror the real structure or the
 	// spec-file checks resolve outside tmpDir.
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("Failed to create config dir: %v", err)
 	}
-	configPath := filepath.Join(configDir, "workflow.yaml")
+	configPath := layout.Config(tmpDir)
 	configContent := `version: "1.0"
 project:
   name: test-project

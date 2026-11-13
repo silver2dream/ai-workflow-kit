@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -144,7 +146,7 @@ func TestCollectConfigInfo_NoFile(t *testing.T) {
 
 func TestCollectConfigInfo_ValidYaml(t *testing.T) {
 	dir := t.TempDir()
-	configDir := filepath.Join(dir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(dir))
 	os.MkdirAll(configDir, 0755)
 	yaml := `rules:
   kit:
@@ -157,7 +159,7 @@ agents:
   custom:
     - name: my-agent
 `
-	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(yaml), 0644)
+	os.WriteFile(layout.Config(dir), []byte(yaml), 0644)
 
 	info := collectConfigInfo(dir)
 	if len(info.RulesKit) != 1 || info.RulesKit[0] != "git-workflow" {
@@ -176,9 +178,9 @@ agents:
 
 func TestCollectConfigInfo_InvalidYaml(t *testing.T) {
 	dir := t.TempDir()
-	configDir := filepath.Join(dir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(dir))
 	os.MkdirAll(configDir, 0755)
-	os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("[invalid yaml"), 0644)
+	os.WriteFile(layout.Config(dir), []byte("[invalid yaml"), 0644)
 
 	info := collectConfigInfo(dir)
 	// Should return empty ConfigInfo on parse error
@@ -211,12 +213,12 @@ func TestFileExists_Status_Missing(t *testing.T) {
 // listed.
 func TestCollectConfigInfo_ShowsWhatIsInEffect(t *testing.T) {
 	dir := t.TempDir()
-	configDir := filepath.Join(dir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(dir))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	content := "agents:\n  custom:\n    - {description: nameless}\n    - {name: sec-check, description: Security}\n"
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(layout.Config(dir), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
