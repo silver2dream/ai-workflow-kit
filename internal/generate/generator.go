@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
-	"gopkg.in/yaml.v3"
+	projectconfig "github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
 // Backtick for use in templates
@@ -28,29 +27,6 @@ type Result struct {
 	// config accounts for any more.
 	RemovedFiles   []string
 	GeneratedFiles []string
-}
-
-// Config represents workflow.yaml structure
-type Config struct {
-	Project ProjectConfig `yaml:"project"`
-	Git     GitConfig     `yaml:"git"`
-	Repos   []RepoConfig  `yaml:"repos"`
-	Rules   RulesConfig   `yaml:"rules"`
-	Agents  AgentsConfig  `yaml:"agents"`
-}
-
-// ValidationError represents a configuration validation error
-type ValidationError struct {
-	Field    string
-	Message  string
-	Expected string
-}
-
-func (e ValidationError) Error() string {
-	if e.Expected != "" {
-		return fmt.Sprintf("%s: %s (expected: %s)", e.Field, e.Message, e.Expected)
-	}
-	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
 
 // ValidateRepoPath validates repo path based on type.
@@ -130,170 +106,19 @@ func ValidateSubmoduleRemote(repoPath, gitmodulesURL, actualRemoteURL string) (b
 	return true, ""
 }
 
-// Validate checks if the configuration has all required fields
-func (c *Config) Validate() []ValidationError {
-	var errors []ValidationError
-
-	if c.Project.Name == "" {
-		errors = append(errors, ValidationError{
-			Field:   "project.name",
-			Message: "required field is missing",
-		})
-	}
-
-	if c.Project.Type == "" {
-		errors = append(errors, ValidationError{
-			Field:    "project.type",
-			Message:  "required field is missing",
-			Expected: "monorepo or single-repo",
-		})
-	} else if c.Project.Type != "monorepo" && c.Project.Type != "single-repo" {
-		errors = append(errors, ValidationError{
-			Field:    "project.type",
-			Message:  fmt.Sprintf("invalid value: %s", c.Project.Type),
-			Expected: "monorepo or single-repo",
-		})
-	}
-
-	if c.Git.IntegrationBranch == "" {
-		errors = append(errors, ValidationError{
-			Field:   "git.integration_branch",
-			Message: "required field is missing",
-		})
-	}
-
-	// Validate custom agents
-	agentNamePattern := regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	validModels := map[string]bool{"haiku": true, "sonnet": true, "opus": true}
-	validTriggers := map[string]bool{
-		"review_pr": true, "check_result": true,
-		"dispatch_worker": true,
-	}
-	builtinAgentNames := make(map[string]bool)
-	for _, name := range c.Agents.Builtin {
-		builtinAgentNames[name] = true
-	}
-	customAgentNames := make(map[string]bool)
-	for i, agent := range c.Agents.Custom {
-		if agent.Name == "" {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("agents.custom[%d].name", i),
-				Message: "required field is missing",
-			})
-		} else {
-			if !agentNamePattern.MatchString(agent.Name) {
-				errors = append(errors, ValidationError{
-					Field:    fmt.Sprintf("agents.custom[%d].name", i),
-					Message:  fmt.Sprintf("invalid name: %s", agent.Name),
-					Expected: "lowercase letters, digits, hyphens (must start with letter)",
-				})
-			}
-			if builtinAgentNames[agent.Name] {
-				errors = append(errors, ValidationError{
-					Field:   fmt.Sprintf("agents.custom[%d].name", i),
-					Message: fmt.Sprintf("name '%s' collides with built-in agent", agent.Name),
-				})
-			}
-			if customAgentNames[agent.Name] {
-				errors = append(errors, ValidationError{
-					Field:   fmt.Sprintf("agents.custom[%d].name", i),
-					Message: fmt.Sprintf("duplicate agent name: %s", agent.Name),
-				})
-			}
-			customAgentNames[agent.Name] = true
-		}
-		if agent.Description == "" {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("agents.custom[%d].description", i),
-				Message: "required field is missing",
-			})
-		}
-		if agent.Model != "" && !validModels[agent.Model] {
-			errors = append(errors, ValidationError{
-				Field:    fmt.Sprintf("agents.custom[%d].model", i),
-				Message:  fmt.Sprintf("invalid model: %s", agent.Model),
-				Expected: "haiku, sonnet, or opus",
-			})
-		}
-		if agent.Trigger != "" && !validTriggers[agent.Trigger] {
-			errors = append(errors, ValidationError{
-				Field:    fmt.Sprintf("agents.custom[%d].trigger", i),
-				Message:  fmt.Sprintf("invalid trigger: %s", agent.Trigger),
-				Expected: "review_pr, check_result, or dispatch_worker",
-			})
-		}
-	}
-
-	// Validate repos
-	for i, repo := range c.Repos {
-		if repo.Name == "" {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("repos[%d].name", i),
-				Message: "required field is missing",
-			})
-		}
-		if repo.Path == "" {
-			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("repos[%d].path", i),
-				Message: "required field is missing",
-			})
-		}
-		if repo.Type != "" && repo.Type != "root" && repo.Type != "directory" && repo.Type != "submodule" {
-			errors = append(errors, ValidationError{
-				Field:    fmt.Sprintf("repos[%d].type", i),
-				Message:  fmt.Sprintf("invalid value: %s", repo.Type),
-				Expected: "root, directory, or submodule",
-			})
-		}
-	}
-
-	return errors
-}
-
-type ProjectConfig struct {
-	Name string `yaml:"name"`
-	Type string `yaml:"type"`
-}
-
-type GitConfig struct {
-	IntegrationBranch string `yaml:"integration_branch"`
-	ReleaseBranch     string `yaml:"release_branch"`
-	CommitFormat      string `yaml:"commit_format"`
-}
-
-type RepoConfig struct {
-	Name     string       `yaml:"name"`
-	Path     string       `yaml:"path"`
-	Type     string       `yaml:"type"`
-	Language string       `yaml:"language"`
-	Verify   VerifyConfig `yaml:"verify"`
-	Rules    []string     `yaml:"rules"`
-}
-
-type VerifyConfig struct {
-	Setup string `yaml:"setup"`
-	Build string `yaml:"build"`
-	Test  string `yaml:"test"`
-}
-
-type RulesConfig struct {
-	Kit    []string `yaml:"kit"`
-	Custom []string `yaml:"custom"`
-}
-
-type AgentsConfig struct {
-	Builtin []string         `yaml:"builtin"`
-	Custom  []CustomAgentDef `yaml:"custom"`
-}
-
-type CustomAgentDef struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Tools       string `yaml:"tools"`
-	Model       string `yaml:"model"`
-	Trigger     string `yaml:"trigger"`
-	Condition   string `yaml:"condition"`
-}
+// The configuration is read by package config, for everyone. These are the
+// names the generator and its templates have for it.
+type (
+	Config          = projectconfig.Config
+	ProjectConfig   = projectconfig.Project
+	GitConfig       = projectconfig.Git
+	RepoConfig      = projectconfig.Repo
+	VerifyConfig    = projectconfig.Verify
+	RulesConfig     = projectconfig.Rules
+	AgentsConfig    = projectconfig.Agents
+	CustomAgentDef  = projectconfig.CustomAgent
+	ValidationError = projectconfig.ValidationError
+)
 
 // TemplateContext holds all data for template rendering
 type TemplateContext struct {
@@ -417,29 +242,9 @@ func Generate(opts Options) (*Result, error) {
 	return result, nil
 }
 
+// loadConfig reads the configuration file at path.
 func loadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
-	}
-
-	// Set defaults
-	if len(config.Rules.Kit) == 0 {
-		config.Rules.Kit = []string{"git-workflow"}
-	}
-	if config.Git.CommitFormat == "" {
-		config.Git.CommitFormat = "[type] subject"
-	}
-	if len(config.Agents.Builtin) == 0 {
-		config.Agents.Builtin = []string{"pr-reviewer", "conflict-resolver"}
-	}
-
-	return &config, nil
+	return projectconfig.LoadFile(path)
 }
 
 func buildContext(config *Config) *TemplateContext {
