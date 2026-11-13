@@ -27,6 +27,7 @@ AWK **learns from its own review history**. Every rejection runs through a four-
 - Relevant lessons are **injected** into future Worker/Reviewer prompts (scoped to the files you're touching, via the same relevance engine that powers knowledge-graph grounding).
 - Each lesson is **settled hit/miss** against real outcomes — counted only for PRs that touched the lesson's scope — and promoted through `candidate → active → proven`; ineffective lessons retire automatically.
 - A **proven** lesson can be promoted (`awkit lessons promote`) into a **hard gate** (rule / audit check) via a human-reviewed issue.
+- **A person's correction is the strongest signal.** Review a PR on GitHub while the workflow runs: AWK will not merge over your open comments, sends the Worker back with them, and distills them into lessons that are trusted from the start.
 
 The result: **a mistake caught once becomes a guardrail that stops it recurring.** The system gets harder to fool over time — and because lessons are committable JSON, the whole team shares the learning (unlike agent memory locked in a private runtime).
 
@@ -322,6 +323,7 @@ Highlighted newer options:
 review:
   score_threshold: 7
   severity_consistency: true    # gate: score vs Critical/Important findings (default on)
+  human_feedback: true          # a maintainer's PR review outranks the automated verdict (default on)
   multi_model: false            # run secondary reviewers + weighted consensus
   # secondary_reviewers:
   #   - backend: claude

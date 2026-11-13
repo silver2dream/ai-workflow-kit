@@ -27,6 +27,7 @@ AWK 會**從自己的審查歷史中學習**。每次拒絕都走一條四步迴
 - 相關教訓會**注入**後續 Worker/Reviewer prompt（依你正在動的檔案精準比對,重用與 knowledge-graph 接地相同的相關性引擎）。
 - 每條教訓依真實結果**結算命中/落空**（只計入有改到該教訓範圍的 PR）,並經 `candidate → active → proven` 晉升 —— 無效的教訓自動退役。
 - **已驗證（proven）**的教訓可用 `awkit lessons promote` 經人審 issue **升級為硬閘門**（rule / audit 檢查）。
+- **人的糾正是最高等級的訊號。** 工作流執行中在 GitHub 上審查 PR:AWK 不會越過你尚未解決的意見合併,會把意見交給 Worker,並把它蒸餾成一開始就受信任的教訓。
 
 成果:**犯過一次的錯,會變成阻止它再犯的護欄。** 系統隨時間越來越難被騙 —— 而且因為教訓是可提交的 JSON,整個團隊共享這份學習(不像鎖在私有 runtime 裡的 agent 記憶)。
 
@@ -320,6 +321,7 @@ Spec 資料夾結構（Kiro 相容）：
 review:
   score_threshold: 7
   severity_consistency: true    # 閘門：分數 vs Critical/Important 發現（預設開）
+  human_feedback: true          # 維護者的 PR 審查意見優先於自動審查（預設開）
   multi_model: false            # 執行次要審查者 + 加權共識
   # secondary_reviewers:
   #   - backend: claude

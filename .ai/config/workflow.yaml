@@ -291,6 +291,13 @@ review:
   # score < threshold requires >=1 Critical/Important item; score >= threshold
   # must not list any Critical item. Set false to disable.
   # severity_consistency: true
+  # Maintainer review feedback (default: true).
+  # What a person with write access writes through GitHub's review interface
+  # (the body of a review, a comment on a line of the diff) outranks the
+  # automated verdict: the pull request is not merged while such feedback is
+  # open on its current commit, the Worker is sent back with it, and it is
+  # recorded as human evidence for the learning loop. Set false to disable.
+  # human_feedback: true
   # Multi-model cross review (enforced by `awkit submit-review` in Go).
   # When true, submit-review fetches the PR diff and runs each secondary
   # reviewer via `claude --print` in parallel, then applies the weighted

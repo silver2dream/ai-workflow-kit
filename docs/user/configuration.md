@@ -354,6 +354,7 @@ review:
   score_threshold: 7           # PR 審核通過的最低分數（1-10）
   merge_strategy: squash       # 合併策略：squash | merge | rebase
   severity_consistency: true   # severity/verdict 一致性閘門（預設開）
+  human_feedback: true         # 維護者的審查意見優先於自動審查（預設開）
   multi_model: false           # multi-model 共識審查
   # secondary_reviewers:
   #   - backend: claude
@@ -376,6 +377,24 @@ Principal 審查 Worker 提交的 PR 時使用的設定。
 | `multi_model` | `false` | 開啟後,`submit-review` 取 PR diff、平行執行次要審查者,套用加權共識（primary×0.7 + secondaries 均分 0.3），任一審查者回報 `[ERROR]` 時共識分數上限 6 |
 | `secondary_reviewers[]` | — | 次要審查者清單,每項 `{backend, model, focus_area}`。省略時預設一個 architecture-focused opus 審查者 |
 | `jittest` | 停用 | 審查時從 PR diff 生成獨立測試（`awkit jittest`）。`failure_policy: block` 時失敗會 `review_blocked` |
+| `human_feedback` | `true` | 維護者在 PR 上的審查意見優先於自動審查,見下方「人工糾正」 |
+
+### 人工糾正:在 PR 上留審查意見
+
+工作流執行中,你隨時可以在 AWK 開的 PR 上用 GitHub 的審查介面留意見:在 diff 的某一行留言,或用「Review changes」送出一段說明。有寫入權限的帳號留的這些意見,AWK 當成最高等級的訊號:
+
+- **不會越過它合併。** PR 目前的 commit 上若有尚未解決的意見,即使自動審查給了通過的分數,AWK 也不會 approve 或合併,而是把 issue 退回給 Worker,並把你的意見原文交給它。
+- **Worker 改完後會被核對。** 下一輪審查時,審查者會拿到你留過的每一則意見,逐一對照目前的程式碼;沒處理到的會被列為 Critical。
+- **成為教訓。** 每則意見記入 `.ai/state/review_feedback.jsonl`（`source: human`）。這個 PR 通過後,蒸餾會以你的意見為主軸,產生的教訓直接是 `active`,不必先當 `candidate`。
+- **你自己動手也算。** AWK 判定不通過或交給人工的 PR,若你推了修正再自行合併,下一次蒸餾會自動發現並把「被拒 → 你修好」當成一個案例。
+
+幾個細節:
+
+- 只認審查介面寫的內容（review 的說明、行內留言）。PR 與 issue 下方的一般對話留言不算,留給討論用。
+- 想讓 AWK 不再等某則意見:把那串對話標為已解決（Resolve conversation）,或撤銷那次 review。
+- Worker 被退回一輪卻沒有推任何修改（例如你的留言是個問題）時,AWK 不會再退一輪,也不會合併,而是標上 `needs-human-review` 停下來等你。
+- AWK 與你共用同一個 GitHub 帳號也沒關係:AWK 自己貼的內容都帶有標記,不會被當成你的意見。
+- 合併之後才留的意見擋不到那次合併:自動審查通過且 CI 通過時,AWK 會立刻合併,目前沒有「合併前先等人看」的開關。
 
 ---
 
