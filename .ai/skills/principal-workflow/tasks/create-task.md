@@ -96,6 +96,13 @@
 - If the task has no dependencies, omit the `## Dependencies` section entirely.
 - If dependency issues have not been created yet (step not yet in epic body as `- [x] #N` or `- [ ] #N`), write `Depends on: Step <N> (issue not yet created)` as a placeholder. The Principal should create prerequisite issues first.
 
+**Constraints section（可選）**：runner 預設會拒絕 Worker 對工作流自身檔案的修改——`.ai/config/`、`.ai/rules/`、`.ai/skills/`、`.claude/agents/`、`CLAUDE.md`、`AGENTS.md`——因為這些檔案決定 Worker 如何被派工與審查。只有當任務本身就是要修改它們時，才在 ticket 加上：
+
+```markdown
+## Constraints
+- allow-script-changes
+```
+
 ### 3) 建立 Issue 並更新 tracking source
 
 **epic 模式** (推薦):

@@ -9,9 +9,45 @@ import (
 	"strings"
 )
 
+// protectedPaths are the workflow's own control files: the configuration,
+// rules, skills and agent definitions that decide how work is dispatched and
+// reviewed. A Worker that edits them changes the rules it is checked against,
+// so the runner rejects such a change unless the ticket allows it
+// (`allow-script-changes` under `## Constraints`).
 var protectedPaths = []string{
-	".ai/scripts/",
-	".ai/commands/",
+	".ai/config/",
+	".ai/rules/",
+	".ai/skills/",
+	".claude/agents/",
+}
+
+// protectedFiles are single files at the repository root with the same standing.
+var protectedFiles = []string{
+	"CLAUDE.md",
+	"AGENTS.md",
+}
+
+// protectedPathList renders the protected set for the Worker prompt, so the
+// prompt names exactly what the runner enforces.
+func protectedPathList() string {
+	all := append(append([]string{}, protectedPaths...), protectedFiles...)
+	return strings.Join(all, ", ")
+}
+
+// isProtectedPath reports whether a normalized, repository-relative path is
+// one of the workflow's control files.
+func isProtectedPath(normalized string) bool {
+	for _, prefix := range protectedPaths {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	for _, file := range protectedFiles {
+		if normalized == normalizePath(file) {
+			return true
+		}
+	}
+	return false
 }
 
 var defaultSecretPatterns = []string{
@@ -35,7 +71,7 @@ func CheckScriptModifications(ctx context.Context, wtDir string, allowChanges bo
 	files := splitLines(output)
 	violations := findProtectedChanges(files, whitelist)
 	if len(violations) > 0 && !allowChanges {
-		return violations, fmt.Errorf("protected scripts modified without approval")
+		return violations, fmt.Errorf("protected workflow files modified without approval: %s (to allow it, add 'allow-script-changes' under '## Constraints' in the ticket)", strings.Join(violations, ", "))
 	}
 
 	return violations, nil
@@ -65,16 +101,13 @@ func findProtectedChanges(files []string, whitelist string) []string {
 		if file == "" {
 			continue
 		}
-		normalized := normalizePath(file)
-		for _, protected := range protectedPaths {
-			if strings.HasPrefix(normalized, protected) {
-				if whitelist != "" && strings.Contains(whitelist, file) {
-					continue
-				}
-				violations = append(violations, file)
-				break
-			}
+		if !isProtectedPath(normalizePath(file)) {
+			continue
 		}
+		if whitelist != "" && strings.Contains(whitelist, file) {
+			continue
+		}
+		violations = append(violations, file)
 	}
 	return violations
 }

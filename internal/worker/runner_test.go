@@ -51,15 +51,15 @@ func TestBuildWorkDirInstruction(t *testing.T) {
 func TestFindProtectedChanges(t *testing.T) {
 	files := []string{
 		"README.md",
-		".ai/scripts/cleanup.sh",
-		".ai/commands/run.md",
+		".ai/skills/cleanup.sh",
+		".ai/config/run.md",
 	}
 	violations := findProtectedChanges(files, "")
 	if len(violations) != 2 {
 		t.Errorf("expected 2 violations, got %d", len(violations))
 	}
 
-	violations = findProtectedChanges(files, ".ai/scripts/cleanup.sh")
+	violations = findProtectedChanges(files, ".ai/skills/cleanup.sh")
 	if len(violations) != 1 {
 		t.Errorf("expected 1 violation with whitelist, got %d", len(violations))
 	}

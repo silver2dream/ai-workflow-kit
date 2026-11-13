@@ -21,21 +21,21 @@ func TestFindProtectedChanges_NoViolations(t *testing.T) {
 }
 
 func TestFindProtectedChanges_CommandsPath(t *testing.T) {
-	files := []string{".ai/commands/run.sh"}
+	files := []string{".ai/config/run.sh"}
 	violations := findProtectedChanges(files, "")
 	if len(violations) != 1 {
-		t.Errorf("findProtectedChanges(.ai/commands/) = %d violations, want 1", len(violations))
+		t.Errorf("findProtectedChanges(.ai/config/) = %d violations, want 1", len(violations))
 	}
 }
 
 func TestFindProtectedChanges_WithViolation(t *testing.T) {
-	files := []string{".ai/scripts/setup.sh", "main.go"}
+	files := []string{".ai/skills/setup.sh", "main.go"}
 	violations := findProtectedChanges(files, "")
 	if len(violations) != 1 {
 		t.Errorf("findProtectedChanges(protected file) = %d violations, want 1", len(violations))
 	}
-	if violations[0] != ".ai/scripts/setup.sh" {
-		t.Errorf("violation = %q, want .ai/scripts/setup.sh", violations[0])
+	if violations[0] != ".ai/skills/setup.sh" {
+		t.Errorf("violation = %q, want .ai/skills/setup.sh", violations[0])
 	}
 }
 
