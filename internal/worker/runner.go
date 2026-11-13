@@ -50,16 +50,6 @@ type workflowConfig struct {
 	Lessons    workflowLessons    `yaml:"lessons"`
 	Feedback   workflowFeedback   `yaml:"feedback"`
 	Worker     workflowWorker     `yaml:"worker"`
-	Specs      workflowSpecs      `yaml:"specs"`
-}
-
-type workflowSpecs struct {
-	BasePath string            `yaml:"base_path"`
-	Files    workflowSpecFiles `yaml:"files"`
-}
-
-type workflowSpecFiles struct {
-	Design string `yaml:"design"`
 }
 
 type workflowWorker struct {
@@ -159,8 +149,6 @@ type issueResultContext struct {
 	RetryCount            int
 	SubmoduleSHA          string
 	ConsistencyStatus     string
-	SpecName              string
-	TaskLine              string
 	Recoverable           bool
 }
 
@@ -364,8 +352,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 					WorkerStartTime:       pidInfo.StartTime,
 					Duration:              time.Since(startTime),
 					RetryCount:            0,
-					SpecName:              resolveSpecName(meta),
-					TaskLine:              resolveTaskLine(meta),
 					Recoverable:           true,
 				})
 			}
@@ -625,7 +611,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Specs, &cfg.Worker, &cfg.Lessons); err != nil {
+	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Worker, &cfg.Lessons); err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
@@ -702,8 +688,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 			WorkerStartTime:       pidInfo.StartTime,
 			Duration:              execDuration,
 			RetryCount:            codex.RetryCount,
-			SpecName:              resolveSpecName(meta),
-			TaskLine:              resolveTaskLine(meta),
 		})
 		resultWritten = true
 
@@ -878,8 +862,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 				RetryCount:            codex.RetryCount,
 				SubmoduleSHA:          submoduleState.SubmoduleSHA,
 				ConsistencyStatus:     consistencyStatus,
-				SpecName:              resolveSpecName(meta),
-				TaskLine:              resolveTaskLine(meta),
 			})
 			resultWritten = true
 			return result, err
@@ -919,8 +901,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 					WorkerStartTime:       pidInfo.StartTime,
 					Duration:              time.Since(startTime),
 					RetryCount:            codex.RetryCount,
-					SpecName:              resolveSpecName(meta),
-					TaskLine:              resolveTaskLine(meta),
 				})
 				resultWritten = true
 				return result, fmt.Errorf("%s", result.Error)
@@ -951,8 +931,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 				WorkerStartTime:       pidInfo.StartTime,
 				Duration:              time.Since(startTime),
 				RetryCount:            codex.RetryCount,
-				SpecName:              resolveSpecName(meta),
-				TaskLine:              resolveTaskLine(meta),
 			})
 			resultWritten = true
 			// Return success (no error) for success_no_changes
@@ -1009,8 +987,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 				RetryCount:            codex.RetryCount,
 				SubmoduleSHA:          submoduleState.SubmoduleSHA,
 				ConsistencyStatus:     consistencyStatus,
-				SpecName:              resolveSpecName(meta),
-				TaskLine:              resolveTaskLine(meta),
 			})
 			resultWritten = true
 			return result, err
@@ -1065,8 +1041,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 			RetryCount:            codex.RetryCount,
 			SubmoduleSHA:          submoduleState.SubmoduleSHA,
 			ConsistencyStatus:     consistencyStatus,
-			SpecName:              resolveSpecName(meta),
-			TaskLine:              resolveTaskLine(meta),
 		})
 		resultWritten = true
 		return result, err
@@ -1102,8 +1076,6 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		RetryCount:            codex.RetryCount,
 		SubmoduleSHA:          submoduleState.SubmoduleSHA,
 		ConsistencyStatus:     consistencyStatus,
-		SpecName:              resolveSpecName(meta),
-		TaskLine:              resolveTaskLine(meta),
 	}); err != nil {
 		runErr = err
 		result.Error = err.Error()
@@ -1256,7 +1228,6 @@ type workerPromptInputs struct {
 	WorkDirInstruction string
 	Ticket             string
 	IssueID            int
-	DesignContent      string // design.md context for the task's spec
 	GraphSection       string // ticket-relevant slice of the knowledge graph
 	ReviewComments     string // earlier AWK Review feedback on the issue
 	PRReviewComments   string // file-level comments from the previous review
@@ -1264,7 +1235,7 @@ type workerPromptInputs struct {
 	TopCategorySection string // most common rejection categories
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, specsCfg *workflowSpecs, workerCfg *workflowWorker, lessonsCfg *workflowLessons) error {
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, workerCfg *workflowWorker, lessonsCfg *workflowLessons) error {
 	in := workerPromptInputs{
 		WorkDirInstruction: workDirInstruction,
 		Ticket:             ticket,
@@ -1272,7 +1243,6 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	}
 	in.ReviewComments = fetchReviewComments(issueID, ghTimeout)
 	in.PRReviewComments = fetchPRReviewComments(prNumber, ghTimeout)
-	in.DesignContent = resolveDesignDoc(stateRoot, ticket, specsCfg)
 	// A ticket-relevant slice of the codebase knowledge graph, when one is
 	// present (best-effort grounding; see knowledgegraph.go).
 	in.GraphSection = loadKnowledgeGraphContext(stateRoot, issueID, ticket, workerCfg)
@@ -1317,16 +1287,6 @@ func buildWorkerPrompt(in workerPromptInputs) string {
 	builder.WriteString("These paths are reserved for the Principal agent and are protected.\n")
 	builder.WriteString("Attempting to access them will result in task failure.\n")
 	builder.WriteString("============================================================\n\n")
-
-	// Design document context comes before the ticket.
-	if in.DesignContent != "" {
-		builder.WriteString("============================================================\n")
-		builder.WriteString("DESIGN CONTEXT\n")
-		builder.WriteString("============================================================\n")
-		builder.WriteString("The following design document provides context for this task:\n\n")
-		builder.WriteString(in.DesignContent)
-		builder.WriteString("\n============================================================\n\n")
-	}
 
 	if in.GraphSection != "" {
 		builder.WriteString("============================================================\n")
@@ -1380,94 +1340,6 @@ func buildWorkerPrompt(in workerPromptInputs) string {
 	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
 
 	return builder.String()
-}
-
-// maxDesignDocChars is the maximum number of characters to inject from a design document.
-const maxDesignDocChars = 4000
-
-// resolveDesignDoc attempts to find and read a design.md for the task's spec.
-// It first checks the ticket's Spec field, then falls back to extracting a spec
-// name from the Source field (e.g., "audit:finding-1" maps to spec name before the colon part).
-// Returns the design doc content (capped at maxDesignDocChars) or empty string.
-func resolveDesignDoc(stateRoot, ticket string, specsCfg *workflowSpecs) string {
-	meta := ParseTicketMetadata(ticket)
-
-	// Determine spec name: prefer explicit SpecName, fall back to env, then Source-based heuristic
-	specName := resolveSpecName(meta)
-
-	if specName == "" {
-		// Try to extract spec name from Source field
-		// Source format: "audit:<finding-id>" or just a spec name
-		specName = extractSpecFromSource(meta.Source)
-	}
-
-	if specName == "" {
-		return ""
-	}
-
-	// Determine base path and design filename
-	basePath := ".ai/specs"
-	designFile := "design.md"
-	if specsCfg != nil {
-		if specsCfg.BasePath != "" {
-			basePath = specsCfg.BasePath
-		}
-		if specsCfg.Files.Design != "" {
-			designFile = specsCfg.Files.Design
-		}
-	}
-
-	// Construct the design doc path
-	designPath := filepath.Join(stateRoot, basePath, specName, designFile)
-
-	// Validate the resolved path doesn't escape the specs directory
-	absBase, err := filepath.Abs(filepath.Join(stateRoot, basePath))
-	if err != nil {
-		return ""
-	}
-	absDesign, err := filepath.Abs(designPath)
-	if err != nil {
-		return ""
-	}
-	if !strings.HasPrefix(absDesign, absBase+string(filepath.Separator)) {
-		return ""
-	}
-
-	data, err := os.ReadFile(designPath)
-	if err != nil {
-		return "" // File not found or unreadable — skip gracefully
-	}
-
-	content := string(data)
-	if len(content) > maxDesignDocChars {
-		content = content[:maxDesignDocChars] + "\n\n[... truncated at 4000 characters ...]"
-	}
-
-	return content
-}
-
-// extractSpecFromSource tries to derive a spec name from the Source metadata field.
-// Known formats:
-//   - "audit:<finding-id>" — not directly a spec, return empty
-//   - "tasks.md #<n>" — not a spec name, return empty
-//   - plain string that could be a spec name
-func extractSpecFromSource(source string) string {
-	source = strings.TrimSpace(source)
-	if source == "" {
-		return ""
-	}
-
-	// "audit:..." and "tasks.md ..." are not spec names
-	if strings.HasPrefix(source, "audit:") || strings.HasPrefix(source, "tasks.md") {
-		return ""
-	}
-
-	// Validate: no path separators, no dots (except in simple names)
-	if strings.ContainsAny(source, "/\\..") {
-		return ""
-	}
-
-	return source
 }
 
 func buildWorkDirInstruction(repoType, repoPath, workDir, repoName string) string {
@@ -2184,8 +2056,6 @@ func writeIssueResult(ctx context.Context, stateRoot string, info issueResultCon
 		RecoveryCommand:   recoveryCommand,
 		TimestampUTC:      time.Now().UTC().Format(time.RFC3339),
 		PRURL:             info.PRURL,
-		SpecName:          info.SpecName,
-		TaskLine:          info.TaskLine,
 		SummaryFile:       info.SummaryFile,
 		SubmoduleStatus:   submoduleStatus,
 		ErrorMessage:      info.ErrorMessage,
@@ -2246,25 +2116,6 @@ func loadAttemptInfo(stateRoot string, issueID int) attemptInfo {
 		PreviousSessionIDs:    previous,
 		PreviousFailureReason: result.Session.PreviousFailureReason,
 	}
-}
-
-func resolveSpecName(meta *TicketMetadata) string {
-	specName := strings.TrimSpace(os.Getenv("AI_SPEC_NAME"))
-	if specName != "" {
-		return specName
-	}
-	return meta.SpecName
-}
-
-func resolveTaskLine(meta *TicketMetadata) string {
-	taskLine := strings.TrimSpace(os.Getenv("AI_TASK_LINE"))
-	if taskLine != "" {
-		return taskLine
-	}
-	if meta.TaskLine > 0 {
-		return strconv.Itoa(meta.TaskLine)
-	}
-	return ""
 }
 
 func generateSessionID(role string) string {

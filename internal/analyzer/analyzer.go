@@ -1,7 +1,6 @@
 package analyzer
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,9 +14,9 @@ import (
 
 // Constants for loop safety
 const (
-	MaxLoop                      = 1000
-	MaxConsecutiveFailures       = 5
-	DefaultMaxReviewAttempts     = 3
+	MaxLoop                  = 1000
+	MaxConsecutiveFailures   = 5
+	DefaultMaxReviewAttempts = 3
 )
 
 // Analyzer implements workflow decision logic
@@ -325,23 +324,8 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}
 	}
 
-	// Step 4: Check for uncompleted tasks (mode-dependent)
-	if a.Config != nil && a.Config.IsEpicMode() {
-		if decision := a.checkEpicProgress(ctx); decision != nil {
-			return decision, nil
-		}
-		// In epic mode, if checkEpicProgress returned nil, all tasks are done
-		a.closeEpicIssues(ctx)
-		return &Decision{
-			NextAction: ActionAllComplete,
-		}, nil
-	}
-
-	if decision := a.checkTasksFiles(ctx); decision != nil {
-		return decision, nil
-	}
-
-	// Step 5: Check if all complete (tasks_md mode)
+	// Step 4: Nothing is left to dispatch. The run is complete once no task
+	// issue is open.
 	openCount, err := a.GHClient.CountOpenIssues(ctx, labels.Task)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to count open issues: %v\n", err)
@@ -353,7 +337,7 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}, nil
 	}
 
-	// Step 6: No actionable tasks
+	// Step 5: No actionable tasks
 	// Distinguish between "no tasks found" and "couldn't check due to API errors"
 	if apiErrors > 0 {
 		return &Decision{
@@ -465,287 +449,6 @@ func (a *Analyzer) extractPRNumberForIssue(issueNumber int, issueBody string) in
 	}
 
 	return 0
-}
-
-// checkTasksFiles checks tasks.md files for uncompleted tasks, and re-schedules
-// tasks that were "falsely completed" (issue closed with no merged PR).
-func (a *Analyzer) checkTasksFiles(ctx context.Context) *Decision {
-	if a.Config == nil || len(a.Config.Specs.Active) == 0 {
-		return nil
-	}
-
-	basePath := a.Config.Specs.BasePath
-	if basePath == "" {
-		basePath = ".ai/specs"
-	}
-
-	for _, spec := range a.Config.Specs.Active {
-		spec = strings.TrimSpace(spec)
-		if spec == "" {
-			continue
-		}
-
-		tasksFile := filepath.Join(a.StateRoot, basePath, spec, "tasks.md")
-		designFile := filepath.Join(a.StateRoot, basePath, spec, "design.md")
-
-		// Check if tasks.md exists
-		if _, err := os.Stat(tasksFile); os.IsNotExist(err) {
-			// Check if design.md exists (need to generate tasks)
-			if _, err := os.Stat(designFile); err == nil {
-				return &Decision{
-					NextAction: ActionGenerateTasks,
-					SpecName:   spec,
-				}
-			}
-			continue
-		}
-
-		// Find uncompleted task without Issue reference
-		file, err := os.Open(tasksFile)
-		if err != nil {
-			continue
-		}
-
-		scanner := bufio.NewScanner(file)
-		lineNum := 0
-		var refTasks []refTask
-		for scanner.Scan() {
-			lineNum++
-			line := scanner.Text()
-
-			if !strings.HasPrefix(line, "- [ ]") {
-				continue
-			}
-			// A task that was never dispatched (no issue ref) is created first.
-			if !strings.Contains(line, "<!-- Issue #") {
-				file.Close()
-				return &Decision{
-					NextAction: ActionCreateTask,
-					SpecName:   spec,
-					TaskLine:   lineNum,
-				}
-			}
-			// Otherwise remember it for the false-completion check below.
-			if n := parseIssueRefNumber(line); n > 0 {
-				refTasks = append(refTasks, refTask{issue: n, line: lineNum})
-			}
-		}
-		// Check for scanner errors (e.g., I/O errors during reading)
-		if err := scanner.Err(); err != nil {
-			file.Close()
-			continue // Skip this spec file on read error
-		}
-		file.Close()
-
-		// Every remaining task carries an issue ref. Re-schedule any that were
-		// closed without the work actually landing — a merged PR is the proof of
-		// completion.
-		if d := a.checkFalseCompletions(ctx, spec, refTasks); d != nil {
-			return d
-		}
-	}
-
-	return nil
-}
-
-// refTask is a tasks.md task line that already carries a GitHub issue reference.
-type refTask struct {
-	issue int
-	line  int
-}
-
-// parseIssueRefNumber extracts N from a "<!-- Issue #N -->" marker on a task
-// line, or 0 when the marker is absent or malformed.
-func parseIssueRefNumber(line string) int {
-	const marker = "<!-- Issue #"
-	i := strings.Index(line, marker)
-	if i < 0 {
-		return 0
-	}
-	rest := line[i+len(marker):]
-	end := strings.IndexFunc(rest, func(r rune) bool { return r < '0' || r > '9' })
-	if end <= 0 {
-		return 0
-	}
-	n, _ := strconv.Atoi(rest[:end])
-	return n
-}
-
-// checkFalseCompletions re-schedules the first task whose issue was closed
-// without the work landing. A task is genuinely done only if a MERGED PR exists
-// for its feat/ai-issue-<n> branch; a closed issue with no merged PR (e.g. a
-// worker that produced no changes, or the codex read-only sandbox bug) is a
-// false completion — reopen the issue and dispatch a worker to actually do it.
-// Best-effort: on any GitHub API error it returns nil rather than risk
-// misclassifying a genuine completion as false.
-func (a *Analyzer) checkFalseCompletions(ctx context.Context, spec string, refTasks []refTask) *Decision {
-	if len(refTasks) == 0 {
-		return nil
-	}
-
-	taskLabel := DefaultLabels().Task
-	if a.Config != nil && a.Config.GitHub.Labels.Task != "" {
-		taskLabel = a.Config.GitHub.Labels.Task
-	}
-
-	merged, err := a.GHClient.MergedIssueBranches(ctx)
-	if err != nil {
-		return nil
-	}
-	states, err := a.GHClient.TaskIssueStates(ctx, taskLabel)
-	if err != nil {
-		return nil
-	}
-
-	for _, rt := range refTasks {
-		if merged[fmt.Sprintf("feat/ai-issue-%d", rt.issue)] {
-			continue // genuinely completed: issue -> PR -> merge
-		}
-		// No merged PR. Only re-schedule if the issue is CLOSED; an OPEN issue is
-		// still in the pipeline and is handled by the earlier steps.
-		if states[rt.issue] != "CLOSED" {
-			continue
-		}
-		fmt.Fprintf(os.Stderr,
-			"[analyzer] false completion: issue #%d (%s line %d) is closed but has no merged PR; reopening and re-dispatching\n",
-			rt.issue, spec, rt.line)
-		_ = a.GHClient.ReopenIssue(ctx, rt.issue)
-		a.updateIssueLabels(ctx, rt.issue, []string{taskLabel}, nil)
-		return &Decision{
-			NextAction:  ActionDispatchWorker,
-			IssueNumber: rt.issue,
-		}
-	}
-	return nil
-}
-
-// closeEpicIssues closes all epic tracking issues for active specs.
-// Errors are logged as warnings and do not interrupt the workflow.
-func (a *Analyzer) closeEpicIssues(ctx context.Context) {
-	if a.Config == nil {
-		return
-	}
-	for _, spec := range a.Config.Specs.Active {
-		spec = strings.TrimSpace(spec)
-		if spec == "" {
-			continue
-		}
-		epicIssue := a.Config.GetEpicIssue(spec)
-		if epicIssue == 0 {
-			continue
-		}
-		if err := a.GHClient.CloseIssue(ctx, epicIssue); err != nil {
-			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to close epic #%d for spec %q: %v\n", epicIssue, spec, err)
-		}
-	}
-}
-
-// checkEpicProgress checks GitHub tracking issues for uncompleted tasks.
-// Returns a Decision if there's work to do, or nil if all tasks are complete.
-func (a *Analyzer) checkEpicProgress(ctx context.Context) *Decision {
-	if a.Config == nil || len(a.Config.Specs.Active) == 0 {
-		return nil
-	}
-
-	for _, spec := range a.Config.Specs.Active {
-		spec = strings.TrimSpace(spec)
-		if spec == "" {
-			continue
-		}
-
-		epicIssue := a.Config.GetEpicIssue(spec)
-		if epicIssue == 0 {
-			fmt.Fprintf(os.Stderr, "[analyzer] warning: epic mode but no epic_issue configured for spec %q\n", spec)
-			continue
-		}
-
-		body, err := a.GHClient.GetIssueBody(ctx, epicIssue)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to read epic #%d body: %v\n", epicIssue, err)
-			continue
-		}
-
-		tasks := ParseEpicBody(body)
-
-		// First priority: find unchecked tasks that need issue creation
-		for _, task := range tasks {
-			if task.Completed {
-				continue
-			}
-
-			// Unchecked task with issue ref — check if issue is still open (in-progress)
-			if task.IssueNumber > 0 {
-				// This task has a child issue already; it's being worked on or pending
-				// The standard issue-label checks in Steps 1-3 handle these
-				continue
-			}
-
-			// Unchecked task without issue ref — needs a new child issue
-			return &Decision{
-				NextAction: ActionCreateTask,
-				SpecName:   spec,
-				EpicIssue:  epicIssue,
-				TaskText:   task.Text,
-			}
-		}
-
-		// Second priority: check if audit should trigger at milestone.
-		// Only triggers when all visible tasks have issue refs (no immediate work)
-		// and not all tasks are complete (audit mid-execution is pointless when done).
-		if a.Config.Specs.Tracking.Audit.IsAuditEnabled() {
-			total, completed := CountEpicProgress(body)
-			if completed < total && a.shouldTriggerAudit(spec, completed, total) {
-				return &Decision{
-					NextAction: ActionAuditEpic,
-					SpecName:   spec,
-					EpicIssue:  epicIssue,
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// shouldTriggerAudit determines if an epic audit should be triggered.
-// Triggers at milestone intervals (default 25%) based on completion percentage.
-func (a *Analyzer) shouldTriggerAudit(spec string, completed, total int) bool {
-	if total == 0 {
-		return false
-	}
-
-	interval := a.Config.Specs.Tracking.Audit.MilestoneInterval
-	if interval <= 0 {
-		interval = 25
-	}
-
-	lastMilestone := a.readAuditMilestone(spec)
-	currentPercent := (completed * 100) / total
-	currentMilestone := (currentPercent / interval) * interval
-
-	if currentMilestone > lastMilestone && currentMilestone >= interval {
-		a.writeAuditMilestone(spec, currentMilestone)
-		return true
-	}
-
-	return false
-}
-
-// readAuditMilestone reads the last audit milestone percentage for a spec.
-func (a *Analyzer) readAuditMilestone(spec string) int {
-	path := filepath.Join(a.StateRoot, ".ai", "state", fmt.Sprintf("audit-milestone-%s.txt", spec))
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	val, _ := strconv.Atoi(strings.TrimSpace(string(data)))
-	return val
-}
-
-// writeAuditMilestone writes the current audit milestone percentage for a spec.
-func (a *Analyzer) writeAuditMilestone(spec string, milestone int) {
-	path := filepath.Join(a.StateRoot, ".ai", "state", fmt.Sprintf("audit-milestone-%s.txt", spec))
-	_ = writeFileAtomic(path, []byte(strconv.Itoa(milestone)), 0644)
 }
 
 // maxReviewAttempts returns the configured max review attempts, falling back to default.

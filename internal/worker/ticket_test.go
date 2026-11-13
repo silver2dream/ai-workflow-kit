@@ -27,12 +27,13 @@ Fix the login issue.
 			expected: &TicketMetadata{
 				Repo:     "backend",
 				Severity: "P0",
-				Source:   "audit:finding-123",
 				Release:  true,
 			},
 		},
 		{
-			name: "metadata with spec and task line",
+			// A ticket written for the old spec-driven flow still names its
+			// repo; the spec and task line it carries mean nothing any more.
+			name: "leftover spec and task line are ignored",
 			body: `# [feat] Add feature
 
 - **Repo**: frontend
@@ -46,8 +47,6 @@ Add a new feature.
 			expected: &TicketMetadata{
 				Repo:     "frontend",
 				Severity: "P1",
-				SpecName: "my-project",
-				TaskLine: 42,
 			},
 		},
 		{
@@ -84,17 +83,6 @@ Fix something dangerous.
 			},
 		},
 		{
-			name: "spec with path traversal should be ignored",
-			body: `- **Spec**: ../malicious
-- **Task Line**: 10
-`,
-			expected: &TicketMetadata{
-				Repo:     "root",
-				TaskLine: 10,
-				// SpecName should be empty due to path traversal
-			},
-		},
-		{
 			name: "alternative format without bold",
 			body: `- Repo: backend
 - Severity: P2
@@ -116,17 +104,8 @@ Fix something dangerous.
 			if result.Severity != tt.expected.Severity {
 				t.Errorf("Severity = %q, want %q", result.Severity, tt.expected.Severity)
 			}
-			if result.Source != tt.expected.Source {
-				t.Errorf("Source = %q, want %q", result.Source, tt.expected.Source)
-			}
 			if result.Release != tt.expected.Release {
 				t.Errorf("Release = %v, want %v", result.Release, tt.expected.Release)
-			}
-			if result.SpecName != tt.expected.SpecName {
-				t.Errorf("SpecName = %q, want %q", result.SpecName, tt.expected.SpecName)
-			}
-			if result.TaskLine != tt.expected.TaskLine {
-				t.Errorf("TaskLine = %d, want %d", result.TaskLine, tt.expected.TaskLine)
 			}
 			if result.AllowParentChanges != tt.expected.AllowParentChanges {
 				t.Errorf("AllowParentChanges = %v, want %v", result.AllowParentChanges, tt.expected.AllowParentChanges)
@@ -293,8 +272,8 @@ func TestGetVerificationCommandsForRepo(t *testing.T) {
 		{"backend", []string{"go test ./..."}},
 		{"frontend", []string{"npm test"}},
 		{"root", []string{"make check"}},
-		{"", []string{"make check"}},       // empty defaults to root
-		{"unknown", nil},                   // no match
+		{"", []string{"make check"}}, // empty defaults to root
+		{"unknown", nil},             // no match
 	}
 
 	for _, tt := range tests {

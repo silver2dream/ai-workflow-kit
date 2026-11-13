@@ -59,24 +59,6 @@ git:
   release_branch: "main"
   commit_format: "[type] subject"
 
-specs:
-  base_path: ".ai/specs"
-  files:
-    requirements: "requirements.md"
-    design: "design.md"
-    tasks: "tasks.md"
-  auto_generate_tasks: true
-  active: []
-
-tasks:
-  format:
-    uncompleted: "- [ ]"
-    completed: "- [x]"
-    optional: "- [ ]*"
-  source_priority:
-    - audit
-    - specs
-
 audit:
   checks:
     - dirty-worktree

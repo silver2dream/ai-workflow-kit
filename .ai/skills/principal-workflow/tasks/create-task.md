@@ -1,71 +1,27 @@
-# Create Task
+# 票券格式與建立
 
-當 `awkit analyze-next` 回傳 `NEXT_ACTION=create_task` 時，代表某個 Spec 有一條尚未建立對應 GitHub Issue 的任務。
+票券就是一個帶有 task 標籤（預設 `ai-task`）的 GitHub Issue。主迴圈只處理已存在的票券，不會自己產生票券；需要新增工作時，照這份文件寫出票券內文，再用 `awkit create-task` 建立。
 
-本步驟採用「兩段式」流程：
-1. Principal 先把 ticket 內容寫完整（包含可驗收的條件與測試要求）
-2. 再用腳本建立 Issue，並把 Issue 編號寫回 tracking source（epic body 或 tasks.md）
+## 1) 撰寫 ticket body
 
-## Inputs
+把內文寫入一個檔案，例如 `.ai/temp/ticket.md`。不要直接 `gh issue create`：`awkit create-task` 會先檢查內文，缺必備 section 就拒絕建立。
 
-**github_epic 模式**（推薦，當 `specs.tracking.mode: github_epic`）:
-- `SPEC_NAME`: Spec 名稱
-- `EPIC_ISSUE`: Tracking Issue 編號
-- `TASK_TEXT`: 任務文字（來自 epic body）
+必備 section（標題需完全符合）：
 
-**tasks_md 模式**（可選，當 `specs.tracking.mode: tasks_md`）:
-- `SPEC_NAME`: Spec 名稱
-- `TASK_LINE`: `tasks.md` 的行號（1-based）
-
-## Workflow (two-stage)
-
-### 1) 讀取任務上下文
-
-**epic 模式**:
-- 任務文字來自 `analyze-next` 輸出的 `task_text` 欄位（從 epic body 解析）
-- 讀取 `"<specs.base_path>/$SPEC_NAME/design.md"` 了解需求與架構脈絡（若存在）
-
-**tasks_md 模式**:
-- 讀取 `"<specs.base_path>/$SPEC_NAME/tasks.md"` 的第 `$TASK_LINE` 行（`specs.base_path` 由 `.ai/config/workflow.yaml` 決定，預設 `.ai/specs`）
-- 讀取 `"<specs.base_path>/$SPEC_NAME/design.md"` 了解需求與架構脈絡（若存在）
-
-### 1.5) 解析 Step Dependencies（若存在）
-
-檢查 `TASK_TEXT` 是否包含 dependency 標注（格式：`(depends on: Step N)` 或 `(depends on: Steps N,M)`）。
-
-若存在 dependency 標注：
-
-1. **提取依賴的 step 編號**：從標注中解析出 step numbers。
-2. **查找對應 Issue 編號**：在 epic body 中查找已完成的 steps 對應的 Issue（格式：`- [x] #N`）。
-3. **記錄 dependency issue numbers**：用於步驟 2 中寫入 ticket body。
-
-範例：
-- `TASK_TEXT`: `"Add RPC handlers (depends on: Step 3)"`
-- Epic body 中 Step 3 對應 `- [x] #42`
-- 則此 task depends on Issue #42
-
-### 2) 撰寫 ticket body 草稿（只寫內容，不要直接 `gh issue create`）
-
-把 ticket body 寫入：`.ai/temp/create-task-body.md`
-
-必備 section（標題需符合）：
 - `## Summary`
-- `## Dependencies` (若有 step dependencies)
 - `## Scope`
 - `## Acceptance Criteria`（至少一個 `- [ ]` checkbox）
 - `## Testing Requirements`
 - `## Metadata`
 
-建議模板：
+模板：
+
 ```markdown
 ## Summary
 <一句話說清楚要做什麼>
 
 ## Dependencies
-- Depends on: #<issue-number> (<step description>)
-- Depends on: #<issue-number> (<step description>)
-
-> **Note**: This task should not start until all dependency issues are closed.
+- Depends on: #<issue-number> (<說明>)
 
 ## Scope
 - <列出要改/要加的功能點>
@@ -75,9 +31,7 @@
 - [ ] <描述邊界條件處理>
 - [ ] Unit tests added for new functionality
 - [ ] Existing tests updated if modifying functionality
-- [ ] All tests pass (`go test ./...` or equivalent)
-
-**注意**: Acceptance Criteria 應描述「意圖」（預期行為），而非精確的測試函數名稱。Worker 自行決定測試的命名和結構。
+- [ ] All tests pass
 
 ## Testing Requirements
 - New features MUST have corresponding unit tests
@@ -85,16 +39,17 @@
 - Test coverage should cover happy path and error cases
 
 ## Metadata
-- **Spec**: <SPEC_NAME>
-- **Task Line**: <TASK_LINE>
-- **Repo**: <從 workflow.yaml 推導 / 或直接寫 root/backend/frontend>
+- **Repo**: <workflow.yaml 裡的 repo 名稱，例如 root / backend / frontend>
 - **Priority**: P2
 - **Release**: false
 ```
 
-**Dependencies section rules**:
-- If the task has no dependencies, omit the `## Dependencies` section entirely.
-- If dependency issues have not been created yet (step not yet in epic body as `- [x] #N` or `- [ ] #N`), write `Depends on: Step <N> (issue not yet created)` as a placeholder. The Principal should create prerequisite issues first.
+撰寫要點：
+
+- **Acceptance Criteria 描述意圖**（預期行為），不是精確的測試函數名稱；測試怎麼命名、怎麼組織由 Worker 決定。審查時每一條都要對應到一個實際跑過的測試。
+- **Repo 一定要填對**：Worker 依它決定在哪個 repo 工作、跑哪一組 verify 指令。
+- **Dependencies** 沒有就整段省略。有的話，先確認被依賴的 Issue 已經存在，寫它的編號。
+- 票券要能獨立讀懂：需要參考的文件，寫出路徑，讓 Worker 自己去讀。
 
 **Constraints section（可選）**：runner 預設會拒絕 Worker 對工作流自身檔案的修改——`.ai/config/`、`.ai/rules/`、`.ai/skills/`、`.claude/agents/`、`CLAUDE.md`、`AGENTS.md`——因為這些檔案決定 Worker 如何被派工與審查。只有當任務本身就是要修改它們時，才在 ticket 加上：
 
@@ -103,46 +58,19 @@
 - allow-script-changes
 ```
 
-### 3) 建立 Issue 並更新 tracking source
+## 2) 建立 Issue
 
-**epic 模式** (推薦):
 ```bash
 awkit create-task \
-  --spec "$SPEC_NAME" \
-  --task-line 0 \
-  --body-file .ai/temp/create-task-body.md \
-  --epic-issue "$EPIC_ISSUE" \
-  --task-text "$TASK_TEXT"
+  --title "[feat] <簡短標題>" \
+  --body-file .ai/temp/ticket.md
 ```
 
-`awkit create-task` 會自動偵測 epic 模式（從 config），建立 Issue 後將 `- [ ] #N` 附加到 epic body。
+- `--title` 必填，用專案的 commit 格式（`[type] subject`）。
+- `--dry-run` 只檢查內文並印出將執行的 `gh` 指令，不建立 Issue。
+- 成功時輸出 `Created Issue #<N>`。Issue 會帶 task 標籤，下一輪 `awkit analyze-next` 就會看到它。
 
-**tasks_md 模式** (可選):
-```bash
-awkit create-task \
-  --spec "$SPEC_NAME" \
-  --task-line "$TASK_LINE" \
-  --body-file .ai/temp/create-task-body.md
-```
+## 3) 驗證
 
-腳本會建立 Issue 並在 `tasks.md` 第 `$TASK_LINE` 行追加 `<!-- Issue #N -->`。
-
-可選參數（兩種模式通用）：
-- `--title "<title>"`：指定 Issue title（否則從 task line/text 自動生成）
-- `--repo "<owner/repo>"`：指定 GitHub repo（若 `.ai/config/workflow.yaml` 已填 `github.repo` 可省略）
-- `--dry-run`：只輸出將執行的 `gh issue create ...` 命令，不實際建立 Issue
-
-### 4) 驗證並回到 Main Loop
-
-- **epic 模式**: epic body 應該新增 `- [ ] #N` 條目
-- **tasks_md 模式**: `tasks.md` 第 `$TASK_LINE` 行應該被追加 `<!-- Issue #N -->`
-- 回到 `phases/main-loop.md` 的 Step 1，重新 `awkit analyze-next --json`
-
-## Notes / Guardrails
-
-- 這個 step 只負責「建立 Issue」，不要在這裡 dispatch worker 或 review PR。
-- Ticket body 不可空白/模板化；Acceptance Criteria 要可測、可驗收。
-- **Acceptance Criteria 不可預先指定精確的測試函數名稱**（如 `TestFooBar passes`），應描述預期行為（如 `Wall collision correctly ends the game`）。
-- **Dependency order**: When a task has dependencies, the Principal should ensure prerequisite issues are created first. `awkit analyze-next` handles dispatch ordering, but the issue body should document the relationship for human reviewers.
-- **epic 模式**: 若 epic body 中該 checkbox 已經 linked to issue，`awkit create-task` 會跳過避免重複。
-- **tasks_md 模式**: 若 `tasks.md` 該行已存在 `<!-- Issue #N -->`，`awkit create-task` 會直接 no-op（避免重複開 Issue）。
+- 內文缺 section 或沒有 checkbox：指令以非零結束並列出缺少的項目，補齊後重跑。
+- 建立後不需要再做任何登記；Issue 本身就是唯一的工作來源。

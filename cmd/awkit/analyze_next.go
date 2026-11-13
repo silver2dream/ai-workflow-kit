@@ -23,11 +23,9 @@ Options:
   --help          Show this help
 
 Output Variables (bash):
-  NEXT_ACTION     generate_tasks | create_task | dispatch_worker | check_result | review_pr | audit_epic | all_complete | none
+  NEXT_ACTION     dispatch_worker | check_result | review_pr | all_complete | none
   ISSUE_NUMBER    Issue number (if applicable)
   PR_NUMBER       PR number (if applicable)
-  SPEC_NAME       Spec name (if applicable)
-  TASK_LINE       Task line number (if applicable)
   EXIT_REASON     Reason for none action
   MERGE_ISSUE     conflict | rebase (when dispatch_worker needs to fix merge issues)
 

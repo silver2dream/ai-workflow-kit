@@ -9,10 +9,9 @@ awkit analyze-next --json
 ```
 
 輸出 JSON 包含：
-- `next_action`: generate_tasks | create_task | dispatch_worker | check_result | review_pr | audit_epic | all_complete | none
-- `issue_number`, `pr_number`, `spec_name`, `task_line`, `exit_reason`
+- `next_action`: dispatch_worker | check_result | review_pr | all_complete | none
+- `issue_number`, `pr_number`, `exit_reason`
 - `merge_issue`: conflict | rebase（當 Worker 需要處理 merge 問題時）
-- `epic_issue`, `task_text`（僅 epic 模式：tracking issue 編號和任務文字）
 
 **重要**：解析 JSON 輸出，記住這些值用於後續步驟。
 
@@ -22,9 +21,6 @@ awkit analyze-next --json
 
 | next_action | 動作 |
 |-------------|------|
-| `generate_tasks` | **Read** `tasks/generate-tasks.md`，根據 tracking mode 執行任務生成（推薦 GitHub Epic，或 tasks.md） |
-| `create_task` | **Read** `tasks/create-task.md`，使用 `epic_issue` 和 `task_text`（epic 模式）或 `spec_name` 和 `task_line`（tasks_md 模式）執行 Issue 創建 |
-| `audit_epic` | **Read** `tasks/audit-epic-review.md`，執行 `awkit audit-epic --spec <spec_name>` 並根據結果補充缺漏任務 |
 | `dispatch_worker` | **Read** `phases/dispatch.md` 並執行 dispatch ⚠️ **同步等待** |
 | `check_result` | 執行 `awkit check-result --issue <issue_number>` |
 | `review_pr` | **Read** `phases/review.md` 並調用 pr-reviewer subagent |

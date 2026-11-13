@@ -108,29 +108,15 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 		return results, fmt.Errorf("repo paths check failed: %s", repoPathsResult.Message)
 	}
 
-	// 10. Check active specs (fatal)
-	activeSpecsResult := p.CheckActiveSpecs()
-	results = append(results, activeSpecsResult)
-	if !activeSpecsResult.Passed {
-		return results, fmt.Errorf("active specs check failed: %s", activeSpecsResult.Message)
-	}
-
-	// 11. Check spec files (fatal)
-	specFilesResult := p.CheckSpecFiles()
-	results = append(results, specFilesResult)
-	if !specFilesResult.Passed {
-		return results, fmt.Errorf("spec files check failed: %s", specFilesResult.Message)
-	}
-
-	// 12. Check integration branch (warning only)
+	// 10. Check integration branch (warning only)
 	branchResult := p.CheckIntegrationBranch()
 	results = append(results, branchResult)
 
-	// 13. Check GitHub repo (warning only)
+	// 11. Check GitHub repo (warning only)
 	ghRepoResult := p.CheckGitHubRepo()
 	results = append(results, ghRepoResult)
 
-	// 13b. Check repo write access (fatal). A read-only token passes `gh auth
+	// 11b. Check repo write access (fatal). A read-only token passes `gh auth
 	// status` but 403s on every state-changing call — create issue, approve/merge
 	// PR, move labels — which silently spins the workflow loop for dozens of
 	// sessions. Catch it here instead of letting the run burn.
@@ -140,12 +126,12 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 		return results, fmt.Errorf("repo write access check failed: %s", writeResult.Message)
 	}
 
-	// 14. Check PTY
+	// 12. Check PTY
 	ptyResult := p.CheckPTY()
 	results = append(results, ptyResult)
 	// PTY check is non-fatal (will fallback to standard execution)
 
-	// 15. Check permissions (warning only, non-fatal)
+	// 13. Check permissions (warning only, non-fatal)
 	permResult := p.CheckPermissions()
 	results = append(results, permResult)
 	// Permissions check is non-fatal but important warning
@@ -516,82 +502,6 @@ func (p *PreflightChecker) CheckRepoPaths() CheckResult {
 		Name:    "Repo Paths",
 		Passed:  true,
 		Message: "all repo paths exist",
-	}
-}
-
-// CheckActiveSpecs validates that specs.active is not empty
-func (p *PreflightChecker) CheckActiveSpecs() CheckResult {
-	if p.config == nil {
-		return CheckResult{
-			Name:    "Active Specs",
-			Passed:  false,
-			Message: "config not loaded (run CheckConfig first)",
-		}
-	}
-
-	if len(p.config.Specs.Active) == 0 {
-		return CheckResult{
-			Name:    "Active Specs",
-			Passed:  false,
-			Message: "specs.active is empty — add at least one spec name to workflow.yaml",
-		}
-	}
-
-	return CheckResult{
-		Name:    "Active Specs",
-		Passed:  true,
-		Message: fmt.Sprintf("%d active spec(s): %s", len(p.config.Specs.Active), strings.Join(p.config.Specs.Active, ", ")),
-	}
-}
-
-// CheckSpecFiles validates that each active spec has a tasks.md or design.md file
-func (p *PreflightChecker) CheckSpecFiles() CheckResult {
-	if p.config == nil {
-		return CheckResult{
-			Name:    "Spec Files",
-			Passed:  false,
-			Message: "config not loaded (run CheckConfig first)",
-		}
-	}
-
-	base := p.baseDir()
-	specsBase := p.config.Specs.BasePath
-	if specsBase == "" {
-		specsBase = ".ai/specs"
-	}
-
-	var missing []string
-	for _, spec := range p.config.Specs.Active {
-		specDir := filepath.Join(base, specsBase, spec)
-		tasksFile := filepath.Join(specDir, "tasks.md")
-		designFile := filepath.Join(specDir, "design.md")
-
-		hasTasksMd := false
-		hasDesignMd := false
-		if _, err := os.Stat(tasksFile); err == nil {
-			hasTasksMd = true
-		}
-		if _, err := os.Stat(designFile); err == nil {
-			hasDesignMd = true
-		}
-
-		if !hasTasksMd && !hasDesignMd {
-			missing = append(missing, spec)
-		}
-	}
-
-	if len(missing) > 0 {
-		return CheckResult{
-			Name:    "Spec Files",
-			Passed:  false,
-			Message: fmt.Sprintf("spec(s) missing tasks.md or design.md: %s", strings.Join(missing, ", ")),
-		}
-	}
-
-	return CheckResult{
-		Name:    "Spec Files",
-		Passed:  true,
-		Message: "all active specs have tasks.md or design.md",
 	}
 }
 

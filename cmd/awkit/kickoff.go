@@ -229,7 +229,6 @@ func cmdKickoff(args []string) int {
 	output.Info(fmt.Sprintf("Starting workflow for project: %s", config.Project.Name))
 	fmt.Println("")
 
-
 	// Multi-session loop: restart Principal when pending work remains.
 	stopMarker := filepath.Join(".ai", "state", "STOP")
 	maxSessions := getEnvInt("AWKIT_MAX_SESSIONS", 50)
@@ -248,15 +247,6 @@ func cmdKickoff(args []string) int {
 	signalHandler.Setup()
 
 	var lastNext analyzeNextVars
-	// No-progress guard: a "creation" decision (create_task/generate_tasks/
-	// audit_epic) always changes repo state on success, so if the analyzer keeps
-	// returning the exact same one, the workflow is stalled — classically a
-	// create_task whose `gh issue create` fails on a permission error, which is
-	// invisible to the analyzer (it only sees that the issue still doesn't
-	// exist) and never counts as a consecutive_failure. Count identical repeats
-	// so we can stop with a clear message instead of burning every session.
-	var sameDecisionStreak int
-	maxSameDecision := getEnvInt("AWKIT_MAX_SAME_DECISION", 3)
 
 	for sessionIndex := 1; sessionIndex <= maxSessions; sessionIndex++ {
 		// Write loop_start event
@@ -324,11 +314,6 @@ func cmdKickoff(args []string) int {
 			endPrincipalSession("paused")
 			return 1
 		}
-		if sessionIndex > 1 && sameDecision(next, lastNext) {
-			sameDecisionStreak++
-		} else {
-			sameDecisionStreak = 1
-		}
 		lastNext = next
 
 		// Write loop_decision event
@@ -369,13 +354,6 @@ func cmdKickoff(args []string) int {
 			endPrincipalSession("stopped")
 			return 1
 		default:
-			if isCreationAction(next.NextAction) && sameDecisionStreak >= maxSameDecision {
-				fmt.Println("")
-				output.Error(fmt.Sprintf("Workflow stopped: no progress — '%s'%s repeated %d× without advancing.", next.NextAction, formatAnalyzeNextContext(next), sameDecisionStreak))
-				output.Info("This usually means gh lacks write access to the repo (check `gh auth status` and the repo's permissions) or a label/config problem. See `awkit doctor`.")
-				endPrincipalSession("no_progress")
-				return 1
-			}
 			output.Info(fmt.Sprintf("Pending: %s%s (restarting in %s)", next.NextAction, formatAnalyzeNextContext(next), restartDelay))
 			time.Sleep(restartDelay)
 			// G8 fix: exponential backoff - double delay for next restart, capped at max
@@ -537,8 +515,6 @@ type analyzeNextVars struct {
 	NextAction  string
 	IssueNumber string
 	PRNumber    string
-	SpecName    string
-	TaskLine    string
 	ExitReason  string
 	MergeIssue  string // conflict | rebase - indicates Worker needs to fix merge issues
 }
@@ -562,8 +538,6 @@ func runAnalyzeNext(ctx context.Context, args analyzeNextArgs) (analyzeNextVars,
 		NextAction:  decision.NextAction,
 		IssueNumber: strconv.Itoa(decision.IssueNumber),
 		PRNumber:    strconv.Itoa(decision.PRNumber),
-		SpecName:    decision.SpecName,
-		TaskLine:    strconv.Itoa(decision.TaskLine),
 		ExitReason:  decision.ExitReason,
 		MergeIssue:  decision.MergeIssue,
 	}, nil
@@ -571,12 +545,6 @@ func runAnalyzeNext(ctx context.Context, args analyzeNextArgs) (analyzeNextVars,
 
 func formatAnalyzeNextContext(v analyzeNextVars) string {
 	parts := make([]string, 0, 5)
-	if strings.TrimSpace(v.SpecName) != "" {
-		parts = append(parts, "spec="+v.SpecName)
-	}
-	if strings.TrimSpace(v.TaskLine) != "" {
-		parts = append(parts, "line="+v.TaskLine)
-	}
 	if strings.TrimSpace(v.IssueNumber) != "" {
 		parts = append(parts, "issue="+v.IssueNumber)
 	}
@@ -590,32 +558,6 @@ func formatAnalyzeNextContext(v analyzeNextVars) string {
 		return ""
 	}
 	return " (" + strings.Join(parts, " ") + ")"
-}
-
-// sameDecision reports whether two analyze-next results are identical across
-// every field that identifies the work to be done. Used to detect a stalled
-// loop that keeps deciding the same thing without making progress.
-func sameDecision(a, b analyzeNextVars) bool {
-	return a.NextAction == b.NextAction &&
-		a.IssueNumber == b.IssueNumber &&
-		a.PRNumber == b.PRNumber &&
-		a.SpecName == b.SpecName &&
-		a.TaskLine == b.TaskLine &&
-		a.MergeIssue == b.MergeIssue
-}
-
-// isCreationAction reports whether an action creates GitHub state (an issue or
-// task list) that, on success, necessarily advances the workflow. Repeating one
-// of these unchanged is a hard stall, so the no-progress guard only trips on
-// them — actions like check_result or dispatch_worker can legitimately recur
-// while a worker runs.
-func isCreationAction(action string) bool {
-	switch action {
-	case "create_task", "generate_tasks", "audit_epic":
-		return true
-	default:
-		return false
-	}
 }
 
 func fileExists(path string) bool {

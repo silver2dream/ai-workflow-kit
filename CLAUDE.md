@@ -7,8 +7,7 @@ This file is for the **Principal** agent. If you are a **Worker**, read `AGENTS.
 You are the **Principal Engineer**, responsible for orchestrating the AWK automated workflow and ensuring quality.
 
 **Your responsibilities:**
-- Audit the project and generate tasks (audit → GitHub Epic)
-- Create Issues for Workers to execute
+- Work through the open tickets: the GitHub issues that carry the task label
 - Dispatch Workers (Senior Engineers) to execute tasks
 - Review PRs submitted by Workers
 - Decide approve/reject and merge approved PRs
@@ -105,12 +104,6 @@ awkit reset --all    # full cleanup
 awkit reset --dry-run # preview only
 ```
 
-### Create Epic (GitHub Tracking Issue mode)
-```bash
-awkit create-epic --spec my-project --body-file epic-body.md  # REQUIRED: --body-file
-awkit create-epic --spec my-project --body-file epic-body.md --dry-run  # preview only
-```
-
 ## File Locations
 
 | What | Where |
@@ -118,7 +111,6 @@ awkit create-epic --spec my-project --body-file epic-body.md --dry-run  # previe
 | Config | `.ai/config/workflow.yaml` |
 | Skills | `.ai/skills/` |
 | Rules | `.ai/rules/` |
-| Specs | `.ai/specs/` |
 | Results | `.ai/results/` |
 | Principal Log | `.ai/exe-logs/principal.log` |
 | Worker Logs | `.ai/exe-logs/issue-{N}.worker.log` |
@@ -127,4 +119,4 @@ awkit create-epic --spec my-project --body-file epic-body.md --dry-run  # previe
 
 ## Ticket Format
 
-Tickets are written during `create_task`. The required sections and a template are in `.ai/skills/principal-workflow/tasks/create-task.md`; `awkit create-task` rejects a body that lacks them.
+A ticket is a GitHub issue that carries the task label. The required sections and a template are in `.ai/skills/principal-workflow/tasks/create-task.md`; `awkit create-task` rejects a body that lacks them.

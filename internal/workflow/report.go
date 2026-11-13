@@ -10,8 +10,8 @@ import (
 
 // Report holds the generated workflow report
 type Report struct {
-	Content    string
-	Path       string
+	Content     string
+	Path        string
 	GeneratedAt time.Time
 }
 
@@ -104,13 +104,11 @@ func formatExitReasonDetails(reason string) string {
 	case "needs_human_review", "review_max_retries":
 		return "⚠ **Workflow stopped: an issue needs human review.**\n\nResolve the flagged issue, then run `awkit kickoff`.\n"
 	case "no_actionable_tasks":
-		return "⏸ **Workflow stopped: no actionable tasks.**\n\nNothing is ready to work on. Check the active specs and open issues, then run `awkit kickoff`.\n"
+		return "⏸ **Workflow stopped: no actionable tasks.**\n\nNothing is ready to work on. Check the open issues, then run `awkit kickoff`.\n"
 	case "config_not_found":
 		return "✗ **Workflow stopped: workflow config not found.**\n\nCheck `.ai/config/workflow.yaml`, or run `awkit doctor`.\n"
 	case "loop_count_error", "github_api_error":
 		return "✗ **Workflow stopped: the analyzer could not read its state.**\n\nRun `awkit doctor` and check GitHub CLI access, then run `awkit kickoff`.\n"
-	case "risky_assumptions":
-		return "⏸ **Workflow stopped: the task plan rests on risky assumptions nobody confirmed.**\n\nReview `.ai/temp/assumptions-<spec>.md`. For each RISKY axis, state the intended choice in the spec's design.md - an axis that design.md states is no longer an assumption. Then remove the stop marker (`awkit reset --stop`) and run `awkit kickoff`.\n"
 	default:
 		return fmt.Sprintf("? **Workflow stopped for reason: %s**\n\nPlease check logs for details.\n", reason)
 	}

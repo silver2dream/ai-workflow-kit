@@ -1,3 +1,5 @@
+// Package task creates the tickets the workflow works on: GitHub issues that
+// carry the task label and a body the Worker and the review can act on.
 package task
 
 import (
@@ -13,36 +15,45 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
-// CreateTaskOptions contains options for creating a task.
+// CreateTaskOptions describes a ticket to create.
 type CreateTaskOptions struct {
-	SpecName     string
-	TaskLine     int
-	BodyFile     string
-	Title        string // optional, will be auto-generated if empty
-	Repo         string // optional, uses config if empty
-	StateRoot    string
-	DryRun       bool
-	GHTimeout    time.Duration
-	TrackingMode string // "tasks_md" (default) | "github_epic"
-	EpicIssue    int    // tracking issue number (epic mode only)
-	TaskText     string // task text from epic body (epic mode only)
+	Title     string // the issue title, e.g. "[feat] add login"
+	BodyFile  string // the ticket body, a markdown file
+	Repo      string // GitHub repository (owner/name); the config's when empty
+	StateRoot string
+	DryRun    bool
+	GHTimeout time.Duration
 }
 
-// CreateTaskResult contains the result of creating a task.
+// CreateTaskResult contains the result of creating a ticket.
 type CreateTaskResult struct {
 	IssueNumber int
 	IssueURL    string
-	Skipped     bool   // true if already has Issue ref
 	DryRunCmd   string // populated if DryRun is true
 }
 
-// CreateTask creates a GitHub Issue from a tasks.md entry or epic body task.
+// runGH runs the gh CLI. Replaced in tests.
+var runGH = func(ctx context.Context, args ...string) ([]byte, error) {
+	return ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", args...)
+}
+
+// CreateTask creates a GitHub issue the workflow will pick up. The body must
+// hold the sections a ticket needs (see ValidateBody); the issue gets the
+// task label, which is what makes it a ticket.
 func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult, error) {
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 60 * time.Second
 	}
+	title := strings.TrimSpace(opts.Title)
+	if title == "" {
+		return nil, fmt.Errorf("a title is required")
+	}
 
-	// 1. Load config
+	bodyPath, err := checkedBodyFile(opts.BodyFile)
+	if err != nil {
+		return nil, err
+	}
+
 	configPath := filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml")
 	cfg, err := analyzer.LoadConfig(configPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -50,207 +61,45 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 	}
 	if cfg == nil {
 		cfg = &analyzer.Config{}
-		cfg.Specs.BasePath = ".ai/specs"
-		cfg.GitHub.Labels.Task = "ai-task"
 	}
-
-	// Determine tracking mode
-	trackingMode := opts.TrackingMode
-	if trackingMode == "" {
-		trackingMode = cfg.Specs.Tracking.Mode
-	}
-	if trackingMode == "" {
-		trackingMode = analyzer.TrackingModeTasksMd
-	}
-
-	if trackingMode == analyzer.TrackingModeGitHubEpic {
-		return createTaskEpicMode(ctx, opts, cfg)
-	}
-	return createTaskFileMode(ctx, opts, cfg)
-}
-
-// createTaskFileMode is the original tasks.md-based task creation flow.
-func createTaskFileMode(ctx context.Context, opts CreateTaskOptions, cfg *analyzer.Config) (*CreateTaskResult, error) {
-	// 2. Find tasks.md
-	tasksPath := filepath.Join(opts.StateRoot, cfg.Specs.BasePath, opts.SpecName, "tasks.md")
-	if _, err := os.Stat(tasksPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("tasks.md not found: %s", tasksPath)
-	}
-
-	// 3. Read task line
-	data, err := os.ReadFile(tasksPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read tasks.md: %w", err)
-	}
-	lines := strings.Split(string(data), "\n")
-	if opts.TaskLine < 1 || opts.TaskLine > len(lines) {
-		return nil, fmt.Errorf("task_line %d out of range (file has %d lines)", opts.TaskLine, len(lines))
-	}
-
-	rawTaskLine := lines[opts.TaskLine-1]
-
-	// 4. Check idempotency (already has <!-- Issue #N -->)
-	if num, found := HasIssueRef(rawTaskLine); found {
-		return &CreateTaskResult{
-			IssueNumber: num,
-			Skipped:     true,
-		}, nil
-	}
-
-	// 5. Extract task text and generate title
-	taskText := ExtractTaskText(rawTaskLine)
-	title := opts.Title
-	if title == "" {
-		title = DefaultIssueTitle(taskText)
-	}
-
-	// 6-8. Prepare body
-	finalBodyPath, err := prepareBodyFile(opts, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	// 9. Determine label and repo
 	label, repo := resolveGHParams(opts, cfg)
+	ghArgs := buildGHCreateArgs(title, bodyPath, label, repo)
 
-	// 10. Build gh command
-	ghArgs := buildGHCreateArgs(title, finalBodyPath, label, repo)
-
-	// 11. Dry run mode
 	if opts.DryRun {
-		cmdStr := "gh " + strings.Join(ghArgs, " ")
-		return &CreateTaskResult{
-			DryRunCmd: cmdStr,
-		}, nil
+		return &CreateTaskResult{DryRunCmd: "gh " + strings.Join(ghArgs, " ")}, nil
 	}
 
-	// 12. Execute gh issue create
 	ctx, cancel := context.WithTimeout(ctx, opts.GHTimeout)
 	defer cancel()
-
-	output, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", ghArgs...)
+	output, err := runGH(ctx, ghArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("gh issue create failed: %s\n%s", err, string(output))
 	}
-
-	// 13. Parse issue number from output
 	issueNumber, issueURL, err := parseIssueOutput(string(output))
 	if err != nil {
 		return nil, err
 	}
-
-	// 14. Append issue ref to tasks.md
-	if err := AppendIssueRef(tasksPath, opts.TaskLine, issueNumber); err != nil {
-		return nil, fmt.Errorf("failed to update tasks.md: %w", err)
-	}
-
-	// 15. Commit tasks.md update (best-effort, don't fail on error)
-	if err := CommitTasksUpdate(tasksPath, issueNumber, "linked"); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to commit tasks.md update: %v\n", err)
-	}
-
-	return &CreateTaskResult{
-		IssueNumber: issueNumber,
-		IssueURL:    issueURL,
-	}, nil
+	return &CreateTaskResult{IssueNumber: issueNumber, IssueURL: issueURL}, nil
 }
 
-// createTaskEpicMode creates an issue and links it in the epic body.
-func createTaskEpicMode(ctx context.Context, opts CreateTaskOptions, cfg *analyzer.Config) (*CreateTaskResult, error) {
-	epicIssue := opts.EpicIssue
-	if epicIssue == 0 {
-		epicIssue = cfg.GetEpicIssue(opts.SpecName)
+// checkedBodyFile returns the absolute path of a ticket body that passed
+// validation.
+func checkedBodyFile(bodyFile string) (string, error) {
+	if bodyFile == "" {
+		return "", fmt.Errorf("a body file is required")
 	}
-	if epicIssue == 0 {
-		return nil, fmt.Errorf("no epic issue configured for spec %q", opts.SpecName)
-	}
-
-	// Generate title from TaskText
-	title := opts.Title
-	if title == "" && opts.TaskText != "" {
-		title = DefaultIssueTitle(opts.TaskText)
-	}
-	if title == "" {
-		title = "[feat] implement task"
-	}
-
-	// Prepare body
-	finalBodyPath, err := prepareBodyFile(opts, cfg)
+	bodyPath, err := filepath.Abs(bodyFile)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("body file %s: %w", bodyFile, err)
 	}
-
-	// Determine label and repo
-	label, repo := resolveGHParams(opts, cfg)
-
-	// Build gh command
-	ghArgs := buildGHCreateArgs(title, finalBodyPath, label, repo)
-
-	// Dry run mode
-	if opts.DryRun {
-		cmdStr := "gh " + strings.Join(ghArgs, " ")
-		return &CreateTaskResult{
-			DryRunCmd: cmdStr,
-		}, nil
-	}
-
-	// Execute gh issue create
-	createCtx, cancel := context.WithTimeout(ctx, opts.GHTimeout)
-	defer cancel()
-
-	output, err := ghutil.RunWithRetry(createCtx, ghutil.DefaultRetryConfig(), "gh", ghArgs...)
-	if err != nil {
-		return nil, fmt.Errorf("gh issue create failed: %s\n%s", err, string(output))
-	}
-
-	issueNumber, issueURL, err := parseIssueOutput(string(output))
-	if err != nil {
-		return nil, err
-	}
-
-	// Link in epic body: read → append → write
-	if err := linkIssueToEpic(ctx, epicIssue, issueNumber, opts.TaskText, repo, opts.GHTimeout); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: issue #%d created but failed to link to epic #%d: %v\n", issueNumber, epicIssue, err)
-	}
-
-	return &CreateTaskResult{
-		IssueNumber: issueNumber,
-		IssueURL:    issueURL,
-	}, nil
-}
-
-// prepareBodyFile reads, validates, and writes the body to a temp file.
-func prepareBodyFile(opts CreateTaskOptions, cfg *analyzer.Config) (string, error) {
-	bodyPath := opts.BodyFile
-	if bodyPath == "" {
-		return "", fmt.Errorf("body file is required")
-	}
-	if !filepath.IsAbs(bodyPath) {
-		cwd, _ := os.Getwd()
-		bodyPath = filepath.Join(cwd, bodyPath)
-	}
-	bodyData, err := os.ReadFile(bodyPath)
+	data, err := os.ReadFile(bodyPath)
 	if err != nil {
 		return "", fmt.Errorf("body file not found: %s", bodyPath)
 	}
-	body := string(bodyData)
-
-	if err := ValidateBody(body); err != nil {
+	if err := ValidateBody(string(data)); err != nil {
 		return "", err
 	}
-
-	body = EnsureAWKMetadata(body, opts.SpecName, opts.TaskLine)
-
-	tempDir := filepath.Join(opts.StateRoot, ".ai", "temp")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	finalBodyPath := filepath.Join(tempDir, fmt.Sprintf("create-task-%s-%d.md", opts.SpecName, opts.TaskLine))
-	if err := os.WriteFile(finalBodyPath, []byte(body), 0644); err != nil {
-		return "", fmt.Errorf("failed to write temp body file: %w", err)
-	}
-
-	return finalBodyPath, nil
+	return bodyPath, nil
 }
 
 // resolveGHParams determines the label and repo for gh commands.
@@ -278,46 +127,6 @@ func buildGHCreateArgs(title, bodyFile, label, repo string) []string {
 		args = append(args, "--repo", repo)
 	}
 	return args
-}
-
-// linkIssueToEpic reads the epic body, appends a task reference, and updates it.
-func linkIssueToEpic(ctx context.Context, epicIssue, issueNumber int, description, repo string, timeout time.Duration) error {
-	readCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// Read current epic body
-	readArgs := []string{"issue", "view", fmt.Sprintf("%d", epicIssue), "--json", "body", "--jq", ".body"}
-	if repo != "" {
-		readArgs = append(readArgs, "--repo", repo)
-	}
-	output, err := ghutil.RunWithRetry(readCtx, ghutil.DefaultRetryConfig(), "gh", readArgs...)
-	if err != nil {
-		return fmt.Errorf("failed to read epic #%d: %w", epicIssue, err)
-	}
-	epicBody := strings.TrimSpace(string(output))
-
-	// Append task reference
-	newBody := analyzer.AppendTaskToEpicBody(epicBody, issueNumber, description)
-
-	// Write updated body via temp file
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("awkit-epic-update-%d.md", epicIssue))
-	if err := os.WriteFile(tmpFile, []byte(newBody), 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	defer os.Remove(tmpFile)
-
-	writeCtx, writeCancel := context.WithTimeout(ctx, timeout)
-	defer writeCancel()
-
-	writeArgs := []string{"issue", "edit", fmt.Sprintf("%d", epicIssue), "--body-file", tmpFile}
-	if repo != "" {
-		writeArgs = append(writeArgs, "--repo", repo)
-	}
-	if _, err := ghutil.RunWithRetry(writeCtx, ghutil.DefaultRetryConfig(), "gh", writeArgs...); err != nil {
-		return fmt.Errorf("failed to update epic #%d: %w", epicIssue, err)
-	}
-
-	return nil
 }
 
 func parseIssueOutput(output string) (int, string, error) {

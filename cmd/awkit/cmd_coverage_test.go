@@ -37,7 +37,7 @@ func TestCmdHelp_KnownCommands(t *testing.T) {
 		"check-result", "dispatch-worker", "run-issue",
 		"analyze-next", "stop-workflow",
 		"prepare-review", "submit-review",
-		"create-task", "create-epic", "audit-epic",
+		"create-task",
 		"doctor", "reset", "generate", "list-presets",
 		"check-update", "completion", "hooks",
 		"events", "feedback-stats", "context-snapshot",
@@ -187,31 +187,6 @@ func TestCmdDispatchWorker_MissingIssue(t *testing.T) {
 }
 
 // ===========================================================================
-// cmdCreateEpic flag validation (create_epic.go)
-// ===========================================================================
-
-func TestCmdCreateEpic_Help(t *testing.T) {
-	exitCode := cmdCreateEpic([]string{"--help"})
-	if exitCode != 0 {
-		t.Errorf("cmdCreateEpic(--help) = %d, want 0", exitCode)
-	}
-}
-
-func TestCmdCreateEpic_MissingSpec(t *testing.T) {
-	exitCode := cmdCreateEpic([]string{})
-	if exitCode != 2 {
-		t.Errorf("cmdCreateEpic() = %d, want 2 (missing --spec)", exitCode)
-	}
-}
-
-func TestCmdCreateEpic_MissingBodyFile(t *testing.T) {
-	exitCode := cmdCreateEpic([]string{"--spec", "test"})
-	if exitCode != 2 {
-		t.Errorf("cmdCreateEpic(--spec test) = %d, want 2 (missing --body-file)", exitCode)
-	}
-}
-
-// ===========================================================================
 // cmdCreateTask flag validation (create_task.go)
 // ===========================================================================
 
@@ -222,31 +197,59 @@ func TestCmdCreateTask_Help(t *testing.T) {
 	}
 }
 
-func TestCmdCreateTask_MissingSpec(t *testing.T) {
-	exitCode := cmdCreateTask([]string{})
-	if exitCode != 2 {
-		t.Errorf("cmdCreateTask() = %d, want 2 (missing --spec)", exitCode)
-	}
-}
-
-func TestCmdCreateTask_MissingTaskLine(t *testing.T) {
-	exitCode := cmdCreateTask([]string{"--spec", "test"})
-	if exitCode != 2 {
-		t.Errorf("cmdCreateTask(--spec only) = %d, want 2 (missing --task-line)", exitCode)
-	}
-}
-
 func TestCmdCreateTask_MissingBodyFile(t *testing.T) {
-	exitCode := cmdCreateTask([]string{"--spec", "test", "--task-line", "1"})
+	exitCode := cmdCreateTask([]string{"--title", "[feat] x"})
 	if exitCode != 2 {
-		t.Errorf("cmdCreateTask(--spec --task-line) = %d, want 2 (missing --body-file)", exitCode)
+		t.Errorf("cmdCreateTask(--title) = %d, want 2 (missing --body-file)", exitCode)
 	}
 }
 
-func TestCmdCreateTask_InvalidTaskLine(t *testing.T) {
-	exitCode := cmdCreateTask([]string{"--spec", "test", "--task-line", "0", "--body-file", "body.md"})
+func TestCmdCreateTask_MissingTitle(t *testing.T) {
+	exitCode := cmdCreateTask([]string{"--body-file", "ticket.md"})
 	if exitCode != 2 {
-		t.Errorf("cmdCreateTask(task-line=0) = %d, want 2 (task-line must be positive)", exitCode)
+		t.Errorf("cmdCreateTask(--body-file) = %d, want 2 (missing --title)", exitCode)
+	}
+}
+
+// The flags of the spec-driven flow are gone: a script that still passes them
+// is told so, and no ticket is created.
+func TestCmdCreateTask_RemovedFlagsAreRefused(t *testing.T) {
+	for _, args := range [][]string{
+		{"--spec", "auth", "--task-line", "5", "--body-file", "ticket.md"},
+		{"--title", "t", "--body-file", "ticket.md", "--epic-issue", "3"},
+		{"--title", "t", "--body-file", "ticket.md", "--task-text", "x"},
+	} {
+		var exitCode int
+		captureStderr(func() { exitCode = cmdCreateTask(args) })
+		if exitCode != 2 {
+			t.Errorf("cmdCreateTask(%v) = %d, want 2", args, exitCode)
+		}
+	}
+}
+
+// A dry run checks the ticket and prints the command; it needs no GitHub.
+func TestCmdCreateTask_DryRun(t *testing.T) {
+	dir := t.TempDir()
+	body := filepath.Join(dir, "ticket.md")
+	content := "## Summary\ns\n\n## Scope\n- x\n\n## Acceptance Criteria\n- [ ] works\n\n## Testing Requirements\n- [ ] tested\n\n## Metadata\n- **Repo**: root\n"
+	if err := os.WriteFile(body, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if exitCode := cmdCreateTask([]string{"--title", "[feat] x", "--body-file", body, "--state-root", dir, "--dry-run"}); exitCode != 0 {
+		t.Errorf("cmdCreateTask(--dry-run) = %d, want 0", exitCode)
+	}
+
+	// A body the Worker could not act on is refused, dry run or not.
+	if err := os.WriteFile(body, []byte("## Summary\nonly this\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var exitCode int
+	stderr := captureStderr(func() {
+		exitCode = cmdCreateTask([]string{"--title", "[feat] x", "--body-file", body, "--state-root", dir, "--dry-run"})
+	})
+	if exitCode != 1 || !strings.Contains(stderr, "missing required sections") {
+		t.Errorf("cmdCreateTask(incomplete body) = %d, stderr %q; want 1 and the missing sections named", exitCode, stderr)
 	}
 }
 
@@ -258,24 +261,6 @@ func TestCmdAnalyzeNext_Help(t *testing.T) {
 	exitCode := cmdAnalyzeNext([]string{"--help"})
 	if exitCode != 0 {
 		t.Errorf("cmdAnalyzeNext(--help) = %d, want 0", exitCode)
-	}
-}
-
-// ===========================================================================
-// cmdAuditEpic flag validation (audit_epic.go)
-// ===========================================================================
-
-func TestCmdAuditEpic_Help(t *testing.T) {
-	exitCode := cmdAuditEpic([]string{"--help"})
-	if exitCode != 0 {
-		t.Errorf("cmdAuditEpic(--help) = %d, want 0", exitCode)
-	}
-}
-
-func TestCmdAuditEpic_MissingSpec(t *testing.T) {
-	exitCode := cmdAuditEpic([]string{})
-	if exitCode != 2 {
-		t.Errorf("cmdAuditEpic() = %d, want 2 (missing --spec)", exitCode)
 	}
 }
 
@@ -726,23 +711,17 @@ func TestUsageDispatchWorker_ContainsContent(t *testing.T) {
 	}
 }
 
-func TestUsageCreateEpic_ContainsContent(t *testing.T) {
-	output := captureStderr(usageCreateEpic)
-	if !strings.Contains(output, "--spec") {
-		t.Error("usageCreateEpic should mention --spec")
-	}
-	if !strings.Contains(output, "--body-file") {
-		t.Error("usageCreateEpic should mention --body-file")
-	}
-}
-
 func TestUsageCreateTask_ContainsContent(t *testing.T) {
 	output := captureStderr(usageCreateTask)
-	if !strings.Contains(output, "--spec") {
-		t.Error("usageCreateTask should mention --spec")
+	for _, flag := range []string{"--title", "--body-file", "--dry-run"} {
+		if !strings.Contains(output, flag) {
+			t.Errorf("usageCreateTask should mention %s", flag)
+		}
 	}
-	if !strings.Contains(output, "--task-line") {
-		t.Error("usageCreateTask should mention --task-line")
+	for _, gone := range []string{"--spec", "--task-line", "tasks.md", "epic"} {
+		if strings.Contains(output, gone) {
+			t.Errorf("usageCreateTask still mentions %s", gone)
+		}
 	}
 }
 
@@ -750,13 +729,6 @@ func TestUsageAnalyzeNext_ContainsContent(t *testing.T) {
 	output := captureStderr(usageAnalyzeNext)
 	if !strings.Contains(output, "analyze") {
 		t.Error("usageAnalyzeNext should mention 'analyze'")
-	}
-}
-
-func TestUsageAuditEpic_ContainsContent(t *testing.T) {
-	output := captureStderr(usageAuditEpic)
-	if !strings.Contains(output, "--spec") {
-		t.Error("usageAuditEpic should mention --spec")
 	}
 }
 
@@ -1096,10 +1068,8 @@ func TestAllCommands_HelpFlag(t *testing.T) {
 	}{
 		{"check-result", cmdCheckResult},
 		{"dispatch-worker", cmdDispatchWorker},
-		{"create-epic", cmdCreateEpic},
 		{"create-task", cmdCreateTask},
 		{"analyze-next", cmdAnalyzeNext},
-		{"audit-epic", cmdAuditEpic},
 		{"stop-workflow", cmdStopWorkflow},
 		{"run-issue", cmdRunIssue},
 		{"prepare-review", cmdPrepareReview},

@@ -211,9 +211,6 @@ repos:
 	}
 
 	// Check defaults
-	if config.Specs.BasePath != ".ai/specs" {
-		t.Errorf("Specs.BasePath = %q, want %q", config.Specs.BasePath, ".ai/specs")
-	}
 	if config.Git.CommitFormat != "[type] subject" {
 		t.Errorf("Git.CommitFormat = %q, want %q", config.Git.CommitFormat, "[type] subject")
 	}
@@ -388,13 +385,19 @@ rules:
 		"## Red Flags (signs your work is going off-rails)",
 		"## Responding to severity-tagged feedback",
 		"### 4. Implementation plan (REQUIRED before coding)",
-		"### 6. Design document context",
+		"### 5. Review feedback handling",
 		"**Critical:**",
 		"**Important:**",
 	}
 	for _, want := range wantSections {
 		if !strings.Contains(content, want) {
 			t.Errorf("generated AGENTS.md missing section: %q", want)
+		}
+	}
+	// The Worker is no longer handed a spec's design document.
+	for _, gone := range []string{"DESIGN CONTEXT", "design.md", "tasks.md"} {
+		if strings.Contains(content, gone) {
+			t.Errorf("generated AGENTS.md still mentions %q", gone)
 		}
 	}
 }
@@ -579,9 +582,6 @@ func TestConfigValidation_ValidConfig(t *testing.T) {
 		Rules: RulesConfig{
 			Kit:    []string{"git-workflow"},
 			Custom: []string{},
-		},
-		Specs: SpecsConfig{
-			BasePath: ".ai/specs",
 		},
 	}
 

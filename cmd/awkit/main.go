@@ -133,10 +133,6 @@ func run() int {
 		return cmdSubmitReview(os.Args[2:])
 	case "create-task":
 		return cmdCreateTask(os.Args[2:])
-	case "create-epic":
-		return cmdCreateEpic(os.Args[2:])
-	case "audit-epic":
-		return cmdAuditEpic(os.Args[2:])
 	case "jittest":
 		return cmdJiTTest(os.Args[2:])
 	case "doctor":
@@ -196,9 +192,7 @@ Commands:
   stop-workflow   Stop the workflow and generate a report
   prepare-review  Prepare PR review context
   submit-review   Submit PR review and handle result
-  create-task     Create GitHub Issue from tasks.md entry
-  create-epic     Create GitHub Tracking Issue (Epic) from body file
-  audit-epic      Audit Epic coverage against design.md
+  create-task     Create a ticket: a GitHub issue the workflow picks up
   jittest         Run JiT (Just-in-Time) tests for a PR
   doctor          Check project health and identify issues
   reset           Reset project state for fresh start
@@ -289,10 +283,6 @@ func cmdHelp(command string) int {
 		usageSubmitReview()
 	case "create-task":
 		usageCreateTask()
-	case "create-epic":
-		usageCreateEpic()
-	case "audit-epic":
-		usageAuditEpic()
 	case "jittest":
 		usageJiTTest()
 	case "doctor":
@@ -558,7 +548,6 @@ func cmdInit(args []string) int {
 		fmt.Println("  .ai/templates/")
 		fmt.Println("  .ai/rules/")
 		fmt.Println("  .ai/skills/")
-		fmt.Println("  .ai/specs/")
 		fmt.Println("  .ai/state/ (runtime, gitignored)")
 		fmt.Println("  .ai/results/ (runtime, gitignored)")
 		fmt.Println("  .ai/runs/ (runtime, gitignored)")
@@ -836,7 +825,6 @@ func cmdUpgrade(args []string) int {
 			fmt.Println("Would preserve:")
 			fmt.Println("  .ai/config/workflow.yaml")
 		}
-		fmt.Println("  .ai/specs/")
 		fmt.Println("  .ai/rules/ (user rules)")
 
 		// Scaffold dry-run
@@ -1266,7 +1254,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task create-epic audit-epic jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1326,9 +1314,7 @@ _awkit() {
         'stop-workflow:Stop the workflow and generate a report'
         'prepare-review:Prepare PR review context'
         'submit-review:Submit PR review and handle result'
-        'create-task:Create GitHub Issue from task entry'
-        'create-epic:Create GitHub Tracking Issue (Epic)'
-        'audit-epic:Audit Epic coverage against design.md'
+        'create-task:Create a ticket the workflow picks up'
         'jittest:Run JiT (Just-in-Time) tests for a PR'
         'doctor:Check project health and identify issues'
         'reset:Reset project state for fresh start'
@@ -1421,9 +1407,7 @@ complete -c awkit -n __fish_use_subcommand -a reconcile -d 'Self-heal structural
 complete -c awkit -n __fish_use_subcommand -a stop-workflow -d 'Stop the workflow and generate a report'
 complete -c awkit -n __fish_use_subcommand -a prepare-review -d 'Prepare PR review context'
 complete -c awkit -n __fish_use_subcommand -a submit-review -d 'Submit PR review and handle result'
-complete -c awkit -n __fish_use_subcommand -a create-task -d 'Create GitHub Issue from task entry'
-complete -c awkit -n __fish_use_subcommand -a create-epic -d 'Create GitHub Tracking Issue (Epic)'
-complete -c awkit -n __fish_use_subcommand -a audit-epic -d 'Audit Epic coverage against design.md'
+complete -c awkit -n __fish_use_subcommand -a create-task -d 'Create a ticket the workflow picks up'
 complete -c awkit -n __fish_use_subcommand -a jittest -d 'Run JiT (Just-in-Time) tests for a PR'
 complete -c awkit -n __fish_use_subcommand -a doctor -d 'Check project health and identify issues'
 complete -c awkit -n __fish_use_subcommand -a reset -d 'Reset project state for fresh start'

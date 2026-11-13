@@ -218,52 +218,19 @@ func TestWorkflowLabelSpecs(t *testing.T) {
 	}
 }
 
-func TestSameDecision(t *testing.T) {
-	base := analyzeNextVars{NextAction: "create_task", SpecName: "tennis-arena", TaskLine: "15"}
-
-	if !sameDecision(base, analyzeNextVars{NextAction: "create_task", SpecName: "tennis-arena", TaskLine: "15"}) {
-		t.Error("identical decisions should compare equal")
-	}
-
-	// Any single differing field breaks equality.
-	diffs := map[string]analyzeNextVars{
-		"action": {NextAction: "dispatch_worker", SpecName: "tennis-arena", TaskLine: "15"},
-		"line":   {NextAction: "create_task", SpecName: "tennis-arena", TaskLine: "16"},
-		"spec":   {NextAction: "create_task", SpecName: "other", TaskLine: "15"},
-		"issue":  {NextAction: "create_task", SpecName: "tennis-arena", TaskLine: "15", IssueNumber: "7"},
-	}
-	for name, d := range diffs {
-		if sameDecision(base, d) {
-			t.Errorf("differing %s should not compare equal", name)
-		}
-	}
-}
-
-func TestIsCreationAction(t *testing.T) {
-	for _, a := range []string{"create_task", "generate_tasks", "audit_epic"} {
-		if !isCreationAction(a) {
-			t.Errorf("%q should be a creation action", a)
-		}
-	}
-	for _, a := range []string{"dispatch_worker", "check_result", "review_pr", "all_complete", "none", ""} {
-		if isCreationAction(a) {
-			t.Errorf("%q should not be a creation action", a)
-		}
-	}
-}
-
 func TestFormatAnalyzeNextContext(t *testing.T) {
 	ctx := formatAnalyzeNextContext(analyzeNextVars{
-		NextAction:  "create_task",
-		SpecName:    "snake-arena",
-		TaskLine:    "7",
-		IssueNumber: "",
+		NextAction:  "dispatch_worker",
+		IssueNumber: "7",
 		PRNumber:    "",
 		ExitReason:  "",
 		MergeIssue:  "",
 	})
-	if ctx != " (spec=snake-arena line=7)" {
-		t.Fatalf("formatAnalyzeNextContext() = %q, want %q", ctx, " (spec=snake-arena line=7)")
+	if ctx != " (issue=7)" {
+		t.Fatalf("formatAnalyzeNextContext() = %q, want %q", ctx, " (issue=7)")
+	}
+	if ctx := formatAnalyzeNextContext(analyzeNextVars{NextAction: "all_complete"}); ctx != "" {
+		t.Fatalf("formatAnalyzeNextContext() with nothing to name = %q, want nothing", ctx)
 	}
 }
 

@@ -17,8 +17,6 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 				NextAction:  ActionDispatchWorker,
 				IssueNumber: 42,
 				PRNumber:    0,
-				SpecName:    "",
-				TaskLine:    0,
 				ExitReason:  "",
 				MergeIssue:  "",
 			},
@@ -26,8 +24,6 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 				"NEXT_ACTION":  ActionDispatchWorker,
 				"ISSUE_NUMBER": "42",
 				"PR_NUMBER":    "0",
-				"SPEC_NAME":    "''",
-				"TASK_LINE":    "0",
 				"EXIT_REASON":  "",
 				"MERGE_ISSUE":  "",
 			},
@@ -38,8 +34,6 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 				NextAction:  ActionReviewPR,
 				IssueNumber: 10,
 				PRNumber:    100,
-				SpecName:    "",
-				TaskLine:    0,
 				ExitReason:  "",
 				MergeIssue:  "",
 			},
@@ -50,30 +44,11 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 			},
 		},
 		{
-			name: "create task",
-			decision: &Decision{
-				NextAction:  ActionCreateTask,
-				IssueNumber: 0,
-				PRNumber:    0,
-				SpecName:    "my-feature",
-				TaskLine:    5,
-				ExitReason:  "",
-				MergeIssue:  "",
-			},
-			want: map[string]string{
-				"NEXT_ACTION": ActionCreateTask,
-				"SPEC_NAME":   "'my-feature'",
-				"TASK_LINE":   "5",
-			},
-		},
-		{
 			name: "none with exit reason",
 			decision: &Decision{
 				NextAction:  ActionNone,
 				IssueNumber: 20,
 				PRNumber:    0,
-				SpecName:    "",
-				TaskLine:    0,
 				ExitReason:  ReasonWorkerFailed,
 				MergeIssue:  "",
 			},
@@ -89,8 +64,6 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 				NextAction:  ActionDispatchWorker,
 				IssueNumber: 30,
 				PRNumber:    300,
-				SpecName:    "",
-				TaskLine:    0,
 				ExitReason:  "",
 				MergeIssue:  MergeIssueConflict,
 			},
@@ -107,8 +80,6 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 				NextAction:  ActionAllComplete,
 				IssueNumber: 0,
 				PRNumber:    0,
-				SpecName:    "",
-				TaskLine:    0,
 				ExitReason:  "",
 				MergeIssue:  "",
 			},
@@ -139,6 +110,15 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 					t.Errorf("%s = %q, want %q", key, gotVal, wantVal)
 				}
 			}
+			// The spec-driven fields are gone from the output altogether.
+			for _, gone := range []string{"SPEC_NAME", "TASK_LINE", "EPIC_ISSUE", "TASK_TEXT"} {
+				if _, ok := got[gone]; ok {
+					t.Errorf("the output still has %s", gone)
+				}
+			}
+			if len(got) != 5 {
+				t.Errorf("the output has %d variables, want the five the loop reads: %v", len(got), got)
+			}
 		})
 	}
 }
@@ -146,8 +126,6 @@ func TestDecision_FormatBashOutput(t *testing.T) {
 func TestActionConstants(t *testing.T) {
 	// Ensure action constants have expected values
 	actions := map[string]string{
-		"ActionGenerateTasks":  ActionGenerateTasks,
-		"ActionCreateTask":     ActionCreateTask,
 		"ActionDispatchWorker": ActionDispatchWorker,
 		"ActionCheckResult":    ActionCheckResult,
 		"ActionReviewPR":       ActionReviewPR,
@@ -156,8 +134,6 @@ func TestActionConstants(t *testing.T) {
 	}
 
 	expected := map[string]string{
-		"ActionGenerateTasks":  "generate_tasks",
-		"ActionCreateTask":     "create_task",
 		"ActionDispatchWorker": "dispatch_worker",
 		"ActionCheckResult":    "check_result",
 		"ActionReviewPR":       "review_pr",

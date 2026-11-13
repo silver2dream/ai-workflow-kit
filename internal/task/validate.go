@@ -37,26 +37,3 @@ func ValidateBody(body string) error {
 
 	return nil
 }
-
-// EnsureAWKMetadata injects **Spec** and **Task Line** into the body if missing.
-func EnsureAWKMetadata(body, spec string, taskLine int) string {
-	specRe := regexp.MustCompile(`(?i)\*\*spec\*\*\s*:`)
-	taskLineRe := regexp.MustCompile(`(?i)\*\*task\s+line\*\*\s*:`)
-
-	needsSpec := !specRe.MatchString(body)
-	needsTaskLine := !taskLineRe.MatchString(body)
-
-	if !needsSpec && !needsTaskLine {
-		return body
-	}
-
-	appended := "\n\n## AWK Metadata\n"
-	if needsSpec {
-		appended += fmt.Sprintf("- **Spec**: %s\n", spec)
-	}
-	if needsTaskLine {
-		appended += fmt.Sprintf("- **Task Line**: %d\n", taskLine)
-	}
-
-	return strings.TrimRight(body, "\r\n\t ") + appended
-}
