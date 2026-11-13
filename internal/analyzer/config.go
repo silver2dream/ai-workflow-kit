@@ -101,7 +101,9 @@ type ReviewConfig struct {
 	// HumanFeedback makes a maintainer's review of a pull request outrank
 	// the automated verdict: the pull request is not merged over open
 	// feedback, the Worker is sent back with it, and it is recorded as
-	// human evidence for the learning loop. nil = enabled (default).
+	// human evidence for the learning loop. Merging never waits for a
+	// review; feedback written after the merge is picked up before the next
+	// dispatch and distilled into lessons. nil = enabled (default).
 	HumanFeedback *bool `yaml:"human_feedback"`
 }
 
