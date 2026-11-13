@@ -140,6 +140,9 @@ func ValidExitReasons() []string {
 		"config_not_found",
 		"loop_count_error",
 		"github_api_error",
+		// Raised by the Principal itself: task generation in an unattended run
+		// found risky assumptions and nobody is there to confirm them.
+		"risky_assumptions",
 	}
 }
 

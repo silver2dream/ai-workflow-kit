@@ -109,6 +109,8 @@ func formatExitReasonDetails(reason string) string {
 		return "✗ **Workflow stopped: workflow config not found.**\n\nCheck `.ai/config/workflow.yaml`, or run `awkit doctor`.\n"
 	case "loop_count_error", "github_api_error":
 		return "✗ **Workflow stopped: the analyzer could not read its state.**\n\nRun `awkit doctor` and check GitHub CLI access, then run `awkit kickoff`.\n"
+	case "risky_assumptions":
+		return "⏸ **Workflow stopped: the task plan rests on risky assumptions nobody confirmed.**\n\nReview `.ai/temp/assumptions-<spec>.md`. For each RISKY axis, state the intended choice in the spec's design.md - an axis that design.md states is no longer an assumption. Then remove the stop marker (`awkit reset --stop`) and run `awkit kickoff`.\n"
 	default:
 		return fmt.Sprintf("? **Workflow stopped for reason: %s**\n\nPlease check logs for details.\n", reason)
 	}

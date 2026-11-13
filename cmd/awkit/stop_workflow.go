@@ -31,6 +31,7 @@ Valid reasons:
   max_consecutive_failures Too many consecutive failures
   contract_violation      Variable contract violation
   none                    No specific reason
+  risky_assumptions       Task plan rests on unconfirmed risky assumptions
 
   The exit_reason values that 'awkit analyze-next' reports are accepted as-is:
   worker_failed, needs_human_review, review_max_retries, no_actionable_tasks,

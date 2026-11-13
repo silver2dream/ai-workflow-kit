@@ -156,14 +156,21 @@ Mark an assumption as **RISKY** if any of these are true:
    → Correct any of these now or I'll proceed with these assumptions.
    ```
 
-3. **If RISKY ASSUMPTIONS list is non-empty**, STOP and wait for user response
-   in this turn. Do NOT proceed to Section A.1 until the user confirms or
-   corrects.
+3. **If RISKY ASSUMPTIONS list is non-empty**, do NOT proceed to Section A.1
+   on your own. What happens next depends on whether anyone can answer:
+   - **A user is in this conversation**: STOP and wait for their response in
+     this turn, then follow A.0.5.4.
+   - **Unattended run** (`awkit kickoff`; its prompt says nobody can answer):
+     do not wait. A question would never be seen, and the session would only
+     be restarted into the same question. Run
+     `awkit stop-workflow risky_assumptions` and end. The stop report tells
+     the human to state the intended choice in design.md; an axis design.md
+     states is no longer an assumption, so the next run passes this step.
 
 4. **If RISKY ASSUMPTIONS list is empty**, you may proceed directly to
    Section A.1 in the same turn (no user pause needed).
 
-#### A.0.5.4 After user response
+#### A.0.5.4 After user response (interactive sessions)
 
 - User confirms: continue to Section A.1.
 - User corrects: update `.ai/temp/assumptions-<spec>.md` and the design.md if
