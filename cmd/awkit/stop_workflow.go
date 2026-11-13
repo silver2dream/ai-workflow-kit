@@ -32,6 +32,10 @@ Valid reasons:
   contract_violation      Variable contract violation
   none                    No specific reason
 
+  The exit_reason values that 'awkit analyze-next' reports are accepted as-is:
+  worker_failed, needs_human_review, review_max_retries, no_actionable_tasks,
+  config_not_found, loop_count_error, github_api_error
+
 Options:
   --state-root    Override state root (default: git root)
   --help          Show this help
