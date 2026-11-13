@@ -13,33 +13,37 @@ import (
 // MockGitHubClient is a mock implementation of GitHubClientInterface for testing
 type MockGitHubClient struct {
 	// Mock data for responses
-	IssuesByLabel        map[string][]Issue
-	IssuesByLabelError   map[string]error // Per-label errors for ListIssuesByLabel
-	PendingIssues        []Issue
-	PendingIssuesError   error // Specific error for ListPendingIssues
-	OpenIssueCount       int
-	PRMerged             map[int]bool
-	PRMergedError        map[int]error
-	PRMergeableStatus    map[int]string // PR number -> MERGEABLE/CONFLICTING/UNKNOWN
-	PRMergeableError     map[int]error
-	PRByBranch           map[string]int // branch name -> PR number
-	ClosedIssues         []int
-	AddedLabels          map[int][]string
-	RemovedLabels        map[int][]string
-	ListIssuesError      error
-	CountError           error
-	AddLabelError        error
-	RemoveLabelError     error
-	CloseIssueError      error
-	IssueBodies          map[int]string // issue number -> body
-	GetIssueBodyError    error
-	UpdateIssueBodyError error
-	UpdatedBodies        map[int]string  // tracks UpdateIssueBody calls
-	ReopenedIssues       []int           // tracks ReopenIssue calls
-	MergedBranches       map[string]bool // head branch -> has a merged PR
-	IssueStates          map[int]string  // issue number -> OPEN/CLOSED
-	MergedBranchesError  error
-	IssueStatesError     error
+	IssuesByLabel       map[string][]Issue
+	IssuesByLabelError  map[string]error // Per-label errors for ListIssuesByLabel
+	PendingIssues       []Issue
+	PendingIssuesError  error // Specific error for ListPendingIssues
+	OpenIssueCount      int
+	PRMerged            map[int]bool
+	PRMergedError       map[int]error
+	PRMergeableStatus   map[int]string // PR number -> MERGEABLE/CONFLICTING/UNKNOWN
+	PRMergeableError    map[int]error
+	PRByBranch          map[string]int // branch name -> PR number
+	ClosedIssues        []int
+	AddedLabels         map[int][]string
+	RemovedLabels       map[int][]string
+	ListIssuesError     error
+	CountError          error
+	AddLabelError       error
+	RemoveLabelError    error
+	CloseIssueError     error
+	ReopenedIssues      []int               // tracks ReopenIssue calls
+	Comments            map[int][]string    // tracks CommentIssue calls
+	MergedBranches      map[string]bool     // head branch -> has a merged PR
+	IssueStatuses       map[int]IssueStatus // every issue GitHub knows; TaskStatuses lists the ones with the task label
+	TaskStatuses        map[int]IssueStatus
+	MergedBranchesError error
+	HasMergedPRError    error
+	IssueStatusesError  error
+	IssueStatusError    error
+	CommentError        error
+	ReopenError         error
+	MergedUnlisted      map[string]bool // merged, yet too old for the list of merged branches
+	Calls               []string        // the status and merge lookups, in order
 }
 
 func NewMockGitHubClient() *MockGitHubClient {
@@ -53,10 +57,10 @@ func NewMockGitHubClient() *MockGitHubClient {
 		PRByBranch:         make(map[string]int),
 		AddedLabels:        make(map[int][]string),
 		RemovedLabels:      make(map[int][]string),
-		IssueBodies:        make(map[int]string),
-		UpdatedBodies:      make(map[int]string),
+		Comments:           make(map[int][]string),
 		MergedBranches:     make(map[string]bool),
-		IssueStates:        make(map[int]string),
+		IssueStatuses:      make(map[int]IssueStatus),
+		TaskStatuses:       make(map[int]IssueStatus),
 	}
 }
 
@@ -136,43 +140,56 @@ func (m *MockGitHubClient) FindPRByBranch(ctx context.Context, branchName string
 	return 0, nil
 }
 
-func (m *MockGitHubClient) GetIssueBody(ctx context.Context, issueNumber int) (string, error) {
-	if m.GetIssueBodyError != nil {
-		return "", m.GetIssueBodyError
-	}
-	body, ok := m.IssueBodies[issueNumber]
-	if !ok {
-		return "", fmt.Errorf("issue #%d not found", issueNumber)
-	}
-	return body, nil
-}
-
-func (m *MockGitHubClient) UpdateIssueBody(ctx context.Context, issueNumber int, body string) error {
-	if m.UpdateIssueBodyError != nil {
-		return m.UpdateIssueBodyError
-	}
-	m.IssueBodies[issueNumber] = body
-	m.UpdatedBodies[issueNumber] = body
-	return nil
-}
-
 func (m *MockGitHubClient) ReopenIssue(ctx context.Context, issueNumber int) error {
+	if m.ReopenError != nil {
+		return m.ReopenError
+	}
 	m.ReopenedIssues = append(m.ReopenedIssues, issueNumber)
 	return nil
 }
 
+func (m *MockGitHubClient) CommentIssue(ctx context.Context, issueNumber int, body string) error {
+	if m.CommentError != nil {
+		return m.CommentError
+	}
+	m.Comments[issueNumber] = append(m.Comments[issueNumber], body)
+	return nil
+}
+
 func (m *MockGitHubClient) MergedIssueBranches(ctx context.Context) (map[string]bool, error) {
+	m.Calls = append(m.Calls, "MergedIssueBranches")
 	if m.MergedBranchesError != nil {
 		return nil, m.MergedBranchesError
 	}
 	return m.MergedBranches, nil
 }
 
-func (m *MockGitHubClient) TaskIssueStates(ctx context.Context, taskLabel string) (map[int]string, error) {
-	if m.IssueStatesError != nil {
-		return nil, m.IssueStatesError
+func (m *MockGitHubClient) HasMergedPR(ctx context.Context, branchName string) (bool, error) {
+	m.Calls = append(m.Calls, "HasMergedPR "+branchName)
+	if m.HasMergedPRError != nil {
+		return false, m.HasMergedPRError
 	}
-	return m.IssueStates, nil
+	return m.MergedBranches[branchName] || m.MergedUnlisted[branchName], nil
+}
+
+func (m *MockGitHubClient) TaskIssueStatuses(ctx context.Context, taskLabel string) (map[int]IssueStatus, error) {
+	m.Calls = append(m.Calls, "TaskIssueStatuses")
+	if m.IssueStatusesError != nil {
+		return nil, m.IssueStatusesError
+	}
+	return m.TaskStatuses, nil
+}
+
+func (m *MockGitHubClient) IssueStatus(ctx context.Context, issueNumber int) (IssueStatus, error) {
+	m.Calls = append(m.Calls, fmt.Sprintf("IssueStatus %d", issueNumber))
+	if m.IssueStatusError != nil {
+		return IssueStatus{}, m.IssueStatusError
+	}
+	status, ok := m.IssueStatuses[issueNumber]
+	if !ok {
+		return IssueStatus{}, ErrIssueNotFound
+	}
+	return status, nil
 }
 
 // Helper function to create test analyzer with mock client

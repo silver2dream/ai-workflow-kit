@@ -1,6 +1,6 @@
 # Phase 5: Issue Creation
 
-Create the approved issues via GitHub CLI and generate a final report.
+Create the approved issues with `awkit create-task` and generate a final report.
 
 ## Prerequisites
 
@@ -8,156 +8,123 @@ Create the approved issues via GitHub CLI and generate a final report.
 - All proposal details are ready
 - GitHub CLI (`gh`) is authenticated
 
-## Step 1: Prepare Issue Bodies
+## How the workflow reads an issue
 
-For each issue, prepare the full body using this template:
+An issue becomes a ticket of the AWK workflow through two things, and
+`awkit create-task` takes care of both:
 
-```markdown
-## Objective
-{objective from proposal}
+- the task label (`ai-task` unless the config says otherwise), and
+- a `yaml awk-ticket` block in the body, which says which repo the ticket is
+  for and which issues must be done before it starts.
 
-## Scope
-{scope list from proposal}
+Do not create these issues with `gh issue create`: it skips the check of the
+body, and a ticket with a missing or broken block stops the workflow later.
 
-## Acceptance Criteria
-{criteria list from proposal - describe INTENT, not test function names}
+The full description of the block is in
+`.ai/skills/principal-workflow/tasks/create-task.md`.
 
-## Verification
-```bash
-{verification commands}
-```
+## Step 1: Decide the order
 
-## Dependencies
-{dependency information - will be updated with actual issue numbers}
+The workflow takes tickets in the order of their issue numbers and skips a
+ticket while one of the issues it depends on is still open. So:
 
-## Constraints
-- Follow commit format: `[type] subject`
-- Obey AGENTS.md
-- Obey `.ai/rules/_kit/git-workflow.md`
-```
+1. Create an issue only after every issue it depends on has been created: its
+   body needs their real numbers.
+2. Among issues that are ready at the same time, create first what should be
+   worked on first (P0, then P1, then P2).
 
-## Step 2: Create Issues in Dependency Order
+Keep the mapping `proposal number -> GitHub issue number` as you go.
 
-Create issues starting with P0 (no dependencies) first, then P1, then P2.
+## Step 2: Write the body and create the issue
 
-### Order Rules
-1. Issues with no dependencies first
-2. Then issues whose dependencies are already created
-3. Track created issue numbers for dependency updates
+For each issue, in that order, write the body to a file and create the issue
+from it:
 
-### Create Command
-
-For each issue:
-
-```bash
-gh issue create \
-  --title "[type] description" \
-  --body "$(cat <<'EOF'
-## Objective
-{objective}
+````bash
+mkdir -p .ai/temp
+cat > .ai/temp/issue-1.md <<'EOF'
+## Summary
+{summary from the proposal}
 
 ## Scope
-{scope list}
+{scope list from the proposal}
 
 ## Acceptance Criteria
-{criteria list - describe INTENT, not test function names}
+{criteria list from the proposal: `- [ ]` items that describe intent, not test function names}
 
-## Verification
-```bash
-{commands}
+## Testing Requirements
+- New features MUST have corresponding unit tests
+- Modified features MUST have updated or new test cases
+- Test coverage should cover happy path and error cases
+
+```yaml awk-ticket
+schema: 1
+repo: backend
+severity: P1
+depends_on: [45, 46]
 ```
-
-## Dependencies
-{dependencies or "None"}
-
-## Constraints
-- Follow commit format: `[type] subject`
-- Obey AGENTS.md
-- Obey `.ai/rules/_kit/git-workflow.md`
 EOF
-)" \
-  --label "feat,backend,ai-task"
-```
 
-### Capture Issue Number
+awkit create-task --title "[type] description" --body-file .ai/temp/issue-1.md
+````
 
-Parse the output to get the created issue number:
+The block:
 
-```bash
-# gh issue create returns: https://github.com/owner/repo/issues/123
-# Extract the issue number from the URL
-```
+| Field | Value |
+|-------|-------|
+| `schema` | always `1` |
+| `repo` | the proposal's Repo: a repo name from `.ai/config/workflow.yaml`, or `root` |
+| `severity` | the proposal's Priority (`P0`, `P1`, `P2`) |
+| `depends_on` | the GitHub issue numbers of the proposal's dependencies. Leave the line out when there are none |
 
-Store the mapping: `proposal_id -> github_issue_number`
+Write nothing else into the block: an unknown field makes `awkit create-task`
+refuse the body. Proposal numbers must never end up in `depends_on`; replace
+each with the GitHub issue number from your mapping.
 
-## Step 3: Update Dependencies
+`awkit create-task` prints `Created Issue #<N>` on success. Record `N` in the
+mapping before you write the next body.
 
-After all issues are created, update issue bodies with actual GitHub issue numbers.
+Use `--dry-run` to check a body without creating anything.
 
-For issues that reference other issues:
-1. Get the actual issue numbers from the mapping
-2. Update the issue body with correct references
-
-```bash
-gh issue edit {issue_number} --body "$(cat <<'EOF'
-{updated body with actual issue numbers}
-EOF
-)"
-```
-
-### Dependency Format in Body
-
-Replace placeholder references:
-- Before: `Depends on: Issue #1, #2` (proposal numbers)
-- After: `Depends on: #45, #46` (GitHub issue numbers)
-
-## Step 4: Add Cross-References
-
-Optionally add comments linking related issues:
-
-```bash
-gh issue comment {issue_number} --body "This issue is part of a feature set. Related issues: #45, #46, #47"
-```
-
-## Step 5: Generate Final Report
+## Step 3: Generate Final Report
 
 Output a comprehensive report:
 
 ```markdown
 ## Issues Created Successfully
 
-| Proposal # | GitHub Issue | Title | Labels | Status |
-|------------|--------------|-------|--------|--------|
-| 1 | #45 | [feat] add user repository | feat, backend | Created |
-| 2 | #46 | [feat] implement user service | feat, backend | Created |
-| 3 | #47 | [test] add user tests | test, backend | Created |
-
-### Issue Links
-- #45: https://github.com/{owner}/{repo}/issues/45
-- #46: https://github.com/{owner}/{repo}/issues/46
-- #47: https://github.com/{owner}/{repo}/issues/47
+| Proposal # | GitHub Issue | Title | Repo | Depends on | Status |
+|------------|--------------|-------|------|------------|--------|
+| 1 | #45 | [feat] add user repository | backend | - | Created |
+| 2 | #46 | [feat] implement user service | backend | #45 | Created |
+| 3 | #47 | [test] add user tests | backend | #46 | Created |
 
 ### Dependency Map (with actual numbers)
-```
+
 #45 [P0] --> #46 [P1] --> #47 [P2]
-```
 
 ### Next Steps
-1. Start with Issue #45 (P0, no dependencies)
-2. After #45 is merged, work on #46
-3. Finally, complete #47
+
+The workflow starts with #45. #46 starts once #45 is merged and closed, #47
+once #46 is.
 
 To run the workflow:
-```bash
-awkit kickoff
-```
+
+    awkit kickoff
 ```
 
 ## Error Handling
 
-### Issue Creation Fails
+### `awkit create-task` refuses the body
 
-If `gh issue create` fails:
+The command exits non-zero and says what is wrong: a missing section, no
+`- [ ]` checkbox, no `yaml awk-ticket` block, a field the block does not have,
+or a repo the config does not have. Correct the body file and run the command
+again. Nothing was created.
+
+### GitHub fails
+
+If the command fails on the GitHub side:
 
 ```markdown
 Failed to create issue: {error message}
@@ -178,23 +145,24 @@ Would you like me to retry the failed issues? (yes/no)
 If some issues were created but not all:
 
 1. Report which succeeded and which failed
-2. Offer to retry failed ones
-3. Ensure dependency references are still correct for created issues
+2. Offer to retry the failed ones
+3. Do not create an issue whose dependency was not created: its `depends_on`
+   would have nothing to point at
 
 ## Example Complete Flow
 
 ```bash
-# Issue 1 (no dependencies)
-gh issue create --title "[feat] add user repository interface" --body "..." --label "feat,backend,ai-task"
-# Returns: https://github.com/owner/repo/issues/45
+# Issue 1 (no dependencies): the block has no depends_on line
+awkit create-task --title "[feat] add user repository interface" --body-file .ai/temp/issue-1.md
+# Created Issue #45
 
-# Issue 2 (depends on #1, now #45)
-gh issue create --title "[feat] implement user service" --body "...Depends on: #45..." --label "feat,backend,ai-task"
-# Returns: https://github.com/owner/repo/issues/46
+# Issue 2 (depends on proposal 1, now #45): depends_on: [45]
+awkit create-task --title "[feat] implement user service" --body-file .ai/temp/issue-2.md
+# Created Issue #46
 
-# Issue 3 (depends on #2, now #46)
-gh issue create --title "[test] add user service tests" --body "...Depends on: #46..." --label "test,backend,ai-task"
-# Returns: https://github.com/owner/repo/issues/47
+# Issue 3 (depends on proposal 2, now #46): depends_on: [46]
+awkit create-task --title "[test] add user service tests" --body-file .ai/temp/issue-3.md
+# Created Issue #47
 ```
 
 ## Completion

@@ -18,8 +18,15 @@ Usage:
 Required:
   --title       Issue title, e.g. "[feat] add login"
   --body-file   Path to the ticket body (markdown). It must have the sections
-                Summary, Scope, Acceptance Criteria, Testing Requirements and
-                Metadata, and at least one unchecked checkbox.
+                Summary, Scope, Acceptance Criteria and Testing Requirements,
+                at least one unchecked checkbox, and a "yaml awk-ticket" block
+                that names the ticket's repo:
+
+                    `+"```"+`yaml awk-ticket
+                    schema: 1
+                    repo: backend          # a repo of .ai/config/workflow.yaml, or root
+                    depends_on: [12, 15]   # optional: issues that must be done first
+                    `+"```"+`
 
 Options:
   --repo        GitHub repo (owner/repo), uses config if not specified

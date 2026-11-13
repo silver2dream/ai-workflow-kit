@@ -105,6 +105,10 @@ func formatExitReasonDetails(reason string) string {
 		return "⚠ **Workflow stopped: an issue needs human review.**\n\nResolve the flagged issue, then run `awkit kickoff`.\n"
 	case "no_actionable_tasks":
 		return "⏸ **Workflow stopped: no actionable tasks.**\n\nNothing is ready to work on. Check the open issues, then run `awkit kickoff`.\n"
+	case "invalid_ticket":
+		return "⚠ **Workflow stopped: a ticket cannot be read.**\n\nThe issue has a comment that says what is wrong with its `yaml awk-ticket` block. Correct the block, remove the `needs-human-review` label, then run `awkit kickoff`.\n"
+	case "blocked_by_dependencies":
+		return "⏸ **Workflow stopped: every pending ticket waits for another issue.**\n\nA ticket starts once every issue in its `depends_on` is closed as completed. What the tickets wait for is still open and not pending, was closed as not planned, or the tickets wait for each other. Reopen or finish that issue, or correct `depends_on`, then run `awkit kickoff`.\n"
 	case "config_not_found":
 		return "✗ **Workflow stopped: workflow config not found.**\n\nCheck `.ai/config/workflow.yaml`, or run `awkit doctor`.\n"
 	case "loop_count_error", "github_api_error":

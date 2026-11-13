@@ -298,43 +298,42 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}, nil
 	}
 
-	// Step 3: Check pending issues
+	// Step 3: Pick the next ticket among the pending ones: the lowest number
+	// whose dependencies are done.
+	lookup := a.newTicketLookup()
 	pendingIssues, err := a.GHClient.ListPendingIssues(ctx, labels)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check pending issues: %v\n", err)
 		apiErrors++
 	}
-	if err == nil && len(pendingIssues) > 0 {
-		// Check each pending issue for merged PR (cleanup orphaned issues)
-		for _, issue := range pendingIssues {
-			prNumber := a.extractPRNumberForIssue(issue.Number, issue.Body)
-			if prNumber > 0 {
-				// Check if PR is merged
-				if merged, err := a.GHClient.IsPRMerged(ctx, prNumber); err == nil && merged {
-					// PR is merged but issue is still open - close it
-					_ = a.GHClient.CloseIssue(ctx, issue.Number)
-					continue // Check next issue
-				}
-			}
-			// This issue is truly pending (no merged PR)
-			return &Decision{
-				NextAction:  ActionDispatchWorker,
-				IssueNumber: issue.Number,
-			}, nil
+	if err == nil {
+		decision, lookupErrors := a.nextTicket(ctx, pendingIssues, lookup)
+		apiErrors += lookupErrors
+		if decision != nil {
+			return decision, nil
 		}
 	}
 
 	// Step 4: Nothing is left to dispatch. The run is complete once no task
-	// issue is open.
+	// issue is open, and no ticket was closed without its work landing.
 	openCount, err := a.GHClient.CountOpenIssues(ctx, labels.Task)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to count open issues: %v\n", err)
 		apiErrors++
 	}
 	if err == nil && openCount == 0 {
-		return &Decision{
-			NextAction: ActionAllComplete,
-		}, nil
+		redo, err := a.falseCompletion(ctx, lookup)
+		switch {
+		case err != nil:
+			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check that the closed tickets landed: %v\n", err)
+			apiErrors++
+		case redo != nil:
+			return redo, nil
+		default:
+			return &Decision{
+				NextAction: ActionAllComplete,
+			}, nil
+		}
 	}
 
 	// Step 5: No actionable tasks

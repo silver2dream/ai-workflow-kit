@@ -6,22 +6,142 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
-// TicketMetadata contains parsed metadata from a ticket/issue body
+// TicketMetadata is what the workflow needs to know about a ticket to run a
+// Worker on it.
 type TicketMetadata struct {
-	Repo               string // root, backend, frontend, etc.
-	Severity           string // P0, P1, P2
-	Release            bool
-	AllowParentChanges bool // Allow changes outside submodule boundary
-	AllowScriptChanges bool // Allow changes to the workflow's own files (protectedPaths)
-	AllowSecrets       bool // Allow secrets in diff
+	Repo               string // the repo of the workflow config the ticket is for
+	Severity           string // P0 to P3, or empty
+	Release            bool   // the pull request goes to the release branch
+	AllowParentChanges bool   // changes outside the submodule are allowed
+	AllowScriptChanges bool   // changes to the workflow's own files (protectedPaths) are allowed
+	AllowSecrets       bool   // secrets in the diff are allowed
+
+	// Legacy is set for a ticket without an awk-ticket block: one written
+	// before the block existed, read from its prose the way it used to be.
+	Legacy bool
+	// What only a legacy ticket can say.
+	ScriptWhitelist string   // protected files the ticket may change
+	SecretPatterns  []string // more patterns that count as secrets
 }
 
-// ParseTicketMetadata extracts metadata from issue body
-func ParseTicketMetadata(body string) *TicketMetadata {
+// dispatchNotesMark separates, in a ticket file, the ticket as it stands on
+// GitHub from what the dispatch adds for the Worker: what the last review
+// found, how to deal with a merge conflict. Where the Worker runs, what it may
+// touch and which commands verify its work is for the ticket alone to say;
+// text that came out of a review must not be able to.
+const dispatchNotesMark = "<!-- awk:dispatch-notes -->"
+
+// A ticket that has the mark in its own text gets this in its place, so that
+// the first mark of a ticket file is always the dispatch's.
+const quotedNotesMark = "<!-- awk:dispatch-notes (written in the ticket) -->"
+
+// ticketFileContent puts a ticket file together: the issue body, then what the
+// dispatch has to add (see dispatchNotes).
+func ticketFileContent(issueBody, reviewReason, mergeIssue, baseBranch string) string {
+	content := strings.ReplaceAll(issueBody, dispatchNotesMark, quotedNotesMark)
+	notes := dispatchNotes(reviewReason, mergeIssue, baseBranch)
+	if notes == "" {
+		return content
+	}
+	return content + "\n\n" + dispatchNotesMark + notes
+}
+
+// dispatchNotes words what the dispatch tells the Worker on top of the ticket:
+// why the last review was blocked, and what to do about a pull request that no
+// longer merges.
+func dispatchNotes(reviewReason, mergeIssue, baseBranch string) string {
+	notes := ""
+	if reviewReason != "" {
+		notes += fmt.Sprintf(`
+
+---
+
+## ⚠️ 上次 Review 被阻擋 - 請修復以下問題
+
+%s
+
+**請根據以上錯誤修復代碼，確保所有測試通過後再提交。**
+`, reviewReason)
+	}
+	switch mergeIssue {
+	case "conflict":
+		notes += fmt.Sprintf(`
+
+---
+
+## ⚠️ MERGE CONFLICT - 請先解決
+
+PR 有 merge conflict，請執行以下步驟：
+
+1. 在 worktree 中執行 `+"`git fetch origin && git rebase origin/%s`"+`
+2. 解決衝突後 `+"`git add . && git rebase --continue`"+`
+3. 推送更新 `+"`git push --force-with-lease`"+`
+4. 確認 CI 通過
+
+**這是最優先的任務，必須先完成才能繼續其他工作。**`, baseBranch)
+	case "rebase":
+		notes += fmt.Sprintf(`
+
+---
+
+## ⚠️ BRANCH BEHIND - 請先 Rebase
+
+PR 分支落後 base branch，請執行以下步驟：
+
+1. 在 worktree 中執行 `+"`git fetch origin && git rebase origin/%s`"+`
+2. 推送更新 `+"`git push --force-with-lease`"+`
+3. 確認 CI 通過
+
+**這是最優先的任務，必須先完成才能繼續其他工作。**`, baseBranch)
+	}
+	return notes
+}
+
+// ticketOf returns the ticket itself from the content of a ticket file:
+// what comes before the dispatch's notes.
+func ticketOf(content string) string {
+	if i := strings.Index(content, dispatchNotesMark); i >= 0 {
+		return content[:i]
+	}
+	return content
+}
+
+// ReadTicketMetadata returns what the workflow needs to know about a ticket,
+// from its body: the issue body, or the ticket of a ticket file (see ticketOf).
+//
+// It reads the ticket's awk-ticket block and nothing else: no prose can set a
+// flag. A block that cannot be used is an error, and the prose is not read in
+// its place. Only a ticket without a block is read from its prose; Legacy is
+// then set.
+func ReadTicketMetadata(body string) (*TicketMetadata, error) {
+	block, found, err := ticket.Parse(body)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return readLegacyTicket(body), nil
+	}
+	return &TicketMetadata{
+		Repo:               block.Repo,
+		Severity:           block.Severity,
+		Release:            block.Release,
+		AllowParentChanges: block.AllowParentChanges,
+		AllowScriptChanges: block.AllowScriptChanges,
+		AllowSecrets:       block.AllowSecrets,
+	}, nil
+}
+
+// readLegacyTicket reads a ticket that has no awk-ticket block from its prose:
+// "**Repo**: backend" lines, flags under "## Constraints", "- key: value"
+// lines. This is how every ticket was read before the block existed.
+func readLegacyTicket(body string) *TicketMetadata {
 	meta := &TicketMetadata{
-		Repo: "root", // Default repo
+		Repo:   ticket.RootRepo, // the repo of a ticket that names none
+		Legacy: true,
 	}
 
 	// Parse Repo: **Repo**: backend or - Repo: backend
@@ -68,6 +188,24 @@ func ParseTicketMetadata(body string) *TicketMetadata {
 		meta.AllowParentChanges = strings.Contains(strings.ToLower(constraints), "allow-parent-changes")
 		meta.AllowScriptChanges = strings.Contains(strings.ToLower(constraints), "allow-script-changes")
 		meta.AllowSecrets = strings.Contains(strings.ToLower(constraints), "allow-secrets")
+	}
+
+	// A "- key: value" line says the same; for a flag it has the last word.
+	if !meta.Release {
+		meta.Release = parseBool(extractTicketValue(body, "Release"))
+	}
+	if value := extractTicketValue(body, "allow_script_changes"); value != "" {
+		meta.AllowScriptChanges = parseBool(value)
+	}
+	if value := extractTicketValue(body, "allow_secrets"); value != "" {
+		meta.AllowSecrets = parseBool(value)
+	}
+	if value := extractTicketValue(body, "allow_parent_changes"); value != "" {
+		meta.AllowParentChanges = parseBool(value)
+	}
+	meta.ScriptWhitelist = extractTicketValue(body, "script_whitelist")
+	if patterns := strings.Fields(extractTicketValue(body, "secret_patterns")); len(patterns) > 0 {
+		meta.SecretPatterns = patterns
 	}
 
 	return meta

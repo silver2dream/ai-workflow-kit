@@ -140,6 +140,8 @@ func ValidExitReasons() []string {
 		"config_not_found",
 		"loop_count_error",
 		"github_api_error",
+		"invalid_ticket",
+		"blocked_by_dependencies",
 	}
 }
 

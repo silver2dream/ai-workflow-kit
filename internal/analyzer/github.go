@@ -3,9 +3,9 @@ package analyzer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -49,12 +49,30 @@ type GitHubClientInterface interface {
 	PRMergeable(ctx context.Context, prNumber int) (string, error)
 	CloseIssue(ctx context.Context, issueNumber int) error
 	FindPRByBranch(ctx context.Context, branchName string) (int, error)
-	GetIssueBody(ctx context.Context, issueNumber int) (string, error)
-	UpdateIssueBody(ctx context.Context, issueNumber int, body string) error
 	ReopenIssue(ctx context.Context, issueNumber int) error
+	CommentIssue(ctx context.Context, issueNumber int, body string) error
 	MergedIssueBranches(ctx context.Context) (map[string]bool, error)
-	TaskIssueStates(ctx context.Context, taskLabel string) (map[int]string, error)
+	HasMergedPR(ctx context.Context, branchName string) (bool, error)
+	TaskIssueStatuses(ctx context.Context, taskLabel string) (map[int]IssueStatus, error)
+	IssueStatus(ctx context.Context, issueNumber int) (IssueStatus, error)
 }
+
+// ErrIssueNotFound is returned for an issue number the repository does not have.
+var ErrIssueNotFound = errors.New("no such issue")
+
+// IssueStatus is whether an issue is open and, when it is closed, how.
+type IssueStatus struct {
+	State  string // OPEN or CLOSED; MERGED when the number is a pull request's
+	Reason string // COMPLETED or NOT_PLANNED for a closed issue; may be empty
+}
+
+// Closed reports whether the issue is closed. A merged pull request is: a
+// ticket may name one as what it waits for.
+func (s IssueStatus) Closed() bool { return s.State == "CLOSED" || s.State == "MERGED" }
+
+// Dropped reports whether the issue was closed as not planned: someone
+// decided the work will not be done.
+func (s IssueStatus) Dropped() bool { return s.Closed() && s.Reason == "NOT_PLANNED" }
 
 // GitHubClient wraps GitHub CLI operations
 type GitHubClient struct {
@@ -343,9 +361,42 @@ func (c *GitHubClient) MergedIssueBranches(ctx context.Context) (map[string]bool
 	return set, nil
 }
 
-// TaskIssueStates returns a map of task-issue number -> state ("OPEN"/"CLOSED")
-// for every issue carrying the task label, in one API call.
-func (c *GitHubClient) TaskIssueStates(ctx context.Context, taskLabel string) (map[int]string, error) {
+// HasMergedPR reports whether a merged pull request exists for a head branch.
+func (c *GitHubClient) HasMergedPR(ctx context.Context, branchName string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "pr", "list",
+		"--head", branchName,
+		"--state", "merged",
+		"--limit", "1",
+		"--json", "number")
+	if err != nil {
+		return false, err
+	}
+	var prs []struct {
+		Number int `json:"number"`
+	}
+	if err := json.Unmarshal(output, &prs); err != nil {
+		return false, err
+	}
+	return len(prs) > 0, nil
+}
+
+// issueStatusJSON is how gh reports an issue's state.
+type issueStatusJSON struct {
+	Number      int    `json:"number"`
+	State       string `json:"state"`
+	StateReason string `json:"stateReason"`
+}
+
+func (j issueStatusJSON) status() IssueStatus {
+	return IssueStatus{State: strings.ToUpper(j.State), Reason: strings.ToUpper(j.StateReason)}
+}
+
+// TaskIssueStatuses returns the status of every issue that carries the task
+// label, open or closed, in one API call.
+func (c *GitHubClient) TaskIssueStatuses(ctx context.Context, taskLabel string) (map[int]IssueStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
@@ -353,56 +404,70 @@ func (c *GitHubClient) TaskIssueStates(ctx context.Context, taskLabel string) (m
 		"--label", taskLabel,
 		"--state", "all",
 		"--limit", "500",
-		"--json", "number,state")
+		"--json", "number,state,stateReason")
 	if err != nil {
 		return nil, err
 	}
-
-	var issues []struct {
-		Number int    `json:"number"`
-		State  string `json:"state"`
-	}
+	var issues []issueStatusJSON
 	if err := json.Unmarshal(output, &issues); err != nil {
 		return nil, err
 	}
-
-	states := make(map[int]string, len(issues))
-	for _, is := range issues {
-		states[is.Number] = strings.ToUpper(is.State)
+	statuses := make(map[int]IssueStatus, len(issues))
+	for _, issue := range issues {
+		statuses[issue.Number] = issue.status()
 	}
-	return states, nil
+	return statuses, nil
 }
 
-// GetIssueBody reads the body of a GitHub issue
-func (c *GitHubClient) GetIssueBody(ctx context.Context, issueNumber int) (string, error) {
+// IssueStatus returns the status of one issue. It returns ErrIssueNotFound for
+// a number the repository does not have.
+func (c *GitHubClient) IssueStatus(ctx context.Context, issueNumber int) (IssueStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
 	output, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "view",
 		strconv.Itoa(issueNumber),
-		"--json", "body",
-		"--jq", ".body")
+		"--json", "number,state,stateReason")
 	if err != nil {
-		return "", err
+		if isNotFound(string(output)) {
+			return IssueStatus{}, ErrIssueNotFound
+		}
+		return IssueStatus{}, err
 	}
-
-	return strings.TrimSpace(string(output)), nil
+	var issue issueStatusJSON
+	if err := json.Unmarshal(output, &issue); err != nil {
+		return IssueStatus{}, err
+	}
+	return issue.status(), nil
 }
 
-// UpdateIssueBody updates the body of a GitHub issue using a temp file to avoid shell escaping issues
-func (c *GitHubClient) UpdateIssueBody(ctx context.Context, issueNumber int, body string) error {
+// isNotFound reports whether gh's output says the issue does not exist, as
+// opposed to GitHub not answering.
+func isNotFound(ghOutput string) bool {
+	return strings.Contains(strings.ToLower(ghOutput), "could not resolve to an issue")
+}
+
+// CommentIssue adds a comment to an issue. The text goes through a file, so
+// nothing in it is read by a shell.
+func (c *GitHubClient) CommentIssue(ctx context.Context, issueNumber int, body string) error {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	// Write body to temp file to avoid shell escaping issues with large/complex bodies
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("awkit-issue-body-%d.md", issueNumber))
-	if err := os.WriteFile(tmpFile, []byte(body), 0644); err != nil {
-		return fmt.Errorf("failed to write temp body file: %w", err)
+	file, err := os.CreateTemp("", "awkit-comment-*.md")
+	if err != nil {
+		return fmt.Errorf("failed to write the comment: %w", err)
 	}
-	defer os.Remove(tmpFile)
+	defer os.Remove(file.Name())
+	if _, err := file.WriteString(body); err != nil {
+		file.Close()
+		return fmt.Errorf("failed to write the comment: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to write the comment: %w", err)
+	}
 
-	_, err := ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "edit",
+	_, err = ghutil.RunWithRetry(ctx, c.Retry, "gh", "issue", "comment",
 		strconv.Itoa(issueNumber),
-		"--body-file", tmpFile)
+		"--body-file", file.Name())
 	return err
 }

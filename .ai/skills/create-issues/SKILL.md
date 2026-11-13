@@ -51,7 +51,6 @@ Generate detailed proposals:
 - Full issue content with all fields
 - Scope with specific file paths
 - Acceptance criteria
-- Verification commands
 - Dependency graph visualization
 
 ### Phase 4: User Approval Gate
@@ -67,24 +66,24 @@ Present proposals and wait for confirmation:
 
 **Read** `phases/create.md`
 
-Create issues via GitHub CLI:
-- Execute `gh issue create` for each issue
-- Capture returned issue numbers
-- Update dependency references
+Create issues with `awkit create-task`, in dependency order:
+- Write each body with its `yaml awk-ticket` block (repo, dependencies)
+- Capture the returned issue number before writing the bodies that depend on it
 - Generate final report with links
 
 ## Critical Rules
 
 1. **NEVER create issues without user approval**
 2. **ALWAYS show full proposal details before asking for approval**
-3. **Respect dependency order** - issues with dependencies must reference actual issue numbers
+3. **Respect dependency order** - create an issue after the issues it depends on, and put their actual numbers in `depends_on` of its `yaml awk-ticket` block
 4. **Follow commit format** - `[type] subject` (no colon)
-5. **Include verification commands** - Go projects use `go test ./...` and `go build ./...`
+5. **Create issues with `awkit create-task`, never `gh issue create`** - it checks the body and adds the task label
 
 ## Integration with AWK Workflow
 
-Issues created by this skill will have the `ai-task` label and are processed by
-`awkit kickoff` (the AWK principal workflow).
+Issues created by this skill carry the task label and a `yaml awk-ticket` block,
+and are processed by `awkit kickoff` (the AWK principal workflow): in the order
+of their numbers, each one once the issues it depends on are done.
 
 **Recommended workflow:**
 ```
@@ -106,4 +105,4 @@ On each phase entry, output:
 | 2. Breakdown | Decompose requirement | `phases/breakdown.md` |
 | 3. Propose | Generate detailed proposals | `phases/propose.md` |
 | 4. Approval | Wait for user confirmation | `phases/approval.md` |
-| 5. Create | Execute gh issue create | `phases/create.md` |
+| 5. Create | Execute awkit create-task | `phases/create.md` |

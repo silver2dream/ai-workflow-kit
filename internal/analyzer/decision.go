@@ -8,7 +8,7 @@ type Decision struct {
 	NextAction  string `json:"next_action"` // dispatch_worker | check_result | review_pr | all_complete | none
 	IssueNumber int    `json:"issue_number"`
 	PRNumber    int    `json:"pr_number"`
-	ExitReason  string `json:"exit_reason"` // worker_failed | needs_human_review | max_loop_reached | max_consecutive_failures | no_actionable_tasks | config_not_found
+	ExitReason  string `json:"exit_reason"` // why the action is none; see the Reason constants
 	MergeIssue  string `json:"merge_issue"` // conflict | rebase - indicates Worker needs to fix merge issues
 }
 
@@ -32,6 +32,12 @@ const (
 	ReasonConfigNotFound         = "config_not_found"
 	ReasonLoopCountError         = "loop_count_error"
 	ReasonGitHubAPIError         = "github_api_error"
+	// ReasonInvalidTicket: a ticket's awk-ticket block cannot be read. The
+	// issue carries a comment that says why.
+	ReasonInvalidTicket = "invalid_ticket"
+	// ReasonBlockedByDependencies: every pending ticket waits for an issue
+	// that is still open, or that was closed as not planned.
+	ReasonBlockedByDependencies = "blocked_by_dependencies"
 )
 
 // Merge issue constants

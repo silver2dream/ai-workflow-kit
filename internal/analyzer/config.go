@@ -3,7 +3,9 @@ package analyzer
 import (
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 	"gopkg.in/yaml.v3"
 )
 
@@ -218,6 +220,29 @@ func (c *Config) GetRepoByName(name string) *RepoConfig {
 		}
 	}
 	return nil
+}
+
+// TicketRepos lists the repos a ticket can be for: the root of the repository,
+// always, and the repos of the config.
+func (c *Config) TicketRepos() []string {
+	names := []string{ticket.RootRepo}
+	for _, repo := range c.Repos {
+		if repo.Name != "" && !strings.EqualFold(repo.Name, ticket.RootRepo) {
+			names = append(names, repo.Name)
+		}
+	}
+	return names
+}
+
+// HasTicketRepo reports whether a ticket can be for the named repo. The case
+// of the name does not matter: the Worker lowers it.
+func (c *Config) HasTicketRepo(name string) bool {
+	for _, known := range c.TicketRepos() {
+		if strings.EqualFold(known, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // GetVerifyCommands returns build and test commands for a repo

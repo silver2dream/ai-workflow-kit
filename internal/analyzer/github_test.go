@@ -121,3 +121,47 @@ func TestGitHubClientInterface(t *testing.T) {
 	// Test that GitHubClient implements GitHubClientInterface
 	var _ GitHubClientInterface = (*GitHubClient)(nil)
 }
+
+// "No such issue" is an answer; GitHub not answering is not. Only the first
+// lets a ticket be refused for what it depends on.
+func TestIsNotFound(t *testing.T) {
+	// What gh 2.x prints for `gh issue view 999999`.
+	if !isNotFound("GraphQL: Could not resolve to an issue or pull request with the number of 999999. (repository.issue)\n") {
+		t.Error("gh's answer for an issue that does not exist was not recognised")
+	}
+	for _, output := range []string{
+		"",
+		"HTTP 502: Bad Gateway (https://api.github.com/graphql)",
+		"error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com",
+		"dial tcp: lookup api.github.com: no such host",
+		"GraphQL: Could not resolve to a Repository with the name 'acme/game'. (repository)",
+		"gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable.",
+		"API rate limit exceeded",
+	} {
+		if isNotFound(output) {
+			t.Errorf("%q was taken for an issue that does not exist", output)
+		}
+	}
+}
+
+func TestIssueStatus(t *testing.T) {
+	tests := []struct {
+		status          IssueStatus
+		closed, dropped bool
+	}{
+		{IssueStatus{State: "OPEN"}, false, false},
+		{IssueStatus{State: "CLOSED", Reason: "COMPLETED"}, true, false},
+		{IssueStatus{State: "CLOSED", Reason: "NOT_PLANNED"}, true, true},
+		{IssueStatus{State: "CLOSED"}, true, false},
+		{IssueStatus{State: "MERGED"}, true, false}, // a pull request's number
+		{IssueStatus{State: "OPEN", Reason: "REOPENED"}, false, false},
+	}
+	for _, tt := range tests {
+		if got := tt.status.Closed(); got != tt.closed {
+			t.Errorf("%+v: Closed() = %v, want %v", tt.status, got, tt.closed)
+		}
+		if got := tt.status.Dropped(); got != tt.dropped {
+			t.Errorf("%+v: Dropped() = %v, want %v", tt.status, got, tt.dropped)
+		}
+	}
+}

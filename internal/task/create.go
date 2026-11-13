@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
 // CreateTaskOptions describes a ticket to create.
@@ -38,8 +39,9 @@ var runGH = func(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 // CreateTask creates a GitHub issue the workflow will pick up. The body must
-// hold the sections a ticket needs (see ValidateBody); the issue gets the
-// task label, which is what makes it a ticket.
+// hold what a ticket needs (see ValidateBody), and its awk-ticket block must
+// name a repo of the config; the issue gets the task label, which is what
+// makes it a ticket.
 func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult, error) {
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 60 * time.Second
@@ -49,7 +51,7 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 		return nil, fmt.Errorf("a title is required")
 	}
 
-	bodyPath, err := checkedBodyFile(opts.BodyFile)
+	bodyPath, block, err := checkedBodyFile(opts.BodyFile)
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +63,10 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 	}
 	if cfg == nil {
 		cfg = &analyzer.Config{}
+	} else if !cfg.HasTicketRepo(block.Repo) {
+		// The Worker would refuse the ticket; better not to create it.
+		return nil, fmt.Errorf("ticket body: the awk-ticket block names repo %q, which is not a repo of .ai/config/workflow.yaml (it has: %s)",
+			block.Repo, strings.Join(cfg.TicketRepos(), ", "))
 	}
 	label, repo := resolveGHParams(opts, cfg)
 	ghArgs := buildGHCreateArgs(title, bodyPath, label, repo)
@@ -83,23 +89,24 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 }
 
 // checkedBodyFile returns the absolute path of a ticket body that passed
-// validation.
-func checkedBodyFile(bodyFile string) (string, error) {
+// validation, and the body's awk-ticket block.
+func checkedBodyFile(bodyFile string) (string, ticket.Meta, error) {
 	if bodyFile == "" {
-		return "", fmt.Errorf("a body file is required")
+		return "", ticket.Meta{}, fmt.Errorf("a body file is required")
 	}
 	bodyPath, err := filepath.Abs(bodyFile)
 	if err != nil {
-		return "", fmt.Errorf("body file %s: %w", bodyFile, err)
+		return "", ticket.Meta{}, fmt.Errorf("body file %s: %w", bodyFile, err)
 	}
 	data, err := os.ReadFile(bodyPath)
 	if err != nil {
-		return "", fmt.Errorf("body file not found: %s", bodyPath)
+		return "", ticket.Meta{}, fmt.Errorf("body file not found: %s", bodyPath)
 	}
-	if err := ValidateBody(string(data)); err != nil {
-		return "", err
+	block, err := validatedBlock(string(data))
+	if err != nil {
+		return "", ticket.Meta{}, err
 	}
-	return bodyPath, nil
+	return bodyPath, block, nil
 }
 
 // resolveGHParams determines the label and repo for gh commands.

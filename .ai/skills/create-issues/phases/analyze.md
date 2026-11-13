@@ -123,7 +123,7 @@ Store the analysis summary for use in Phase 2 (Breakdown).
 The analysis informs:
 1. Which repo(s) the requirement affects
 2. Which modules need modification
-3. What verification commands to include
+3. Which verify commands those repos have in `.ai/config/workflow.yaml` (the Worker and the review run them)
 4. What patterns to follow
 
 ## Next Phase
