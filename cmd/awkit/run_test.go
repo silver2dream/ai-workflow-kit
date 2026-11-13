@@ -1,8 +1,11 @@
 package main
 
 import (
+	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
@@ -359,5 +362,61 @@ func TestSetRunScope(t *testing.T) {
 	setRunScope(0)
 	if got, err := analyzer.ScopeFromEnv(); err != nil || got != 0 {
 		t.Errorf("after setRunScope(0): the limit is %d, %v; want none", got, err)
+	}
+}
+
+// A Worker may take an hour, and `awkit dispatch-worker` waits for it. The
+// shell tool of the session a run starts gives a command two minutes and then
+// ten more in the background before it stops it, unless these two settings
+// say otherwise. Measured with Claude Code 2.1.321: a 13 minute command is
+// killed with the defaults and finishes with both settings at 15 minutes.
+func TestSetPrincipalShellTimeouts(t *testing.T) {
+	want := strconv.FormatInt((worker.DefaultWorkerTimeout + 5*time.Minute).Milliseconds(), 10)
+	if want != "3900000" {
+		t.Fatalf("the shell timeout is %s ms, want 65 minutes: a dispatch waits %s for its Worker", want, worker.DefaultWorkerTimeout)
+	}
+
+	for _, tc := range []struct {
+		name, before, after string
+		set                 bool
+	}{
+		{name: "not set", after: want},
+		{name: "the default of two minutes", before: "120000", set: true, after: want},
+		{name: "just below", before: "3899999", set: true, after: want},
+		{name: "exactly as long", before: want, set: true, after: want},
+		{name: "longer is the user's", before: "7200000", set: true, after: "7200000"},
+		{name: "longer, with a space", before: " 7200000 ", set: true, after: " 7200000 "},
+		{name: "not a number", before: "soon", set: true, after: want},
+		{name: "empty", before: "", set: true, after: want},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range shellTimeoutSettings {
+				t.Setenv(name, tc.before)
+				if !tc.set {
+					os.Unsetenv(name)
+				}
+			}
+			setPrincipalShellTimeouts()
+			for _, name := range shellTimeoutSettings {
+				if got := os.Getenv(name); got != tc.after {
+					t.Errorf("%s = %q, want %q", name, got, tc.after)
+				}
+			}
+		})
+	}
+
+	// Both settings, and each on its own: the default is what a command gets
+	// when the model names no timeout, the maximum is what caps it.
+	if len(shellTimeoutSettings) != 2 || shellTimeoutSettings[0] != "BASH_DEFAULT_TIMEOUT_MS" || shellTimeoutSettings[1] != "BASH_MAX_TIMEOUT_MS" {
+		t.Errorf("the settings are %v", shellTimeoutSettings)
+	}
+	t.Setenv("BASH_DEFAULT_TIMEOUT_MS", "7200000")
+	t.Setenv("BASH_MAX_TIMEOUT_MS", "600000")
+	setPrincipalShellTimeouts()
+	if got := os.Getenv("BASH_DEFAULT_TIMEOUT_MS"); got != "7200000" {
+		t.Errorf("BASH_DEFAULT_TIMEOUT_MS = %q, want the user's", got)
+	}
+	if got := os.Getenv("BASH_MAX_TIMEOUT_MS"); got != want {
+		t.Errorf("BASH_MAX_TIMEOUT_MS = %q, want %s: it was below what a Worker may take", got, want)
 	}
 }
