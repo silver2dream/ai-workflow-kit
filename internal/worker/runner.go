@@ -1350,9 +1350,7 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	builder.WriteString("Keep the plan concise. This will be included in the PR description for reviewers.\n")
 
 	builder.WriteString("\nAfter making changes:\n")
-	builder.WriteString("- Print: git status --porcelain\n")
-	builder.WriteString("- Print: git diff\n")
-	builder.WriteString("- Run verification commands from the ticket.\n")
+	builder.WriteString("- Run the verification commands (the ticket's, or the defaults in AGENTS.md).\n")
 	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
 
 	return os.WriteFile(path, []byte(builder.String()), 0644)

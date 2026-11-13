@@ -32,9 +32,7 @@ func BuildWorkerPrompt(repoType, repoPath, workDir, taskContent string) string {
 	builder.WriteString("Ticket:\n")
 	builder.WriteString(taskContent)
 	builder.WriteString("\n\nAfter making changes:\n")
-	builder.WriteString("- Print: git status --porcelain\n")
-	builder.WriteString("- Print: git diff\n")
-	builder.WriteString("- Run verification commands from the ticket.\n")
+	builder.WriteString("- Run the verification commands (the ticket's, or the defaults in AGENTS.md).\n")
 	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
 
 	return builder.String()
@@ -173,12 +171,6 @@ func TestWorkerPromptComplete(t *testing.T) {
 		// Test prompt includes verification instructions
 		prompt := BuildWorkerPrompt("root", "./", "/worktree", "Test task")
 
-		if !strings.Contains(prompt, "git status --porcelain") {
-			t.Error("Expected prompt to contain 'git status --porcelain'")
-		}
-		if !strings.Contains(prompt, "git diff") {
-			t.Error("Expected prompt to contain 'git diff'")
-		}
 		if !strings.Contains(prompt, "verification commands") {
 			t.Error("Expected prompt to mention verification commands")
 		}

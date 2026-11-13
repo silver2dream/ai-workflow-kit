@@ -582,7 +582,6 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- Run verification commands (build, test, lint)\n")
 	sb.WriteString("- Ensure code quality meets project standards\n\n")
 	sb.WriteString("**You do NOT handle git operations.** The runner script will automatically commit, push, and create PR.\n\n")
-	sb.WriteString("**If you receive Principal's review feedback (PREVIOUS REVIEW FEEDBACK), you MUST fix the code according to the feedback.**\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("Default priority: correctness > minimal diff > speed.\n\n")
 	sb.WriteString("## MUST-READ (before any work)\n\n")
@@ -590,7 +589,7 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	// Kit rules
 	for _, rule := range ctx.Rules.Kit {
 		if rule == "git-workflow" {
-			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s (CRITICAL for commit format)\n", bt, rule, bt))
+			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s (branch and PR conventions; the runner makes the commits, you do not)\n", bt, rule, bt))
 		} else {
 			sb.WriteString(fmt.Sprintf("- Read and obey: %s.ai/rules/_kit/%s.md%s\n", bt, rule, bt))
 		}
@@ -622,8 +621,7 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- Modify " + bt + ".git" + bt + " directory\n\n")
 	sb.WriteString("**Your job is ONLY to:**\n")
 	sb.WriteString("1. Write/modify code files\n")
-	sb.WriteString("2. Run verification commands (build, test, lint)\n")
-	sb.WriteString("3. Print " + bt + "git status --porcelain" + bt + " and " + bt + "git diff" + bt + " for the runner to see\n\n")
+	sb.WriteString("2. Run verification commands (build, test, lint)\n\n")
 	sb.WriteString("### 4. Implementation plan (REQUIRED before coding)\n")
 	sb.WriteString("Before making any code changes, you MUST create an implementation plan file at:\n")
 	sb.WriteString(bt + ".ai/runs/issue-{ISSUE_ID}/plan.md" + bt + "\n\n")
@@ -701,7 +699,7 @@ func writeWorkerGuardrails(sb *strings.Builder) {
 	sb.WriteString("- You couldn't run verify commands and decided \"it should work\".\n")
 	sb.WriteString("- You created a new pattern instead of extending the existing one because the existing one \"felt complicated\".\n")
 	sb.WriteString("- You introduced a new dependency without checking if a similar one already exists in the repo.\n\n")
-	sb.WriteString("If any red flag fires, fix it before printing " + bt + "git status" + bt + " / " + bt + "git diff" + bt + ". Reviewer enforces these and a " + bt + "changes_requested" + bt + " round-trip is far more expensive than slowing down now.\n\n")
+	sb.WriteString("If any red flag fires, fix it before you finish. Reviewer enforces these and a " + bt + "changes_requested" + bt + " round-trip is far more expensive than slowing down now.\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## Responding to severity-tagged feedback\n\n")
 	sb.WriteString("Reviewer comments may be prefixed with severity tags. Respond accordingly:\n\n")
