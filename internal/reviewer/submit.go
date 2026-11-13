@@ -707,6 +707,9 @@ func cleanupWorktree(stateRoot string, issueNumber int) error {
 	return nil
 }
 
+// runJiT generates and runs the JiT tests. Replaced in tests.
+var runJiT = jittest.Run
+
 // runJiTTestIfEnabled runs JiT tests if enabled in config.
 // Returns nil if disabled or config cannot be loaded (graceful skip).
 func runJiTTestIfEnabled(ctx context.Context, opts SubmitReviewOptions) *jittest.Result {
@@ -737,7 +740,7 @@ func runJiTTestIfEnabled(ctx context.Context, opts SubmitReviewOptions) *jittest
 	jitCtx, cancel := context.WithTimeout(ctx, time.Duration(jitCfg.TimeoutSeconds)*time.Second)
 	defer cancel()
 
-	result, err := jittest.Run(jitCtx, input, jitCfg)
+	result, err := runJiT(jitCtx, input, jitCfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] JiT test skipped: %v\n", err)
 		return nil

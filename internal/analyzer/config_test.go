@@ -131,7 +131,7 @@ func TestDefaultLabels(t *testing.T) {
 	}
 }
 
-func TestGetRepoByName(t *testing.T) {
+func TestFindRepo(t *testing.T) {
 	config := &Config{
 		Repos: []RepoConfig{
 			{Name: "backend", Path: "backend", Language: "go"},
@@ -140,18 +140,18 @@ func TestGetRepoByName(t *testing.T) {
 	}
 
 	// Found
-	repo := config.GetRepoByName("backend")
+	repo := config.FindRepo("backend")
 	if repo == nil {
-		t.Fatal("GetRepoByName() returned nil for existing repo")
+		t.Fatal("FindRepo() returned nil for existing repo")
 	}
 	if repo.Language != "go" {
 		t.Errorf("Language = %q, want %q", repo.Language, "go")
 	}
 
 	// Not found
-	repo = config.GetRepoByName("nonexistent")
+	repo = config.FindRepo("nonexistent")
 	if repo != nil {
-		t.Error("GetRepoByName() should return nil for nonexistent repo")
+		t.Error("FindRepo() should return nil for nonexistent repo")
 	}
 }
 

@@ -367,7 +367,7 @@ func planRepos(root string) ([]council.Repo, error) {
 	var repos []council.Repo
 	for _, name := range cfg.TicketRepos() {
 		entry := council.Repo{Name: name}
-		if configured := cfg.GetRepoByName(name); configured != nil {
+		if configured := cfg.FindRepo(name); configured != nil {
 			entry.Language, entry.Path = configured.Language, configured.Path
 		} else if name == ticket.RootRepo {
 			entry.Path = "./"

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -53,8 +54,10 @@ func TestLoad_Defaults(t *testing.T) {
 	if !reflect.DeepEqual(Default(), want) {
 		t.Errorf("Default() =\n%+v\nwant what an empty file gives", Default())
 	}
-	if labels := DefaultLabels(); labels.Task != "ai-task" || labels.NeedsHumanReview != "needs-human-review" || labels.Completed != "completed" {
-		t.Errorf("default labels = %+v", labels)
+	// The names the workflow's labels have on GitHub when the file gives none.
+	if labels, want := DefaultLabels(), (Labels{Task: "ai-task", InProgress: "in-progress", PRReady: "pr-ready", WorkerFailed: "worker-failed",
+		NeedsHumanReview: "needs-human-review", ReviewFailed: "review-failed", MergeConflict: "merge-conflict", NeedsRebase: "needs-rebase", Completed: "completed"}); labels != want {
+		t.Errorf("default labels = %+v, want %+v", labels, want)
 	}
 
 	// What is on unless the file turns it off, and what is off unless it turns it on.
@@ -228,6 +231,48 @@ func TestLoad_TheOldNameOfALabel(t *testing.T) {
 	}
 }
 
+// The old name of the label is worth one warning to a command, however often
+// the command reads the configuration. A file where the old name decides
+// nothing is not warned about.
+func TestLoad_WarnsOnceAboutTheOldNameOfALabel(t *testing.T) {
+	stderrOf := func(contents ...string) string {
+		t.Helper()
+		warnReviewFail = sync.Once{} // what an earlier test printed does not count
+		file, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		orig := os.Stderr
+		os.Stderr = file
+		defer func() { os.Stderr = orig }()
+		for _, content := range contents {
+			if _, err := Load(writeConfig(t, content)); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		written, err := os.ReadFile(file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(written)
+	}
+
+	const old = "github: {labels: {review_fail: old-name}}\n"
+	out := stderrOf(old, old, old)
+	if strings.Count(out, "\n") != 1 || !strings.Contains(out, "'review_fail'") || !strings.Contains(out, "awkit upgrade") {
+		t.Errorf("three reads of a file with the old name should warn once, and say what to do: %q", out)
+	}
+	if out := stderrOf("github: {labels: {review_failed: new-name}}\n", "# nothing\n"); out != "" {
+		t.Errorf("a file without the old name is warned about: %q", out)
+	}
+	if out := stderrOf("github: {labels: {review_fail: old-name, review_failed: new-name}}\n"); out != "" {
+		t.Errorf("the old name is warned about where the new one decides: %q", out)
+	}
+}
+
 // A project without a configuration is told apart from one whose
 // configuration is broken; a broken one is never half used.
 func TestLoad_FilesThatCannotBeUsed(t *testing.T) {
@@ -295,11 +340,11 @@ func TestRepos(t *testing.T) {
 	if got := cfg.FindRepo("web"); got != nil {
 		t.Errorf("FindRepo(web) = %+v, want none", got)
 	}
-	if got := cfg.GetRepoByName("backend"); got != nil {
-		t.Errorf("GetRepoByName(backend) = %+v; it takes the name as it is written", got)
-	}
-	if got := cfg.GetRepoByName("Backend"); got == nil {
-		t.Error("GetRepoByName(Backend) found nothing")
+	// The whole name, not the start of one.
+	for _, name := range []string{"back", "front", "doc", "backends"} {
+		if got := cfg.FindRepo(name); got != nil {
+			t.Errorf("FindRepo(%s) = %+v, want none", name, got)
+		}
 	}
 	// What is returned is the repo of the configuration, not a copy.
 	cfg.FindRepo("docs").Language = "markdown"
@@ -319,7 +364,16 @@ func TestRepos(t *testing.T) {
 		t.Errorf("TicketRepos of a file without repos = %v, want the root alone", got)
 	}
 
-	for repo, want := range map[string][]string{"Backend": {"make", "make test"}, "frontend": {"dotnet test"}, "docs": nil, "web": nil} {
+	// A name the file writes twice is one repo, the first.
+	twice := &Config{Repos: []Repo{{Name: "backend", Language: "go"}, {Name: "Backend", Language: "rust"}, {Name: "Root"}, {Name: "root"}}}
+	if got, want := twice.TicketRepos(), []string{"root", "backend"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("TicketRepos = %v, want %v", got, want)
+	}
+	if got := twice.FindRepo("BACKEND"); got == nil || got.Language != "go" {
+		t.Errorf("FindRepo(BACKEND) = %+v, want the first repo of that name", got)
+	}
+
+	for repo, want := range map[string][]string{"Backend": {"make", "make test"}, "backend": {"make", "make test"}, "frontend": {"dotnet test"}, "docs": nil, "web": nil} {
 		if got := cfg.GetVerifyCommands(repo); !reflect.DeepEqual(got, want) {
 			t.Errorf("GetVerifyCommands(%s) = %v, want %v", repo, got, want)
 		}
@@ -383,9 +437,20 @@ func TestValidate(t *testing.T) {
 	if want := []string{"project.name", "project.type", "git.integration_branch", "agents.custom[0].name", "agents.custom[0].description", "repos[0].name", "repos[0].path"}; !reflect.DeepEqual(fields, want) {
 		t.Errorf("problems of an empty configuration = %v, want %v", fields, want)
 	}
+	// What a custom agent may be called: lowercase letters, digits and
+	// hyphens, a letter first. The name becomes a file name and a subagent
+	// type.
+	for name, ok := range map[string]bool{"a": true, "x9": true, "sec-check-2": true,
+		"perf check": false, "perf_check": false, "9lives": false, "-perf": false, "Perf": false, "perF": false, "perf!": false, "p\u00e9rf": false} {
+		cfg := valid()
+		cfg.Agents.Custom[1].Name = name
+		if errs := cfg.Validate(); (len(errs) == 0) != ok {
+			t.Errorf("an agent called %q: problems = %v, want it accepted: %v", name, errs, ok)
+		}
+	}
 	// A repo may leave its type out, and every known model and trigger is accepted.
-	for _, model := range AgentModels {
-		for _, trigger := range AgentTriggers {
+	for _, model := range []string{"haiku", "sonnet", "opus"} {
+		for _, trigger := range []string{"review_pr", "check_result", "dispatch_worker"} {
 			cfg := valid()
 			cfg.Agents.Custom[0].Model, cfg.Agents.Custom[0].Trigger = model, trigger
 			if errs := cfg.Validate(); len(errs) != 0 {
