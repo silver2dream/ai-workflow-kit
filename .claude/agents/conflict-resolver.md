@@ -22,9 +22,9 @@ You will receive:
 cd $WORKTREE_PATH
 ```
 
-Verify the worktree is in rebase state:
+Verify that a rebase is in progress. In a worktree `.git` is a file, so ask git where the rebase state lives instead of listing `.git/`:
 ```bash
-ls -la .git/rebase-merge/
+test -d "$(git rev-parse --git-path rebase-merge)" || test -d "$(git rev-parse --git-path rebase-apply)"
 ```
 
 ### Step 2: List Conflicted Files
@@ -39,11 +39,11 @@ Record all conflicted file paths.
 
 1. **Read the file** - Use Read tool to see the full content
 2. **Identify conflicts** - Find `<<<<<<< HEAD`, `=======`, and `>>>>>>>` markers
-3. **Understand both sides**:
-   - `<<<<<<< HEAD` to `=======`: Our changes (current branch)
-   - `=======` to `>>>>>>>`: Their changes (rebasing onto)
+3. **Understand both sides** — during a rebase they are the reverse of a merge:
+   - `<<<<<<< HEAD` to `=======`: the base branch being rebased onto, plus this PR's commits already replayed (git calls this side `--ours`)
+   - `=======` to `>>>>>>>`: the commit from this PR being replayed (git calls this side `--theirs`)
 4. **Resolve the conflict** - Use Edit tool to:
-   - Keep the correct code (may be our side, their side, or a merge of both)
+   - Keep the correct code (either side, or a merge of both)
    - Remove ALL conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
 5. **Stage the fix**:
    ```bash
@@ -115,8 +115,8 @@ Then output `TOO_COMPLEX` or `FAILED`.
 ### Simple Conflicts
 
 For most conflicts (whitespace, imports, variable renames):
-- Prefer the upstream (their) version for formatting/style
-- Prefer our version for new features being added
+- Prefer the base branch's version for formatting/style
+- Prefer this PR's version for the feature it adds
 - Merge both if they touch different parts
 
 ### Complex Conflicts
@@ -154,10 +154,10 @@ func Calculate(x int) int {
     // Performance improvement
     return x << 1
 }
->>>>>>> main
+>>>>>>> a1b2c3d ([perf] faster calculate)
 ```
 
-**Resolution** (keeping the performance improvement):
+**Resolution** (keeping this PR's performance improvement):
 ```
 func Calculate(x int) int {
     // Performance improvement
@@ -181,7 +181,7 @@ import (
     "fmt"
     "strings"
 )
->>>>>>> main
+>>>>>>> a1b2c3d ([feat] add string helpers)
 ```
 
 **Resolution**: Merge both imports (if both are needed).
