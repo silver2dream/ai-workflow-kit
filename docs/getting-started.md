@@ -1,105 +1,72 @@
-# Getting Started (Directory Monorepo Example)
+# Getting Started
 
-This repo is an **AWK (AI Workflow Kit)** reference implementation for a directory-based monorepo:
-
-- `backend/` (Go)
-- `frontend/` (Unity skeleton)
+**AWK (AI Workflow Kit)** installs into your repository. This guide takes a project from `awkit init` to its first run.
 
 ## 0) Install AWK into your repo
 
-Recommended: install the `awkit` CLI from GitHub Releases, then run:
+Install the `awkit` CLI from GitHub Releases, then run it in your project directory:
 
 ```bash
-# In your project directory
-awkit init --preset generic
+# Any stack: a single repo, you name the build and test commands
+awkit init
 
-# Or specify a path
-awkit init /path/to/your-repo --preset generic
+# Go backend + Godot C# frontend, with a project skeleton
+awkit init --preset godot-go --scaffold
 
-# With scaffold to create project structure
-awkit init --preset go --scaffold
+# Or name the project's path
+awkit init /path/to/your-repo --preset godot-go --scaffold
 ```
 
 ## Available Presets
 
-Run `awkit list-presets` to see all available presets.
+`awkit list-presets` prints them.
 
-### Single-Repo Presets
+| Preset | Project | Repos | Verify commands |
+|--------|---------|-------|-----------------|
+| `generic` (default) | single repo, any stack | `root` at `./`, language `generic` | empty: you set them |
+| `godot-go` | monorepo | `backend/` (Go), `frontend/` (Godot C#) | `go build ./...`, `go test ./...`; `dotnet build`, `dotnet test` |
 
-| Preset | Description | Language | Scaffold Files |
-|--------|-------------|----------|----------------|
-| `generic` | Generic project (alias for node) | TypeScript | package.json, tsconfig.json, src/index.ts |
-| `go` | Go single-repo project | Go | go.mod, main.go |
-| `python` | Python single-repo project | Python | pyproject.toml, src/, tests/ |
-| `rust` | Rust single-repo project | Rust | Cargo.toml, src/main.rs |
-| `dotnet` | .NET single-repo project | .NET | .csproj, Program.cs |
-| `node` | Node.js/TypeScript single-repo | TypeScript | package.json, tsconfig.json, src/index.ts |
-
-### Monorepo Presets
-
-| Preset | Description | Frontend | Backend |
-|--------|-------------|----------|---------|
-| `react-go` | React frontend + Go backend | React/Vite | Go |
-| `react-python` | React frontend + Python backend | React/Vite | Python |
-| `unity-go` | Unity frontend + Go backend | Unity | Go |
-| `godot-go` | Godot frontend + Go backend | Godot | Go |
-| `unreal-go` | Unreal frontend + Go backend | Unreal | Go |
+The `generic` preset assumes nothing about your project. Set `verify.build` and `verify.test` of the repo in `.ai/config/workflow.yaml` before the first run: the Worker runs them before it opens a pull request, the review runs the tests again, and CI is generated from them.
 
 ## Using --scaffold
 
-The `--scaffold` flag creates a minimal project structure:
+`--scaffold` writes a project skeleton. Only the `godot-go` preset has one; the `generic` preset knows nothing it could write.
 
 ```bash
-# Single-repo Go project
-awkit init --preset go --scaffold
+awkit init --preset godot-go --scaffold
 
-# Monorepo with React + Go
-awkit init --preset react-go --scaffold
-
-# Preview what would be created (dry-run)
-awkit init --preset python --scaffold --dry-run
+# Preview what would be created
+awkit init --preset godot-go --scaffold --dry-run
 ```
 
-### Scaffold File Structures
-
-**Go (`--preset go --scaffold`):**
 ```
 .
-├── go.mod
-├── main.go
-└── README.md
-```
-
-**Python (`--preset python --scaffold`):**
-```
-.
-├── pyproject.toml
-├── src/
-│   ├── __init__.py
-│   └── main.py
-├── tests/
-│   ├── __init__.py
-│   └── test_placeholder.py
-└── README.md
-```
-
-**React + Go (`--preset react-go --scaffold`):**
-```
-.
-├── backend/
+├── backend/                       # Go module
 │   ├── go.mod
 │   ├── main.go
+│   ├── health/
+│   │   ├── health.go
+│   │   └── health_test.go
 │   └── README.md
-└── frontend/
-    ├── package.json
-    ├── tsconfig.json
-    ├── vite.config.ts
-    ├── index.html
-    ├── src/
-    │   ├── main.tsx
-    │   └── App.tsx
+└── frontend/                      # Godot C# solution
+    ├── .gitignore
+    ├── Frontend.sln
+    ├── Directory.Build.props
+    ├── game/                      # the Godot project
+    │   ├── Game.csproj
+    │   └── project.godot
+    ├── src/Game.Core/             # game logic that does not depend on the engine
+    │   ├── Game.Core.csproj
+    │   └── Counter.cs
+    ├── tests/Game.Core.Tests/     # xUnit tests of that logic
+    │   ├── Game.Core.Tests.csproj
+    │   └── CounterTests.cs
     └── README.md
 ```
+
+The skeleton builds and passes its tests as it is: `go build ./... && go test ./...` in `backend/`, `dotnet build && dotnet test` in `frontend/`. Building needs the .NET 8 SDK; the Godot engine (4.x, .NET edition) is needed only to open and run the game.
+
+Files that already exist are kept; `--force` overwrites them.
 
 ## 1) Configure `workflow.yaml`
 
@@ -147,7 +114,7 @@ If you want stricter, tech-specific rules, copy them from `.ai/rules/_examples/`
 
 Example:
 
-- Copy `.ai/rules/_examples/backend-go.md` → `.ai/rules/backend-go.md`
+- Copy `.ai/rules/_examples/testing-strategy.md` → `.ai/rules/testing-strategy.md`
 - Update `.ai/config/workflow.yaml`:
 
 ```yaml
@@ -155,7 +122,7 @@ rules:
   kit:
     - git-workflow
   custom:
-    - backend-go
+    - testing-strategy
 ```
 
 Then regenerate helper docs (recommended):
@@ -179,19 +146,18 @@ awkit evaluate --offline
 go test ./...
 ```
 
-## 5) Enable CI (GitHub Actions)
+## 5) CI (GitHub Actions)
 
-Add a workflow under `.github/workflows/` that runs:
+`awkit init` and `awkit generate` write a CI workflow for every repo that has a build or a test command:
 
-- `awkit evaluate --offline`
-- `go test ./...`
-- backend tests: `go test ./...` in `backend/`
-- frontend sanity checks in `frontend/`
+| Repo type | Workflow |
+|-----------|----------|
+| `root` | `.github/workflows/ci.yml` |
+| `directory` | `.github/workflows/ci-<repo>.yml`, run in the repo's directory |
+| `submodule` | `.github/workflows/ci.yml` inside the submodule |
 
-This repo ships with a working example workflow in `.github/workflows/ci.yml`.
+Each workflow checks the code out, sets up the toolchain of the repo's language (Go from the module's `go.mod`, the .NET SDK for C# and Godot) and runs `verify.setup`, `verify.build` and `verify.test`: the commands the Worker verifies with. A repo with no build and no test command gets no workflow.
 
-If you prefer generating CI from templates, run:
+A generated workflow starts with a comment that says so. While that comment is there, awkit keeps the file in step with the config: change a branch or a command, run `awkit generate`, and the workflow follows. To change a workflow by hand, delete the comment; from then on the file is yours and awkit leaves it alone. `awkit generate --generate-ci` rewrites every workflow from the config, including the ones you took over.
 
-```bash
-awkit generate --generate-ci
-```
+A project that already has its own `.github/workflows/ci.yml` keeps it, and no per-repo workflow is added next to it.

@@ -122,7 +122,7 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 - `go` 1.25+
 
 ### Offline（可選）
-- `python3`（僅用於 frontend CI 的 JSON 驗證範例；核心生成功能已內建於 `awkit`）
+- `dotnet` 8 SDK：建置與測試 C# / Godot 前端（`godot-go` preset）
 
 ### Online / E2E（選配）
 - `gh`（GitHub CLI）+ `gh auth login`
@@ -140,9 +140,7 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 │   ├── templates/               # generators (CLAUDE/AGENTS/CI)
 │   ├── rules/                   # architecture + git workflow rules
 │   └── specs/                   # Kiro-style specs
-├── .github/workflows/ci.yml     # root CI example
-├── backend/                     # directory example (Go)
-└── frontend/                    # directory example (Unity skeleton)
+└── .github/workflows/           # CI：每個 repo 一份 workflow，由設定檔產生
 ```
 
 ---
@@ -166,27 +164,26 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 把 AWK 安裝到你的專案：
 
 ```bash
-# 在當前目錄初始化 AWK
+# 在當前目錄初始化 AWK：不限技術棧，建置與測試指令由你填
 awkit init
 
-# 使用 preset 並自動建立專案結構
-awkit init --preset go --scaffold
-
-# Monorepo：React + Go
-awkit init --preset react-go --scaffold
+# Go 後端 + Godot C# 前端，並建立一份可直接建置、測試會過的專案骨架
+awkit init --preset godot-go --scaffold
 
 # 預覽會建立哪些檔案
-awkit init --preset python --scaffold --dry-run
+awkit init --preset godot-go --scaffold --dry-run
 ```
 
 ### 可用的 Presets
 
-| 類別 | Presets |
-|------|---------|
-| Single-Repo | `generic`, `go`, `python`, `rust`, `dotnet`, `node` |
-| Monorepo | `react-go`, `react-python`, `unity-go`, `godot-go`, `unreal-go` |
+| Preset | 內容 |
+|--------|------|
+| `generic`（預設） | 單一 repo、不限技術棧。在 `.ai/config/workflow.yaml` 填 `verify.build` 與 `verify.test`，其餘不做任何假設。 |
+| `godot-go` | Monorepo：`backend/` 用 Go、`frontend/` 用 Godot C#。加上 `--scaffold` 會建立可直接建置、測試會過的骨架（建置需要 .NET 8 SDK，開啟遊戲需要 Godot 4 .NET 版）。 |
 
-執行 `awkit list-presets` 查看詳細說明。scaffold 檔案結構請參考 [Getting Started](docs/getting-started.md)。
+執行 `awkit list-presets` 查看詳細說明。骨架的檔案結構請參考 [Getting Started](docs/getting-started.md)。
+
+`awkit init` 也會替每個有建置或測試指令的 repo 寫一份 CI workflow，用的就是 Worker 驗證時跑的那組指令：單一 repo 是 `.github/workflows/ci.yml`，directory repo 各一份 `ci-<repo>.yml`。workflow 會一直跟著設定檔走；刪掉檔案開頭那段註解之後，它就歸你管，awkit 不再動它。
 
 注意：`awkit install` 是 `awkit init` 的別名（向後相容）。
 
@@ -216,13 +213,13 @@ awkit generate
 
 ```bash
 # 只套用不同的 preset 到 workflow.yaml
-awkit init --preset react-go --force-config
+awkit init --preset godot-go --force-config
 
 # 升級 kit 檔案，並覆蓋 workflow.yaml（需要 --preset）
-awkit upgrade --force-config --preset react-go
+awkit upgrade --force-config --preset godot-go
 
 # 完整重置：更新 kit 檔案並套用 preset 到 workflow.yaml
-awkit init --preset react-go --force
+awkit init --preset godot-go --force
 ```
 
 ### 1) 生成輸出
@@ -337,12 +334,19 @@ lessons:
 
 ---
 
-## 📦 Directory Monorepo 範例
+## 📦 專案骨架（`godot-go`）
 
-這個 repo 內建一個可用的 directory 範例：
+`awkit init --preset godot-go --scaffold` 會寫出一份不用改就能建置、測試會過的專案：
 
-- `backend/`：最小 Go module + unit test（`go test ./...`）
-- `frontend/`：Unity skeleton（CI 只做結構與 JSON sanity，不需要 Unity Editor）
+- `backend/`：Go module，含 health handler 與測試（`go build ./...`、`go test ./...`）
+- `frontend/`：Godot C# solution（`dotnet build`、`dotnet test`）
+  - `game/`：Godot 專案
+  - `src/Game.Core/`：不依賴引擎的遊戲邏輯
+  - `tests/Game.Core.Tests/`：上述邏輯的 xUnit 測試
+- `.github/workflows/ci-backend.yml`、`ci-frontend.yml`：跑同一組指令的 CI
+
+這個 repo 自己的 CI 每次 push 都會初始化一份這樣的專案，並執行它產生的 workflow 裡的指令，所以骨架、preset 與 CI 產生器不會各走各的。
+
 - Spec 範例：`.ai/specs/example/`
 - 入門指南：`docs/getting-started.md`
 

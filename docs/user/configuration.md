@@ -81,29 +81,25 @@ repos:
 
 ### language 支援的語言
 
-CI 內容由 `awkit init` / `awkit generate` 依 `language` 產生（內建於 Go,不需外部模板）。
+`language` 可以填任何名稱。下列語言 AWK 有額外支援，其他語言（或 `generic`）只會執行 `verify` 的指令，不做任何假設。
 
-| 語言 | 值 |
-|------|-----|
-| Go | `go` |
-| Node.js | `node` / `typescript` / `javascript`（含 react/vue/svelte 等框架） |
-| Python | `python`（含 django/flask/fastapi） |
-| Rust | `rust` |
-| .NET | `dotnet` / `csharp` |
-| Unity | `unity` |
-| Godot | `godot` |
-| Unreal | `unreal` |
-| 其他 | `generic` |
+| 語言 | 值 | 額外支援 |
+|------|-----|---------|
+| Go | `go` | CI 依 `go.mod` 安裝 Go；審查時逐一核對測試名稱 |
+| C# / Godot | `csharp` / `godot` | CI 安裝 .NET SDK；審查時以 `dotnet test` 逐一核對測試名稱 |
+| Node.js | `node` / `typescript` / `javascript` | 審查時核對測試名稱；依 `package_manager` 推斷安裝指令 |
+| Python | `python` | 審查時核對測試名稱 |
 
-### 語言版本設定
+CI workflow 由 `awkit init` / `awkit generate` 依每個 repo 的 `verify.setup` / `build` / `test` 產生：`root` repo 是 `.github/workflows/ci.yml`，`directory` repo 各一份 `ci-<repo>.yml`。build 與 test 都沒設的 repo 不會有 workflow。產生的 workflow 開頭有一段註解，註解還在時 awkit 會讓它跟著設定檔更新；要自己改就先刪掉註解，之後 awkit 不再動它。
+
+### 範例：Go 後端 + Godot C# 前端
 
 ```yaml
 repos:
   - name: backend
     path: backend/
     type: directory
-    language: go
-    go_version: "1.25.x"        # Go 版本
+    language: go                # Go 版本取自 backend/go.mod
     verify:
       build: "go build ./..."
       test: "go test ./..."
@@ -111,12 +107,11 @@ repos:
   - name: frontend
     path: frontend/
     type: directory
-    language: node
-    node_version: "20"          # Node.js 版本
-    package_manager: "pnpm"     # npm | yarn | pnpm
+    language: csharp            # Godot C#：只需要 .NET SDK
     verify:
-      build: "pnpm build"
-      test: "pnpm test"
+      setup: "dotnet tool restore"   # 可省略：建置前要先跑的指令
+      build: "dotnet build"
+      test: "dotnet test"
 ```
 
 ---
@@ -260,12 +255,12 @@ rules:
 
 ```bash
 # 複製範例規則
-cp .ai/rules/_examples/backend-go.md .ai/rules/
+cp .ai/rules/_examples/testing-strategy.md .ai/rules/
 
 # 在 workflow.yaml 中啟用
 rules:
   custom:
-    - backend-go
+    - testing-strategy
 ```
 
 ---
@@ -548,7 +543,6 @@ repos:
     path: ./
     type: root
     language: python
-    python_version: "3.11"
     verify:
       build: "python -m py_compile src/*.py"
       test: "pytest"
@@ -588,7 +582,6 @@ repos:
     path: api/
     type: directory
     language: go
-    go_version: "1.25.x"
     verify:
       build: "go build ./..."
       test: "go test ./..."
@@ -597,7 +590,6 @@ repos:
     path: web/
     type: directory
     language: node
-    node_version: "20"
     package_manager: "pnpm"
     verify:
       build: "pnpm build"

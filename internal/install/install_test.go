@@ -202,14 +202,14 @@ func TestInstall_PresetConfigNotOverwrittenByCopyDir(t *testing.T) {
 	// Create a mock FS that includes a default workflow.yaml
 	// (simulating the embedded kit files with a different config)
 	mockFS := fstest.MapFS{
-		".ai/config/workflow.yaml":              &fstest.MapFile{Data: []byte("language: unity\n")},
-		".ai/config/workflow.schema.json":       &fstest.MapFile{Data: []byte(`{}`)},
-		".ai/scripts/generate.sh":               &fstest.MapFile{Data: []byte("#!/bin/bash\necho test")},
-		".ai/rules/.gitkeep":                    &fstest.MapFile{Data: []byte("")},
-		".ai/rules/_examples/backend-go.md":     &fstest.MapFile{Data: []byte("# Go rules")},
-		".ai/rules/_examples/frontend-react.md": &fstest.MapFile{Data: []byte("# React rules")},
-		".ai/commands/.gitkeep":                 &fstest.MapFile{Data: []byte("")},
-		".ai/templates/.gitkeep":                &fstest.MapFile{Data: []byte("")},
+		".ai/config/workflow.yaml":                &fstest.MapFile{Data: []byte("language: unity\n")},
+		".ai/config/workflow.schema.json":         &fstest.MapFile{Data: []byte(`{}`)},
+		".ai/scripts/generate.sh":                 &fstest.MapFile{Data: []byte("#!/bin/bash\necho test")},
+		".ai/rules/.gitkeep":                      &fstest.MapFile{Data: []byte("")},
+		".ai/rules/_examples/testing-strategy.md": &fstest.MapFile{Data: []byte("# Testing rules")},
+		".ai/rules/_examples/api-design.md":       &fstest.MapFile{Data: []byte("# API rules")},
+		".ai/commands/.gitkeep":                   &fstest.MapFile{Data: []byte("")},
+		".ai/templates/.gitkeep":                  &fstest.MapFile{Data: []byte("")},
 	}
 
 	// Install with the godot-go preset and force mode

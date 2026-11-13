@@ -984,14 +984,29 @@ func setupClaudeSymlinks(aiRoot, claudeDir string) error {
 	return lastErr
 }
 
+// removeGenerated takes away whatever is at a path the generator owns, so
+// that a link or a copy can be put there.
+//
+// os.Remove removes a link of any kind without following it: a symlink, a
+// junction, or the link another tool made that Go sees as neither a symlink
+// nor a directory. Only a real directory, an earlier copy, is emptied.
+func removeGenerated(target string) error {
+	info, err := os.Lstat(target)
+	if err != nil {
+		return nil // nothing there
+	}
+	if err := os.Remove(target); err == nil {
+		return nil
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return os.RemoveAll(target)
+	}
+	return fmt.Errorf("cannot replace %s: it is neither a link nor a directory that can be removed", target)
+}
+
 func createSymlinkOrCopy(source, target, name string) error {
-	// Remove existing
-	if info, err := os.Lstat(target); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			os.Remove(target)
-		} else if info.IsDir() {
-			os.RemoveAll(target)
-		}
+	if err := removeGenerated(target); err != nil {
+		return err
 	}
 
 	// Try symlink first

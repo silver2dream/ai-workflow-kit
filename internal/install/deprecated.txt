@@ -23,6 +23,19 @@
 .ai/config/execution_trace.schema.json
 .ai/config/failure_patterns.json
 
+# v0.16.x - rule examples of stacks the kit no longer ships. A copy a
+# project enabled lives in .ai/rules/ and is not touched.
+.ai/rules/_examples/backend-go.md
+.ai/rules/_examples/backend-node.md
+.ai/rules/_examples/backend-python.md
+.ai/rules/_examples/backend-rust.md
+.ai/rules/_examples/frontend-react.md
+.ai/rules/_examples/frontend-svelte.md
+.ai/rules/_examples/frontend-unity.md
+.ai/rules/_examples/frontend-vue.md
+.ai/rules/_examples/mobile-flutter.md
+.ai/rules/_examples/ui-toolkit-react-to-uxml.md
+
 # v0.15.x - multi-model review runs inside `awkit submit-review`
 # (review.secondary_reviewers); the standalone subagent had no caller
 .claude/agents/architecture-reviewer.md
