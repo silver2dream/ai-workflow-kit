@@ -296,7 +296,9 @@ review:
   # (the body of a review, a comment on a line of the diff) outranks the
   # automated verdict: the pull request is not merged while such feedback is
   # open on its current commit, the Worker is sent back with it, and it is
-  # recorded as human evidence for the learning loop. Set false to disable.
+  # recorded as human evidence for the learning loop. Merging never waits
+  # for a review; feedback written after the merge is picked up before the
+  # next dispatch and turned into lessons. Set false to disable.
   # human_feedback: true
   # Multi-model cross review (enforced by `awkit submit-review` in Go).
   # When true, submit-review fetches the PR diff and runs each secondary

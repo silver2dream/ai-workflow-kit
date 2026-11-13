@@ -216,10 +216,16 @@ func lessonsDistill(stateRoot string, maxEntries int) int {
 		timeout = time.Duration(cfg.Distiller.TimeoutSeconds) * time.Second
 	}
 
-	// A pull request a maintainer merged outside the workflow resolves its
-	// case too; record those merges before distilling.
-	if n := reviewer.SyncHumanResolutions(context.Background(), stateRoot, 60*time.Second); n > 0 {
-		fmt.Printf("Found %d issue(s) merged by a maintainer outside the workflow\n", n)
+	// What maintainers did on their own makes cases too: a pull request they
+	// merged outside the workflow resolves its rejections, and review
+	// feedback on one that was already merged is a case by itself. Record
+	// both before distilling.
+	handMerged, lateItems := reviewer.SyncMaintainerActivity(context.Background(), stateRoot, 60*time.Second)
+	if handMerged > 0 {
+		fmt.Printf("Found %d issue(s) merged by a maintainer outside the workflow\n", handMerged)
+	}
+	if lateItems > 0 {
+		fmt.Printf("Found %d maintainer review item(s) on merged pull requests\n", lateItems)
 	}
 
 	report, err := lessons.Distill(context.Background(), stateRoot, lessons.DistillOptions{

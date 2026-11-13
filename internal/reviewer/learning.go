@@ -60,7 +60,7 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 			IssueID:   opts.IssueNumber,
 			PRNumber:  opts.PRNumber,
 			Score:     opts.Score,
-			Outcome:   "approved",
+			Outcome:   outcomeApproved,
 		}
 	} else {
 		entry = BuildFeedbackEntry(opts.IssueNumber, opts.PRNumber, opts.Score, findings)
@@ -70,12 +70,15 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 		if len(findings) > maxSummaryChars {
 			entry.Findings = truncateSummary(findings, maxFindingsChars)
 		}
-		// Read before settlement: which lessons the rejected attempt had.
-		if rec := lessons.LoadInjection(opts.StateRoot, opts.IssueNumber); rec != nil {
-			entry.InjectedLessons = rec.LessonIDs
-		}
 		entry.Source = o.Source
 		entry.Refs = o.Refs
+	}
+	// Read before settlement, which drops the record at a merge: the lessons
+	// the judged attempt had. On a rejection they are the ones that did not
+	// prevent it; on a merge they are kept in case a maintainer objects to
+	// the merged code later.
+	if rec := lessons.LoadInjection(opts.StateRoot, opts.IssueNumber); rec != nil {
+		entry.InjectedLessons = rec.LessonIDs
 	}
 	entry.HeadSHA = opts.headSHA
 	entry.Paths = changed
@@ -111,21 +114,18 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 	if err != nil || !cfg.Lessons.IsEnabled() {
 		return
 	}
-	timeout := 60 * time.Second
-	if cfg.Lessons.Distiller.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.Lessons.Distiller.TimeoutSeconds) * time.Second
+	// What maintainers did on their own makes cases too: a pull request they
+	// merged outside the workflow resolves its rejections, and what they
+	// wrote about one that was already merged stands by itself. Pick both up
+	// before distilling.
+	handMerged, lateItems := SyncMaintainerActivity(ctx, opts.StateRoot, opts.GHTimeout)
+	if handMerged > 0 {
+		fmt.Printf("[REVIEW] Lessons: %d issue(s) were merged by a maintainer outside the workflow\n", handMerged)
 	}
-	// Cases a maintainer closed by merging outside the workflow are resolved
-	// too; pick them up before distilling.
-	if n := SyncHumanResolutions(ctx, opts.StateRoot, opts.GHTimeout); n > 0 {
-		fmt.Printf("[REVIEW] Lessons: %d issue(s) were merged by a maintainer outside the workflow\n", n)
+	if lateItems > 0 {
+		fmt.Printf("[REVIEW] Lessons: %d maintainer review item(s) on merged pull requests recorded\n", lateItems)
 	}
-	distilled, err := lessons.Distill(context.Background(), opts.StateRoot, lessons.DistillOptions{
-		Model:      cfg.Lessons.Distiller.Model,
-		Timeout:    timeout,
-		MaxActive:  cfg.Lessons.MaxActive,
-		MaxEntries: 3,
-	})
+	distilled, err := lessons.Distill(context.Background(), opts.StateRoot, distillOptions(cfg.Lessons, 3))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: lesson distillation failed: %v\n", err)
 		return
@@ -181,7 +181,7 @@ func SyncHumanResolutions(ctx context.Context, stateRoot string, ghTimeout time.
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 			IssueID:   p.IssueID,
 			PRNumber:  p.PRNumber,
-			Outcome:   "approved",
+			Outcome:   outcomeApproved,
 			Source:    sourceHuman,
 			HeadSHA:   state.HeadSHA,
 		})

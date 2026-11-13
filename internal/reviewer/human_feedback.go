@@ -27,6 +27,11 @@ import (
 // GitHub's review interface: the body of a review and comments on lines of
 // the diff. Conversation comments are left for discussion.
 //
+// This file is about feedback on a pull request that is still open. The
+// workflow does not wait for it — a pull request with no open feedback
+// merges as soon as the automated review and CI pass — so much of it arrives
+// after the merge; late_feedback.go takes that in.
+//
 // The maintainer and the workflow often share one GitHub account, so the
 // author of a comment cannot tell them apart. The text can: everything AWK
 // posts carries a marker.
@@ -50,7 +55,8 @@ type humanFeedback struct {
 	Line     int
 	Body     string
 	Resolved bool   // the maintainer resolved the conversation
-	At       string // RFC 3339
+	At       string // when it was published, RFC 3339
+	Hunk     string // line comments only: the diff it is attached to, ending at its line
 }
 
 // prState is what the merge gate and the learning loop need to know about a
@@ -58,6 +64,7 @@ type humanFeedback struct {
 type prState struct {
 	HeadSHA  string
 	Merged   bool
+	MergedAt string          // RFC 3339; "" while the pull request is not merged
 	Feedback []humanFeedback // maintainer feedback, oldest first
 	Ignored  int             // review text left out because of who wrote it
 }
@@ -75,6 +82,8 @@ type ghFeedback struct {
 	Line        int    `json:"line"`
 	Commit      string `json:"commit"`
 	At          string `json:"at"`
+	Hunk        string `json:"hunk"`   // line comments only
+	ReviewID    int64  `json:"review"` // line comments only: the review it was submitted with
 }
 
 // awkGenerated reports whether review text was written by AWK itself.
@@ -100,6 +109,12 @@ func writeAccess(association string) bool {
 // unknown); resolved holds the ids of line comments whose conversation the
 // maintainer resolved.
 func selectHumanFeedback(reviews, comments []ghFeedback, viewerLogin string, resolved map[int64]bool) (items []humanFeedback, ignored int) {
+	// A line comment drafted in a review is published when the review is
+	// submitted, which can be long after it was written.
+	submitted := make(map[int64]string, len(reviews))
+	for _, r := range reviews {
+		submitted[r.ID] = r.At
+	}
 	keep := func(kind string, f ghFeedback) {
 		if strings.EqualFold(f.UserType, "Bot") || strings.TrimSpace(f.Body) == "" || awkGenerated(f.Body) {
 			return
@@ -109,16 +124,21 @@ func selectHumanFeedback(reviews, comments []ghFeedback, viewerLogin string, res
 			ignored++
 			return
 		}
-		items = append(items, humanFeedback{
-			Ref:      fmt.Sprintf("%s:%d", kind, f.ID),
-			Author:   f.Login,
-			Commit:   f.Commit,
-			Path:     f.Path,
-			Line:     f.Line,
-			Body:     strings.TrimSpace(f.Body),
-			Resolved: kind == "comment" && resolved[f.ID],
-			At:       f.At,
-		})
+		item := humanFeedback{
+			Ref:    fmt.Sprintf("%s:%d", kind, f.ID),
+			Author: f.Login,
+			Commit: f.Commit,
+			Path:   f.Path,
+			Line:   f.Line,
+			Body:   strings.TrimSpace(f.Body),
+			At:     f.At,
+		}
+		if kind == "comment" {
+			item.Resolved = resolved[f.ID]
+			item.Hunk = f.Hunk
+			item.At = laterStamp(f.At, submitted[f.ReviewID])
+		}
+		items = append(items, item)
 	}
 	for _, r := range reviews {
 		switch strings.ToUpper(r.State) {
@@ -132,6 +152,20 @@ func selectHumanFeedback(reviews, comments []ghFeedback, viewerLogin string, res
 	}
 	sort.SliceStable(items, func(a, b int) bool { return items[a].At < items[b].At })
 	return items, ignored
+}
+
+// laterStamp returns the later of two GitHub timestamps. One that cannot be
+// read loses to the other.
+func laterStamp(a, b string) string {
+	ta, errA := time.Parse(time.RFC3339, a)
+	tb, errB := time.Parse(time.RFC3339, b)
+	switch {
+	case errB != nil:
+		return a
+	case errA != nil || tb.After(ta):
+		return b
+	}
+	return a
 }
 
 // needsViewerLogin reports whether any text comes from an account whose
@@ -167,7 +201,7 @@ func decodeFeedback(output []byte) ([]ghFeedback, error) {
 // it (original_commit_id); GitHub moves commit_id along with later pushes.
 const (
 	reviewsJQ  = `.[] | {id, login: .user.login, type: .user.type, association: .author_association, state, body, commit: .commit_id, at: .submitted_at}`
-	commentsJQ = `.[] | {id, login: .user.login, type: .user.type, association: .author_association, body, path, line: (.original_line // .line), commit: (.original_commit_id // .commit_id), at: .created_at}`
+	commentsJQ = `.[] | {id, login: .user.login, type: .user.type, association: .author_association, body, path, line: (.original_line // .line), commit: (.original_commit_id // .commit_id), at: .created_at, hunk: .diff_hunk, review: .pull_request_review_id}`
 
 	resolvedThreadsQuery = `query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved comments(first: 100) { nodes { databaseId } } } } } } }`
 	resolvedThreadsJQ    = `.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[].databaseId`
@@ -188,13 +222,14 @@ func fetchPRState(ctx context.Context, prNumber int, timeout time.Duration) (*pr
 	}
 	pull := fmt.Sprintf("repos/{owner}/{repo}/pulls/%d", prNumber)
 
-	out, err := gh("api", pull, "--jq", "{head: .head.sha, merged: .merged}")
+	out, err := gh("api", pull, "--jq", "{head: .head.sha, merged: .merged, merged_at: .merged_at}")
 	if err != nil {
 		return nil, err
 	}
 	var meta struct {
-		Head   string `json:"head"`
-		Merged bool   `json:"merged"`
+		Head     string `json:"head"`
+		Merged   bool   `json:"merged"`
+		MergedAt string `json:"merged_at"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(out), &meta); err != nil {
 		return nil, fmt.Errorf("pull request #%d: %w", prNumber, err)
@@ -239,7 +274,7 @@ func fetchPRState(ctx context.Context, prNumber int, timeout time.Duration) (*pr
 		}
 	}
 
-	state := &prState{HeadSHA: meta.Head, Merged: meta.Merged}
+	state := &prState{HeadSHA: meta.Head, Merged: meta.Merged, MergedAt: meta.MergedAt}
 	state.Feedback, state.Ignored = selectHumanFeedback(reviews, comments, viewer, resolved)
 	return state, nil
 }
@@ -341,19 +376,26 @@ func recordedFeedbackRefs(stateRoot string, issueID int) map[string]bool {
 // record for the learning loop only; it settles nothing.
 func recordHumanFeedback(stateRoot string, issueID, prNumber int, items []humanFeedback) {
 	for _, group := range groupByCommit(items) {
-		text := formatHumanFeedback(group.Items)
-		entry := BuildFeedbackEntry(issueID, prNumber, 0, text)
-		if len(text) > maxSummaryChars {
-			entry.Findings = truncateSummary(text, maxFindingsChars)
-		}
-		entry.Source = sourceHuman
-		entry.Refs = feedbackRefs(group.Items)
+		entry := humanFeedbackEntry(issueID, prNumber, group.Items)
 		entry.HeadSHA = group.Commit
-		entry.Paths = feedbackPaths(group.Items)
 		if err := RecordFeedback(stateRoot, entry); err != nil {
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: could not record maintainer feedback: %v\n", err)
 		}
 	}
+}
+
+// humanFeedbackEntry builds the feedback log entry for maintainer feedback:
+// a rejection that quotes it and carries the ids of the items it records.
+func humanFeedbackEntry(issueID, prNumber int, items []humanFeedback) FeedbackEntry {
+	text := formatHumanFeedback(items)
+	entry := BuildFeedbackEntry(issueID, prNumber, 0, text)
+	if len(text) > maxSummaryChars {
+		entry.Findings = truncateSummary(text, maxFindingsChars)
+	}
+	entry.Source = sourceHuman
+	entry.Refs = feedbackRefs(items)
+	entry.Paths = feedbackPaths(items)
+	return entry
 }
 
 // humanReview is the maintainer feedback found on the pull request under
