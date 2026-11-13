@@ -9,7 +9,7 @@ import (
 
 // TestSignalHandler_GracefulTimeout tests graceful shutdown timing
 func TestSignalHandler_GracefulTimeout(t *testing.T) {
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	// Default graceful timeout should be 60 seconds
 	expectedGraceful := 60 * time.Second
@@ -48,7 +48,7 @@ func TestStopMarkerPath_Constant(t *testing.T) {
 
 // TestSignalHandler_AddRemoveMonitor tests monitor management
 func TestSignalHandler_AddRemoveMonitor(t *testing.T) {
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	// Create mock monitors
 	monitor1 := &IssueMonitor{issueID: 1}
@@ -84,7 +84,7 @@ func TestSignalHandler_AddRemoveMonitor(t *testing.T) {
 
 // TestSignalHandler_IsShutdown tests shutdown state tracking
 func TestSignalHandler_IsShutdown(t *testing.T) {
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	// Initially not shutdown
 	if handler.IsShutdown() {
@@ -103,7 +103,7 @@ func TestSignalHandler_IsShutdown(t *testing.T) {
 
 // TestSignalHandler_SetCleanupCallback tests cleanup callback
 func TestSignalHandler_SetCleanupCallback(t *testing.T) {
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	called := false
 	handler.SetCleanupCallback(func() {
@@ -131,9 +131,8 @@ func TestNewSignalHandler(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	lock := NewLockManager(tmpDir + "/test.lock")
-	state := NewStateManager(tmpDir)
 
-	handler := NewSignalHandler(nil, state, lock)
+	handler := NewSignalHandler(nil, lock)
 
 	if handler == nil {
 		t.Fatal("NewSignalHandler returned nil")
@@ -141,10 +140,6 @@ func TestNewSignalHandler(t *testing.T) {
 
 	if handler.lock != lock {
 		t.Error("lock not set correctly")
-	}
-
-	if handler.state != state {
-		t.Error("state not set correctly")
 	}
 
 	if handler.gracefulTO != GracefulTimeout {
@@ -162,7 +157,7 @@ func TestNewSignalHandler(t *testing.T) {
 
 // TestSignalHandler_DoubleShutdown tests that shutdown only runs once
 func TestSignalHandler_DoubleShutdown(t *testing.T) {
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	callCount := 0
 	handler.SetCleanupCallback(func() {
@@ -184,7 +179,7 @@ func TestSignalHandler_DoubleShutdown(t *testing.T) {
 
 // TestSignalHandler_MonitorsCopied tests that monitors are copied during shutdown
 func TestSignalHandler_MonitorsCopied(t *testing.T) {
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	monitor := &IssueMonitor{
 		issueID:  42,
@@ -206,7 +201,7 @@ func TestSignalHandler_MonitorsCopied(t *testing.T) {
 // TestSignalHandler_WithExecutor tests handler with executor
 func TestSignalHandler_WithExecutor(t *testing.T) {
 	executor, _ := NewPTYExecutor("echo", []string{"test"})
-	handler := NewSignalHandler(executor, nil, nil)
+	handler := NewSignalHandler(executor, nil)
 
 	if handler.executor != executor {
 		t.Error("executor not set correctly")
@@ -216,7 +211,7 @@ func TestSignalHandler_WithExecutor(t *testing.T) {
 // TestSignalHandler_NilComponents tests handler with nil components
 func TestSignalHandler_NilComponents(t *testing.T) {
 	// Should not panic with nil components
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	if handler == nil {
 		t.Fatal("NewSignalHandler returned nil")
@@ -241,7 +236,7 @@ func TestSignalHandler_CreateStopMarker(t *testing.T) {
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
 
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	// Create STOP marker
 	err = handler.createStopMarker()
@@ -287,7 +282,7 @@ func TestSignalHandler_CreateStopMarker_CreatesDirectory(t *testing.T) {
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
 
-	handler := NewSignalHandler(nil, nil, nil)
+	handler := NewSignalHandler(nil, nil)
 
 	// Verify .ai/state doesn't exist yet
 	stateDir := filepath.Join(tmpDir, ".ai", "state")

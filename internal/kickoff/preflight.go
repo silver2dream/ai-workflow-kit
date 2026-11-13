@@ -21,24 +21,6 @@ type PreflightChecker struct {
 	forceDelete bool // auto-delete STOP marker
 }
 
-// AuditSummary represents the summary from audit.json
-type AuditSummary struct {
-	P0 int `json:"p0"`
-	P1 int `json:"p1"`
-}
-
-// AuditFinding represents a finding from audit.json
-type AuditFinding struct {
-	Severity string `json:"severity"`
-	Title    string `json:"title"`
-}
-
-// AuditResult represents the audit.json structure
-type AuditResult struct {
-	Summary  AuditSummary   `json:"summary"`
-	Findings []AuditFinding `json:"findings"`
-}
-
 // CheckResult represents the result of a single check
 type CheckResult struct {
 	Name    string

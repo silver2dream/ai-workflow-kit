@@ -59,11 +59,7 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 .ai/
 ├── config/
 │   ├── workflow.yaml              # 主配置檔
-│   ├── workflow.schema.json       # 配置 Schema
-│   ├── repo_scan.schema.json      # repo 掃描輸出 Schema
-│   ├── audit.schema.json          # audit 輸出 Schema
-│   ├── execution_trace.schema.json # 執行追蹤 Schema
-│   └── failure_patterns.json      # 錯誤模式定義
+│   └── workflow.schema.json       # 配置 Schema
 │
 ├── skills/                        # Agent Skills (Principal/Worker 技能)
 │   ├── principal-workflow/        # Principal 工作流程技能
@@ -255,9 +251,6 @@ escalation:
 | 檔案 | Schema |
 |------|--------|
 | workflow.yaml | workflow.schema.json |
-| repo_scan.json | repo_scan.schema.json |
-| audit.json | audit.schema.json |
-| traces/*.json | execution_trace.schema.json |
 
 ---
 

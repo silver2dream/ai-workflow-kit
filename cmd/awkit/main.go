@@ -123,8 +123,6 @@ func run() int {
 		return cmdDispatchWorker(os.Args[2:])
 	case "run-issue":
 		return cmdRunIssue(os.Args[2:])
-	case "session":
-		return cmdSession(os.Args[2:])
 	case "analyze-next":
 		return cmdAnalyzeNext(os.Args[2:])
 	case "reconcile":
@@ -195,7 +193,6 @@ Commands:
   check-result    Check worker execution result for an issue
   dispatch-worker Dispatch an issue to a worker
   run-issue       Run a worker for a single issue
-  session         Manage Principal/Worker sessions
   analyze-next    Analyze and determine next workflow action
   reconcile       Self-heal structural drift (e.g. integration-branch scaffold)
   stop-workflow   Stop the workflow and generate a report
@@ -282,8 +279,6 @@ func cmdHelp(command string) int {
 		usageDispatchWorker()
 	case "run-issue":
 		usageRunIssue()
-	case "session":
-		usageSession()
 	case "analyze-next":
 		usageAnalyzeNext()
 	case "reconcile":
@@ -1248,7 +1243,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue session analyze-next reconcile stop-workflow prepare-review submit-review create-task create-epic audit-epic jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall kickoff validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task create-epic audit-epic jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1303,7 +1298,6 @@ _awkit() {
         'check-result:Check worker execution result for an issue'
         'dispatch-worker:Dispatch an issue to a worker'
         'run-issue:Run a worker for a single issue'
-        'session:Manage Principal/Worker sessions'
         'analyze-next:Analyze and determine next workflow action'
         'reconcile:Self-heal structural drift'
         'stop-workflow:Stop the workflow and generate a report'
@@ -1399,7 +1393,6 @@ complete -c awkit -n __fish_use_subcommand -a next -d 'Show suggested next actio
 complete -c awkit -n __fish_use_subcommand -a check-result -d 'Check worker execution result for an issue'
 complete -c awkit -n __fish_use_subcommand -a dispatch-worker -d 'Dispatch an issue to a worker'
 complete -c awkit -n __fish_use_subcommand -a run-issue -d 'Run a worker for a single issue'
-complete -c awkit -n __fish_use_subcommand -a session -d 'Manage Principal/Worker sessions'
 complete -c awkit -n __fish_use_subcommand -a analyze-next -d 'Analyze and determine next workflow action'
 complete -c awkit -n __fish_use_subcommand -a reconcile -d 'Self-heal structural drift'
 complete -c awkit -n __fish_use_subcommand -a stop-workflow -d 'Stop the workflow and generate a report'

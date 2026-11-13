@@ -241,7 +241,6 @@ gh auth login
 # Using awkit CLI (recommended)
 awkit kickoff --dry-run    # Preview what would happen
 awkit kickoff              # Start the workflow
-awkit kickoff --resume     # Resume from saved state
 awkit validate             # Validate config only
 
 # Legacy bash scripts have been removed; use awkit commands above

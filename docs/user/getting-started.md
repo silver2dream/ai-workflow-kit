@@ -256,7 +256,6 @@ brew install bash
 | `awkit help <command>` | 顯示命令說明 |
 | `awkit kickoff` | 啟動工作流程 |
 | `awkit kickoff --dry-run` | 預覽工作流程 |
-| `awkit kickoff --resume` | 從上次狀態恢復 |
 | `awkit validate` | 驗證配置 |
 | `awkit doctor` | 檢查專案健康狀態，報告問題 |
 | `awkit reset` | 重設專案狀態（支援 `--all`、`--dry-run` 等 flags） |

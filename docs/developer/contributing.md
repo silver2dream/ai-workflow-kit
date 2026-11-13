@@ -78,7 +78,7 @@ git checkout -b feat/your-feature
 go test ./...
 
 # 執行特定套件測試
-go test ./internal/errors/... -v
+go test ./internal/lessons/... -v
 
 # 執行測試覆蓋率
 go test ./... -cover
@@ -209,13 +209,13 @@ go test ./... -cover
 go test ./... -v
 
 # 執行特定測試函數
-go test ./internal/errors -run TestAWKError -v
+go test ./internal/lessons -run TestStore_SaveLoadRoundTrip -v
 ```
 
 ### 測試覆蓋率要求
 
 - 新增的程式碼應有對應的測試
-- 核心套件 (`internal/errors`, `internal/analyzer`, `internal/reviewer`, `internal/worker`) 覆蓋率應 > 70%
+- 核心套件 (`internal/analyzer`, `internal/reviewer`, `internal/worker`) 覆蓋率應 > 70%
 - PR 不應降低整體覆蓋率
 
 ---
@@ -324,7 +324,7 @@ Closes #123
 go test ./... -v
 
 # 執行特定套件測試
-go test ./internal/errors/... -v
+go test ./internal/lessons/... -v
 
 # 跑單一測試
 go test ./internal/reviewer/ -run TestParseStructuredReview -v

@@ -25,7 +25,6 @@ awkit init              # 初始化專案
 awkit init --preset go  # 使用 preset 初始化
 awkit kickoff           # 啟動工作流程（audit/掃描已內建於 kickoff 迴圈）
 awkit kickoff --dry-run # 預覽執行
-awkit kickoff --resume  # 恢復上次執行
 awkit status            # 檢查狀態（離線摘要）
 awkit next              # 顯示下一個動作
 awkit validate          # 驗證配置
@@ -79,7 +78,7 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 啟動工作流程入口。提供 PTY 即時輸出、Issue Monitor 顯示 Worker 進度、Spinner 動畫。
 
 ```bash
-awkit kickoff [--dry-run] [--background] [--resume] [--fresh]
+awkit kickoff [--dry-run] [--background] [--force]
 awkit validate  # 只驗證配置
 ```
 

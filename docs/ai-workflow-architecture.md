@@ -448,8 +448,6 @@ gh auth status      # GitHub 認證
 awkit kickoff              # 啟動工作流
 awkit kickoff --dry-run    # 只做前置檢查
 awkit kickoff --background # 背景執行（睡前啟動）
-awkit kickoff --resume     # 從上次狀態恢復
-awkit kickoff --fresh      # 忽略舊狀態，重新開始
 awkit validate             # 只驗證配置
 
 # Legacy bash 腳本已移除；請使用上方的 awkit 命令

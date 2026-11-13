@@ -16,6 +16,13 @@
 .ai/specs/learning-loop/design.md
 .ai/specs/learning-loop
 
+# v0.16.x - output schemas and failure patterns of the removed Python scripts;
+# nothing reads them
+.ai/config/audit.schema.json
+.ai/config/repo_scan.schema.json
+.ai/config/execution_trace.schema.json
+.ai/config/failure_patterns.json
+
 # v0.15.x - multi-model review runs inside `awkit submit-review`
 # (review.secondary_reviewers); the standalone subagent had no caller
 .claude/agents/architecture-reviewer.md
