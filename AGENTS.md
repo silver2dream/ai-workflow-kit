@@ -18,7 +18,6 @@ Default priority: correctness > minimal diff > speed.
 
 ## MUST-READ (before any work)
 
-
 - Read and obey: `.ai/rules/_kit/git-workflow.md` (branch and PR conventions; the runner makes the commits, you do not)
 
 Do not proceed if these files are missing—stop and report what you cannot find.
@@ -55,24 +54,12 @@ Do not proceed if these files are missing—stop and report what you cannot find
 Before making any code changes, you MUST create an implementation plan file at:
 `.ai/runs/issue-{ISSUE_ID}/plan.md`
 
-The plan MUST use this structure:
-```markdown
-## Summary
-Brief description of the approach (1-3 sentences).
+The plan MUST contain:
+- `## Summary` — brief description of the approach (1-3 sentences)
+- `## Files to modify` — list of files and what changes
+- `## Key decisions` — important decisions and rationale
 
-## Files to modify
-- `path/to/file.go` — what changes and why
-
-## Key decisions
-- Decision 1: rationale
-- Decision 2: rationale
-```
-
-Rules:
-- Write the plan FIRST, before any code changes.
-- The `{ISSUE_ID}` is the GitHub Issue number from the ticket.
-- Keep it concise — focus on approach and rationale, not implementation details.
-- The runner will include this plan in the PR description for reviewers.
+Write the plan FIRST. The runner includes it in the PR description for reviewers.
 
 ### 5. Review feedback handling
 If you see a `PREVIOUS REVIEW FEEDBACK` section in your prompt:
@@ -85,10 +72,9 @@ If you see a `PREVIOUS REVIEW FEEDBACK` section in your prompt:
 
 ### 6. Design document context
 If you see a `DESIGN CONTEXT` section in your prompt:
-- This contains the relevant design document (design.md) for the current task
-- You SHOULD reference this design document to understand architectural decisions, data models, and intended behavior
+- It contains the relevant design document (design.md) for the current task
 - Ensure your implementation aligns with the design specifications
-- If the design and ticket conflict, follow the ticket (it may represent a deliberate deviation)
+- If the design and ticket conflict, follow the ticket (it may be a deliberate deviation)
 
 ---
 

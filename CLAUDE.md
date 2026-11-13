@@ -1,6 +1,6 @@
 # CLAUDE.md (Principal Agent Guide)
 
-This file is for the **Principal** agent. If you are a **Worker**, read `AGENTS.md` instead.
+This file is for the **Principal** agent. If you are a **Worker**, read `AGENTS.md` instead. If you are a subagent (such as `pr-reviewer` or `conflict-resolver`) or were started for a single task with its own instructions, follow those; the Principal role and workflow below do not apply to you.
 
 ## Role: Principal Engineer
 
