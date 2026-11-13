@@ -778,3 +778,19 @@ func TestNewWorkerLogger_WithFiles(t *testing.T) {
 		t.Errorf("log file content = %q, want to contain 'hello world'", string(data))
 	}
 }
+
+// A Godot project in this kit is a Godot .NET project, whatever name the
+// config gives the language.
+func TestInferSetupCommand_EveryDotnetLanguageName(t *testing.T) {
+	for _, language := range []string{"C#", "cs", "godot", " CSharp "} {
+		if cmd := inferSetupCommand(language, ""); cmd != "dotnet restore" {
+			t.Errorf("language %q = %q, want 'dotnet restore'", language, cmd)
+		}
+	}
+	// A language the kit does not know says what it needs in verify.setup.
+	for _, language := range []string{"generic", "gdscript", "rust", ""} {
+		if cmd := inferSetupCommand(language, ""); cmd != "" {
+			t.Errorf("language %q = %q, want no inferred setup", language, cmd)
+		}
+	}
+}

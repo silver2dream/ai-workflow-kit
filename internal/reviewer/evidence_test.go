@@ -333,11 +333,11 @@ func TestNormalizeTestName(t *testing.T) {
 
 func TestLevenshteinSimilarity(t *testing.T) {
 	tests := []struct {
-		name     string
-		a        string
-		b        string
-		minSim   float64
-		maxSim   float64
+		name   string
+		a      string
+		b      string
+		minSim float64
+		maxSim float64
 	}{
 		{"identical", "foo", "foo", 1.0, 1.0},
 		{"empty strings", "", "", 1.0, 1.0},
@@ -383,10 +383,10 @@ func TestTokensMatch(t *testing.T) {
 
 func TestExtractTokens(t *testing.T) {
 	tests := []struct {
-		name           string
-		input          string
-		wantMinTokens  int
-		wantContains   []string
+		name          string
+		input         string
+		wantMinTokens int
+		wantContains  []string
 	}{
 		{"read chapter", "readchapter", 2, []string{"read", "chapter"}},
 		{"get user", "getuser", 2, []string{"get", "user"}},
@@ -461,10 +461,10 @@ func TestFindSimilarTests(t *testing.T) {
 	}{
 		// Note: findSimilarTests uses Levenshtein similarity only, not token matching
 		// Word reordering results in low Levenshtein similarity
-		{"find similar chapter", "TestChapterRead", 0.2, 1},  // Low threshold needed for reordering
+		{"find similar chapter", "TestChapterRead", 0.2, 1},     // Low threshold needed for reordering
 		{"find similar with suffix", "TestGetUserById", 0.5, 1}, // Should find TestGetUser with higher similarity
-		{"no similar", "TestPayment", 0.7, 0},                // Should find nothing
-		{"very low threshold", "TestSomething", 0.1, 1},      // Very low threshold should find something
+		{"no similar", "TestPayment", 0.7, 0},                   // Should find nothing
+		{"very low threshold", "TestSomething", 0.1, 1},         // Very low threshold should find something
 	}
 
 	for _, tt := range tests {
@@ -488,9 +488,9 @@ func TestFuzzyMatchTestNameIntegration(t *testing.T) {
 	}
 
 	expectedTests := []string{
-		"TestReadChapter",    // exact match
-		"TestChapterRead",    // reordering - should fuzzy match to TestReadChapter
-		"TestWriteChapter",   // version suffix - should fuzzy match to TestWriteChapter_v2
+		"TestReadChapter",  // exact match
+		"TestChapterRead",  // reordering - should fuzzy match to TestReadChapter
+		"TestWriteChapter", // version suffix - should fuzzy match to TestWriteChapter_v2
 	}
 
 	for _, expected := range expectedTests {
@@ -816,13 +816,13 @@ func TestFuzzyMatchCriteria(t *testing.T) {
 	}{
 		{"exact match", "Feature works", "Feature works", true},
 		{"case insensitive", "Feature Works", "feature works", true},
-		{"close contains match", "add authentication check", "add authentication", true},          // 18/24 = 75%
-		{"too short contains", "Feature A works correctly", "Feature A", false},                   // 9/24 = 37% → rejected by ratio
-		{"too short reverse", "Feature", "Feature works correctly", false},                        // 7/22 = 31% → rejected
+		{"close contains match", "add authentication check", "add authentication", true}, // 18/24 = 75%
+		{"too short contains", "Feature A works correctly", "Feature A", false},          // 9/24 = 37% → rejected by ratio
+		{"too short reverse", "Feature", "Feature works correctly", false},               // 7/22 = 31% → rejected
 		{"whitespace normalized", "Feature  works", "Feature works", true},
 		{"completely different", "Feature A", "Something else", false},
 		{"empty strings", "", "", true},
-		{"one empty", "Feature", "", false},                                                       // empty vs non-empty → rejected
+		{"one empty", "Feature", "", false},                                                             // empty vs non-empty → rejected
 		{"similar criteria prevent false positive", "add logging", "add logging to all modules", false}, // 11/26 = 42% → rejected
 	}
 
@@ -1464,8 +1464,8 @@ func TestParseTestResults_VitestFormat(t *testing.T) {
 			expectedFailed: []string{},
 		},
 		{
-			name: "vitest verbose fail format",
-			output: ` ✕ __tests__/math.test.ts > subtraction > 5 - 3 should equal 2 5ms`,
+			name:           "vitest verbose fail format",
+			output:         ` ✕ __tests__/math.test.ts > subtraction > 5 - 3 should equal 2 5ms`,
 			expectedPassed: []string{},
 			expectedFailed: []string{
 				"5_-_3_should_equal_2",
@@ -1483,8 +1483,8 @@ func TestParseTestResults_VitestFormat(t *testing.T) {
 			expectedFailed: []string{},
 		},
 		{
-			name: "vitest default fail format",
-			output: ` ✕ test/broken.test.ts (2 failed) 100ms`,
+			name:           "vitest default fail format",
+			output:         ` ✕ test/broken.test.ts (2 failed) 100ms`,
 			expectedPassed: []string{},
 			expectedFailed: []string{
 				"test/broken.test.ts",
@@ -1841,8 +1841,8 @@ exit 0
 		WorktreePath: tmpDir,
 		// ToSlash keeps the path intact inside `sh -c` on Windows, where
 		// backslashes would otherwise be consumed as escape characters.
-		TestCommand:  "sh " + filepath.ToSlash(scriptPath),
-		Language:     "node",
+		TestCommand: "sh " + filepath.ToSlash(scriptPath),
+		Language:    "node",
 	}
 
 	// This should NOT return an error because:
@@ -2468,5 +2468,55 @@ describe('GameCanvas', () => { it('renders', () => { expect(1).toBe(1) }) })
 	}
 	if report == nil || !report.FileLevelOnly {
 		t.Errorf("expected FileLevelOnly=true in report, got %+v", report)
+	}
+}
+
+// A cited test that ran and failed is not evidence, even when a test with a
+// similar name passed: the similar one is a different test.
+func TestVerifyTestEvidence_FailedTestIsNotRescuedByASimilarOne(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := "package parse\n\nfunc TestParseRejectsEmptyInput(t *testing.T) { assert.Error(t, err) }\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "parse_test.go"), []byte(testFile), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	scriptPath := filepath.Join(tmpDir, "run-test.sh")
+	script := "#!/bin/sh\n" +
+		"echo '--- FAIL: TestParseRejectsEmptyInput (0.00s)'\n" +
+		"echo '--- PASS: TestParseRejectsEmptyInputs (0.00s)'\n" +
+		"echo '--- PASS: TestParseAcceptsInput (0.00s)'\n" +
+		"exit 1\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	verify := func(testName string) *EvidenceError {
+		return VerifyTestEvidence(context.Background(), VerifyOptions{
+			Ticket:       "## Acceptance Criteria\n- [ ] Empty input is rejected",
+			WorktreePath: tmpDir,
+			TestCommand:  "sh " + filepath.ToSlash(scriptPath),
+			Language:     "go",
+			Verifications: []CriteriaVerification{{
+				Criteria:       "Empty input is rejected",
+				Implementation: "Parse returns an error for an empty string",
+				TestName:       testName,
+				Assertion:      "assert.Error(t, err)",
+			}},
+		})
+	}
+
+	// The names differ by one letter, which fuzzy matching alone would accept.
+	if !fuzzyMatchTestName("TestParseRejectsEmptyInput", "TestParseRejectsEmptyInputs") {
+		t.Fatal("the two names are meant to be close enough for a fuzzy match")
+	}
+	err := verify("TestParseRejectsEmptyInput")
+	if err == nil {
+		t.Fatal("a test that failed was accepted as evidence because a similar test passed")
+	}
+	if !strings.Contains(strings.Join(err.Details, "\n"), "TestParseRejectsEmptyInput (FAILED)") {
+		t.Errorf("the error should say the cited test failed, got %v", err.Details)
+	}
+
+	// A test that passed is still accepted, by its exact name.
+	if err := verify("TestParseAcceptsInput"); err != nil {
+		t.Errorf("a test that passed was refused: %s %v", err.Message, err.Details)
 	}
 }

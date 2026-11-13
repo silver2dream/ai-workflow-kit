@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 )
 
 // Input provides all information needed to run JiT tests for a PR.
@@ -55,6 +56,21 @@ func Run(ctx context.Context, input Input, cfg analyzer.JiTTestConfig) (*Result,
 
 	start := time.Now()
 
+	// A language without test conventions of its own is skipped: tests written
+	// to another language's conventions would only fail to build.
+	if !Supported(input.Language) {
+		return &Result{Error: fmt.Sprintf("JiT tests are not available for language %q", input.Language), Duration: time.Since(start)}, nil
+	}
+
+	// A .NET test compiles only inside a test project.
+	var testProjects []string
+	if repo.ToolchainOf(input.Language) == repo.ToolchainDotnet {
+		testProjects = findDotnetTestProjects(input.WorkDir)
+		if len(testProjects) == 0 {
+			return &Result{Error: "no .NET test project to put JiT tests into", Duration: time.Since(start)}, nil
+		}
+	}
+
 	// Step 1: Get diff
 	diff, err := getDiffFunc(ctx, input.WorkDir, input.BaseBranch, input.HeadBranch)
 	if err != nil {
@@ -69,12 +85,13 @@ func Run(ctx context.Context, input Input, cfg analyzer.JiTTestConfig) (*Result,
 
 	// Step 3: Generate tests via LLM
 	genInput := GenerateInput{
-		Diff:        diff,
-		SourceFiles: sourceFiles,
-		Language:    input.Language,
-		MaxTests:    cfg.MaxTests,
-		Model:       cfg.Model,
-		WorkDir:     input.WorkDir,
+		Diff:         diff,
+		SourceFiles:  sourceFiles,
+		Language:     input.Language,
+		MaxTests:     cfg.MaxTests,
+		Model:        cfg.Model,
+		WorkDir:      input.WorkDir,
+		TestProjects: testProjects,
 	}
 
 	tests, err := GenerateTests(ctx, genInput)
@@ -85,8 +102,23 @@ func Run(ctx context.Context, input Input, cfg analyzer.JiTTestConfig) (*Result,
 		}, nil
 	}
 
-	// Step 4: Execute tests in worktree (cleanup is handled by RunTests)
-	result := RunTests(ctx, input.WorkDir, tests, input.TestCommand)
+	// Step 4: Execute tests in worktree (cleanup is handled by RunTests). A
+	// file the model put outside the test projects is not written at all.
+	runnable, misplaced := tests, []TestOutcome(nil)
+	if len(testProjects) > 0 {
+		runnable = nil
+		for _, test := range tests {
+			if inAnyDir(test.Filename, testProjects) {
+				runnable = append(runnable, test)
+				continue
+			}
+			misplaced = append(misplaced, TestOutcome{Test: test, Error: "not inside a test project"})
+		}
+	}
+	result := RunTests(ctx, input.WorkDir, runnable, input.TestCommand)
+	result.Generated += len(misplaced)
+	result.Skipped += len(misplaced)
+	result.Tests = append(result.Tests, misplaced...)
 	result.Duration = time.Since(start)
 
 	return result, nil

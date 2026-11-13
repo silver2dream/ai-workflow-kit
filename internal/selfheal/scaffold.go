@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 )
 
 // Repo is the minimal repo shape selfheal needs: where the repo lives and what
@@ -40,10 +41,10 @@ type ScaffoldReconcile struct {
 func inferPreset(repos []Repo) string {
 	var goBackend, csharpFrontend bool
 	for _, r := range repos {
-		switch strings.ToLower(r.Language) {
-		case "go", "golang":
+		switch repo.ToolchainOf(r.Language) {
+		case repo.ToolchainGo:
 			goBackend = true
-		case "csharp", "c#", "dotnet", "godot":
+		case repo.ToolchainDotnet:
 			csharpFrontend = true
 		}
 	}
@@ -59,8 +60,8 @@ func inferPreset(repos []Repo) string {
 // skeleton's names says nothing.
 func repoBaseFile(r Repo) string {
 	path := strings.TrimSuffix(r.Path, "/")
-	switch strings.ToLower(r.Language) {
-	case "go", "golang":
+	switch repo.ToolchainOf(r.Language) {
+	case repo.ToolchainGo:
 		return join(path, "go.mod")
 	default:
 		return ""
