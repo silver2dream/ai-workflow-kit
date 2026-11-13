@@ -19,6 +19,31 @@ type Options struct {
 	StateRoot string
 	CI        CIPolicy // what to do about the CI workflows; the zero value leaves them alone
 	DryRun    bool     // show what would be generated without writing
+	// Quiet asks for no progress lines. Init and upgrade generate as a part
+	// of something larger and say what was done in their own words.
+	Quiet bool
+}
+
+// progress says what the generator does, a line at a time, with paths as
+// they are from the project's root.
+type progress struct {
+	quiet bool
+	root  string
+}
+
+func (p progress) say(format string, args ...any) {
+	if !p.quiet {
+		fmt.Printf("[generate] "+format+"\n", args...)
+	}
+}
+
+// path shows a file the way a person names it: from the project's root, with
+// forward slashes.
+func (p progress) path(file string) string {
+	if rel, err := filepath.Rel(p.root, file); err == nil && p.root != "" && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return filepath.ToSlash(file)
 }
 
 // Result holds the result of the generate operation
@@ -27,6 +52,10 @@ type Result struct {
 	// config accounts for any more.
 	RemovedFiles   []string
 	GeneratedFiles []string
+	// Warnings are what the generator found and went on from: a listed rule
+	// file that is not there, for one. They are printed unless Quiet is set;
+	// a caller that asked for silence shows them itself.
+	Warnings []string
 }
 
 // ValidateRepoPath validates repo path based on type.
@@ -141,8 +170,9 @@ func Generate(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	say := progress{quiet: opts.Quiet, root: opts.StateRoot}
+
 	// Validate config before generation
-	fmt.Println("[generate] Validating config...")
 	if validationErrors := config.Validate(); len(validationErrors) > 0 {
 		var errMsgs []string
 		for _, e := range validationErrors {
@@ -150,7 +180,6 @@ func Generate(opts Options) (*Result, error) {
 		}
 		return nil, fmt.Errorf("config validation failed:\n  - %s", strings.Join(errMsgs, "\n  - "))
 	}
-	fmt.Println("[generate] Config validation: OK")
 
 	// Build template context
 	ctx := buildContext(config)
@@ -182,13 +211,13 @@ func Generate(opts Options) (*Result, error) {
 	if err := generateClaudeMd(claudePath, ctx); err != nil {
 		return nil, fmt.Errorf("failed to generate CLAUDE.md: %w", err)
 	}
-	fmt.Printf("[generate] Created: %s\n", claudePath)
+	say.say("wrote %s", say.path(claudePath))
 
 	// Generate AGENTS.md
 	if err := generateAgentsMd(agentsPath, ctx); err != nil {
 		return nil, fmt.Errorf("failed to generate AGENTS.md: %w", err)
 	}
-	fmt.Printf("[generate] Created: %s\n", agentsPath)
+	say.say("wrote %s", say.path(agentsPath))
 
 	// Generate git-workflow.md
 	if err := os.MkdirAll(kitRulesDir, 0755); err != nil {
@@ -197,7 +226,7 @@ func Generate(opts Options) (*Result, error) {
 	if err := generateGitWorkflowMd(gitWorkflowPath, ctx); err != nil {
 		return nil, fmt.Errorf("failed to generate git-workflow.md: %w", err)
 	}
-	fmt.Printf("[generate] Created: %s\n", gitWorkflowPath)
+	say.say("wrote %s", say.path(gitWorkflowPath))
 
 	// Setup .claude directory
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
@@ -208,31 +237,37 @@ func Generate(opts Options) (*Result, error) {
 	if err := generateClaudeSettings(settingsPath, config.Agents); err != nil {
 		return nil, fmt.Errorf("failed to generate claude settings: %w", err)
 	}
-	fmt.Printf("[generate] Created: %s\n", settingsPath)
+	say.say("wrote %s", say.path(settingsPath))
 
-	// Validate custom rules (non-fatal warnings)
-	if ruleWarnings := validateCustomRules(opts.StateRoot, config.Rules); len(ruleWarnings) > 0 {
-		for _, w := range ruleWarnings {
-			fmt.Printf("[generate] WARNING: %s\n", w)
-		}
+	// What is found and gone on from: the caller is told, and so is the
+	// reader of the progress lines.
+	warn := func(warning string) {
+		result.Warnings = append(result.Warnings, warning)
+		say.say("WARNING: %s", warning)
+	}
+	for _, warning := range validateCustomRules(opts.StateRoot, config.Rules) {
+		warn(warning)
 	}
 
 	// The subagents the Principal hands work to: the kit's, and the ones the
 	// configuration defines.
-	if err := installAgentsDir(layout.Agents(opts.StateRoot), config.Agents); err != nil {
+	agentWarnings, err := installAgentsDir(layout.Agents(opts.StateRoot), config.Agents, say)
+	if err != nil {
 		return nil, fmt.Errorf("failed to install agents: %w", err)
+	}
+	for _, warning := range agentWarnings {
+		warn(warning)
 	}
 
 	// CI workflows, as the policy says. They come last: a workflow that cannot
 	// be written fails the run, and everything else is in place by then.
-	ciWritten, ciRemoved, err := generateCIWorkflows(opts.StateRoot, ctx, opts.CI)
+	ciWritten, ciRemoved, err := generateCIWorkflows(opts.StateRoot, ctx, opts.CI, say)
 	result.GeneratedFiles = append(result.GeneratedFiles, ciWritten...)
 	result.RemovedFiles = ciRemoved
 	if err != nil {
 		return result, err
 	}
 
-	fmt.Println("[generate] Done!")
 	return result, nil
 }
 
@@ -328,7 +363,11 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 		}
 	}
 	sb.WriteString("\n")
-	sb.WriteString("- Branches: pull requests are merged into " + code(ctx.Git.IntegrationBranch) + "; " + code(ctx.Git.ReleaseBranch) + " is the release branch\n\n")
+	if ctx.Git.IntegrationBranch == ctx.Git.ReleaseBranch {
+		sb.WriteString("- Branch: pull requests are merged into " + code(ctx.Git.IntegrationBranch) + "; there is no separate release branch\n\n")
+	} else {
+		sb.WriteString("- Branches: pull requests are merged into " + code(ctx.Git.IntegrationBranch) + "; " + code(ctx.Git.ReleaseBranch) + " is the release branch\n\n")
+	}
 
 	sb.WriteString("## While a command runs (Principal)\n\n")
 	sb.WriteString("A run lasts many loop iterations, and everything you read or write stays in your context for all of them. " + code("awkit") + " commands do their own waiting: " + code("awkit dispatch-worker") + " returns when the Worker has finished, and its output carries the result. So while a command runs, wait for it: do not read " + code(layout.LogsDir+"/") + " to follow the Worker, do not poll, do not narrate progress. When it returns, act on what it printed, as the skill describes.\n")
@@ -503,8 +542,14 @@ func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 			sb.WriteString("\n")
 		}
 	}
-	sb.WriteString("- Integration branch: " + integration + ". Every pull request targets it, whichever repo the change is in.\n")
-	sb.WriteString("- Release branch: " + release + ". Nothing targets it except a release: a pull request from " + integration + ", or the pull request of a ticket whose " + code("awk-ticket") + " block sets " + code("release: true") + ".\n")
+	// One trunk, or a branch to merge into and a branch to release from.
+	singleTrunk := ctx.Git.IntegrationBranch == ctx.Git.ReleaseBranch
+	if singleTrunk {
+		sb.WriteString("- Branch: " + integration + ". Every pull request targets it, whichever repo the change is in. The project has no separate release branch.\n")
+	} else {
+		sb.WriteString("- Integration branch: " + integration + ". Every pull request targets it, whichever repo the change is in.\n")
+		sb.WriteString("- Release branch: " + release + ". Nothing targets it except a release: a pull request from " + integration + ", or the pull request of a ticket whose " + code("awk-ticket") + " block sets " + code("release: true") + ".\n")
+	}
 	sb.WriteString("- Working branches: " + code("feat/<topic>") + " or " + code("fix/<topic>") + ". The workflow names its own " + code("feat/ai-issue-<id>") + ".\n\n")
 
 	sb.WriteString("## 2. Commit messages\n\n")
@@ -517,7 +562,11 @@ func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("\n")
 
 	sb.WriteString("## 3. Pull requests\n\n")
-	sb.WriteString("- A change reaches " + integration + " or " + release + " through a pull request, never by a direct push.\n")
+	if singleTrunk {
+		sb.WriteString("- A change reaches " + integration + " through a pull request, never by a direct push.\n")
+	} else {
+		sb.WriteString("- A change reaches " + integration + " or " + release + " through a pull request, never by a direct push.\n")
+	}
 	sb.WriteString("- The title is in the commit format.\n")
 	sb.WriteString("- The body contains " + code("Closes #<issue>") + ", which ties the pull request to its ticket.\n")
 	sb.WriteString("- It is merged once the required checks have passed.\n\n")
@@ -572,9 +621,12 @@ func generateClaudeSettings(path string, agents AgentsConfig) error {
 // builtinAgentFiles lists the agent definitions installed from the kit.
 var builtinAgentFiles = []string{"pr-reviewer.md", "conflict-resolver.md"}
 
-func installAgentsDir(agentsDir string, agents AgentsConfig) error {
+// installAgentsDir writes the subagents: the kit's, and the ones the
+// configuration defines. What it could not tidy up afterwards comes back as
+// warnings.
+func installAgentsDir(agentsDir string, agents AgentsConfig, say progress) (warnings []string, err error) {
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Built-in agent definitions have a single source of truth: the files the
@@ -584,13 +636,13 @@ func installAgentsDir(agentsDir string, agents AgentsConfig) error {
 	for _, name := range builtinAgentFiles {
 		content, err := awkit.KitFS.ReadFile(".claude/agents/" + name)
 		if err != nil {
-			return fmt.Errorf("built-in agent %s is missing from the kit: %w", name, err)
+			return nil, fmt.Errorf("built-in agent %s is missing from the kit: %w", name, err)
 		}
 		agentPath := filepath.Join(agentsDir, name)
 		if err := os.WriteFile(agentPath, content, 0644); err != nil {
-			return err
+			return nil, err
 		}
-		fmt.Printf("[generate] Created: %s\n", agentPath)
+		say.say("wrote %s", say.path(agentPath))
 	}
 
 	// Generate custom agent definitions
@@ -598,9 +650,9 @@ func installAgentsDir(agentsDir string, agents AgentsConfig) error {
 		body := generateCustomAgentBody(agent)
 		agentPath := filepath.Join(agentsDir, agent.Name+".md")
 		if err := os.WriteFile(agentPath, []byte(body), 0644); err != nil {
-			return err
+			return nil, err
 		}
-		fmt.Printf("[generate] Created: %s\n", agentPath)
+		say.say("wrote %s", say.path(agentPath))
 	}
 
 	// Clean stale agent files not in config
@@ -609,11 +661,11 @@ func installAgentsDir(agentsDir string, agents AgentsConfig) error {
 	for _, agent := range agents.Custom {
 		customNames[agent.Name] = true
 	}
-	if err := cleanStaleAgents(agentsDir, builtinNames, customNames); err != nil {
-		fmt.Printf("[generate] WARNING: failed to clean stale agents: %v\n", err)
+	if err := cleanStaleAgents(agentsDir, builtinNames, customNames, say); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to clean stale agents: %v", err))
 	}
 
-	return nil
+	return warnings, nil
 }
 
 func generateCustomAgentBody(agent CustomAgentDef) string {
@@ -664,7 +716,7 @@ const GeneratedAgentMark = "<!-- Generated by awkit from agents.custom in the co
 // agents the configuration no longer names. A file it did not write is the
 // project's own and stays: the agents directory is Claude Code's, and the
 // project may keep subagents of its own there.
-func cleanStaleAgents(agentsDir string, builtinNames, customNames map[string]bool) error {
+func cleanStaleAgents(agentsDir string, builtinNames, customNames map[string]bool, say progress) error {
 	entries, err := os.ReadDir(agentsDir)
 	if err != nil {
 		return err
@@ -689,7 +741,7 @@ func cleanStaleAgents(agentsDir string, builtinNames, customNames map[string]boo
 		if err := os.Remove(stalePath); err != nil {
 			return err
 		}
-		fmt.Printf("[generate] Removed stale agent: %s\n", stalePath)
+		say.say("removed %s (the configuration no longer names the agent)", say.path(stalePath))
 	}
 	return nil
 }
@@ -697,14 +749,14 @@ func cleanStaleAgents(agentsDir string, builtinNames, customNames map[string]boo
 func validateCustomRules(stateRoot string, rules RulesConfig) []string {
 	var warnings []string
 	for _, rule := range rules.Custom {
-		rulePath := filepath.Join(layout.Rules(stateRoot), rule+".md")
-		data, err := os.ReadFile(rulePath)
+		shown := layout.RulesDir + "/" + rule + ".md"
+		data, err := os.ReadFile(filepath.Join(layout.Rules(stateRoot), rule+".md"))
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("custom rule '%s' not found: %s", rule, rulePath))
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s' not found: %s", rule, shown))
 			continue
 		}
 		if strings.TrimSpace(string(data)) == "" {
-			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is empty: %s", rule, rulePath))
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is empty: %s", rule, shown))
 		}
 	}
 	return warnings
