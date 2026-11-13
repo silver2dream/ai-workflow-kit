@@ -2,13 +2,12 @@ package install
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
-// A preset decides what a new project starts with: its workflow config, its
-// CI workflow and, with --scaffold, a project skeleton.
+// A preset decides what a new project starts with: its workflow config and,
+// with --scaffold, a project skeleton. Everything else, CI workflows
+// included, is generated from that config.
 const (
 	// PresetGeneric assumes nothing about the stack: one repository, and the
 	// build and test commands are left for the project to fill in.
@@ -189,89 +188,4 @@ repos:
       test: "dotnet test"
 `, projectName)
 	return []byte(head + configSections)
-}
-
-// ciWorkflows holds the CI workflow of each preset that knows its stack. A
-// preset without an entry gets no CI file: there is nothing to assume about
-// how the project builds.
-var ciWorkflows = map[string]string{
-	PresetGodotGo: godotGoCI,
-}
-
-const godotGoCI = `name: ci
-
-on:
-  push:
-    branches: ["feat/example"]
-  pull_request:
-    branches: ["feat/example", "main"]
-
-jobs:
-  backend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.25.x"
-
-      - name: Build
-        run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
-
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
-
-      - name: Build
-        run: dotnet build
-
-      - name: Test
-        run: dotnet test --no-build
-`
-
-// ensureCIWorkflow writes the preset's CI workflow when the project has none
-// (or force is set), and takes the long-removed awk job out of an existing one.
-func ensureCIWorkflow(targetDir, preset string, force bool) error {
-	path := filepath.Join(targetDir, ".github", "workflows", "ci.yml")
-
-	existingContent, err := os.ReadFile(path)
-	if err == nil {
-		if migrated, migratedContent := migrateCIWorkflow(existingContent); migrated {
-			return os.WriteFile(path, migratedContent, 0o644)
-		}
-		if !force {
-			return nil
-		}
-	}
-
-	content, ok := ciWorkflows[presetName(preset)]
-	if !ok {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(content), 0o644)
 }

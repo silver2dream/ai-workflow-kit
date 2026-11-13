@@ -33,7 +33,6 @@ func TestInstall_CurrentDirectory(t *testing.T) {
 	result, err := Install(mockFS, tmpDir, Options{
 		Preset:     "generic",
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
@@ -74,7 +73,6 @@ func TestInstall_DotPath(t *testing.T) {
 	result, err := Install(mockFS, ".", Options{
 		Preset:     "generic",
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install with '.' failed: %v", err)
@@ -137,7 +135,6 @@ func TestInstall_ConfigSkipped(t *testing.T) {
 	result, err := Install(mockFS, tmpDir, Options{
 		Preset:     "generic",
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
@@ -174,7 +171,6 @@ func TestInstall_ForceConfig(t *testing.T) {
 		Preset:      "generic",
 		ForceConfig: true,
 		NoGenerate:  true,
-		WithCI:      false,
 	})
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
@@ -277,7 +273,6 @@ func TestInstall_Upgrade(t *testing.T) {
 		Force:      true,
 		SkipConfig: true,
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install (upgrade) failed: %v", err)
@@ -315,7 +310,6 @@ func TestInstall_GitIgnoreContainsClaudeSettings(t *testing.T) {
 	_, err = Install(mockFS, tmpDir, Options{
 		Preset:     "generic",
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
@@ -344,7 +338,6 @@ func TestInstall_GitIgnoreContainsCacheFiles(t *testing.T) {
 	_, err = Install(mockFS, tmpDir, Options{
 		Preset:     "generic",
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
@@ -381,7 +374,6 @@ func TestInstall_ClaudeDirectoryCreated(t *testing.T) {
 	_, err = Install(mockFS, tmpDir, Options{
 		Preset:     "generic",
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
@@ -427,7 +419,6 @@ func TestInstall_GitIgnoreUpdatedOnUpgrade(t *testing.T) {
 		Force:      true,
 		SkipConfig: true,
 		NoGenerate: true,
-		WithCI:     false,
 	})
 	if err != nil {
 		t.Fatalf("Install (upgrade) failed: %v", err)
@@ -506,58 +497,6 @@ func TestValidateProjectName(t *testing.T) {
 				t.Errorf("unexpected error for input %q: %v", tc.input, err)
 			}
 		})
-	}
-}
-
-// TestCIWorkflowDoesNotContainAWKJob verifies that the generated CI workflow
-// for user projects does not contain the 'awk' job (which is only for awkit repo itself)
-func TestCIWorkflowDoesNotContainAWKJob(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "awkit-ci-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	mockFS := createMinimalMockFS()
-
-	// Install with CI enabled
-	_, err = Install(mockFS, tmpDir, Options{
-		Preset:     PresetGodotGo,
-		NoGenerate: true,
-		WithCI:     true, // This should create ci.yml
-	})
-	if err != nil {
-		t.Fatalf("Install failed: %v", err)
-	}
-
-	// Read the generated CI file
-	ciPath := filepath.Join(tmpDir, ".github", "workflows", "ci.yml")
-	content, err := os.ReadFile(ciPath)
-	if err != nil {
-		t.Fatalf("Failed to read ci.yml: %v", err)
-	}
-
-	ciContent := string(content)
-
-	// Verify 'awk' job does NOT exist
-	if strings.Contains(ciContent, "awk:") {
-		t.Error("CI workflow should NOT contain 'awk:' job for user projects")
-	}
-
-	// Verify it contains expected jobs
-	if !strings.Contains(ciContent, "backend:") {
-		t.Error("CI workflow should contain 'backend:' job")
-	}
-	if !strings.Contains(ciContent, "frontend:") {
-		t.Error("CI workflow should contain 'frontend:' job")
-	}
-
-	// Verify it does NOT contain awkit-specific commands
-	if strings.Contains(ciContent, "evaluate.sh") {
-		t.Error("CI workflow should NOT contain 'evaluate.sh' (awkit-specific)")
-	}
-	if strings.Contains(ciContent, "run_all_tests.sh") {
-		t.Error("CI workflow should NOT contain 'run_all_tests.sh' (awkit-specific)")
 	}
 }
 

@@ -20,10 +20,13 @@ Generates:
   - .ai/rules/_kit/git-workflow.md
   - .claude/settings.local.json
   - .claude/{rules,skills} (symlink or copy)
+  - .github/workflows/: a CI workflow for every repo that has build or
+    test commands. A workflow keeps following the config until you delete
+    the comment at its top; from then on it is yours and is left alone.
 
 Options:
   --dry-run        Show what would be generated without writing files
-  --generate-ci    Generate GitHub Actions workflow(s) from config
+  --generate-ci    Rewrite every CI workflow, the ones you took over included
   --state-root     Override state root (default: git root)
   --help           Show this help
 
@@ -64,11 +67,14 @@ func cmdGenerate(args []string) int {
 		*stateRoot = root
 	}
 
-	// Run pure Go generation
+	ciPolicy := generate.CISync
+	if *generateCI {
+		ciPolicy = generate.CIRewrite
+	}
 	result, err := generate.Generate(generate.Options{
-		StateRoot:  *stateRoot,
-		GenerateCI: *generateCI,
-		DryRun:     *dryRun,
+		StateRoot: *stateRoot,
+		CI:        ciPolicy,
+		DryRun:    *dryRun,
 	})
 
 	if err != nil {
