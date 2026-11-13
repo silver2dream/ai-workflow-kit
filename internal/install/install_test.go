@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/council"
 )
 
 // createMinimalMockFS creates a mock FS with minimal required files
@@ -608,5 +610,59 @@ jobs:
 	}
 	if string(newContent) != cleanCI {
 		t.Error("Content should be unchanged when no migration needed")
+	}
+}
+
+// A new project gets the roster of its preset: who sits at the table when
+// `awkit plan` plans. A roster that is there is the project's own and stays;
+// an upgrade writes none.
+func TestInstall_Roster(t *testing.T) {
+	rosterOf := func(dir string) string {
+		data, err := os.ReadFile(filepath.Join(dir, ".ai", "roster.yaml"))
+		if err != nil {
+			return ""
+		}
+		return string(data)
+	}
+
+	for preset, want := range map[string]string{"generic": "generic", "godot-go": "godot-go"} {
+		dir := t.TempDir()
+		if _, err := Install(createMinimalMockFS(), dir, Options{Preset: preset, NoGenerate: true}); err != nil {
+			t.Fatalf("%s: Install: %v", preset, err)
+		}
+		if got := rosterOf(dir); got == "" || got != string(council.DefaultRoster(want)) {
+			t.Errorf("%s: the project did not get the %s roster (%d bytes)", preset, want, len(got))
+		}
+		if _, err := council.LoadRoster(filepath.Join(dir, ".ai", "roster.yaml")); err != nil {
+			t.Errorf("%s: the roster that was written cannot hold a meeting: %v", preset, err)
+		}
+	}
+	if string(council.DefaultRoster("generic")) == string(council.DefaultRoster("godot-go")) {
+		t.Fatal("the two rosters of the test are the same one")
+	}
+
+	// The project's own roster is kept, also when the config is forced.
+	dir := t.TempDir()
+	const own = "roles:\n  - {id: lead, decides: true, plans: true, stance: leads}\n  - {id: critic, stance: criticises}\n"
+	if err := os.MkdirAll(filepath.Join(dir, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".ai", "roster.yaml"), []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(createMinimalMockFS(), dir, Options{Preset: "godot-go", NoGenerate: true, Force: true, ForceConfig: true}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if got := rosterOf(dir); got != own {
+		t.Errorf("the project's own roster was replaced:\n%s", got)
+	}
+
+	// An upgrade leaves the config alone, and writes no roster either.
+	dir = t.TempDir()
+	if _, err := Install(createMinimalMockFS(), dir, Options{Force: true, SkipConfig: true, NoGenerate: true}); err != nil {
+		t.Fatalf("Install (upgrade): %v", err)
+	}
+	if got := rosterOf(dir); got != "" {
+		t.Errorf("an upgrade wrote a roster:\n%s", got)
 	}
 }

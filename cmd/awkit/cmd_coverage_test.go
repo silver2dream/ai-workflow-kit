@@ -835,7 +835,7 @@ func TestUsage_ListsEveryCommandOnce(t *testing.T) {
 	output := captureStderr(usage)
 	commands := []string{
 		"init", "upgrade", "uninstall", "generate", "validate", "list-presets",
-		"create-task", "run", "status", "next", "doctor", "reset",
+		"plan", "create-task", "run", "status", "next", "doctor", "reset",
 		"events", "feedback-stats", "lessons", "evaluate", "hooks",
 		"analyze-next", "dispatch-worker", "check-result", "run-issue", "prepare-review", "submit-review",
 		"jittest", "stop-workflow", "reconcile", "context-snapshot",

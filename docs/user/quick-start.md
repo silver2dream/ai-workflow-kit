@@ -95,9 +95,20 @@ Key points:
 
 ---
 
-## Step 4: Write a ticket
+## Step 4: Plan the work, or write a ticket
 
 The work is a queue of tickets. A ticket is a GitHub issue with the task label (`ai-task`), and its body says what to do and, in a small block, which repo it is for.
+
+For anything larger than one ticket, let the council plan it:
+
+```bash
+awkit plan "A health endpoint for the API server: build version and database state"
+awkit plan approve <plan>    # after you have read docs/plans/<plan>/tickets.yaml
+```
+
+The roles of `.ai/roster.yaml` argue the brief out, write the documents they own under `docs/`, put their decisions on record in `docs/decisions.md` and propose the tickets. Nothing is created on GitHub until you approve the list. With `--ask` the council puts its questions to you before it argues; without it, it says what it assumed. After the approval, go on with Step 5 and `awkit run`.
+
+For one piece of work, write the ticket yourself.
 
 Write the body to a file, for example `ticket.md`:
 

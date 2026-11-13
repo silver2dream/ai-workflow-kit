@@ -135,6 +135,8 @@ This will also generate `.claude/settings.local.json` with pre-approved permissi
 
 ## 3) Add your first ticket
 
+For anything larger than one ticket, let the council plan it: `awkit plan "<what you want built>"` has the roles of `.ai/roster.yaml` argue the brief out, write the documents under `docs/`, record their decisions and propose the tickets; `awkit plan approve <plan>` creates the issues once you have read the list. See "Plan the work: the council" in the README.
+
 The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block that names its repo and the issues it waits for. Write the body to a file (the template is in `.ai/skills/principal-workflow/tasks/create-task.md`) and create the issue:
 
 ```bash

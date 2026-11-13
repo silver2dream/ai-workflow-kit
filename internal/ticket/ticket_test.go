@@ -181,3 +181,41 @@ func TestValidate_ReleaseForTheRootRepo(t *testing.T) {
 		t.Errorf("a ticket that is not a release was refused: %v", err)
 	}
 }
+
+func TestRender(t *testing.T) {
+	tests := []struct {
+		name string
+		meta Meta
+		want string
+	}{
+		{"the least", Meta{Schema: 1, Repo: "root"}, "```yaml awk-ticket\nschema: 1\nrepo: root\n```\n"},
+		{"everything", Meta{Schema: 1, Repo: "root", DependsOn: []int{12, 15}, Severity: "P0", Release: true,
+			AllowParentChanges: true, AllowScriptChanges: true, AllowSecrets: true},
+			"```yaml awk-ticket\nschema: 1\nrepo: root\ndepends_on: [12, 15]\nseverity: P0\nrelease: true\n" +
+				"allow_parent_changes: true\nallow_script_changes: true\nallow_secrets: true\n```\n"},
+	}
+	for _, tt := range tests {
+		if got := Render(tt.meta); got != tt.want {
+			t.Errorf("%s: Render =\n%s\nwant\n%s", tt.name, got, tt.want)
+		}
+	}
+}
+
+// Whatever Render writes, Parse reads back as the same thing, also for repo
+// names YAML would otherwise take for something else.
+func TestRender_RoundTrips(t *testing.T) {
+	repos := []string{"root", "backend", "game-client", "services/api", "api.v2", "true", "no", "null", "123", "1.5", "~", "a:b", "#web", "名稱"}
+	for _, repo := range repos {
+		meta := Meta{Schema: 1, Repo: repo, DependsOn: []int{7, 2, 40}, Severity: "P2", AllowSecrets: true}
+
+		got, found, err := Parse("intro\n\n" + Render(meta) + "\noutro\n")
+
+		if err != nil || !found {
+			t.Errorf("repo %q: found=%v err=%v\n%s", repo, found, err, Render(meta))
+			continue
+		}
+		if !reflect.DeepEqual(got, meta) {
+			t.Errorf("repo %q: read back %+v, wrote %+v", repo, got, meta)
+		}
+	}
+}

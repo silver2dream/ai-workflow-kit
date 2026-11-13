@@ -145,6 +145,17 @@ awkit validate
 
 ## 第一個工作流程
 
+較大的需求可以先交給議會規劃，由它產出文件與票券：
+
+```bash
+awkit plan "幫 API server 加上健康檢查端點，回報 build 版本與資料庫狀態"
+awkit plan approve <plan>    # 讀過 docs/plans/<plan>/tickets.yaml 之後，建立 Issue
+```
+
+`.ai/roster.yaml` 裡的角色會辯論這個需求，寫出 `docs/` 下各自擁有的文件，把決策記入 `docs/decisions.md`，並提出票券；你核可之前，GitHub 上不會有任何東西。加上 `--ask`，議會會在辯論前先把問題拿來問你；不加的話，它會寫明自己做了哪些假設。核可之後，直接跳到「3. 啟動前檢查」。
+
+只有一件事要做時，照下面的步驟自己寫一張票。
+
 ### 1. 寫一張票券
 
 工作就是一串票券：帶有 task 標籤（`ai-task`）的 GitHub Issue。內文說明要做什麼，並用一個小區塊寫明這張票屬於哪個 repo。
@@ -259,6 +270,9 @@ brew install bash
 | `awkit check-update` | 檢查 CLI 更新 |
 | `awkit version` | 顯示版本 |
 | `awkit help <command>` | 顯示命令說明 |
+| `awkit plan "<需求>"` | 讓議會規劃：產出文件、決策與提案的票券（`--ask` 會先問你問題） |
+| `awkit plan approve <plan>` | 核可工作清單，建立 Issue |
+| `awkit create-task` | 從寫好的內文建立一張票券 |
 | `awkit run` | 啟動工作流程 |
 | `awkit run --dry-run` | 預覽工作流程 |
 | `awkit validate` | 驗證配置 |

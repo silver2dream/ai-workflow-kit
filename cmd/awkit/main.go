@@ -107,6 +107,8 @@ func run() int {
 		return cmdUninstall(os.Args[2:])
 	case "upgrade":
 		return cmdUpgrade(os.Args[2:])
+	case "plan":
+		return cmdPlan(os.Args[2:])
 	case "run", "kickoff":
 		// kickoff is the former name of run.
 		return cmdRun(os.Args[2:])
@@ -186,6 +188,8 @@ Set up a project:
   list-presets  Show available project presets
 
 Run the workflow:
+  plan          Plan work with the council: a brief becomes documents,
+                decisions and a list of tickets for you to approve
   create-task   Create a ticket: a GitHub issue the workflow picks up
   run           Start the workflow: work through the open tickets
                 (--issue N for one ticket only)
@@ -222,6 +226,7 @@ The CLI itself:
 Examples:
   awkit init
   awkit init --preset godot-go
+  awkit plan "a daily login reward that grows over seven days"
   awkit create-task --title "[feat] add login" --body-file ticket.md
   awkit run
   awkit run --issue 42
@@ -266,6 +271,8 @@ func cmdHelp(command string) int {
 		usageUpgrade()
 	case "uninstall":
 		usageUninstall()
+	case "plan":
+		usagePlan()
 	case "run", "kickoff":
 		usageRun()
 	case "validate":
@@ -693,6 +700,8 @@ func cmdInit(args []string) int {
 	fmt.Printf("  1. %s\n", cyan("cd "+displayTarget))
 	fmt.Printf("  2. %s\n", cyan("Edit .ai/config/workflow.yaml"))
 	fmt.Printf("  3. %s\n", cyan("awkit generate"))
+	fmt.Printf("  4. %s   the council (.ai/roster.yaml) writes the documents and proposes the tickets\n", cyan(`awkit plan "<what you want built>"`))
+	fmt.Printf("  5. %s   work through the tickets\n", cyan("awkit run"))
 	fmt.Println("")
 
 	warnUpdateAvailable()
@@ -1261,7 +1270,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall run validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall plan run validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1276,6 +1285,11 @@ _awkit() {
         upgrade)
             local opts="--scaffold --preset --force-config --force --dry-run --no-generate --no-commit --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -d -- ${cur}) )
+            return 0
+            ;;
+        plan)
+            local opts="approve --ask --brief-file --resume --roster --help"
+            COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) $(compgen -f -- ${cur}) )
             return 0
             ;;
         run|kickoff)
@@ -1314,6 +1328,7 @@ _awkit() {
         'install:Alias for init'
         'upgrade:Upgrade AWK kit files (preserves config by default)'
         'uninstall:Remove AWK from a project'
+        'plan:Plan work with the council: documents, decisions and tickets to approve'
         'run:Start the workflow: work through the open tickets'
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
@@ -1407,6 +1422,7 @@ complete -c awkit -n __fish_use_subcommand -a init -d 'Initialize AWK in a proje
 complete -c awkit -n __fish_use_subcommand -a install -d 'Alias for init'
 complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files (preserves config by default)'
 complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a project'
+complete -c awkit -n __fish_use_subcommand -a plan -d 'Plan work with the council: documents, decisions and tickets to approve'
 complete -c awkit -n __fish_use_subcommand -a run -d 'Start the workflow: work through the open tickets'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'

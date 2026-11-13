@@ -62,6 +62,7 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 ## ✨ 特色
 
 ### 核心工作流
+- **用辯論來規劃**：`awkit plan` 讓名冊裡的角色把一句需求吵清楚，寫出各自擁有的文件、記下決策與不同意見，並提出票券。你核可工作清單之前，不會建立任何東西
 - **Issue 就是工作**：票券是帶有 task 標籤的 GitHub Issue，內文用一個小小的 `yaml awk-ticket` 區塊寫明它屬於哪個 repo、要等哪些票先完成。沒有 spec 檔，也沒有要同步的任務清單
 - **依編號、依依賴**：票券依編號由小到大處理，依賴的票落地後才開始；`awkit run --issue N` 只做一張票就停
 - **GitHub 作為狀態機**：Issues/PR + labels 追蹤進度
@@ -136,9 +137,11 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 .
 ├── .ai/                         # kit 本體
 │   ├── config/workflow.yaml     # 主設定檔
+│   ├── roster.yaml              # `awkit plan` 規劃時坐在桌邊的角色
 │   ├── rules/                   # git 工作流規則 + 可選的規則包
 │   ├── skills/                  # Principal 依循的流程：主迴圈、票券格式
 │   └── state/、results/         # 執行期狀態（gitignored）
+├── docs/                        # 議會的文件、decisions.md 與 plans/
 ├── .claude/                     # 給 Claude Code 的 agents、rules、skills（產生的）
 ├── CLAUDE.md、AGENTS.md         # 給 Principal 與 Worker 的指引（產生的）
 └── .github/workflows/           # CI：每個 repo 一份 workflow，由設定檔產生
@@ -229,9 +232,42 @@ awkit init --preset godot-go --force
 awkit generate
 ```
 
-### 2) 建立票券並執行工作流
+### 2) 規劃工作：議會
 
-工作就是一串票券：帶有 task 標籤的 GitHub Issue，內文各有一個 `yaml awk-ticket` 區塊。
+```bash
+awkit plan "每日登入獎勵：七天一輪，獎勵逐日變好，漏一天就重來"
+```
+
+`.ai/roster.yaml` 裡的角色會把這句需求吵清楚：每個角色先表明立場，接著互相提出異議，最要緊的幾個異議由當事的兩個角色來回對辯，不選邊的主持人整理目前的狀況，仍有爭議的由決策角色裁決。之後每個角色寫出自己擁有的文件，規劃角色擬出票券，其他角色可以對這份清單提一次異議。
+
+發言順序寫在程式裡，不是寫在提示詞裡：awkit 逐一詢問各角色、計算回合數與模型呼叫次數，而且只有 awkit 會寫檔，所以一個角色寫不到別的角色擁有的文件。
+
+| 一次規劃留下的東西 | |
+|---|---|
+| `docs/plans/<plan>/minutes.md` | 誰說了什麼：立場、異議、每個爭點與它的結果 |
+| `docs/decisions.md` | 決策（每一項有固定的編號，例如 `D7`）、誰持不同意見，以及這次規劃做的假設（`A3`）；只增不改 |
+| `docs/<area>/*.md` | 各份文件，每份只由擁有它的那個角色撰寫 |
+| `docs/plans/<plan>/tickets.yaml` | 提案的票券，依可施工的順序排列 |
+
+這時 GitHub 上還沒有任何東西。讀過工作清單、改掉你想改的地方，再執行：
+
+```bash
+awkit plan approve <plan>    # 建立 Issue，每張都排在它依賴的票之後
+```
+
+**只有你能回答的問題。** 規劃不會停下來等人：角色需要只有你才知道的答案時，決策角色會寫明這次規劃的假設，假設有自己的編號並記入決策日誌，規劃結束時會把它們列出來。想改成先被問，就加上 `--ask`：會議開始約一分鐘後，議會把問題（最多七個）拿來問你，再依你的回答辯論。你跳過的問題，交給議會自行假設。
+
+```bash
+awkit plan --ask "每日登入獎勵：七天一輪，獎勵逐日變好，漏一天就重來"
+```
+
+**下一次規劃會接著這一次。** 每個角色都會讀到已記錄的決策，以及自己那幾份文件目前的內容；新需求改到的地方才改，沒碰到的文件原樣保留。規劃角色會看到先前規劃開過的票，所以同一件事不會開兩次。新的票可以等一張已存在的 Issue（`depends_on: ["#12"]`），也可以等先前規劃裡還沒上 GitHub 的票（`depends_on: ["<plan>/<key>"]`）；這時 `awkit plan approve` 會要你先核可那個規劃。
+
+名冊可以自由修改：有哪些角色、各自的立場、各自擁有的文件、由哪個模型扮演、一次規劃最多幾次模型呼叫。`awkit init` 會寫出符合 preset 的名冊（`godot-go` 是一個小型遊戲工作室）。規劃中途停下時，用 `awkit plan --resume <plan>` 接著做；已回答的內容會保留，你手動改過的工作清單也維持原樣。
+
+### 3) 票券與執行
+
+工作就是一串票券：帶有 task 標籤的 GitHub Issue，內文各有一個 `yaml awk-ticket` 區塊。`awkit plan approve` 會從議會的工作清單建立它們；你也可以自己寫：
 
 ````markdown
 ## Summary
