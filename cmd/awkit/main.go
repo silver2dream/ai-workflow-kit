@@ -42,25 +42,22 @@ func init() {
 }
 
 var presets = []PresetInfo{
-	// Single-repo presets
-	{Name: "generic", Description: "Generic project (alias for node)", Category: "single-repo"},
-	{Name: "go", Description: "Go single-repo project", Category: "single-repo"},
-	{Name: "python", Description: "Python single-repo project", Category: "single-repo"},
-	{Name: "rust", Description: "Rust single-repo project", Category: "single-repo"},
-	{Name: "dotnet", Description: ".NET single-repo project", Category: "single-repo"},
-	{Name: "node", Description: "Node.js/TypeScript single-repo project", Category: "single-repo"},
-	// Monorepo presets
-	{Name: "react-go", Description: "React frontend + Go backend", Category: "monorepo"},
-	{Name: "react-python", Description: "React frontend + Python backend", Category: "monorepo"},
-	{Name: "unity-go", Description: "Unity frontend + Go backend", Category: "monorepo"},
-	{Name: "godot-go", Description: "Godot frontend + Go backend", Category: "monorepo"},
-	{Name: "unreal-go", Description: "Unreal frontend + Go backend", Category: "monorepo"},
+	{Name: install.PresetGeneric, Description: "Any single repository; you set the build and test commands", Category: "single-repo"},
+	{Name: install.PresetGodotGo, Description: "Go backend + Godot C# frontend, with a project skeleton (--scaffold)", Category: "monorepo"},
 }
 
 type PresetInfo struct {
 	Name        string
 	Description string
 	Category    string // "single-repo" | "monorepo"
+}
+
+// noScaffoldForPreset reports that --scaffold was asked of a preset that has
+// no project skeleton, and returns the exit code for a usage error.
+func noScaffoldForPreset(preset string) int {
+	errorf("The %s preset has no project skeleton, so --scaffold has nothing to write.\n", preset)
+	fmt.Fprintf(os.Stderr, "Presets with a skeleton: %s\n", strings.Join(install.ScaffoldPresets(), ", "))
+	return 2
 }
 
 func availablePresetNames() string {
@@ -219,7 +216,7 @@ Commands:
 
 Examples:
   awkit init
-  awkit init --preset react-go
+  awkit init --preset godot-go
   awkit kickoff
   awkit kickoff --dry-run
   awkit validate
@@ -351,10 +348,10 @@ Options:
 
 Examples:
   awkit init
-  awkit init --preset react-go
-  awkit init --preset go --scaffold
+  awkit init --preset godot-go
+  awkit init --preset godot-go --scaffold
   awkit init /path/to/project --force
-  awkit init --preset react-go --force-config  # Apply preset to existing project
+  awkit init --preset godot-go --force-config  # Apply preset to existing project
   awkit init --dry-run
 
 Run 'awkit list-presets' to see available presets.
@@ -388,8 +385,8 @@ Examples:
   awkit upgrade
   awkit upgrade /path/to/project
   awkit upgrade --dry-run
-  awkit upgrade --scaffold --preset go
-  awkit upgrade --scaffold --preset react-go --force
+  awkit upgrade --scaffold --preset godot-go
+  awkit upgrade --scaffold --preset godot-go --force
   awkit upgrade --no-commit  # Manual commit control
 `)
 }
@@ -521,6 +518,9 @@ func cmdInit(args []string) int {
 		fmt.Fprintf(os.Stderr, "\nRun 'awkit list-presets' for details.\n")
 		return 2
 	}
+	if *scaffold && !install.HasScaffold(*preset) {
+		return noScaffoldForPreset(*preset)
+	}
 
 	// Resolve target for display
 	displayTarget := targetDir
@@ -538,9 +538,6 @@ func cmdInit(args []string) int {
 	}
 	fmt.Printf("  Target:  %s\n", cyan(displayTarget))
 	fmt.Printf("  Preset:  %s\n", cyan(*preset))
-	if *scaffold && *preset == "generic" {
-		fmt.Printf("  Using default preset: %s\n", cyan("generic (node)"))
-	}
 	if *force {
 		fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
 	} else if *forceConfig {
@@ -768,6 +765,9 @@ func cmdUpgrade(args []string) int {
 			fmt.Fprintf(os.Stderr, "Available presets: %s\n", availablePresetNames())
 			fmt.Fprintf(os.Stderr, "\nRun 'awkit list-presets' for details.\n")
 			return 2
+		}
+		if *scaffold && !install.HasScaffold(*preset) {
+			return noScaffoldForPreset(*preset)
 		}
 	}
 
@@ -1266,7 +1266,7 @@ _awkit() {
             return 0
             ;;
         --preset)
-            COMPREPLY=( $(compgen -W "generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "generic godot-go" -- ${cur}) )
             return 0
             ;;
         completion)
@@ -1324,7 +1324,7 @@ _awkit() {
     )
 
     local -a presets
-    presets=(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)
+    presets=(generic godot-go)
 
     _arguments -C \
         '1: :->command' \
@@ -1338,7 +1338,7 @@ _awkit() {
             case $words[2] in
                 init|install)
                     _arguments \
-                        '--preset[Project preset]:preset:(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)' \
+                        '--preset[Project preset]:preset:(generic godot-go)' \
                         '--scaffold[Create project structure]' \
                         '--force[Overwrite all existing files]' \
                         '--force-config[Overwrite only workflow.yaml]' \
@@ -1350,7 +1350,7 @@ _awkit() {
                 upgrade)
                     _arguments \
                         '--scaffold[Supplement scaffold files]' \
-                        '--preset[Preset for scaffold]:preset:(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)' \
+                        '--preset[Preset for scaffold]:preset:(generic godot-go)' \
                         '--force-config[Overwrite only workflow.yaml]' \
                         '--force[Overwrite scaffold files]' \
                         '--dry-run[Show what would be done]' \
@@ -1418,7 +1418,7 @@ complete -c awkit -n __fish_use_subcommand -a version -d 'Show version'
 complete -c awkit -n __fish_use_subcommand -a help -d 'Show help'
 
 # init/install options
-complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic godot-go'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l scaffold -d 'Create project structure'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Overwrite all existing files'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only workflow.yaml'
@@ -1428,7 +1428,7 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name 
 
 # upgrade options
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l scaffold -d 'Supplement scaffold files'
-complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset for scaffold' -xa 'generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset for scaffold' -xa 'generic godot-go'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force -d 'Overwrite scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'

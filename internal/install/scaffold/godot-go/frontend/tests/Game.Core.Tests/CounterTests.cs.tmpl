@@ -1,0 +1,16 @@
+using Game.Core;
+using Xunit;
+
+namespace Game.Core.Tests;
+
+public sealed class CounterTests
+{
+    [Fact]
+    public void Increment_AddsOne()
+    {
+        var counter = new Counter();
+
+        Assert.Equal(1, counter.Increment());
+        Assert.Equal(1, counter.Value);
+    }
+}
