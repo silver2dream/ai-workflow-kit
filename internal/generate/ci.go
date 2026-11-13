@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	awkrepo "github.com/silver2dream/ai-workflow-kit/internal/repo"
 )
 
 // CIPolicy says what a generate run does about the CI workflows.
@@ -44,15 +46,6 @@ const (
 // ciDotnetSDK is the SDK a C# job installs: the one the godot-go skeleton
 // targets. A project on another SDK takes its workflow over.
 const ciDotnetSDK = "8.0.x"
-
-// ciToolchain names the toolchain a CI job sets up for a repo language. A
-// language without an entry gets a job that only runs the repo's own commands.
-var ciToolchain = map[string]string{
-	"go": "go", "golang": "go",
-	// A Godot .NET project builds and tests with the .NET SDK alone: the engine
-	// SDK is a NuGet package.
-	"csharp": "dotnet", "c#": "dotnet", "dotnet": "dotnet", "godot": "dotnet",
-}
 
 // ciWorkflowFile is a workflow as the config says it should be.
 type ciWorkflowFile struct {
@@ -250,8 +243,10 @@ func generateCIContent(repo RepoConfig, git GitConfig) string {
 	sb.WriteString("    steps:\n")
 	fmt.Fprintf(&sb, "      - uses: %s\n", actionCheckout)
 
-	switch ciToolchain[strings.ToLower(strings.TrimSpace(repo.Language))] {
-	case "go":
+	// A toolchain the job has no setup step for (and a language the kit does
+	// not know) gets a job that only runs the repo's own commands.
+	switch awkrepo.ToolchainOf(repo.Language) {
+	case awkrepo.ToolchainGo:
 		// The Go version is the module's own. The cache key takes go.mod as
 		// well, because a module without dependencies has no go.sum.
 		fmt.Fprintf(&sb, "      - uses: %s\n", actionSetupGo)
@@ -260,7 +255,7 @@ func generateCIContent(repo RepoConfig, git GitConfig) string {
 		sb.WriteString("          cache-dependency-path: |\n")
 		fmt.Fprintf(&sb, "            %s\n", path.Join(dir, "go.mod"))
 		fmt.Fprintf(&sb, "            %s\n", path.Join(dir, "go.sum"))
-	case "dotnet":
+	case awkrepo.ToolchainDotnet:
 		fmt.Fprintf(&sb, "      - uses: %s\n", actionSetupDotnet)
 		sb.WriteString("        with:\n")
 		fmt.Fprintf(&sb, "          dotnet-version: %s\n", strconv.Quote(ciDotnetSDK))

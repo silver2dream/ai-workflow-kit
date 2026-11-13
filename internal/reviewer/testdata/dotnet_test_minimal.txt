@@ -1,0 +1,30 @@
+Test run for C:\work\frontend\tests\Game.Core.Tests\bin\Debug\net8.0\Game.Core.Tests.dll (.NETCoreApp,Version=v8.0)
+Microsoft (R) Test Execution Command Line Tool Version 17.10.0 (x64)
+Copyright (c) Microsoft Corporation.  All rights reserved.
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.23]     Game.Core.Tests.ProbeTests.Broken_Fails [FAIL]
+  Failed Game.Core.Tests.ProbeTests.Broken_Fails [2 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   1
+  Stack Trace:
+     at Game.Core.Tests.ProbeTests.Broken_Fails() in C:\work\frontend\tests\Game.Core.Tests\ProbeTests.cs:line 11
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.24]     Game.Core.Tests.ProbeTests.Theory_OneCaseFails(value: 5, expected: True) [FAIL]
+[xUnit.net 00:00:00.24]     Game.Core.Tests.ProbeTests.Skipped_Test [SKIP]
+  Failed Game.Core.Tests.ProbeTests.Theory_OneCaseFails(value: 5, expected: True) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Game.Core.Tests.ProbeTests.Theory_OneCaseFails(Int32 value, Boolean expected) in C:\work\frontend\tests\Game.Core.Tests\ProbeTests.cs:line 41
+   at InvokeStub_ProbeTests.Theory_OneCaseFails(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Skipped Game.Core.Tests.ProbeTests.Skipped_Test [1 ms]
+
+Failed!  - Failed:     2, Passed:     8, Skipped:     1, Total:    11, Duration: 43 ms - Game.Core.Tests.dll (net8.0)

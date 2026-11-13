@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	repocfg "github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
@@ -62,8 +63,8 @@ type workflowSpecFiles struct {
 }
 
 type workflowWorker struct {
-	Backend    string                 `yaml:"backend"`
-	ClaudeCode workflowClaudeCode     `yaml:"claude_code"`
+	Backend    string             `yaml:"backend"`
+	ClaudeCode workflowClaudeCode `yaml:"claude_code"`
 	// KnowledgeGraph controls injection of a ticket-relevant slice of
 	// .understand-anything/knowledge-graph.json into the Worker prompt.
 	// "auto" (default, inject when the file exists) | "off".
@@ -121,10 +122,10 @@ type workflowEscalation struct {
 }
 
 type workflowTimeouts struct {
-	GitSeconds      int `yaml:"git_seconds"`       // Git operations timeout (default: 120)
-	GHSeconds       int `yaml:"gh_seconds"`        // GitHub CLI operations timeout (default: 60)
-	CodexMinutes    int `yaml:"codex_minutes"`     // Codex execution timeout (default: 30)
-	GHRetryCount    int `yaml:"gh_retry_count"`    // Max retry attempts for gh CLI calls (default: 3)
+	GitSeconds       int `yaml:"git_seconds"`         // Git operations timeout (default: 120)
+	GHSeconds        int `yaml:"gh_seconds"`          // GitHub CLI operations timeout (default: 60)
+	CodexMinutes     int `yaml:"codex_minutes"`       // Codex execution timeout (default: 30)
+	GHRetryCount     int `yaml:"gh_retry_count"`      // Max retry attempts for gh CLI calls (default: 3)
 	GHRetryBaseDelay int `yaml:"gh_retry_base_delay"` // Base delay in seconds for retry backoff (default: 2)
 }
 
@@ -1212,10 +1213,8 @@ func getSetupCommand(cfg *workflowConfig, repoName string) string {
 
 // inferSetupCommand returns a dependency install command based on language and package manager.
 func inferSetupCommand(language, packageManager string) string {
-	switch strings.ToLower(language) {
-	case "node", "nodejs", "typescript", "javascript",
-		"react", "vue", "angular", "nextjs", "nuxt", "svelte",
-		"express", "nestjs":
+	switch repocfg.ToolchainOf(language) {
+	case repocfg.ToolchainNode:
 		switch strings.ToLower(packageManager) {
 		case "yarn":
 			return "yarn install --frozen-lockfile 2>/dev/null || yarn install"
@@ -1224,12 +1223,13 @@ func inferSetupCommand(language, packageManager string) string {
 		default:
 			return "npm ci 2>/dev/null || npm install"
 		}
-	case "python", "django", "flask", "fastapi":
+	case repocfg.ToolchainPython:
 		return "pip install -r requirements.txt 2>/dev/null || true"
-	case "dotnet", "csharp", "aspnet", "blazor":
+	case repocfg.ToolchainDotnet:
 		return "dotnet restore"
 	default:
-		// go, rust, unity, unreal, godot, generic — no setup needed
+		// Go fetches its modules as it builds; any other language says what
+		// it needs in verify.setup.
 		return ""
 	}
 }
