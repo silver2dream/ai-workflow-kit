@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -530,6 +531,88 @@ func TestCmdPlan_WhatAPlanWroteAndWhatWaits(t *testing.T) {
 	listed = captureStderr(func() { code = cmdPlan([]string{"approve", "--state-root", dir}) })
 	if code != 2 || strings.Contains(listed, "Plans with tickets") {
 		t.Errorf("approve without a plan = %d, with nothing left to approve:\n%s", code, listed)
+	}
+}
+
+// A Worker reads the project from the integration branch: an approval says so
+// when what the council wrote under docs/ is not committed. A dry run creates
+// nothing and has nothing to warn about.
+func TestCmdPlanApprove_WarnsAboutDocsThatAreNotCommitted(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	origModel, origCreate := planModel, planCreate
+	t.Cleanup(func() { planModel, planCreate = origModel, origCreate })
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	writePlanConfig(t, dir, "repos:\n  - {name: backend, path: backend/, language: go}\n")
+	planModel = &scriptedCouncil{}
+	planCreate = func(ctx context.Context, stateRoot, title, bodyFile string) (int, error) { return 1, nil }
+
+	// Nothing under docs/: nothing to say.
+	if got := uncommittedDocs(dir); got != "" {
+		t.Errorf("a project without docs has uncommitted docs: %q", got)
+	}
+	// A folder that is not a repository: nothing to say either.
+	if got := uncommittedDocs(t.TempDir()); got != "" {
+		t.Errorf("outside a repository: %q", got)
+	}
+
+	_ = captureStdout(t, func() {
+		if code := cmdPlan([]string{"Add a health endpoint.", "--state-root", dir}); code != 0 {
+			t.Errorf("cmdPlan = %d", code)
+		}
+	})
+	plans, _ := filepath.Glob(filepath.Join(dir, "docs", "plans", "*"))
+	if len(plans) != 1 {
+		t.Fatalf("%d plans, want one", len(plans))
+	}
+	id := filepath.Base(plans[0])
+
+	approve := func(args ...string) (stderr string) {
+		t.Helper()
+		_ = captureStdout(t, func() {
+			stderr = captureStderr(func() {
+				if code := cmdPlan(append([]string{"approve", id, "--state-root", dir}, args...)); code != 0 {
+					t.Errorf("approve %v = %d", args, code)
+				}
+			})
+		})
+		return stderr
+	}
+	if warned := approve("--dry-run"); strings.Contains(warned, "not committed") {
+		t.Errorf("a dry run warns about docs that are not committed:\n%s", warned)
+	}
+	warned := approve()
+	for _, want := range []string{"docs/ has changes that are not committed. A Worker reads the project from the integration branch (develop) and will not see them:", "?? docs/"} {
+		if !strings.Contains(warned, want) {
+			t.Errorf("the approval should warn %q:\n%s", want, warned)
+		}
+	}
+
+	// Committed: nothing to warn about. Then many changed files: the first
+	// eight are named, the rest counted.
+	git("add", "docs")
+	git("commit", "-q", "-m", "docs")
+	if got := uncommittedDocs(dir); got != "" {
+		t.Errorf("committed docs are said to be uncommitted: %q", got)
+	}
+	for i := 0; i < 11; i++ {
+		file := filepath.Join(dir, "docs", fmt.Sprintf("note-%02d.md", i))
+		if err := os.WriteFile(file, []byte("a note\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lines := strings.Split(uncommittedDocs(dir), "\n")
+	if len(lines) != 9 || !strings.Contains(lines[0], "docs/note-00.md") || lines[8] != "  ... and 3 more" {
+		t.Errorf("many uncommitted docs are listed as %q, want eight and a count", lines)
 	}
 }
 
