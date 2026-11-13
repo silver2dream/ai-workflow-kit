@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -294,6 +295,7 @@ func TestUpgradeForceConfigOverwritesWorkflowYAML(t *testing.T) {
 		t.Fatalf("failed to write existing workflow.yaml: %v", err)
 	}
 
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
 	exitCode := cmdUpgrade([]string{tmpDir, "--no-commit", "--no-generate", "--force-config", "--preset", "generic"})
 	if exitCode != 0 {
 		t.Fatalf("cmdUpgrade() exit code = %d, want 0", exitCode)
@@ -305,6 +307,250 @@ func TestUpgradeForceConfigOverwritesWorkflowYAML(t *testing.T) {
 	}
 	if string(updated) == original {
 		t.Fatal("workflow.yaml was not overwritten with upgrade --force-config")
+	}
+}
+
+// awkit init writes a CI workflow for every repo of the preset. awkit upgrade
+// leaves the project's workflows alone: it adds none and rewrites none.
+func TestInitWritesCIWorkflows_UpgradeLeavesThemAlone(t *testing.T) {
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+	workflows := filepath.Join(tmpDir, ".github", "workflows")
+	backendCI := filepath.Join(workflows, "ci-backend.yml")
+	frontendCI := filepath.Join(workflows, "ci-frontend.yml")
+
+	if exitCode := cmdInit([]string{"--preset", "godot-go", tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	for _, path := range []string{backendCI, frontendCI} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("init should write %s: %v", filepath.Base(path), err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "CLAUDE.md")); err != nil {
+		t.Errorf("init should also write the other generated files: %v", err)
+	}
+
+	// The project edits one workflow and drops the other.
+	const own = "name: mine\n"
+	if err := os.WriteFile(backendCI, []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(frontendCI); err != nil {
+		t.Fatal(err)
+	}
+
+	if exitCode := cmdUpgrade([]string{tmpDir, "--no-commit"}); exitCode != 0 {
+		t.Fatalf("cmdUpgrade() = %d, want 0", exitCode)
+	}
+	if got, _ := os.ReadFile(backendCI); string(got) != own {
+		t.Errorf("upgrade rewrote the project's workflow:\n%s", got)
+	}
+	if _, err := os.Stat(frontendCI); !os.IsNotExist(err) {
+		t.Error("upgrade brought back a workflow the project removed")
+	}
+
+	// Running init again restores the missing one and keeps the edited one.
+	if exitCode := cmdInit([]string{"--preset", "godot-go", tmpDir}); exitCode != 0 {
+		t.Fatalf("second cmdInit() = %d, want 0", exitCode)
+	}
+	if got, _ := os.ReadFile(backendCI); string(got) != own {
+		t.Errorf("init without --force rewrote the project's workflow:\n%s", got)
+	}
+	if _, err := os.Stat(frontendCI); err != nil {
+		t.Errorf("init should write the workflow that is missing: %v", err)
+	}
+}
+
+// The generic preset names no build or test command, so init writes no CI
+// workflow: there is nothing it could run.
+func TestInitGenericWritesNoCIWorkflow(t *testing.T) {
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+
+	if exitCode := cmdInit([]string{tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(tmpDir, ".github", "workflows")); len(entries) != 0 {
+		t.Errorf("init wrote %d workflow files for the generic preset", len(entries))
+	}
+}
+
+// An upgrade brings the workflows awkit generated in step with the new kit,
+// and its commit takes them along: the project is not left with changes it
+// never made.
+func TestUpgradeRefreshesAwkitsWorkflowsAndCommitsThem(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return string(out)
+	}
+	git("init")
+	git("config", "user.email", "test@example.com")
+	git("config", "user.name", "Test User")
+	git("config", "commit.gpgsign", "false")
+
+	if exitCode := cmdInit([]string{"--preset", "godot-go", tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	backendCI := filepath.Join(tmpDir, ".github", "workflows", "ci-backend.yml")
+	frontendCI := filepath.Join(tmpDir, ".github", "workflows", "ci-frontend.yml")
+	current, err := os.ReadFile(backendCI)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The backend workflow as an older kit wrote it (still awkit's: the header
+	// is there). The frontend workflow is the project's own.
+	older := strings.Replace(string(current), "go test ./...", "go test -short ./...", 1)
+	if older == string(current) {
+		t.Fatal("could not make the workflow look out of date")
+	}
+	if err := os.WriteFile(backendCI, []byte(older), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const own = "name: mine\n"
+	if err := os.WriteFile(frontendCI, []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-m", "project as an older kit left it")
+
+	if exitCode := cmdUpgrade([]string{tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdUpgrade() = %d, want 0", exitCode)
+	}
+
+	if got, _ := os.ReadFile(backendCI); string(got) != string(current) {
+		t.Errorf("awkit's workflow was not refreshed:\n%s", got)
+	}
+	if got, _ := os.ReadFile(frontendCI); string(got) != own {
+		t.Errorf("the project's own workflow was changed:\n%s", got)
+	}
+	if status := git("status", "--porcelain"); strings.TrimSpace(status) != "" {
+		t.Errorf("the upgrade left uncommitted changes:\n%s", status)
+	}
+	if subject := strings.TrimSpace(git("log", "-1", "--format=%s")); subject != "[chore] upgrade awkit" {
+		t.Errorf("last commit = %q, want the upgrade commit", subject)
+	}
+	changed := git("show", "--name-only", "--format=", "HEAD")
+	if !strings.Contains(changed, ".github/workflows/ci-backend.yml") {
+		t.Errorf("the upgrade commit should carry the refreshed workflow, it has:\n%s", changed)
+	}
+	if strings.Contains(changed, "ci-frontend.yml") {
+		t.Errorf("the upgrade commit touched the project's own workflow:\n%s", changed)
+	}
+}
+
+// awkit generate keeps the CI workflows in step with the config: it writes
+// the one that is missing, follows the config in the ones awkit owns, and
+// leaves the project's own alone unless --generate-ci.
+func TestGenerateKeepsCIWorkflowsInStepWithTheConfig(t *testing.T) {
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+	ci := filepath.Join(tmpDir, ".github", "workflows", "ci.yml")
+	configPath := filepath.Join(tmpDir, ".ai", "config", "workflow.yaml")
+	setTestCommand := func(from, to string) {
+		t.Helper()
+		config, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated := strings.Replace(string(config), "test: "+from, "test: "+to, 1)
+		if updated == string(config) {
+			t.Fatalf("the config has no test command %s to replace:\n%s", from, config)
+		}
+		if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	generate := func(args ...string) {
+		t.Helper()
+		if exitCode := cmdGenerate(append([]string{"--state-root", tmpDir}, args...)); exitCode != 0 {
+			t.Fatalf("cmdGenerate(%v) = %d, want 0", args, exitCode)
+		}
+	}
+	workflow := func() string {
+		t.Helper()
+		data, err := os.ReadFile(ci)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	// The generic preset names no commands: no workflow yet.
+	if exitCode := cmdInit([]string{tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	if _, err := os.Stat(ci); !os.IsNotExist(err) {
+		t.Fatal("a workflow exists before the project named any command")
+	}
+
+	// The project names its test command: generate writes the workflow.
+	setTestCommand(`""`, `"make test"`)
+	generate()
+	if got := workflow(); !strings.Contains(got, "make test") {
+		t.Fatalf("the workflow should run the test command:\n%s", got)
+	}
+
+	// The command changes: the workflow follows.
+	setTestCommand(`"make test"`, `"make check"`)
+	generate()
+	if got := workflow(); !strings.Contains(got, "make check") || strings.Contains(got, "make test") {
+		t.Errorf("the workflow did not follow the config:\n%s", got)
+	}
+
+	// A dry run changes nothing.
+	setTestCommand(`"make check"`, `"make verify"`)
+	generate("--dry-run")
+	if got := workflow(); !strings.Contains(got, "make check") {
+		t.Errorf("a dry run rewrote the workflow:\n%s", got)
+	}
+
+	// The project takes the workflow over: generate leaves it alone,
+	// --generate-ci writes it from the config again.
+	const own = "name: mine\n"
+	if err := os.WriteFile(ci, []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	generate()
+	if got := workflow(); got != own {
+		t.Errorf("generate overwrote the project's own workflow:\n%s", got)
+	}
+	generate("--generate-ci")
+	if got := workflow(); !strings.Contains(got, "make verify") {
+		t.Errorf("--generate-ci should write the workflow from the config:\n%s", got)
+	}
+}
+
+func TestProjectWorkflowPaths(t *testing.T) {
+	root := filepath.Join("work", "proj")
+	workflows := filepath.Join(root, ".github", "workflows")
+	written := []string{
+		filepath.Join(workflows, "ci-backend.yml"),
+		// A submodule's workflow is in another repository.
+		filepath.Join(root, "engine", ".github", "workflows", "ci.yml"),
+	}
+	removed := []string{filepath.Join(workflows, "ci-frontend.yml")}
+
+	got := projectWorkflowPaths(root, written, removed)
+
+	want := []string{".github/workflows/ci-backend.yml", ".github/workflows/ci-frontend.yml"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("projectWorkflowPaths = %v, want %v", got, want)
+	}
+	if got := projectWorkflowPaths(root); len(got) != 0 {
+		t.Errorf("projectWorkflowPaths with nothing written = %v", got)
 	}
 }
 

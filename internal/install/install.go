@@ -23,12 +23,14 @@ type Options struct {
 	ProjectName string
 	Force       bool
 	ForceConfig bool // Only overwrite workflow.yaml
-	ForceCI     bool // Overwrite CI workflow file
 	SkipConfig  bool // Skip workflow.yaml entirely (for upgrade)
-	NoGenerate  bool
-	WithCI      bool
-	Scaffold    bool // Execute scaffold after install
-	DryRun      bool // For scaffold dry-run
+	NoGenerate  bool // Skip the files derived from the config, CI workflows included
+	// CI is what to do about the CI workflows: init writes the missing ones
+	// (generate.CISync), upgrade only refreshes the ones awkit owns
+	// (generate.CIRefresh). The zero value leaves them alone.
+	CI       generate.CIPolicy
+	Scaffold bool // Execute scaffold after install
+	DryRun   bool // For scaffold dry-run
 }
 
 // InstallResult contains information about what was done
@@ -37,6 +39,14 @@ type InstallResult struct {
 	ConfigPath     string
 	ScaffoldResult *ScaffoldResult
 	ScaffoldError  error
+	// GenerateError is why the files derived from the config (CLAUDE.md,
+	// AGENTS.md, the CI workflows) were not written. The kit itself is
+	// installed all the same.
+	GenerateError error
+	// CIWritten and CIRemoved are the CI workflows the install wrote and
+	// removed.
+	CIWritten []string
+	CIRemoved []string
 }
 
 // ScaffoldOptions configures scaffold behavior
@@ -145,10 +155,8 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		return nil, err
 	}
 
-	if opts.WithCI {
-		if err := ensureCIWorkflow(targetDir, opts.Preset, opts.ForceCI); err != nil {
-			return nil, err
-		}
+	if err := migrateExistingCIWorkflow(targetDir); err != nil {
+		return nil, err
 	}
 
 	if err := ensureClaudeLinks(targetDir); err != nil {
@@ -174,7 +182,17 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	}
 
 	if !opts.NoGenerate {
-		_ = tryGenerate(targetDir)
+		generated, err := generate.Generate(generate.Options{StateRoot: targetDir, CI: opts.CI})
+		result.GenerateError = err
+		if generated != nil {
+			workflows := filepath.Join(".github", "workflows") + string(filepath.Separator)
+			for _, file := range generated.GeneratedFiles {
+				if strings.Contains(file, workflows) {
+					result.CIWritten = append(result.CIWritten, file)
+				}
+			}
+			result.CIRemoved = generated.RemovedFiles
+		}
 	}
 
 	return result, nil
@@ -493,12 +511,19 @@ func migrateCIWorkflow(content []byte) (bool, []byte) {
 	return false, content
 }
 
-func tryGenerate(targetDir string) error {
-	_, err := generate.Generate(generate.Options{
-		StateRoot:  targetDir,
-		GenerateCI: false,
-	})
-	return err
+// migrateExistingCIWorkflow takes the long-removed awk job out of a ci.yml
+// that an old version of the kit wrote. A project without that file, or
+// without that job, is left alone.
+func migrateExistingCIWorkflow(targetDir string) error {
+	path := filepath.Join(targetDir, ".github", "workflows", "ci.yml")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	if migrated, migratedContent := migrateCIWorkflow(content); migrated {
+		return os.WriteFile(path, migratedContent, 0o644)
+	}
+	return nil
 }
 
 // validateProjectName checks for invalid characters in project name

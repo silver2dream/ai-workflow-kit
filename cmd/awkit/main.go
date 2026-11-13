@@ -13,6 +13,7 @@ import (
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
 	"github.com/silver2dream/ai-workflow-kit/internal/buildinfo"
+	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/updatecheck"
@@ -340,10 +341,11 @@ Arguments:
 Options:
   --preset        Project preset (%s) [default: generic]
   --scaffold      Create minimal project structure for the preset
-  --force         Overwrite all existing kit files (and scaffold files if --scaffold)
+  --force         Overwrite all existing kit files, the CI workflows the project took
+                  over, and scaffold files if --scaffold
   --force-config  Overwrite only workflow.yaml (apply preset to existing project)
   --dry-run       Show what would be done without making changes
-  --no-generate   Skip running awkit generate after init
+  --no-generate   Skip the generated files (CLAUDE.md, AGENTS.md, CI workflows)
   --project-name  Override project name in config
 
 Examples:
@@ -364,7 +366,9 @@ func usageUpgrade() {
 This command updates scripts, templates, commands, rules, and docs
 while preserving your workflow.yaml configuration by default.
 
-CI workflow is automatically migrated (removes deprecated awk job).
+The CI workflows awkit generated follow the new kit. A workflow the project
+wrote or took over is left alone, apart from an old ci.yml losing the
+deprecated awk job; no workflow is added.
 
 Usage:
   awkit upgrade [project_path] [options]
@@ -561,7 +565,7 @@ func cmdInit(args []string) int {
 		fmt.Println("  .ai/exe-logs/ (runtime, gitignored)")
 		fmt.Println("  .worktrees/ (gitignored)")
 		fmt.Println("  .claude/agents/")
-		fmt.Println("  .github/workflows/ci.yml (if missing)")
+		fmt.Println("  .github/workflows/ (a CI workflow per repo that has build or test commands)")
 		fmt.Println("  .gitignore (append AWK entries)")
 		fmt.Println("  .gitattributes (if missing)")
 
@@ -607,14 +611,19 @@ func cmdInit(args []string) int {
 		return 0
 	}
 
+	// A CI workflow for every repo that has commands to run. One the project
+	// took over is left alone unless --force.
+	ciPolicy := generate.CISync
+	if *force {
+		ciPolicy = generate.CIRewrite
+	}
 	result, err := install.Install(awkit.KitFS, targetDir, install.Options{
 		Preset:      *preset,
 		ProjectName: *projectName,
 		Force:       *force,
 		ForceConfig: *forceConfig,
-		ForceCI:     *force, // --force also overwrites CI
 		NoGenerate:  *noGenerate,
-		WithCI:      true, // CI is always created by default
+		CI:          ciPolicy,
 		Scaffold:    *scaffold,
 	})
 	if err != nil {
@@ -674,6 +683,12 @@ func cmdInit(args []string) int {
 	if result != nil && result.ScaffoldError != nil {
 		fmt.Println("")
 		warn("Scaffold completed with errors: %v\n", result.ScaffoldError)
+	}
+
+	if result != nil && result.GenerateError != nil {
+		fmt.Println("")
+		warn("CLAUDE.md, AGENTS.md and the CI workflows were not written: %v\n", result.GenerateError)
+		fmt.Println("  Fix .ai/config/workflow.yaml, then run awkit init again.")
 	}
 
 	fmt.Println("")
@@ -812,7 +827,7 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("  .ai/rules/_examples/")
 		fmt.Println("  .ai/skills/")
 		fmt.Println("  .claude/agents/")
-		fmt.Println("  .github/workflows/ci.yml (migrate deprecated awk job)")
+		fmt.Println("  .github/workflows/ (the workflows awkit generated; an old ci.yml loses the awk job)")
 		fmt.Println("")
 		if *forceConfig {
 			fmt.Println("Would overwrite:")
@@ -902,8 +917,9 @@ func cmdUpgrade(args []string) int {
 		ForceConfig: *forceConfig,
 		SkipConfig:  !*forceConfig, // Preserve workflow.yaml by default
 		NoGenerate:  *noGenerate,
-		WithCI:      true,  // Always migrate CI
-		ForceCI:     false, // Never force-replace CI on upgrade (only migrate)
+		// The workflows awkit owns follow the new kit; none is added, and one
+		// the project took over is left alone.
+		CI: generate.CIRefresh,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "")
@@ -920,6 +936,12 @@ func cmdUpgrade(args []string) int {
 	} else if *forceConfig {
 		fmt.Println("")
 		info("  Config overwritten: .ai/config/workflow.yaml\n")
+	}
+
+	if result != nil && result.GenerateError != nil {
+		fmt.Println("")
+		warn("CLAUDE.md, AGENTS.md and the CI workflows were not regenerated: %v\n", result.GenerateError)
+		fmt.Println("  Fix .ai/config/workflow.yaml, then run awkit generate.")
 	}
 
 	// Upgrade permissions in settings.local.json
@@ -979,6 +1001,9 @@ func cmdUpgrade(args []string) int {
 
 	// Handle scaffold for upgrade (BEFORE auto-commit so scaffold files are included)
 	var extraCommitPaths []string
+	if result != nil {
+		extraCommitPaths = append(extraCommitPaths, projectWorkflowPaths(targetDir, result.CIWritten, result.CIRemoved)...)
+	}
 	if *scaffold {
 		projectName := filepath.Base(displayTarget)
 		scaffoldResult, scaffoldErr := install.Scaffold(displayTarget, install.ScaffoldOptions{
@@ -1048,6 +1073,23 @@ func cmdUpgrade(args []string) int {
 
 	warnUpdateAvailable()
 	return 0
+}
+
+// projectWorkflowPaths are the workflow files in the project's own
+// .github/workflows, relative to the project. A submodule's workflow belongs
+// to another repository and cannot go into the project's commit.
+func projectWorkflowPaths(targetDir string, fileLists ...[]string) []string {
+	workflowDir := filepath.Join(targetDir, ".github", "workflows")
+	var paths []string
+	for _, files := range fileLists {
+		for _, file := range files {
+			if filepath.Dir(file) != workflowDir {
+				continue
+			}
+			paths = append(paths, filepath.ToSlash(filepath.Join(".github", "workflows", filepath.Base(file))))
+		}
+	}
+	return paths
 }
 
 // autoCommitUpgrade attempts to automatically commit upgrade changes.
