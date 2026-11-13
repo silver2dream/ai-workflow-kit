@@ -109,9 +109,12 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 		return results, fmt.Errorf("repo paths check failed: %s", repoPathsResult.Message)
 	}
 
-	// 10. Check integration branch (warning only)
+	// 10. Check the integration branch: every ticket needs it on the remote
 	branchResult := p.CheckIntegrationBranch()
 	results = append(results, branchResult)
+	if !branchResult.Passed {
+		return results, fmt.Errorf("integration branch check failed: %s", branchResult.Message)
+	}
 
 	// 11. Check GitHub repo (warning only)
 	ghRepoResult := p.CheckGitHubRepo()
@@ -496,11 +499,29 @@ func (p *PreflightChecker) CheckRepoPaths() CheckResult {
 	}
 }
 
-// CheckIntegrationBranch checks if the configured integration branch exists in git
+// remoteHasBranch asks origin whether it has a branch. known is false when it
+// could not be asked: no remote of that name, or no way to reach it.
+var remoteHasBranch = func(branch string) (found, known bool) {
+	err := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+branch).Run()
+	if err == nil {
+		return true, true
+	}
+	// git ls-remote --exit-code ends with 2 when the remote answered and has
+	// no such ref.
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 2 {
+		return false, true
+	}
+	return false, false
+}
+
+// CheckIntegrationBranch checks that the branch pull requests go to is on the
+// remote. A Worker's worktree is branched from it and the Worker's pull
+// request is opened against it, so every ticket fails while it is not there.
 func (p *PreflightChecker) CheckIntegrationBranch() CheckResult {
+	const name = "Integration Branch"
 	if p.config == nil {
 		return CheckResult{
-			Name:    "Integration Branch",
+			Name:    name,
 			Passed:  true,
 			Warning: true,
 			Message: "config not loaded, skipping branch check",
@@ -510,32 +531,43 @@ func (p *PreflightChecker) CheckIntegrationBranch() CheckResult {
 	branch := p.config.Git.IntegrationBranch
 	if branch == "" {
 		return CheckResult{
-			Name:    "Integration Branch",
+			Name:    name,
 			Passed:  true,
 			Warning: true,
 			Message: "no integration branch configured",
 		}
 	}
 
-	// Check if branch exists locally or in remote
-	cmd := exec.Command("git", "rev-parse", "--verify", branch)
-	if err := cmd.Run(); err != nil {
-		// Try remote
-		cmd2 := exec.Command("git", "rev-parse", "--verify", "origin/"+branch)
-		if err2 := cmd2.Run(); err2 != nil {
-			return CheckResult{
-				Name:    "Integration Branch",
-				Passed:  true,
-				Warning: true,
-				Message: fmt.Sprintf("branch %q not found locally or in origin (will be created on first push)", branch),
-			}
+	here := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
+	found, known := remoteHasBranch(branch)
+	switch {
+	case found:
+		return CheckResult{Name: name, Passed: true, Message: fmt.Sprintf("pull requests go to %q", branch)}
+	case known && here:
+		return CheckResult{
+			Name:    name,
+			Message: fmt.Sprintf("branch %q is not on origin, and a ticket's pull request is opened against it. Push it: git push -u origin %s", branch, branch),
 		}
-	}
-
-	return CheckResult{
-		Name:    "Integration Branch",
-		Passed:  true,
-		Message: fmt.Sprintf("integration branch %q exists", branch),
+	case known:
+		return CheckResult{
+			Name: name,
+			Message: fmt.Sprintf("branch %q does not exist, and every ticket is branched from it. Create it (git branch %s <the branch to start from> && git push -u origin %s), or set git.integration_branch in %s to the branch pull requests go to",
+				branch, branch, branch, layout.ConfigFile),
+		}
+	case here:
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("origin could not be asked for branch %q; it is here, and has to be on origin before a ticket is worked on", branch),
+		}
+	default:
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("branch %q is not here, and origin could not be asked for it; it has to be on origin before a ticket is worked on", branch),
+		}
 	}
 }
 

@@ -1008,3 +1008,87 @@ func TestCheckCodexCLI_ChecksTheConfiguredBackend(t *testing.T) {
 		}
 	}
 }
+
+// originAndClone makes a repository with a commit on main, and a clone of it
+// to work in. The test's working directory is the clone.
+func originAndClone(t *testing.T) (origin, clone string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin, clone = t.TempDir(), filepath.Join(t.TempDir(), "clone")
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.invalid",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git(origin, "init", "-q", "-b", "main")
+	git(origin, "commit", "-q", "--allow-empty", "-m", "first")
+	git(origin, "branch", "develop")
+	git(filepath.Dir(clone), "clone", "-q", origin, clone)
+	git(clone, "branch", "only-here")
+	if err := os.Chdir(clone); err != nil {
+		t.Fatal(err)
+	}
+	return origin, clone
+}
+
+// A Worker's worktree is branched from the integration branch and its pull
+// request is opened against it. The check asks the remote, and stops the run
+// with what to do when the branch is not there. It said "will be created on
+// first push" and let the run start; the first ticket then failed.
+func TestCheckIntegrationBranch_AsksTheRemote(t *testing.T) {
+	originAndClone(t)
+	check := func(branch string) CheckResult {
+		checker := NewPreflightChecker("", "")
+		checker.config = &Config{Git: GitConfig{IntegrationBranch: branch}}
+		return checker.CheckIntegrationBranch()
+	}
+
+	for _, branch := range []string{"main", "develop"} {
+		if got := check(branch); !got.Passed || got.Warning || !strings.Contains(got.Message, `"`+branch+`"`) {
+			t.Errorf("a branch that is on origin (%s): %+v, want a pass that names it", branch, got)
+		}
+	}
+
+	onlyHere := check("only-here")
+	if onlyHere.Passed || !strings.Contains(onlyHere.Message, "git push -u origin only-here") {
+		t.Errorf("a branch that is only here: %+v, want a failure that says to push it", onlyHere)
+	}
+
+	nowhere := check("feat/example")
+	if nowhere.Passed || !strings.Contains(nowhere.Message, "git branch feat/example") || !strings.Contains(nowhere.Message, "git.integration_branch") {
+		t.Errorf("a branch that is nowhere: %+v, want a failure that says how to create it, or to name another", nowhere)
+	}
+	if strings.Contains(nowhere.Message, "will be created") {
+		t.Errorf("the check still promises that the branch will appear: %s", nowhere.Message)
+	}
+}
+
+// When origin cannot be asked, the check does not stop the run on a guess:
+// the checks of the remote itself say what is wrong with it.
+func TestCheckIntegrationBranch_WhenTheRemoteCannotBeAsked(t *testing.T) {
+	_, clone := originAndClone(t)
+	if out, err := exec.Command("git", "-C", clone, "remote", "remove", "origin").CombinedOutput(); err != nil {
+		t.Fatalf("git remote remove: %v\n%s", err, out)
+	}
+	for _, branch := range []string{"only-here", "feat/example"} {
+		checker := NewPreflightChecker("", "")
+		checker.config = &Config{Git: GitConfig{IntegrationBranch: branch}}
+		got := checker.CheckIntegrationBranch()
+		if !got.Passed || !got.Warning || !strings.Contains(got.Message, "has to be on origin") {
+			t.Errorf("without a remote (%s): %+v, want a warning that says where the branch has to be", branch, got)
+		}
+	}
+}

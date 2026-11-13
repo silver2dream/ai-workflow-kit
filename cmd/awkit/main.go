@@ -20,6 +20,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/updatecheck"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
+	"golang.org/x/term"
 )
 
 // ANSI color codes
@@ -33,8 +34,10 @@ var (
 )
 
 func init() {
-	// Disable colors on Windows or when not a terminal
-	if runtime.GOOS == "windows" || os.Getenv("NO_COLOR") != "" {
+	// Colours are for a person at a terminal: none on Windows, none when
+	// NO_COLOR is set, and none when the output goes to a file or a pipe,
+	// where the escape codes would be read as text.
+	if runtime.GOOS == "windows" || os.Getenv("NO_COLOR") != "" || !term.IsTerminal(int(os.Stdout.Fd())) {
 		colorReset = ""
 		colorRed = ""
 		colorGreen = ""
@@ -61,6 +64,17 @@ func noScaffoldForPreset(preset string) int {
 	errorf("The %s preset has no project skeleton, so --scaffold has nothing to write.\n", preset)
 	fmt.Fprintf(os.Stderr, "Presets with a skeleton: %s\n", strings.Join(install.ScaffoldPresets(), ", "))
 	return 2
+}
+
+// branchesFor names the branches a configuration written for the project in
+// dir starts with. A configuration that is there and is being written over
+// keeps its branches: they are the project's choice, not the preset's. A new
+// one gets the branches found in the repository.
+func branchesFor(dir string) install.Branches {
+	if cfg, err := config.LoadFile(config.Path(dir)); err == nil && cfg.Git.IntegrationBranch != "" {
+		return install.Branches{Integration: cfg.Git.IntegrationBranch, Release: cfg.Git.ReleaseBranch}
+	}
+	return install.DetectBranches(dir)
 }
 
 func availablePresetNames() string {
@@ -263,6 +277,14 @@ func bold(s string) string {
 
 func cyan(s string) string {
 	return colorCyan + s + colorReset
+}
+
+func green(s string) string {
+	return colorGreen + s + colorReset
+}
+
+func yellow(s string) string {
+	return colorYellow + s + colorReset
 }
 
 func cmdHelp(command string) int {
@@ -556,29 +578,28 @@ func cmdInit(args []string) int {
 		return 1
 	}
 
-	fmt.Println("")
 	if *dryRun {
+		fmt.Println("")
 		fmt.Printf("%s[DRY RUN]%s Would initialize AWK:\n", colorYellow, colorReset)
-	} else {
-		fmt.Println("Initializing AWK...")
-	}
-	fmt.Printf("  Target:  %s\n", cyan(displayTarget))
-	fmt.Printf("  Preset:  %s\n", cyan(*preset))
-	if *force {
-		fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
-	} else if *forceConfig {
-		fmt.Printf("  Mode:    %s\n", cyan("force-config (overwrite config only)"))
-	}
-	if *scaffold {
-		fmt.Printf("  Scaffold: %s\n", cyan("yes"))
-	}
-	fmt.Println("")
+		fmt.Printf("  Target:  %s\n", cyan(displayTarget))
+		fmt.Printf("  Preset:  %s\n", cyan(*preset))
+		if *force {
+			fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
+		} else if *forceConfig {
+			fmt.Printf("  Mode:    %s\n", cyan("force-config (overwrite config only)"))
+		}
+		if *scaffold {
+			fmt.Printf("  Scaffold: %s\n", cyan("yes"))
+		}
+		fmt.Println("")
 
-	if *dryRun {
 		fmt.Println(bold("AWK Kit files:"))
 		fmt.Println("  " + layout.ConfigFile)
 		fmt.Println("  " + layout.RosterFile)
 		fmt.Println("  " + layout.KitRulesDir + "/")
+		for _, rule := range install.StarterRules(*preset) {
+			fmt.Println("  " + layout.RulesDir + "/" + rule + ".md (a starter rule of the preset; the project's own from then on)")
+		}
 		fmt.Println("  " + layout.SkillsDir + "/")
 		fmt.Println("  " + layout.AgentsDir + "/")
 		fmt.Println("  " + layout.StateDir + "/ (what a run leaves behind, gitignored)")
@@ -640,6 +661,7 @@ func cmdInit(args []string) int {
 		ProjectName: *projectName,
 		Force:       *force,
 		ForceConfig: *forceConfig,
+		Branches:    branchesFor(targetDir),
 		NoGenerate:  *noGenerate,
 		CI:          ciPolicy,
 		Scaffold:    *scaffold,
@@ -655,72 +677,18 @@ func cmdInit(args []string) int {
 		return 1
 	}
 
-	fmt.Println("")
-	success("AWK initialized successfully!\n")
-
-	// Warn if config was skipped
-	if result != nil && result.ConfigSkipped {
-		fmt.Println("")
-		warn("Skipped: " + layout.ConfigFile + " (already exists)\n")
-		fmt.Printf("  Preset '%s' was NOT applied to config.\n", *preset)
-		fmt.Println("")
-		fmt.Println("  To apply preset config, use one of:")
-		fmt.Printf("    awkit init --preset %s --force        # Overwrite all files\n", *preset)
-		fmt.Printf("    awkit init --preset %s --force-config # Overwrite config only\n", *preset)
-	}
-
-	// Show scaffold results
-	if *scaffold && result != nil && result.ScaffoldResult != nil {
-		sr := result.ScaffoldResult
-		if len(sr.Created) > 0 {
-			fmt.Println("")
-			fmt.Println(bold("Scaffold files created:"))
-			for _, f := range sr.Created {
-				fmt.Printf("  %s\n", f)
-			}
+	summary := collectInitSummary(targetDir, *preset, result)
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "preset" {
+			summary.PresetNamed = true
 		}
-		if len(sr.Skipped) > 0 {
-			fmt.Println("")
-			warn("Scaffold files skipped (already exist):\n")
-			for _, f := range sr.Skipped {
-				fmt.Printf("  %s\n", f)
-			}
-		}
-		if len(sr.Failed) > 0 {
-			fmt.Println("")
-			errorf("Scaffold files failed:\n")
-			for i, f := range sr.Failed {
-				fmt.Printf("  %s: %v\n", f, sr.Errors[i])
-			}
-			fmt.Println("")
-			warn("Some files failed to create. Run 'awkit init --scaffold' again to retry.\n")
-		}
-	}
-
-	// Handle scaffold error
-	if result != nil && result.ScaffoldError != nil {
-		fmt.Println("")
-		warn("Scaffold completed with errors: %v\n", result.ScaffoldError)
-	}
-
-	if result != nil && result.GenerateError != nil {
-		fmt.Println("")
-		warn("CLAUDE.md, AGENTS.md and the CI workflows were not written: %v\n", result.GenerateError)
-		fmt.Println("  Fix " + layout.ConfigFile + ", then run awkit init again.")
-	}
-
-	fmt.Println("")
-	fmt.Println(bold("Next steps:"))
-	fmt.Printf("  1. %s\n", cyan("cd "+displayTarget))
-	fmt.Printf("  2. %s\n", cyan("Edit "+layout.ConfigFile))
-	fmt.Printf("  3. %s\n", cyan("awkit generate"))
-	fmt.Printf("  4. %s   the council ("+layout.RosterFile+") writes the documents and proposes the tickets\n", cyan(`awkit plan "<what you want built>"`))
-	fmt.Printf("  5. %s   work through the tickets\n", cyan("awkit run"))
-	fmt.Println("")
+	})
+	printInitSummary(os.Stdout, summary)
 
 	warnUpdateAvailable()
 	return 0
 }
+
 func cmdUpgrade(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -958,6 +926,7 @@ func cmdUpgrade(args []string) int {
 		Force:       true, // Overwrite kit files
 		ForceConfig: *forceConfig,
 		SkipConfig:  !*forceConfig, // the configuration is kept by default
+		Branches:    branchesFor(targetDir),
 		NoGenerate:  *noGenerate,
 		// The workflows awkit owns follow the new kit; none is added, and one
 		// the project took over is left alone.
@@ -984,6 +953,11 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("")
 		warn("CLAUDE.md, AGENTS.md and the CI workflows were not regenerated: %v\n", result.GenerateError)
 		fmt.Println("  Fix " + layout.ConfigFile + ", then run awkit generate.")
+	}
+	if result != nil {
+		for _, warning := range result.GenerateWarnings {
+			warn("%s\n", warning)
+		}
 	}
 
 	// Upgrade permissions in settings.local.json

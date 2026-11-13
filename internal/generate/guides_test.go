@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // generated runs one of the generators for a configuration and returns what
@@ -191,5 +193,142 @@ func TestGenerateGitWorkflowMd_Submodules(t *testing.T) {
 	single.Repos = []RepoConfig{{Name: "root", Path: "./", Type: "root", Language: "go"}}
 	if got := generated(t, generateGitWorkflowMd, single); strings.Contains(got, "This project") {
 		t.Errorf("a single repository is described as a monorepo:\n%s", got)
+	}
+}
+
+// A project with one trunk has the same branch to merge into and to release
+// from. The guides name it once, and do not describe a release branch that is
+// not there.
+func TestGeneratedGuides_OneTrunk(t *testing.T) {
+	cfg := godotGoProject()
+	cfg.Git.IntegrationBranch, cfg.Git.ReleaseBranch = "main", "main"
+
+	rule := generated(t, generateGitWorkflowMd, cfg)
+	for _, want := range []string{
+		"- Branch: `main`. Every pull request targets it, whichever repo the change is in. The project has no separate release branch.\n",
+		"- A change reaches `main` through a pull request, never by a direct push.\n",
+	} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("the git rule file of a project with one trunk lacks %q:\n%s", want, rule)
+		}
+	}
+	for _, wrong := range []string{"Integration branch", "Release branch", "`main` or `main`", "release: true"} {
+		if strings.Contains(rule, wrong) {
+			t.Errorf("the git rule file of a project with one trunk says %q", wrong)
+		}
+	}
+
+	guide := generated(t, generateClaudeMd, cfg)
+	if !strings.Contains(guide, "- Branch: pull requests are merged into `main`; there is no separate release branch\n") {
+		t.Errorf("CLAUDE.md of a project with one trunk:\n%s", guide)
+	}
+	if strings.Contains(guide, "is the release branch") {
+		t.Error("CLAUDE.md of a project with one trunk names a release branch")
+	}
+}
+
+// captureStdout returns what fn prints.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		data, _ := io.ReadAll(r)
+		done <- string(data)
+	}()
+	fn()
+	w.Close()
+	os.Stdout = old
+	return <-done
+}
+
+// projectWith writes a configuration into a new directory and returns it.
+func projectWith(t *testing.T, config string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := layout.Config(dir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+const projectWithAMissingRule = `project: {name: demo, type: single-repo}
+repos:
+  - {name: root, path: ./, type: root, language: go, verify: {build: "go build ./...", test: "go test ./..."}}
+git: {integration_branch: main, release_branch: main}
+rules: {kit: [git-workflow], custom: [backend]}
+`
+
+// The generator says what it writes, a line a file, with the path as it is
+// from the project's root: a person reads these, and a full path of a
+// temporary directory three times the width of the terminal is no help.
+func TestGenerate_SaysWhatItWrites(t *testing.T) {
+	dir := projectWith(t, projectWithAMissingRule)
+	var result *Result
+	out := captureStdout(t, func() {
+		var err error
+		if result, err = Generate(Options{StateRoot: dir, CI: CISync}); err != nil {
+			t.Errorf("Generate: %v", err)
+		}
+	})
+	for _, want := range []string{
+		"[generate] wrote CLAUDE.md\n",
+		"[generate] wrote AGENTS.md\n",
+		"[generate] wrote .claude/rules/_kit/git-workflow.md\n",
+		"[generate] wrote .claude/settings.local.json\n",
+		"[generate] wrote .claude/agents/pr-reviewer.md\n",
+		"[generate] wrote .github/workflows/ci.yml\n",
+		"[generate] WARNING: custom rule 'backend' not found",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the progress lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, dir) || strings.Contains(out, filepath.ToSlash(dir)) {
+		t.Errorf("the progress shows the full path of the project:\n%s", out)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "custom rule 'backend' not found") {
+		t.Errorf("Warnings = %q, want the one about the rule file that is not there", result.Warnings)
+	}
+}
+
+// Asked for silence, the generator prints nothing and still returns what it
+// wrote and what it found: init and upgrade say it in their own words.
+func TestGenerate_Quiet(t *testing.T) {
+	dir := projectWith(t, projectWithAMissingRule)
+	var result *Result
+	out := captureStdout(t, func() {
+		var err error
+		if result, err = Generate(Options{StateRoot: dir, CI: CISync, Quiet: true}); err != nil {
+			t.Errorf("Generate: %v", err)
+		}
+	})
+	if out != "" {
+		t.Errorf("a quiet generate printed:\n%s", out)
+	}
+	if len(result.Warnings) != 1 {
+		t.Errorf("Warnings = %q, want the one about the rule file that is not there", result.Warnings)
+	}
+	wrote := map[string]bool{}
+	for _, file := range result.GeneratedFiles {
+		rel, err := filepath.Rel(dir, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wrote[filepath.ToSlash(rel)] = true
+	}
+	for _, want := range []string{"CLAUDE.md", "AGENTS.md", ".claude/rules/_kit/git-workflow.md", ".claude/settings.local.json", ".github/workflows/ci.yml"} {
+		if !wrote[want] {
+			t.Errorf("GeneratedFiles lacks %s: %v", want, result.GeneratedFiles)
+		}
 	}
 }

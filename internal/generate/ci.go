@@ -165,10 +165,10 @@ func planCIWorkflows(stateRoot string, ctx *TemplateContext, policy CIPolicy) ci
 
 // generateCIWorkflows carries out the plan and returns the files it wrote and
 // the files it removed.
-func generateCIWorkflows(stateRoot string, ctx *TemplateContext, policy CIPolicy) (written, removed []string, err error) {
+func generateCIWorkflows(stateRoot string, ctx *TemplateContext, policy CIPolicy, say progress) (written, removed []string, err error) {
 	plan := planCIWorkflows(stateRoot, ctx, policy)
 	for _, note := range plan.notes {
-		fmt.Printf("[generate] %s\n", note)
+		say.say("%s", note)
 	}
 	for _, file := range plan.write {
 		if err := os.MkdirAll(filepath.Dir(file.path), 0o755); err != nil {
@@ -178,14 +178,14 @@ func generateCIWorkflows(stateRoot string, ctx *TemplateContext, policy CIPolicy
 			return written, removed, fmt.Errorf("CI workflow for %s: %w", file.subject, err)
 		}
 		written = append(written, file.path)
-		fmt.Printf("[generate] Created: %s\n", file.path)
+		say.say("wrote %s", say.path(file.path))
 	}
 	for _, file := range plan.remove {
 		if err := os.Remove(file); err != nil {
 			return written, removed, fmt.Errorf("remove stale CI workflow: %w", err)
 		}
 		removed = append(removed, file)
-		fmt.Printf("[generate] Removed: %s (no repo in the config runs it any more)\n", file)
+		say.say("removed %s (no repo in the configuration runs it any more)", say.path(file))
 	}
 	return written, removed, nil
 }

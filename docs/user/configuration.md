@@ -118,8 +118,8 @@ repos:
 
 ```yaml
 git:
-  integration_branch: "feat/example"    # 開發整合分支
-  release_branch: "main"                # 發布分支
+  integration_branch: "develop"         # PR 合併進這個分支；awkit init 會填 repo 裡已有的分支
+  release_branch: "main"                # 發版分支；只有一條主幹時兩者相同
   commit_format: "[type] subject"       # Commit 格式
   pr_body_template: |                   # PR 描述模板
     Closes #${ISSUE_ID}

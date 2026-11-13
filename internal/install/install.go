@@ -27,7 +27,10 @@ type Options struct {
 	Force       bool
 	ForceConfig bool // only the configuration is written over
 	SkipConfig  bool // the configuration is left alone (an upgrade)
-	NoGenerate  bool // Skip the files derived from the config, CI workflows included
+	// Branches are the branches a new configuration names (DetectBranches).
+	// Without them it names a single trunk, main.
+	Branches   Branches
+	NoGenerate bool // Skip the files derived from the config, CI workflows included
 	// CI is what to do about the CI workflows: init writes the missing ones
 	// (generate.CISync), upgrade only refreshes the ones awkit owns
 	// (generate.CIRefresh). The zero value leaves them alone.
@@ -50,6 +53,9 @@ type InstallResult struct {
 	// removed.
 	CIWritten []string
 	CIRemoved []string
+	// GenerateWarnings are what the generator found and went on from, for
+	// the caller to show: the install generates without a word.
+	GenerateWarnings []string
 }
 
 // ScaffoldOptions configures scaffold behavior
@@ -171,9 +177,10 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	}
 
 	if !opts.NoGenerate {
-		generated, err := generate.Generate(generate.Options{StateRoot: targetDir, CI: opts.CI})
+		generated, err := generate.Generate(generate.Options{StateRoot: targetDir, CI: opts.CI, Quiet: true})
 		result.GenerateError = err
 		if generated != nil {
+			result.GenerateWarnings = generated.Warnings
 			workflows := filepath.Join(".github", "workflows") + string(filepath.Separator)
 			for _, file := range generated.GeneratedFiles {
 				if strings.Contains(file, workflows) {

@@ -1179,7 +1179,7 @@ func TestInstallAgentsDir_WithCustomAgents(t *testing.T) {
 		},
 	}
 
-	if err := installAgentsDir(agentsDir, agents); err != nil {
+	if _, err := installAgentsDir(agentsDir, agents, progress{quiet: true}); err != nil {
 		t.Fatalf("installAgentsDir() error = %v", err)
 	}
 
@@ -1371,7 +1371,7 @@ func TestInstallAgentsDir_CleanStaleAgents(t *testing.T) {
 		{Name: "sec-check", Description: "Security"},
 		{Name: "perf", Description: "Performance"},
 	}}
-	if err := installAgentsDir(agentsDir, two); err != nil {
+	if _, err := installAgentsDir(agentsDir, two, progress{quiet: true}); err != nil {
 		t.Fatalf("installAgentsDir: %v", err)
 	}
 	generated, err := os.ReadFile(filepath.Join(agentsDir, "sec-check.md"))
@@ -1392,7 +1392,7 @@ func TestInstallAgentsDir_CleanStaleAgents(t *testing.T) {
 	}
 
 	one := AgentsConfig{Builtin: builtin, Custom: []CustomAgentDef{{Name: "perf", Description: "Performance"}}}
-	if err := installAgentsDir(agentsDir, one); err != nil {
+	if _, err := installAgentsDir(agentsDir, one, progress{quiet: true}); err != nil {
 		t.Fatalf("installAgentsDir: %v", err)
 	}
 

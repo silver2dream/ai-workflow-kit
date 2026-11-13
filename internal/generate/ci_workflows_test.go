@@ -32,7 +32,7 @@ func workflowNames(t *testing.T, dir string, paths []string) []string {
 // and removed.
 func runCI(t *testing.T, dir string, ctx *TemplateContext, policy CIPolicy) (written, removed []string) {
 	t.Helper()
-	writtenPaths, removedPaths, err := generateCIWorkflows(dir, ctx, policy)
+	writtenPaths, removedPaths, err := generateCIWorkflows(dir, ctx, policy, progress{quiet: true})
 	if err != nil {
 		t.Fatalf("generateCIWorkflows: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestCIWorkflows_WriteFailureIsReported(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	written, _, err := generateCIWorkflows(dir, ciContext(goBackend), CISync)
+	written, _, err := generateCIWorkflows(dir, ciContext(goBackend), CISync, progress{quiet: true})
 
 	if err == nil {
 		t.Fatalf("no error although nothing could be written (reported %v)", written)

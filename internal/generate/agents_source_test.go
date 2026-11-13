@@ -14,7 +14,7 @@ import (
 // and then overwrote the current definitions on every install/generate.
 func TestInstallAgentsDir_WritesKitDefinitions(t *testing.T) {
 	agentsDir := filepath.Join(t.TempDir(), "agents")
-	if err := installAgentsDir(agentsDir, AgentsConfig{}); err != nil {
+	if _, err := installAgentsDir(agentsDir, AgentsConfig{}, progress{quiet: true}); err != nil {
 		t.Fatalf("installAgentsDir() error = %v", err)
 	}
 
