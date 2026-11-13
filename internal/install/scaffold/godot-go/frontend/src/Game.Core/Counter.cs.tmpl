@@ -1,0 +1,13 @@
+namespace Game.Core;
+
+/// <summary>Game state that does not depend on the engine, so it can be tested without it.</summary>
+public sealed class Counter
+{
+    public int Value { get; private set; }
+
+    public int Increment()
+    {
+        Value++;
+        return Value;
+    }
+}

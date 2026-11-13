@@ -17,8 +17,11 @@ func TestAvailablePresetNames(t *testing.T) {
 	if !strings.Contains(names, "generic") {
 		t.Error("expected 'generic' in preset names")
 	}
-	if !strings.Contains(names, "react-go") {
-		t.Error("expected 'react-go' in preset names")
+	if !strings.Contains(names, "godot-go") {
+		t.Error("expected 'godot-go' in preset names")
+	}
+	if strings.Contains(names, "react-go") {
+		t.Error("the removed preset 'react-go' is still listed")
 	}
 }
 
@@ -77,21 +80,24 @@ func TestPresets(t *testing.T) {
 	}
 
 	foundGeneric := false
-	foundReactGo := false
+	foundGodotGo := false
 	for _, p := range presets {
 		if p.Name == "generic" {
 			foundGeneric = true
 		}
-		if p.Name == "react-go" {
-			foundReactGo = true
+		if p.Name == "godot-go" {
+			foundGodotGo = true
 		}
 	}
 
 	if !foundGeneric {
 		t.Error("missing 'generic' preset")
 	}
-	if !foundReactGo {
-		t.Error("missing 'react-go' preset")
+	if !foundGodotGo {
+		t.Error("missing 'godot-go' preset")
+	}
+	if len(presets) != len(install.Presets) {
+		t.Errorf("the CLI lists %d presets, the installer knows %d", len(presets), len(install.Presets))
 	}
 }
 
@@ -147,7 +153,7 @@ func TestInitWithScaffold(t *testing.T) {
 	// We can't easily test the full CLI, but we can test the install package directly
 	// This is effectively what cmdInit does
 	result, err := install.Install(awkit.KitFS, tmpDir, install.Options{
-		Preset:     "go",
+		Preset:     install.PresetGodotGo,
 		NoGenerate: true,
 		Scaffold:   true,
 	})
@@ -161,11 +167,10 @@ func TestInitWithScaffold(t *testing.T) {
 	}
 
 	// Verify scaffold files were created
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); os.IsNotExist(err) {
-		t.Error("go.mod should be created by scaffold")
-	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "main.go")); os.IsNotExist(err) {
-		t.Error("main.go should be created by scaffold")
+	for _, file := range []string{"backend/go.mod", "backend/main.go", "frontend/Frontend.sln", "frontend/game/project.godot"} {
+		if _, err := os.Stat(filepath.Join(tmpDir, filepath.FromSlash(file))); os.IsNotExist(err) {
+			t.Errorf("%s should be created by scaffold", file)
+		}
 	}
 
 	// Verify scaffold result
@@ -187,7 +192,7 @@ func TestInitScaffoldDryRun(t *testing.T) {
 
 	// Test dry-run scaffold
 	result, err := install.Scaffold(tmpDir, install.ScaffoldOptions{
-		Preset:      "go",
+		Preset:      install.PresetGodotGo,
 		TargetDir:   tmpDir,
 		ProjectName: "test-project",
 		Force:       false,
@@ -198,8 +203,8 @@ func TestInitScaffoldDryRun(t *testing.T) {
 	}
 
 	// Verify no files were actually created
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); !os.IsNotExist(err) {
-		t.Error("go.mod should NOT be created in dry-run mode")
+	if _, err := os.Stat(filepath.Join(tmpDir, "backend", "go.mod")); !os.IsNotExist(err) {
+		t.Error("backend/go.mod should NOT be created in dry-run mode")
 	}
 
 	// Verify dry-run reports what would be created
@@ -209,7 +214,7 @@ func TestInitScaffoldDryRun(t *testing.T) {
 
 	// Now actually create the files
 	actualResult, err := install.Scaffold(tmpDir, install.ScaffoldOptions{
-		Preset:      "go",
+		Preset:      install.PresetGodotGo,
 		TargetDir:   tmpDir,
 		ProjectName: "test-project",
 		Force:       false,
@@ -236,7 +241,7 @@ func TestUpgradeWithScaffold(t *testing.T) {
 
 	// First, do initial install without scaffold
 	_, err = install.Install(awkit.KitFS, tmpDir, install.Options{
-		Preset:     "go",
+		Preset:     install.PresetGodotGo,
 		NoGenerate: true,
 		Scaffold:   false,
 	})
@@ -245,13 +250,13 @@ func TestUpgradeWithScaffold(t *testing.T) {
 	}
 
 	// Verify scaffold files don't exist yet
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); !os.IsNotExist(err) {
-		t.Error("go.mod should not exist before scaffold")
+	if _, err := os.Stat(filepath.Join(tmpDir, "backend", "go.mod")); !os.IsNotExist(err) {
+		t.Error("backend/go.mod should not exist before scaffold")
 	}
 
-	// Now simulate upgrade --scaffold --preset go
+	// Now simulate upgrade --scaffold --preset godot-go
 	result, err := install.Scaffold(tmpDir, install.ScaffoldOptions{
-		Preset:      "go",
+		Preset:      install.PresetGodotGo,
 		TargetDir:   tmpDir,
 		ProjectName: filepath.Base(tmpDir),
 		Force:       false,
@@ -262,8 +267,8 @@ func TestUpgradeWithScaffold(t *testing.T) {
 	}
 
 	// Verify scaffold files were created
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); os.IsNotExist(err) {
-		t.Error("go.mod should be created by scaffold")
+	if _, err := os.Stat(filepath.Join(tmpDir, "backend", "go.mod")); os.IsNotExist(err) {
+		t.Error("backend/go.mod should be created by scaffold")
 	}
 
 	if len(result.Created) == 0 {
@@ -324,11 +329,8 @@ func TestScaffoldVerifyCompatibility(t *testing.T) {
 		preset     string
 		verifyFile string // File that must exist for verify to work
 	}{
-		{"Go", "go", "go.mod"},
-		{"Python", "python", "pyproject.toml"},
-		{"Rust", "rust", "Cargo.toml"},
-		{"Dotnet", "dotnet", "Program.cs"},
-		{"Node", "node", "package.json"},
+		{"Go backend", install.PresetGodotGo, "backend/go.mod"},
+		{"Godot C# frontend", install.PresetGodotGo, "frontend/Frontend.sln"},
 	}
 
 	for _, tc := range testCases {
@@ -352,7 +354,7 @@ func TestScaffoldVerifyCompatibility(t *testing.T) {
 			}
 
 			// Verify the critical file exists
-			if _, err := os.Stat(filepath.Join(tmpDir, tc.verifyFile)); os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(tmpDir, filepath.FromSlash(tc.verifyFile))); os.IsNotExist(err) {
 				t.Errorf("%s should exist for verify compatibility", tc.verifyFile)
 			}
 		})
@@ -373,14 +375,12 @@ func TestListPresetsOutput(t *testing.T) {
 		}
 	}
 
-	// Should have 6 single-repo presets
-	if singleRepoCount != 6 {
-		t.Errorf("expected 6 single-repo presets, got %d", singleRepoCount)
+	// One preset of each kind: generic and godot-go
+	if singleRepoCount != 1 {
+		t.Errorf("expected 1 single-repo preset, got %d", singleRepoCount)
 	}
-
-	// Should have 5 monorepo presets
-	if monorepoCount != 5 {
-		t.Errorf("expected 5 monorepo presets, got %d", monorepoCount)
+	if monorepoCount != 1 {
+		t.Errorf("expected 1 monorepo preset, got %d", monorepoCount)
 	}
 }
 
@@ -409,10 +409,7 @@ func TestInvalidPresetError(t *testing.T) {
 
 func TestAllPresetsExist(t *testing.T) {
 	// Verify all expected presets exist (Req 7.5)
-	expectedPresets := []string{
-		"generic", "go", "python", "rust", "dotnet", "node",
-		"react-go", "react-python", "unity-go", "godot-go", "unreal-go",
-	}
+	expectedPresets := install.Presets
 
 	for _, expected := range expectedPresets {
 		found := false
@@ -430,10 +427,7 @@ func TestAllPresetsExist(t *testing.T) {
 
 func TestShellCompletionContainsAllPresets(t *testing.T) {
 	// Verify shell completions include all presets (Req 5.4)
-	expectedPresets := []string{
-		"generic", "go", "python", "rust", "dotnet", "node",
-		"react-go", "react-python", "unity-go", "godot-go", "unreal-go",
-	}
+	expectedPresets := install.Presets
 
 	for _, preset := range expectedPresets {
 		if !strings.Contains(bashCompletion, preset) {
@@ -444,6 +438,15 @@ func TestShellCompletionContainsAllPresets(t *testing.T) {
 		}
 		if !strings.Contains(fishCompletion, preset) {
 			t.Errorf("fish completion missing preset: %s", preset)
+		}
+	}
+
+	// Presets that were removed must not be offered any more.
+	for _, removed := range []string{"react-go", "react-python", "unity-go", "unreal-go", "python", "rust", "dotnet"} {
+		for shell, script := range map[string]string{"bash": bashCompletion, "zsh": zshCompletion, "fish": fishCompletion} {
+			if strings.Contains(script, removed) {
+				t.Errorf("%s completion still offers the removed preset %s", shell, removed)
+			}
 		}
 	}
 }
@@ -508,17 +511,17 @@ func TestInitFlagOrderIndependence(t *testing.T) {
 	}{
 		{
 			name:     "flags before path",
-			args:     []string{"--preset", "react-go", "--dry-run", "."},
+			args:     []string{"--preset", "godot-go", "--dry-run", "."},
 			wantExit: 0,
 		},
 		{
 			name:     "flags after path",
-			args:     []string{".", "--preset", "react-go", "--dry-run"},
+			args:     []string{".", "--preset", "godot-go", "--dry-run"},
 			wantExit: 0,
 		},
 		{
 			name:     "flags mixed with path",
-			args:     []string{"--preset", "react-go", ".", "--dry-run"},
+			args:     []string{"--preset", "godot-go", ".", "--dry-run"},
 			wantExit: 0,
 		},
 	}
