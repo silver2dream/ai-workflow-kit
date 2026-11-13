@@ -138,6 +138,7 @@ func ValidExitReasons() []string {
 		"review_max_retries",
 		"no_actionable_tasks",
 		"config_not_found",
+		"config_invalid",
 		"loop_count_error",
 		"github_api_error",
 		"invalid_ticket",

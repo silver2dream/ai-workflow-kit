@@ -30,8 +30,12 @@ const (
 	ReasonMaxConsecutiveFailures = "max_consecutive_failures"
 	ReasonNoActionableTasks      = "no_actionable_tasks"
 	ReasonConfigNotFound         = "config_not_found"
-	ReasonLoopCountError         = "loop_count_error"
-	ReasonGitHubAPIError         = "github_api_error"
+	// ReasonConfigInvalid: the configuration is there and cannot be used. What
+	// is wrong with it is on standard error, and `awkit validate` says it
+	// again.
+	ReasonConfigInvalid  = "config_invalid"
+	ReasonLoopCountError = "loop_count_error"
+	ReasonGitHubAPIError = "github_api_error"
 	// ReasonInvalidTicket: a ticket's awk-ticket block cannot be read. The
 	// issue carries a comment that says why.
 	ReasonInvalidTicket = "invalid_ticket"

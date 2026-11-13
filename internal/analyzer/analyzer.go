@@ -52,9 +52,16 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		configPath := config.Path(a.StateRoot)
 		config, err := LoadConfig(configPath)
 		if err != nil {
+			// A file that is not there is created; a file that cannot be used
+			// is corrected. The run stops either way, and says which.
+			reason := ReasonConfigNotFound
+			if !os.IsNotExist(err) {
+				reason = ReasonConfigInvalid
+				fmt.Fprintf(os.Stderr, "[analyzer] error: %v\n", err)
+			}
 			return &Decision{
 				NextAction: ActionNone,
-				ExitReason: ReasonConfigNotFound,
+				ExitReason: reason,
 			}, nil
 		}
 		a.Config = config
