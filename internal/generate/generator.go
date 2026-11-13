@@ -470,7 +470,7 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	var sb strings.Builder
 
 	sb.WriteString("# CLAUDE.md (Principal Agent Guide)\n\n")
-	sb.WriteString("This file is for the **Principal** agent. If you are a **Worker**, read " + bt + "AGENTS.md" + bt + " instead.\n\n")
+	sb.WriteString("This file is for the **Principal** agent. If you are a **Worker**, read " + bt + "AGENTS.md" + bt + " instead. If you are a subagent (such as " + bt + "pr-reviewer" + bt + " or " + bt + "conflict-resolver" + bt + ") or were started for a single task with its own instructions, follow those; the Principal role and workflow below do not apply to you.\n\n")
 	sb.WriteString("## Role: Principal Engineer\n\n")
 	sb.WriteString("You are the **Principal Engineer**, responsible for orchestrating the AWK automated workflow and ensuring quality.\n\n")
 	sb.WriteString("**Your responsibilities:**\n")
