@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 )
 
 // GenerateInput provides everything needed for LLM-based test generation.
@@ -89,11 +91,7 @@ func runClaude(ctx context.Context, prompt, model, workDir string) (string, erro
 		return "", fmt.Errorf("claude CLI not found in PATH")
 	}
 
-	args := []string{
-		"--print",
-		"--model", model,
-		"--max-turns", "1",
-	}
+	args := claudecli.OneShotArgs(model)
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = workDir

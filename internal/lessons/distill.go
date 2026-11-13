@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 )
 
 // FeedbackRecord mirrors the reviewer package's feedback JSONL entries.
@@ -102,7 +104,7 @@ func runDistillCLI(ctx context.Context, prompt, model string) (string, error) {
 	if _, err := exec.LookPath("claude"); err != nil {
 		return "", fmt.Errorf("claude CLI not found in PATH")
 	}
-	cmd := exec.CommandContext(ctx, "claude", "--print", "--model", model, "--max-turns", "1")
+	cmd := exec.CommandContext(ctx, "claude", claudecli.OneShotArgs(model)...)
 	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
