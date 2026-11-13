@@ -135,7 +135,7 @@ func Generate(opts Options) (*Result, error) {
 	}
 
 	// Load config
-	configPath := filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml")
+	configPath := projectconfig.Path(opts.StateRoot)
 	config, err := loadConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)

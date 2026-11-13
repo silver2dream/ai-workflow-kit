@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
@@ -282,7 +282,7 @@ func fetchPRState(ctx context.Context, prNumber int, timeout time.Duration) (*pr
 // humanFeedbackEnabled reports whether maintainer review feedback is read
 // and acted on (review.human_feedback, default: true).
 func humanFeedbackEnabled(stateRoot string) bool {
-	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(stateRoot))
 	if err != nil {
 		return true
 	}

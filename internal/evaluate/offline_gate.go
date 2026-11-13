@@ -2,6 +2,7 @@ package evaluate
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/audit"
-	"gopkg.in/yaml.v3"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
 // CheckO3Audit runs the project audit. P0 findings (missing CLAUDE.md,
@@ -73,60 +74,29 @@ func CheckO0GitIgnore(rootPath string) GateResult {
 	return Pass("all required paths are git-ignored")
 }
 
-// CheckO5ConfigValidation validates the workflow.yaml configuration file.
-// Returns PASS if the config is valid, FAIL otherwise.
+// CheckO5ConfigValidation checks the configuration the way `awkit validate`
+// and the pre-flight checks of a run do: it is read by the shared reader and
+// must pass its validation.
 func CheckO5ConfigValidation(rootPath string) GateResult {
-	configPath := filepath.Join(rootPath, ".ai", "config", "workflow.yaml")
-
-	data, err := os.ReadFile(configPath)
+	cfg, err := config.Load(rootPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		var parse *config.ParseError
+		switch {
+		case os.IsNotExist(err):
 			return Fail("workflow.yaml not found")
-		}
-		return Fail("cannot read workflow.yaml: " + err.Error())
-	}
-
-	// Parse YAML to validate structure
-	var config map[string]interface{}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return Fail("invalid YAML syntax: " + err.Error())
-	}
-
-	// Check required top-level fields
-	requiredFields := []string{"project", "repos", "git"}
-	var missingFields []string
-	for _, field := range requiredFields {
-		if _, ok := config[field]; !ok {
-			missingFields = append(missingFields, field)
+		case errors.As(err, &parse):
+			return Fail(err.Error())
+		default:
+			return Fail("cannot read workflow.yaml: " + err.Error())
 		}
 	}
-
-	if len(missingFields) > 0 {
-		return Fail("missing required fields: " + strings.Join(missingFields, ", "))
+	if problems := cfg.Validate(); len(problems) > 0 {
+		reasons := make([]string, len(problems))
+		for i, problem := range problems {
+			reasons[i] = problem.Error()
+		}
+		return Fail("workflow.yaml is not valid: " + strings.Join(reasons, "; "))
 	}
-
-	// Check project has name and type
-	project, ok := config["project"].(map[string]interface{})
-	if !ok {
-		return Fail("project must be a map")
-	}
-
-	if _, ok := project["name"]; !ok {
-		return Fail("project.name is required")
-	}
-	if _, ok := project["type"]; !ok {
-		return Fail("project.type is required")
-	}
-
-	// Check git has integration_branch
-	git, ok := config["git"].(map[string]interface{})
-	if !ok {
-		return Fail("git must be a map")
-	}
-	if _, ok := git["integration_branch"]; !ok {
-		return Fail("git.integration_branch is required")
-	}
-
 	return Pass("workflow.yaml is valid")
 }
 

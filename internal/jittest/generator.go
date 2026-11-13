@@ -58,6 +58,19 @@ func GenerateTests(ctx context.Context, input GenerateInput) ([]GeneratedTest, e
 	return tests, nil
 }
 
+// DiffBase names what a pull request's changes are compared with: the branch
+// it goes to as the remote has it, or the local branch of that name when
+// there is no such remote branch in this repository.
+func DiffBase(ctx context.Context, workDir, branch string) string {
+	remote := "origin/" + branch
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet", remote+"^{commit}")
+	cmd.Dir = workDir
+	if err := cmd.Run(); err == nil {
+		return remote
+	}
+	return branch
+}
+
 // GetDiff runs git diff to obtain the unified diff between base and head branches.
 func GetDiff(ctx context.Context, workDir, baseBranch, headBranch string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", baseBranch+"..."+headBranch)

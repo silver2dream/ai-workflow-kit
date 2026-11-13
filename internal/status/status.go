@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
-	"gopkg.in/yaml.v3"
 )
 
 type Options struct {
@@ -562,38 +562,20 @@ func parseIssueIDFromFilename(name string) int {
 	return i
 }
 
-// partialConfig is a lightweight struct for reading only rules/agents from workflow.yaml
-type partialConfig struct {
-	Rules struct {
-		Kit    []string `yaml:"kit"`
-		Custom []string `yaml:"custom"`
-	} `yaml:"rules"`
-	Agents struct {
-		Builtin []string `yaml:"builtin"`
-		Custom  []struct {
-			Name string `yaml:"name"`
-		} `yaml:"custom"`
-	} `yaml:"agents"`
-}
-
 func collectConfigInfo(root string) ConfigInfo {
-	configPath := filepath.Join(root, ".ai", "config", "workflow.yaml")
-	data, err := os.ReadFile(configPath)
+	// What is shown is what is in effect: the rules and agents a file that
+	// names none still gets are listed.
+	cfg, err := config.Load(root)
 	if err != nil {
 		return ConfigInfo{}
 	}
 
-	var pc partialConfig
-	if err := yaml.Unmarshal(data, &pc); err != nil {
-		return ConfigInfo{}
-	}
-
 	info := ConfigInfo{
-		RulesKit:      pc.Rules.Kit,
-		RulesCustom:   pc.Rules.Custom,
-		AgentsBuiltin: pc.Agents.Builtin,
+		RulesKit:      cfg.Rules.Kit,
+		RulesCustom:   cfg.Rules.Custom,
+		AgentsBuiltin: cfg.Agents.Builtin,
 	}
-	for _, agent := range pc.Agents.Custom {
+	for _, agent := range cfg.Agents.Custom {
 		if agent.Name != "" {
 			info.AgentsCustom = append(info.AgentsCustom, agent.Name)
 		}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
@@ -25,9 +24,9 @@ Options:
   --ticket        Required: Ticket file path
   --repo          Optional: Repo override (root/backend/frontend)
   --state-root    Optional: Override state root (default: git root)
-  --gh-timeout    Optional: GitHub CLI timeout (default: 60s)
-  --git-timeout   Optional: Git timeout (default: 120s)
-  --codex-timeout Optional: Codex timeout (default: 30m)
+  --gh-timeout    Optional: GitHub CLI timeout (default: timeouts.gh_seconds of workflow.yaml, 60s)
+  --git-timeout   Optional: Git timeout (default: timeouts.git_seconds, 120s)
+  --codex-timeout Optional: Worker backend timeout (default: timeouts.codex_minutes, 30m)
   --merge-issue   Optional: Merge issue type (conflict/rebase)
   --pr-number     Optional: PR number for merge issue resolution
   --json          Optional: Output result as JSON
@@ -40,6 +39,9 @@ Examples:
 `)
 }
 
+// runIssue runs the Worker for one issue. Replaced in tests.
+var runIssue = worker.RunIssue
+
 func cmdRunIssue(args []string) int {
 	fs := flag.NewFlagSet("run-issue", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -49,9 +51,10 @@ func cmdRunIssue(args []string) int {
 	ticketFile := fs.String("ticket", "", "")
 	repo := fs.String("repo", "", "")
 	stateRoot := fs.String("state-root", "", "")
-	ghTimeout := fs.Duration("gh-timeout", 60*time.Second, "")
-	gitTimeout := fs.Duration("git-timeout", 120*time.Second, "")
-	codexTimeout := fs.Duration("codex-timeout", 30*time.Minute, "")
+	// Not given, a timeout is the configuration's: the Worker fills it in.
+	ghTimeout := fs.Duration("gh-timeout", 0, "")
+	gitTimeout := fs.Duration("git-timeout", 0, "")
+	codexTimeout := fs.Duration("codex-timeout", 0, "")
 	mergeIssue := fs.String("merge-issue", "", "")
 	prNumber := fs.Int("pr-number", 0, "")
 	jsonOutput := fs.Bool("json", false, "")
@@ -107,7 +110,7 @@ func cmdRunIssue(args []string) int {
 	}
 
 	ctx := context.Background()
-	result, err := worker.RunIssue(ctx, worker.RunIssueOptions{
+	result, err := runIssue(ctx, worker.RunIssueOptions{
 		IssueID:      *issueNumber,
 		TicketFile:   *ticketFile,
 		RepoOverride: *repo,

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
@@ -209,10 +210,10 @@ func (d *Doctor) CheckGitHubLabels(ctx context.Context) []CheckResult {
 	var results []CheckResult
 
 	labels := []struct {
-		name       string
-		desc       string
-		canReset   bool
-		resetTo    string
+		name        string
+		desc        string
+		canReset    bool
+		resetTo     string
 		humanAction string
 	}{
 		{"needs-human-review", "Issues requiring human intervention", false, "", "manually review and close/merge"},
@@ -439,7 +440,7 @@ func (d *Doctor) CheckJiTTestCalibration() []CheckResult {
 
 // CheckConfigVersion checks if workflow.yaml needs migration to a newer version
 func (d *Doctor) CheckConfigVersion() []CheckResult {
-	configPath := filepath.Join(d.StateRoot, ".ai", "config", "workflow.yaml")
+	configPath := config.Path(d.StateRoot)
 	currentVersion, needed, err := migrate.NeedsMigration(configPath)
 	if err != nil {
 		// Config not found or unreadable — not an error for doctor

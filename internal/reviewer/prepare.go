@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
-	"gopkg.in/yaml.v3"
 )
 
 // PrepareReviewOptions configures the prepare review operation
@@ -35,8 +35,8 @@ type ReviewContext struct {
 	ReviewDir          string `json:"review_dir"`
 	WorktreePath       string `json:"worktree_path"`
 	TestCommand        string `json:"test_command"`
-	Language           string `json:"language"` // Programming language for test name validation
-	Ticket             string `json:"ticket,omitempty"`    // Issue body with acceptance criteria
+	Language           string `json:"language"`         // Programming language for test name validation
+	Ticket             string `json:"ticket,omitempty"` // Issue body with acceptance criteria
 	IssueJSON          string `json:"issue_json,omitempty"`
 	TaskContent        string `json:"task_content,omitempty"`
 	CommitsJSON        string `json:"commits_json,omitempty"`
@@ -177,30 +177,6 @@ func extractIssueBody(issueJSON string) string {
 	return issue.Body
 }
 
-// reviewConfig represents the review section in workflow.yaml
-type reviewConfig struct {
-	ScoreThreshold int    `yaml:"score_threshold"`
-	MergeStrategy  string `yaml:"merge_strategy"`
-}
-
-// workflowConfig represents the workflow.yaml structure for test command extraction
-type workflowConfig struct {
-	Repos  []repoConfig `yaml:"repos"`
-	Review reviewConfig `yaml:"review"`
-}
-
-type repoConfig struct {
-	Name     string       `yaml:"name"`
-	Path     string       `yaml:"path"`
-	Type     string       `yaml:"type"`
-	Language string       `yaml:"language"`
-	Verify   verifyConfig `yaml:"verify"`
-}
-
-type verifyConfig struct {
-	Test string `yaml:"test"`
-}
-
 // ReviewSettings holds review configuration loaded from workflow.yaml
 type ReviewSettings struct {
 	ScoreThreshold int
@@ -210,36 +186,12 @@ type ReviewSettings struct {
 // GetReviewSettings loads review config from workflow.yaml and applies defaults.
 // Returns default values (score_threshold=7, merge_strategy="squash") if config cannot be read.
 func GetReviewSettings(stateRoot string) ReviewSettings {
-	defaults := ReviewSettings{
-		ScoreThreshold: 7,
-		MergeStrategy:  "squash",
-	}
-
-	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
-	content, err := os.ReadFile(configPath)
+	cfg, err := config.Load(stateRoot)
 	if err != nil {
-		return defaults
+		cfg = config.Default()
 	}
-
-	var cfg workflowConfig
-	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return defaults
-	}
-
-	result := defaults
-	if cfg.Review.ScoreThreshold > 0 {
-		result.ScoreThreshold = cfg.Review.ScoreThreshold
-	}
-	if cfg.Review.MergeStrategy != "" {
-		switch cfg.Review.MergeStrategy {
-		case "squash", "merge", "rebase":
-			result.MergeStrategy = cfg.Review.MergeStrategy
-		default:
-			// Invalid strategy, keep default
-		}
-	}
-
-	return result
+	// A strategy the file names and AWK does not know is squash.
+	return ReviewSettings{ScoreThreshold: cfg.Review.ScoreThreshold, MergeStrategy: cfg.Review.Strategy()}
 }
 
 // repoSettings holds test command and language from workflow.yaml
@@ -253,15 +205,8 @@ type repoSettings struct {
 // Returns empty settings (TestCommand: "", Language: "unknown") if config cannot be read
 // or no matching repo is found, allowing callers to handle the fallback appropriately.
 func getRepoSettingsFromConfig(stateRoot, worktreePath string) repoSettings {
-	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
-	content, err := os.ReadFile(configPath)
+	cfg, err := config.Load(stateRoot)
 	if err != nil {
-		// Return empty/unknown settings instead of assuming Go project
-		return repoSettings{TestCommand: "", Language: "unknown"}
-	}
-
-	var cfg workflowConfig
-	if err := yaml.Unmarshal(content, &cfg); err != nil {
 		// Return empty/unknown settings instead of assuming Go project
 		return repoSettings{TestCommand: "", Language: "unknown"}
 	}
@@ -372,7 +317,6 @@ func fetchPRCommits(ctx context.Context, prNumber int, timeout time.Duration) st
 	}
 	return string(output)
 }
-
 
 // reviewerLessonCategories are the categories describing review-process
 // failures (as opposed to code failures) — the mistakes the REVIEWER makes.

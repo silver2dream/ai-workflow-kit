@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
 // AuditProject performs a full audit of the project at the given path.
@@ -50,7 +52,7 @@ func CheckRequiredFiles(path string) []Finding {
 	}
 
 	// Check .ai/config/workflow.yaml
-	workflowPath := filepath.Join(path, ".ai", "config", "workflow.yaml")
+	workflowPath := config.Path(path)
 	if !fileExists(workflowPath) {
 		findings = append(findings, NewFinding(FindingMissingWorkflowYAML, SeverityP0, workflowPath))
 	}

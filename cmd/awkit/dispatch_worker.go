@@ -5,10 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
@@ -126,7 +126,7 @@ func cmdDispatchWorker(args []string) int {
 
 	// Load hooks from config
 	var hookRunner *hooks.HookRunner
-	configPath := filepath.Join(*stateRoot, ".ai", "config", "workflow.yaml")
+	configPath := config.Path(*stateRoot)
 	if cfg, err := analyzer.LoadConfig(configPath); err == nil {
 		hookRunner = hooks.NewHookRunner(cfg.Hooks, *stateRoot, os.Stderr)
 	}

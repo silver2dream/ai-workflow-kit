@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
 
@@ -110,7 +111,7 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 		return
 	}
 
-	cfg, err := analyzer.LoadConfig(filepath.Join(opts.StateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(opts.StateRoot))
 	if err != nil || !cfg.Lessons.IsEnabled() {
 		return
 	}

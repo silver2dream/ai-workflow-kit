@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 )
@@ -337,7 +338,7 @@ _Source: awkit lessons promote %s_`,
 
 // loadLessonsConfig reads the lessons section of workflow.yaml with defaults.
 func loadLessonsConfig(stateRoot string) analyzer.LessonsConfig {
-	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(stateRoot))
 	if err != nil {
 		return analyzer.LessonsConfig{}
 	}

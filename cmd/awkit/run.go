@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
@@ -76,7 +77,7 @@ func cmdRun(args []string) int {
 	}
 
 	// Paths
-	configPath := filepath.Join(".ai", "config", "workflow.yaml")
+	configPath := config.Path(".")
 	lockFile := filepath.Join(".ai", "state", "kickoff.lock")
 	logDir := filepath.Join(".ai", "exe-logs")
 

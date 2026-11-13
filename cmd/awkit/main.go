@@ -13,6 +13,7 @@ import (
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
 	"github.com/silver2dream/ai-workflow-kit/internal/buildinfo"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
@@ -888,7 +889,7 @@ func cmdUpgrade(args []string) int {
 
 		// Check config migrations (dry-run)
 		if !*skipMigrate && !*forceConfig {
-			configPath := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
+			configPath := config.Path(targetDir)
 			if _, err := os.Stat(configPath); err == nil {
 				migrations, _ := migrate.Run(configPath, true)
 				if len(migrations) > 0 {
@@ -964,7 +965,7 @@ func cmdUpgrade(args []string) int {
 
 	// Run config migrations (unless --skip-migrate or --force-config)
 	if !*skipMigrate && !*forceConfig {
-		configPath := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
+		configPath := config.Path(targetDir)
 		if _, err := os.Stat(configPath); err == nil {
 			migrations, migrateErr := migrate.Run(configPath, *dryRun)
 			if migrateErr != nil {

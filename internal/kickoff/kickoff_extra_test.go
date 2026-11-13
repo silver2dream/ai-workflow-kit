@@ -732,32 +732,3 @@ func TestCheckAgents_AllPresent(t *testing.T) {
 		t.Errorf("CheckAgents with all present should not warn: %s", result.Message)
 	}
 }
-
-// =============================================================================
-// parseYAMLWorkerBackend (preflight.go)
-// =============================================================================
-
-func TestParseYAMLWorkerBackend_ValidYAML(t *testing.T) {
-	type testOut struct {
-		Backend string `yaml:"backend"`
-	}
-	data := []byte("backend: codex\n")
-	var out testOut
-	if err := parseYAMLWorkerBackend(data, &out); err != nil {
-		t.Fatalf("parseYAMLWorkerBackend: %v", err)
-	}
-	if out.Backend != "codex" {
-		t.Errorf("Backend = %q, want 'codex'", out.Backend)
-	}
-}
-
-func TestParseYAMLWorkerBackend_InvalidYAML(t *testing.T) {
-	type testOut struct {
-		Backend string `yaml:"backend"`
-	}
-	data := []byte("[invalid yaml")
-	var out testOut
-	if err := parseYAMLWorkerBackend(data, &out); err == nil {
-		t.Error("parseYAMLWorkerBackend with invalid YAML should return error")
-	}
-}
