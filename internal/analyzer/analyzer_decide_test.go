@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -225,6 +226,50 @@ func TestDecide_ConfigNotFound(t *testing.T) {
 	}
 	if decision.ExitReason != ReasonConfigNotFound {
 		t.Errorf("ExitReason = %q, want %q", decision.ExitReason, ReasonConfigNotFound)
+	}
+}
+
+// A configuration that is there and cannot be used stops the run under a
+// reason of its own, and what is wrong with it is said: "not found" sends a
+// person looking for a file that is in its place.
+func TestDecide_ConfigNotValid(t *testing.T) {
+	for name, content := range map[string]string{
+		"a value of the wrong kind": "timeouts: {gh_seconds: soon}\n",
+		"not YAML":                  "project: [unclosed\n",
+	} {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, ".ai", "config", "workflow.yaml")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		a := newTestAnalyzer(tmpDir, nil, NewMockGitHubClient())
+
+		captured, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		orig := os.Stderr
+		os.Stderr = captured
+		decision, err := a.Decide(context.Background())
+		os.Stderr = orig
+		if closeErr := captured.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		said, _ := os.ReadFile(captured.Name())
+
+		if err != nil || decision.NextAction != ActionNone || decision.ExitReason != ReasonConfigInvalid {
+			t.Errorf("%s: decision = %+v, err = %v; want the run to stop with %s", name, decision, err, ReasonConfigInvalid)
+		}
+		if !strings.Contains(string(said), "workflow.yaml is not valid: ") {
+			t.Errorf("%s: what is wrong with the file is not said: %q", name, said)
+		}
+		// Nothing was decided from a file that could not be read: no loop was counted.
+		if _, err := os.Stat(filepath.Join(tmpDir, ".ai", "state", "loop_count")); !os.IsNotExist(err) {
+			t.Errorf("%s: the run went on to count a loop (err = %v)", name, err)
+		}
 	}
 }
 
