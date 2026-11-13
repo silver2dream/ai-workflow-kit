@@ -72,9 +72,10 @@ If push is **rejected** (e.g. `[rejected]`, `stale info`, or `failed to push`), 
    ```bash
    git fetch origin
    ```
-2. Re-rebase onto the updated branch:
+2. Re-rebase onto the PR's base branch. It is not part of your input, so look it up:
    ```bash
-   git rebase origin/<base-branch>
+   BASE=$(gh pr view $PR_NUMBER --json baseRefName --jq .baseRefName)
+   git rebase "origin/$BASE"
    ```
    If new conflicts appear, resolve them (repeat Steps 2-4).
 3. Push again:
@@ -193,11 +194,15 @@ go mod tidy
 git add go.mod go.sum
 ```
 
-### package.json/yarn.lock Conflicts
+### package.json / lockfile Conflicts
+
+Resolve `package.json` by hand, then regenerate the lockfile with the package manager the repository uses (its lockfile tells you which) instead of merging the lockfile by hand:
 
 ```bash
-yarn install
-git add package.json yarn.lock
+npm install     # package-lock.json
+yarn install    # yarn.lock
+pnpm install    # pnpm-lock.yaml
+git add package.json <the lockfile>
 ```
 
 ---

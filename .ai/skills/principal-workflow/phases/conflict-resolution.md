@@ -22,7 +22,7 @@
 | `TOO_COMPLEX` | 1. 移除 `in-progress` 標籤<br>2. 添加 `needs-human-review` 和 `merge-conflict` 標籤<br>3. 在 Issue 添加評論說明需要人工介入<br>4. 執行 `awkit stop-workflow needs_human_review` |
 | `FAILED` 或其他 | 1. 移除 `in-progress` 標籤<br>2. 添加 `merge-conflict` 標籤<br>3. 回到 main-loop Step 1（下輪會重試） |
 
-**標籤操作範例**：
+**標籤操作範例**（以下是預設標籤名稱；若 `workflow.yaml` 的 `github.labels` 有自訂，改用設定的名稱）：
 ```bash
 # RESOLVED 後
 gh issue edit <issue_number> --remove-label in-progress,merge-conflict
