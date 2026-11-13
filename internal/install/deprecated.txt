@@ -30,6 +30,9 @@
 .ai/specs/example/design.md
 .ai/specs/example/tasks.md
 .ai/specs/example
+# the template of a spec's design.md, and the directory that held nothing else
+.ai/templates/design.md.example
+.ai/templates
 
 # v0.16.x - rule examples of stacks the kit no longer ships. A copy a
 # project enabled lives in .ai/rules/ and is not touched.

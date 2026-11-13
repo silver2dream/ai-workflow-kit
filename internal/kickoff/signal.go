@@ -303,7 +303,7 @@ func (s *SignalHandler) printSummary(graceful bool) {
 	fmt.Println("Before next run, please verify:")
 	fmt.Println("  1. Check for orphan processes: ps aux | grep codex")
 	fmt.Println("  2. Check worktree status: ls .worktrees/")
-	fmt.Println("  3. Restart: awkit kickoff")
+	fmt.Println("  3. Restart: awkit run")
 	fmt.Println("")
 }
 

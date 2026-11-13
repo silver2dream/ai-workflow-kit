@@ -39,7 +39,6 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 func TestKitFSContainsRequiredDirectories(t *testing.T) {
 	requiredDirs := []string{
 		".ai/config",
-		".ai/templates",
 		".ai/rules/_kit",
 		".ai/rules/_examples",
 		// Skills

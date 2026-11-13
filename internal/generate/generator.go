@@ -515,7 +515,7 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## Principal Workflow (MUST FOLLOW)\n\n")
-	sb.WriteString("When " + bt + "awkit kickoff" + bt + " starts, use the **principal-workflow** Skill:\n\n")
+	sb.WriteString("When " + bt + "awkit run" + bt + " starts, use the **principal-workflow** Skill:\n\n")
 	sb.WriteString("1. **Read** " + bt + ".ai/skills/principal-workflow/SKILL.md" + bt + "\n")
 	sb.WriteString("2. **Read** " + bt + ".ai/skills/principal-workflow/phases/main-loop.md" + bt + "\n")
 	sb.WriteString("3. Follow the main loop instructions\n\n")
@@ -544,7 +544,7 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("---\n\n")
 	sb.WriteString("## Quick Reference\n\n")
 	sb.WriteString("### Start Work\n")
-	sb.WriteString("```bash\nawkit kickoff\n```\n\n")
+	sb.WriteString("```bash\nawkit run\n```\n\n")
 	sb.WriteString("### Check Status\n")
 	sb.WriteString("```bash\nawkit status\n```\n\n")
 	sb.WriteString("### Stop Work\n")
@@ -742,7 +742,7 @@ func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 
 	sb.WriteString("\nRelease rule (root only):\n")
 	sb.WriteString(fmt.Sprintf("- Only create PR from %s%s%s -> %s%s%s for release tickets.\n", bt, ctx.Git.IntegrationBranch, bt, bt, ctx.Git.ReleaseBranch, bt))
-	sb.WriteString(fmt.Sprintf("- Do NOT target %s%s%s unless the ticket explicitly says %sRelease: true%s.\n\n", bt, ctx.Git.ReleaseBranch, bt, bt, bt))
+	sb.WriteString(fmt.Sprintf("- Do NOT target %s%s%s unless the ticket's awk-ticket block sets %srelease: true%s.\n\n", bt, ctx.Git.ReleaseBranch, bt, bt, bt))
 	sb.WriteString("## 1. Branching Strategy\n\n")
 	sb.WriteString("- **Feature branches**: " + bt + "feat/<topic>" + bt + "\n")
 	sb.WriteString("- **Fix branches**: " + bt + "fix/<topic>" + bt + "\n")

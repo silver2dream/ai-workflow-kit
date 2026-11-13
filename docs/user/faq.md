@@ -52,12 +52,12 @@ awkit generate
 
 ## 工作流程
 
-### Q: awkit kickoff 和 awkit generate 有什麼差別？
+### Q: awkit run 和 awkit generate 有什麼差別？
 
 **A:**
 - `awkit generate` - 根據 workflow.yaml 生成設定檔 (CLAUDE.md, AGENTS.md 等)
-- `awkit kickoff` - 啟動完整的 AI 工作流程 (審計、建立 Issue、執行任務)
-- `kickoff.sh` - legacy bash 版本，建議使用 `awkit kickoff` 取代
+- `awkit run` - 啟動完整的 AI 工作流程 (審計、建立 Issue、執行任務)
+- `kickoff.sh` - legacy bash 版本，建議使用 `awkit run` 取代
 
 ---
 
@@ -74,58 +74,42 @@ touch .ai/state/STOP
 
 ### Q: --dry-run 模式會做什麼？
 
-**A:** 顯示將執行的操作但不實際執行，用於預覽和測試。
+**A:** 只做啟動前檢查（工具、登入、設定、權限），不會開始工作。
 
 ---
 
-### Q: 什麼是 Spec？
+### Q: 什麼是票券？
 
-**A:** Spec 是任務規格檔，定義要實作的功能。結構如下：
-```
-.ai/specs/<feature-name>/
-├── requirements.md    # 需求文檔 (可選)
-├── design.md          # 設計文檔 (可選)
-└── tasks.md           # 任務清單 (必要)
-```
+**A:** 票券就是工作的單位：一個帶有 task 標籤（預設 `ai-task`）的 GitHub Issue。未完成的票券就是工作流程要做的事，沒有另外的任務清單檔。
 
 ---
 
-### Q: 如何啟用 Spec？
+### Q: 票券的格式是什麼？
 
-**A:** 在 workflow.yaml 中加入：
-```yaml
-specs:
-  active:
-    - my-feature
+**A:** 內文要有 `## Summary`、`## Scope`、`## Acceptance Criteria`（至少一個 `- [ ]`）、`## Testing Requirements`，以及一個 `yaml awk-ticket` 區塊：
+
+````markdown
+```yaml awk-ticket
+schema: 1
+repo: backend
+depends_on: [12, 15]
 ```
+````
+
+`repo` 是 `workflow.yaml` 裡的 repo 名稱或 `root`；`depends_on` 是必須先完成的 Issue，可省略。用 `awkit create-task --title ... --body-file ...` 建立，內文不合格時不會建立。完整說明見 `.ai/skills/principal-workflow/tasks/create-task.md`。
 
 ---
 
-### Q: tasks.md 的格式是什麼？
+### Q: 票券的處理順序？
 
-**A:**
-```markdown
-# Feature Name
-
-Repo: backend
-Coordination: sequential
-
-## Tasks
-
-- [ ] 1. First task
-  - [ ] 1.1 Subtask
-  - _depends_on: -_
-
-- [ ] 2. Second task
-  - _depends_on: 1_
-```
+**A:** 依 Issue 編號由小到大。`depends_on` 裡的 Issue 還沒完成的票會被跳過；所有待辦的票都在等時，流程會以 `blocked_by_dependencies` 停下。只想做某一張票時用 `awkit run --issue N`。
 
 ---
 
 ### Q: 什麼是 Principal 和 Worker？
 
 **A:**
-- **Principal (Claude Code)** - 讀取 spec、建立 Issue、審查 PR、決策
+- **Principal (Claude Code)** - 依序處理票券、派工、審查 PR、決策
 - **Worker** - 實作程式碼、提交 PR。後端可選 `codex`（預設）或 `claude-code`，由 `worker.backend` 設定
 
 ---

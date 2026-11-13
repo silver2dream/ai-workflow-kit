@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get AWKit running in 5 minutes. This guide covers the fastest path from zero to `awkit kickoff`.
+Get AWKit running in 5 minutes. This guide covers the fastest path from zero to `awkit run`.
 
 ---
 
@@ -13,7 +13,7 @@ Install these **before** anything else:
 | **GitHub CLI (`gh`)** | [cli.github.com](https://cli.github.com/) | Issue/PR operations (required) |
 | **`gh auth login`** | Run after installing `gh` | **#1 first-time blocker** — authenticate now |
 | **Claude Code (`claude`)** | [claude.ai/download](https://claude.ai/download) | Principal AI agent |
-| **Codex (`codex`)** | per Codex docs | Default Worker backend (`worker.backend: codex`) — needed for `kickoff` to dispatch work; skip if you set `worker.backend: claude-code` |
+| **Codex (`codex`)** | per Codex docs | Default Worker backend (`worker.backend: codex`) — needed for `awkit run` to dispatch work; skip if you set `worker.backend: claude-code` |
 | **Git** | [git-scm.com](https://git-scm.com/) | Version control |
 
 ```bash
@@ -85,66 +85,51 @@ repos:
       test: "go test ./..."
 
 git:
-  integration_branch: "feat/my-feature"   # PR target branch
-
-specs:
-  base_path: ".ai/specs"
-  active:
-    - my-feature              # must match a folder under .ai/specs/
+  integration_branch: "develop"           # PR target branch
 ```
 
 Key points:
-- `specs.active` **must not be empty** — this tells AWKit which specs to process
+- `repos[].name` is what a ticket names as its `repo`; the repository root is always available as `root`
+- `repos[].verify` holds the commands the Worker, the review and CI run
 - `git.integration_branch` is the PR target (not `main`)
 
 ---
 
-## Step 4: Write your spec
+## Step 4: Write a ticket
 
-Create a spec folder under `.ai/specs/`:
+The work is a queue of tickets. A ticket is a GitHub issue with the task label (`ai-task`), and its body says what to do and, in a small block, which repo it is for.
 
-```bash
-mkdir -p .ai/specs/my-feature
+Write the body to a file, for example `ticket.md`:
+
+````markdown
+## Summary
+Add a health endpoint.
+
+## Scope
+- GET /healthz in the API server
+
+## Acceptance Criteria
+- [ ] GET /healthz answers 200 with the build version
+- [ ] Unit tests added for new functionality
+
+## Testing Requirements
+- A unit test covers the handler, the happy path and the error cases
+
+```yaml awk-ticket
+schema: 1
+repo: root
 ```
+````
 
-### Option A: Epic mode (recommended)
+The `yaml awk-ticket` block:
 
-Write a `design.md` — the Principal will generate tasks from it:
+| Field | |
+|-------|---|
+| `schema` | always `1` |
+| `repo` | a repo name from `workflow.yaml`, or `root` |
+| `depends_on` | optional: issues that must be done first, e.g. `[12, 15]` |
 
-```markdown
-# My Feature Design
-
-## Overview
-Brief description of what this feature does.
-
-## Requirements
-- Requirement 1
-- Requirement 2
-
-## Technical Design
-Describe the implementation approach.
-```
-
-### Option B: tasks.md mode
-
-Write a `tasks.md` directly:
-
-```markdown
-# My Feature
-
-Repo: root
-Coordination: sequential
-
-## Tasks
-
-- [ ] 1. Implement data model
-  - [ ] 1.1 Create schema
-  - [ ] 1.2 Add validation
-
-- [ ] 2. Add API endpoint
-  - [ ] 2.1 Create handler
-  - [ ] 2.2 Write tests
-```
+Acceptance criteria describe behaviour, not test names: the review checks that each one is covered by a test that ran.
 
 ---
 
@@ -160,21 +145,28 @@ Fix any issues `doctor` reports before continuing.
 
 ---
 
-## Step 6: Kickoff
+## Step 6: Create the ticket and run
 
 ```bash
-# Preview what would happen (no side effects)
-awkit kickoff --dry-run
+# Create the issue. The body is checked first; nothing is created from one that would not work
+awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
 
-# Start the workflow
-awkit kickoff
+# Pre-flight checks only (no side effects)
+awkit run --dry-run
+
+# Work through every open ticket
+awkit run
+
+# Or one ticket only
+awkit run --issue 42
 ```
 
-AWKit will:
-1. Audit the project
-2. Create GitHub Issues from your spec
-3. Dispatch Workers to implement each task
-4. Review and merge PRs automatically
+For each ticket, in the order of the issue numbers and once what it depends on is done, AWKit will:
+1. Dispatch a Worker to implement it and open a pull request
+2. Review the pull request: run the tests, check every acceptance criterion against a test that ran
+3. Merge it, or send the Worker back with what the review found
+
+The run ends when no ticket is left, or when something needs a person. `awkit status` says where things stand.
 
 ---
 
@@ -190,7 +182,7 @@ To resume later:
 
 ```bash
 rm .ai/state/STOP
-awkit kickoff
+awkit run
 ```
 
 ---
@@ -200,8 +192,10 @@ awkit kickoff
 | Problem | Fix |
 |---------|-----|
 | `gh not authenticated` | Run `gh auth login` |
-| `specs.active is empty` | Add a spec name to `specs.active` in workflow.yaml |
-| `spec missing tasks.md or design.md` | Create the file in `.ai/specs/<name>/` |
+| `ticket body has no yaml awk-ticket block` | Add the block to the ticket body (Step 4) |
+| `Workflow stopped (invalid_ticket)` | The issue has a comment that says what is wrong with its block. Correct it, remove the `needs-human-review` label, run again |
+| `Workflow stopped (blocked_by_dependencies)` | Every ticket waits for an issue in its `depends_on` that is not done. Finish or reopen that issue, or correct `depends_on` |
+| `Workflow stopped (no_actionable_tasks)` | There is no open ticket to work on. Create one (Step 6) |
 | `repo path does not exist` | Check `repos[].path` in workflow.yaml |
 | `Working directory not clean` | Commit or stash your changes |
 

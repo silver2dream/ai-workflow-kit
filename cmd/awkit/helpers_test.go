@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// formatDuration (kickoff.go)
+// formatDuration (run.go)
 // ---------------------------------------------------------------------------
 
 func TestFormatDuration_UnderMinute(t *testing.T) {
@@ -54,7 +54,7 @@ func TestFormatDuration_PadSeconds(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fileExists (kickoff.go)
+// fileExists (run.go)
 // ---------------------------------------------------------------------------
 
 func TestFileExists_ExistingFile(t *testing.T) {
@@ -84,7 +84,7 @@ func TestFileExists_ExistingDir(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// getEnvInt (kickoff.go)
+// getEnvInt (run.go)
 // ---------------------------------------------------------------------------
 
 func TestGetEnvInt_Default_EnvNotSet(t *testing.T) {

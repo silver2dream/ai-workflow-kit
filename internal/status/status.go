@@ -341,11 +341,11 @@ func Collect(root string, opts Options) (Report, error) {
 	suggestions := make([]string, 0, 6)
 
 	if report.Control.StopPresent {
-		suggestions = append(suggestions, "STOP marker is present; delete `.ai/state/STOP` to resume, then run `awkit kickoff --resume`.")
+		suggestions = append(suggestions, "STOP marker is present; delete `.ai/state/STOP` to resume, then run `awkit run`.")
 	}
 
 	if report.Run.State == "stale_lock" {
-		suggestions = append(suggestions, "Stale lock detected; rerun `awkit kickoff` (it will auto-clear stale lock), or delete `.ai/state/kickoff.lock` if needed.")
+		suggestions = append(suggestions, "Stale lock detected; rerun `awkit run` (it will auto-clear stale lock), or delete `.ai/state/kickoff.lock` if needed.")
 	}
 
 	if report.Run.State == "running" {

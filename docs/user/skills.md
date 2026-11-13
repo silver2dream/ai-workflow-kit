@@ -48,16 +48,14 @@ Principal Agent 的主工作流程。
 
 **用途：**
 - 執行完整的 AWK 自動化工作流程
-- 通常由 `awkit kickoff` 自動觸發
+- 通常由 `awkit run` 自動觸發
 
 **流程：**
-1. 讀取 specs/tasks.md
-2. 選擇下一個任務
-3. 建立 GitHub Issue
-4. 調度 Worker 執行
-5. 審查 PR
-6. 合併或退回
-7. 迴圈
+1. 取得下一張票券（未完成、依賴都已完成的 Issue 中編號最小的）
+2. 調度 Worker 執行
+3. 審查 PR
+4. 合併或退回
+5. 迴圈
 
 ---
 
@@ -137,14 +135,14 @@ mkdir -p .ai/skills/my-skill/phases
 
 ## 與 awkit CLI 的整合
 
-Skills 可以透過 `awkit kickoff` 自動觸發：
+Skills 可以透過 `awkit run` 自動觸發：
 
 ```bash
 # 啟動工作流程 (使用 principal-workflow skill)
-awkit kickoff
+awkit run
 
 # 乾跑模式
-awkit kickoff --dry-run
+awkit run --dry-run
 ```
 
 ---

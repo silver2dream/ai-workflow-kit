@@ -11,8 +11,6 @@ version: "1.2"
 project: { ... }
 repos: [ ... ]
 git: { ... }
-specs: { ... }
-tasks: { ... }
 audit: { ... }
 github: { ... }
 rules: { ... }
@@ -135,57 +133,6 @@ git:
 | `release_branch` | 是 | 正式發布的分支 |
 | `commit_format` | 是 | Commit message 格式 |
 | `pr_body_template` | 否 | PR 描述模板，支援變數 |
-
----
-
-## specs - Spec 設定
-
-```yaml
-specs:
-  base_path: ".ai/specs"
-  files:
-    requirements: "requirements.md"   # 可選
-    design: "design.md"               # 可選
-    tasks: "tasks.md"                 # 必要
-  auto_generate_tasks: true
-  active:
-    - my-feature
-    - another-feature
-```
-
-| 欄位 | 必填 | 說明 |
-|------|------|------|
-| `base_path` | 是 | Spec 目錄根路徑 |
-| `files` | 否 | Spec 檔案名稱對應 |
-| `auto_generate_tasks` | 否 | 是否從 design.md 自動生成 tasks.md |
-| `active` | 是 | 目前啟用的 spec 清單 |
-
-### Spec 目錄結構
-
-```
-.ai/specs/
-├── my-feature/
-│   ├── requirements.md    # 可選：需求文檔
-│   ├── design.md          # 可選：設計文檔
-│   └── tasks.md           # 必要：任務清單
-└── another-feature/
-    └── tasks.md
-```
-
----
-
-## tasks - 任務格式設定
-
-```yaml
-tasks:
-  format:
-    uncompleted: "- [ ]"     # 未完成任務
-    completed: "- [x]"       # 已完成任務
-    optional: "- [ ]*"       # 可選任務
-  source_priority:
-    - audit                  # 優先處理 audit 發現的問題
-    - specs                  # 再處理 specs 中的任務
-```
 
 ---
 
@@ -552,10 +499,6 @@ git:
   release_branch: "main"
   commit_format: "[type] subject"
 
-specs:
-  base_path: ".ai/specs"
-  active: []
-
 github:
   repo: ""
 
@@ -599,10 +542,6 @@ git:
   integration_branch: "develop"
   release_branch: "main"
   commit_format: "[type] subject"
-
-specs:
-  base_path: ".ai/specs"
-  active: []
 
 github:
   repo: ""

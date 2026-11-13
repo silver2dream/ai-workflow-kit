@@ -34,7 +34,7 @@ If you want stricter, tech-specific rules, copy from `.ai/rules/_examples/` into
 
 ## Principal Workflow (MUST FOLLOW)
 
-When `awkit kickoff` starts, use the **principal-workflow** Skill:
+When `awkit run` starts, use the **principal-workflow** Skill:
 
 1. **Read** `.ai/skills/principal-workflow/SKILL.md`
 2. **Read** `.ai/skills/principal-workflow/phases/main-loop.md`
@@ -79,7 +79,7 @@ AWK supports three repository types configured in `.ai/config/workflow.yaml`:
 
 ### Start Work
 ```bash
-awkit kickoff
+awkit run
 ```
 
 ### Check Status

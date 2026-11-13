@@ -82,12 +82,12 @@ Create issues with `awkit create-task`, in dependency order:
 ## Integration with AWK Workflow
 
 Issues created by this skill carry the task label and a `yaml awk-ticket` block,
-and are processed by `awkit kickoff` (the AWK principal workflow): in the order
+and are processed by `awkit run` (the AWK principal workflow): in the order
 of their numbers, each one once the issues it depends on are done.
 
 **Recommended workflow:**
 ```
-/create-issues → (user approves) → issues created → awkit kickoff
+/create-issues → (user approves) → issues created → awkit run
 ```
 
 ## Self-Check

@@ -32,7 +32,7 @@ func TestTernary_False(t *testing.T) {
 
 func TestCmdHelp_KnownCommands(t *testing.T) {
 	commands := []string{
-		"init", "install", "upgrade", "uninstall", "kickoff",
+		"init", "install", "upgrade", "uninstall", "run", "kickoff",
 		"validate", "status", "next",
 		"check-result", "dispatch-worker", "run-issue",
 		"analyze-next", "stop-workflow",
@@ -454,13 +454,22 @@ func TestCmdEvents_Help(t *testing.T) {
 }
 
 // ===========================================================================
-// cmdKickoff flag validation (kickoff.go)
+// cmdRun flag validation (run.go)
 // ===========================================================================
 
-func TestCmdKickoff_Help(t *testing.T) {
-	exitCode := cmdKickoff([]string{"--help"})
+func TestCmdRun_Help(t *testing.T) {
+	exitCode := cmdRun([]string{"--help"})
 	if exitCode != 0 {
-		t.Errorf("cmdKickoff(--help) = %d, want 0", exitCode)
+		t.Errorf("cmdRun(--help) = %d, want 0", exitCode)
+	}
+}
+
+// What --issue takes is checked before anything is started.
+func TestCmdRun_IssueMustBeANumber(t *testing.T) {
+	for _, value := range []string{"-3", "abc", "1.5", ""} {
+		if exitCode := cmdRun([]string{"--issue", value, "--dry-run"}); exitCode != 2 {
+			t.Errorf("cmdRun(--issue %q) = %d, want 2", value, exitCode)
+		}
 	}
 }
 
@@ -811,10 +820,43 @@ func TestUsageHooks_ContainsContent(t *testing.T) {
 	}
 }
 
-func TestUsageKickoff_ContainsContent(t *testing.T) {
-	output := captureStderr(usageKickoff)
-	if !strings.Contains(output, "kickoff") {
-		t.Error("usageKickoff should mention 'kickoff'")
+func TestUsageRun_ContainsContent(t *testing.T) {
+	output := captureStderr(usageRun)
+	for _, want := range []string{"awkit run [options]", "--issue N", "--dry-run", "--background", "--force", "awkit kickoff"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("usageRun should mention %q", want)
+		}
+	}
+}
+
+// The usage names every command a person runs and every command the workflow
+// runs, each once, and `run` is how the workflow is started.
+func TestUsage_ListsEveryCommandOnce(t *testing.T) {
+	output := captureStderr(usage)
+	commands := []string{
+		"init", "upgrade", "uninstall", "generate", "validate", "list-presets",
+		"create-task", "run", "status", "next", "doctor", "reset",
+		"events", "feedback-stats", "lessons", "evaluate", "hooks",
+		"analyze-next", "dispatch-worker", "check-result", "run-issue", "prepare-review", "submit-review",
+		"jittest", "stop-workflow", "reconcile", "context-snapshot",
+		"check-update", "completion", "version", "help",
+	}
+	for _, command := range commands {
+		if got := strings.Count(output, "\n  "+command+" "); got != 1 {
+			t.Errorf("the usage lists %q %d times, want once", command, got)
+		}
+	}
+	if strings.Contains(output, "kickoff") {
+		t.Error("the usage still shows the former name of run")
+	}
+	// Every command the usage lists has its own help.
+	for _, command := range commands {
+		if command == "help" {
+			continue
+		}
+		if exitCode := cmdHelp(command); exitCode != 0 {
+			t.Errorf("awkit help %s = %d, want 0", command, exitCode)
+		}
 	}
 }
 
@@ -1079,7 +1121,7 @@ func TestAllCommands_HelpFlag(t *testing.T) {
 		{"status", cmdStatus},
 		{"next", cmdNext},
 		{"events", cmdEvents},
-		{"kickoff", cmdKickoff},
+		{"run", cmdRun},
 	}
 
 	for _, tt := range tests {

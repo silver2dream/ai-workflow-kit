@@ -216,11 +216,7 @@
 
 while True:
     1. 檢查 pending issues: `gh issue list --label ai-task --state open`
-    2. 如果沒有 pending:
-       - 若 tasks.md 不存在但 design.md 存在，先生成 tasks.md
-       - 分析 <specs.base_path>/<active_spec>/tasks.md
-       - 找出未完成任務
-       - 創建新 Issue（含完整 ticket 模板）
+    2. 如果沒有 pending: 工作完成，結束（票券只來自已存在的 Issue）
     3. 選擇優先級最高的 issue
     4. 執行 Worker: `awkit run-issue <id> <file>`
     5. 讀取結果: `cat .ai/results/issue-<id>.json`
@@ -438,16 +434,16 @@ These scripts are not part of the automatic workflow loop, but can be used manua
 ## 9. Quick Start
 
 ```bash
-# 1. 確認環境（awkit kickoff 會自動檢查）
+# 1. 確認環境（awkit run 會自動檢查）
 claude --version    # Claude Code CLI
 codex --version     # Codex CLI
 gh auth status      # GitHub 認證
 
 # 2. 啟動工作流
 # 方式 A: 使用 awkit CLI（推薦）
-awkit kickoff              # 啟動工作流
-awkit kickoff --dry-run    # 只做前置檢查
-awkit kickoff --background # 背景執行（睡前啟動）
+awkit run              # 啟動工作流
+awkit run --dry-run    # 只做前置檢查
+awkit run --background # 背景執行（睡前啟動）
 awkit validate             # 只驗證配置
 
 # Legacy bash 腳本已移除；請使用上方的 awkit 命令
