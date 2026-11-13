@@ -38,6 +38,13 @@ type FeedbackEntry struct {
 	// InjectedLessons are the lessons that were in the Worker's prompt for
 	// the attempt a rejection judged.
 	InjectedLessons []string `json:"injected_lessons,omitempty"`
+	// Source is "human" when the entry records a maintainer's action: review
+	// feedback they wrote (a rejection) or a merge they made outside the
+	// workflow (an approval). Empty for the automated review.
+	Source string `json:"source,omitempty"`
+	// Refs identify the maintainer review items a human rejection records
+	// ("review:<id>", "comment:<id>"), so each is recorded once.
+	Refs []string `json:"refs,omitempty"`
 }
 
 // feedbackFile is the JSONL file path relative to state root.
