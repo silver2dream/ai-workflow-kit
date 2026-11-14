@@ -182,6 +182,10 @@ func extractIssueBody(issueJSON string) string {
 type ReviewSettings struct {
 	ScoreThreshold int
 	MergeStrategy  string
+	// TestTimeout bounds the run of the tests the review makes again:
+	// timeouts.verify_minutes, the limit the Worker's runner has for the same
+	// command.
+	TestTimeout time.Duration
 }
 
 // GetReviewSettings loads review config from workflow.yaml and applies defaults.
@@ -192,7 +196,11 @@ func GetReviewSettings(stateRoot string) ReviewSettings {
 		cfg = config.Default()
 	}
 	// A strategy the file names and AWK does not know is squash.
-	return ReviewSettings{ScoreThreshold: cfg.Review.ScoreThreshold, MergeStrategy: cfg.Review.Strategy()}
+	return ReviewSettings{
+		ScoreThreshold: cfg.Review.ScoreThreshold,
+		MergeStrategy:  cfg.Review.Strategy(),
+		TestTimeout:    time.Duration(cfg.Timeouts.VerifyMinutes) * time.Minute,
+	}
 }
 
 // repoSettings holds test command and language from workflow.yaml

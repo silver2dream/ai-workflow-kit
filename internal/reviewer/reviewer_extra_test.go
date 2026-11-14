@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
@@ -215,5 +216,36 @@ func TestCleanupWorktree_NonExistentWorktree(t *testing.T) {
 	err := cleanupWorktree(dir, 999)
 	if err != nil {
 		t.Errorf("cleanupWorktree with non-existent worktree should not error, got: %v", err)
+	}
+}
+
+// The review runs the tests again with the time limit the configuration
+// gives a build or a test command: the one the Worker's runner has for the
+// same command. It had five minutes whatever the project said.
+func TestSubmitReviewOptions_FillDefaults(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(layout.Config(dir)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.Config(dir), []byte("timeouts: {verify_minutes: 25}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GetReviewSettings(dir).TestTimeout; got != 25*time.Minute {
+		t.Errorf("the review's limit for the tests = %v, want the configured 25m", got)
+	}
+	if got := GetReviewSettings(t.TempDir()).TestTimeout; got != 10*time.Minute {
+		t.Errorf("without a configuration = %v, want 10m", got)
+	}
+
+	opts := SubmitReviewOptions{StateRoot: dir}
+	opts.fillDefaults()
+	if opts.TestTimeout != 25*time.Minute || opts.GHTimeout != 60*time.Second || opts.ScoreThreshold != 7 || opts.MergeStrategy != "squash" {
+		t.Errorf("what was left open = %+v; want the tests' limit from the configuration, 60s for gh, 7, squash", opts)
+	}
+
+	set := SubmitReviewOptions{StateRoot: dir, TestTimeout: time.Minute, GHTimeout: time.Second, ScoreThreshold: 5, MergeStrategy: "rebase"}
+	set.fillDefaults()
+	if set.TestTimeout != time.Minute || set.GHTimeout != time.Second || set.ScoreThreshold != 5 || set.MergeStrategy != "rebase" {
+		t.Errorf("what the caller set = %+v; want it kept", set)
 	}
 }

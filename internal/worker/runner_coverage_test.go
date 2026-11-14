@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1260,5 +1261,70 @@ func TestFillTimeouts(t *testing.T) {
 	opts.fillTimeouts(workflowTimeouts{GHSeconds: -1})
 	if opts.GHTimeout != 60*time.Second || opts.GitTimeout != 2*time.Second || opts.CodexTimeout != 30*time.Minute {
 		t.Errorf("without configured timeouts = %v, %v, %v; want 60s, the caller's 2s, 30m", opts.GHTimeout, opts.GitTimeout, opts.CodexTimeout)
+	}
+}
+
+// A build, a test or a setup command has the time limit of such commands.
+// It used to have the one of a git command, two minutes unless configured:
+// a test suite that needs longer was stopped and counted as a failed
+// verification on every attempt.
+func TestRunVerificationCommand_HasItsOwnTimeLimit(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not on the PATH")
+	}
+	ctx, dir := context.Background(), t.TempDir()
+
+	// Longer than a git command may take, well within its own limit.
+	patient := RunIssueOptions{GitTimeout: 10 * time.Millisecond, VerifyTimeout: time.Minute}
+	if err := patient.runVerificationCommand(ctx, dir, "sleep 0.3"); err != nil {
+		t.Errorf("a command within the limit of verification, past the one of git: %v", err)
+	}
+
+	// Past its own limit, however long a git command may take. The command
+	// is stopped together with what it started: the sleep is a child of the
+	// shell, and holds the shell's output open for as long as it lives.
+	hurried := RunIssueOptions{GitTimeout: time.Hour, VerifyTimeout: 200 * time.Millisecond}
+	started := time.Now()
+	err := hurried.runVerificationCommand(ctx, dir, "sleep 4; echo done")
+	if err == nil || !strings.Contains(err.Error(), "timeout after 200ms") {
+		t.Errorf("a command past the limit of verification: err = %v, want a timeout after 200ms", err)
+	}
+	if took := time.Since(started); took > 3*time.Second {
+		t.Errorf("the command was waited for %v after its limit of 200ms: what it started was not stopped with it", took)
+	}
+
+	// A command that fails says why, and one that passes says nothing.
+	err = patient.runVerificationCommand(ctx, dir, "echo the build is broken >&2; exit 3")
+	if err == nil || !strings.Contains(err.Error(), "the build is broken") {
+		t.Errorf("a failing command: err = %v, want what it wrote to standard error", err)
+	}
+	if err := patient.runVerificationCommand(ctx, dir, "true"); err != nil {
+		t.Errorf("a passing command: %v", err)
+	}
+
+	// Options nobody filled in have the default limit, not none.
+	if err := (&RunIssueOptions{}).runVerificationCommand(ctx, dir, "true"); err != nil {
+		t.Errorf("without a limit set: %v", err)
+	}
+}
+
+// The limit of verification comes from the configuration like the others.
+func TestFillTimeouts_Verification(t *testing.T) {
+	opts := RunIssueOptions{}
+	opts.fillTimeouts(workflowTimeouts{GitSeconds: 8, VerifyMinutes: 25})
+	if opts.VerifyTimeout != 25*time.Minute || opts.GitTimeout != 8*time.Second {
+		t.Errorf("verification %v, git %v; want the configured 25m and 8s", opts.VerifyTimeout, opts.GitTimeout)
+	}
+
+	opts = RunIssueOptions{VerifyTimeout: time.Minute}
+	opts.fillTimeouts(workflowTimeouts{VerifyMinutes: 25})
+	if opts.VerifyTimeout != time.Minute {
+		t.Errorf("a limit the caller set = %v, want it kept", opts.VerifyTimeout)
+	}
+
+	opts = RunIssueOptions{}
+	opts.fillTimeouts(workflowTimeouts{})
+	if opts.VerifyTimeout != 10*time.Minute {
+		t.Errorf("without a configured limit = %v, want 10m", opts.VerifyTimeout)
 	}
 }

@@ -32,8 +32,10 @@ type RunIssueOptions struct {
 	GHTimeout    time.Duration
 	GitTimeout   time.Duration
 	CodexTimeout time.Duration
-	MergeIssue   string // "conflict" or "rebase" - indicates merge issue to resolve
-	PRNumber     int    // PR number for merge issue resolution
+	// VerifyTimeout bounds one build, test or setup command of the repo.
+	VerifyTimeout time.Duration
+	MergeIssue    string // "conflict" or "rebase" - indicates merge issue to resolve
+	PRNumber      int    // PR number for merge issue resolution
 }
 
 // RunIssueResult reports worker execution status.
@@ -503,7 +505,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	setupCmd := getSetupCommand(cfg, repoName)
 	if setupCmd != "" {
 		logger.Log("verify.setup: %s", setupCmd)
-		if setupErr := runVerificationCommand(ctx, workDir, setupCmd, opts.GitTimeout); setupErr != nil {
+		if setupErr := opts.runVerificationCommand(ctx, workDir, setupCmd); setupErr != nil {
 			runErr = fmt.Errorf("verify.setup failed: %s: %w", setupCmd, setupErr)
 			logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "verify_setup", runErr.Error())
 			result.Error = runErr.Error()
@@ -688,7 +690,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		logger.Log("執行驗證測試 (目錄: %s)...", workDir)
 		for _, cmd := range verifyCommands {
 			logger.Log("  運行: %s", cmd)
-			if testErr := runVerificationCommand(ctx, workDir, cmd, opts.GitTimeout); testErr != nil {
+			if testErr := opts.runVerificationCommand(ctx, workDir, cmd); testErr != nil {
 				runErr = fmt.Errorf("verification failed: %s: %w", cmd, testErr)
 				result.Error = runErr.Error()
 				result.Status = "failed"
@@ -1025,6 +1027,9 @@ func (opts *RunIssueOptions) fillTimeouts(timeouts workflowTimeouts) {
 	}
 	if opts.CodexTimeout == 0 {
 		opts.CodexTimeout = time.Duration(pick(timeouts.CodexMinutes, defaults.CodexMinutes)) * time.Minute
+	}
+	if opts.VerifyTimeout == 0 {
+		opts.VerifyTimeout = time.Duration(pick(timeouts.VerifyMinutes, defaults.VerifyMinutes)) * time.Minute
 	}
 }
 
@@ -2135,10 +2140,15 @@ func (l *workerLogger) Close() error {
 	return nil
 }
 
-// runVerificationCommand runs a verification command in the given directory
-func runVerificationCommand(ctx context.Context, workDir, command string, timeout time.Duration) error {
-	if timeout == 0 {
-		timeout = 5 * time.Minute
+// runVerificationCommand runs a build, test or setup command of the repo in
+// workDir. It has the time limit of such commands (timeouts.verify_minutes)
+// and no other: with the limit of a git command, a suite that takes more than
+// two minutes was stopped and counted as a failed verification, attempt after
+// attempt.
+func (opts *RunIssueOptions) runVerificationCommand(ctx context.Context, workDir, command string) error {
+	timeout := opts.VerifyTimeout
+	if timeout <= 0 {
+		timeout = time.Duration(config.Default().Timeouts.VerifyMinutes) * time.Minute
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -2147,13 +2157,17 @@ func runVerificationCommand(ctx context.Context, workDir, command string, timeou
 	// Use bash to run the command for shell expansion support
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	cmd.Dir = workDir
+	// A process that escapes being stopped with the command and holds the
+	// output open is not waited for longer than this.
+	cmd.WaitDelay = 5 * time.Second
 
 	// Capture output for error reporting
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	// At the limit the command is stopped together with what it started.
+	err := util.RunWithChildren(cmd)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("timeout after %v", timeout)

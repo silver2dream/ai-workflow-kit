@@ -229,9 +229,14 @@ type Escalation struct {
 
 // Timeouts bound the external commands the Worker runs.
 type Timeouts struct {
-	GitSeconds       int `yaml:"git_seconds"`
-	GHSeconds        int `yaml:"gh_seconds"`
-	CodexMinutes     int `yaml:"codex_minutes"`
+	GitSeconds   int `yaml:"git_seconds"`
+	GHSeconds    int `yaml:"gh_seconds"`
+	CodexMinutes int `yaml:"codex_minutes"`
+	// VerifyMinutes bounds one build, test or setup command of a repo: each
+	// of the ones the Worker's runner makes before a change is handed in, and
+	// the tests the review runs again. They used to have the time of a git
+	// command, and a suite that takes more than two minutes failed every time.
+	VerifyMinutes    int `yaml:"verify_minutes"`
 	GHRetryCount     int `yaml:"gh_retry_count"`
 	GHRetryBaseDelay int `yaml:"gh_retry_base_delay"`
 }
@@ -485,6 +490,7 @@ func (c *Config) applyDefaults() {
 	positive(&c.Timeouts.GitSeconds, 120)
 	positive(&c.Timeouts.GHSeconds, 60)
 	positive(&c.Timeouts.CodexMinutes, 30)
+	positive(&c.Timeouts.VerifyMinutes, 10)
 	positive(&c.Timeouts.GHRetryCount, 3)
 	positive(&c.Timeouts.GHRetryBaseDelay, 2)
 
