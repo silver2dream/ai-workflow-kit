@@ -5,7 +5,6 @@ package util
 import (
 	"os/exec"
 	"sync/atomic"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -15,26 +14,27 @@ import (
 //
 // A build or a test starts other processes (the test binaries, a test host).
 // Killing the shell alone leaves them running and holding the command's
-// output open, so the wait went on past the time limit. Here the command runs
-// in a job object, and the job is terminated: what a process starts belongs
-// to its job, also where the parent has gone by then, which is why following
-// parent process ids (taskkill /T) does not find the children of a Git Bash
-// shell.
+// output open, so the wait went on past the time limit.
 //
-// Without a job (it cannot be created, or the command cannot join it) the
-// command alone is stopped, as it was before.
+// The command runs in a job object, and at the end of the context the job is
+// terminated. What a process starts belongs to its job, also where the parent
+// has gone by then, which is why following parent process ids (taskkill /T)
+// does not find the children of a Git Bash shell.
+//
+// Nothing changes for a command that ends by itself: what it left running
+// keeps running, in the job or not. And without a job (it cannot be created,
+// or the command cannot join it) the command alone is stopped, as it was
+// before.
+//
+// The command joins the job right after it is started. A process it starts
+// before that is outside the job; a shell needs far longer to start one than
+// the joining takes.
 func RunWithChildren(cmd *exec.Cmd) error {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return cmd.Run()
 	}
 	defer windows.CloseHandle(job)
-
-	// What is still in the job when its last handle is closed ends with it.
-	var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	_, _ = windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits)))
 
 	var joined atomic.Bool
 	cmd.Cancel = func() error {
