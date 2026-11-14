@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -17,8 +18,11 @@ func TestAvailablePresetNames(t *testing.T) {
 	if !strings.Contains(names, "generic") {
 		t.Error("expected 'generic' in preset names")
 	}
-	if !strings.Contains(names, "react-go") {
-		t.Error("expected 'react-go' in preset names")
+	if !strings.Contains(names, "godot-go") {
+		t.Error("expected 'godot-go' in preset names")
+	}
+	if strings.Contains(names, "react-go") {
+		t.Error("the removed preset 'react-go' is still listed")
 	}
 }
 
@@ -77,21 +81,24 @@ func TestPresets(t *testing.T) {
 	}
 
 	foundGeneric := false
-	foundReactGo := false
+	foundGodotGo := false
 	for _, p := range presets {
 		if p.Name == "generic" {
 			foundGeneric = true
 		}
-		if p.Name == "react-go" {
-			foundReactGo = true
+		if p.Name == "godot-go" {
+			foundGodotGo = true
 		}
 	}
 
 	if !foundGeneric {
 		t.Error("missing 'generic' preset")
 	}
-	if !foundReactGo {
-		t.Error("missing 'react-go' preset")
+	if !foundGodotGo {
+		t.Error("missing 'godot-go' preset")
+	}
+	if len(presets) != len(install.Presets) {
+		t.Errorf("the CLI lists %d presets, the installer knows %d", len(presets), len(install.Presets))
 	}
 }
 
@@ -147,7 +154,7 @@ func TestInitWithScaffold(t *testing.T) {
 	// We can't easily test the full CLI, but we can test the install package directly
 	// This is effectively what cmdInit does
 	result, err := install.Install(awkit.KitFS, tmpDir, install.Options{
-		Preset:     "go",
+		Preset:     install.PresetGodotGo,
 		NoGenerate: true,
 		Scaffold:   true,
 	})
@@ -161,11 +168,10 @@ func TestInitWithScaffold(t *testing.T) {
 	}
 
 	// Verify scaffold files were created
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); os.IsNotExist(err) {
-		t.Error("go.mod should be created by scaffold")
-	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "main.go")); os.IsNotExist(err) {
-		t.Error("main.go should be created by scaffold")
+	for _, file := range []string{"backend/go.mod", "backend/main.go", "frontend/Frontend.sln", "frontend/game/project.godot"} {
+		if _, err := os.Stat(filepath.Join(tmpDir, filepath.FromSlash(file))); os.IsNotExist(err) {
+			t.Errorf("%s should be created by scaffold", file)
+		}
 	}
 
 	// Verify scaffold result
@@ -187,7 +193,7 @@ func TestInitScaffoldDryRun(t *testing.T) {
 
 	// Test dry-run scaffold
 	result, err := install.Scaffold(tmpDir, install.ScaffoldOptions{
-		Preset:      "go",
+		Preset:      install.PresetGodotGo,
 		TargetDir:   tmpDir,
 		ProjectName: "test-project",
 		Force:       false,
@@ -198,8 +204,8 @@ func TestInitScaffoldDryRun(t *testing.T) {
 	}
 
 	// Verify no files were actually created
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); !os.IsNotExist(err) {
-		t.Error("go.mod should NOT be created in dry-run mode")
+	if _, err := os.Stat(filepath.Join(tmpDir, "backend", "go.mod")); !os.IsNotExist(err) {
+		t.Error("backend/go.mod should NOT be created in dry-run mode")
 	}
 
 	// Verify dry-run reports what would be created
@@ -209,7 +215,7 @@ func TestInitScaffoldDryRun(t *testing.T) {
 
 	// Now actually create the files
 	actualResult, err := install.Scaffold(tmpDir, install.ScaffoldOptions{
-		Preset:      "go",
+		Preset:      install.PresetGodotGo,
 		TargetDir:   tmpDir,
 		ProjectName: "test-project",
 		Force:       false,
@@ -236,7 +242,7 @@ func TestUpgradeWithScaffold(t *testing.T) {
 
 	// First, do initial install without scaffold
 	_, err = install.Install(awkit.KitFS, tmpDir, install.Options{
-		Preset:     "go",
+		Preset:     install.PresetGodotGo,
 		NoGenerate: true,
 		Scaffold:   false,
 	})
@@ -245,13 +251,13 @@ func TestUpgradeWithScaffold(t *testing.T) {
 	}
 
 	// Verify scaffold files don't exist yet
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); !os.IsNotExist(err) {
-		t.Error("go.mod should not exist before scaffold")
+	if _, err := os.Stat(filepath.Join(tmpDir, "backend", "go.mod")); !os.IsNotExist(err) {
+		t.Error("backend/go.mod should not exist before scaffold")
 	}
 
-	// Now simulate upgrade --scaffold --preset go
+	// Now simulate upgrade --scaffold --preset godot-go
 	result, err := install.Scaffold(tmpDir, install.ScaffoldOptions{
-		Preset:      "go",
+		Preset:      install.PresetGodotGo,
 		TargetDir:   tmpDir,
 		ProjectName: filepath.Base(tmpDir),
 		Force:       false,
@@ -262,8 +268,8 @@ func TestUpgradeWithScaffold(t *testing.T) {
 	}
 
 	// Verify scaffold files were created
-	if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); os.IsNotExist(err) {
-		t.Error("go.mod should be created by scaffold")
+	if _, err := os.Stat(filepath.Join(tmpDir, "backend", "go.mod")); os.IsNotExist(err) {
+		t.Error("backend/go.mod should be created by scaffold")
 	}
 
 	if len(result.Created) == 0 {
@@ -289,6 +295,7 @@ func TestUpgradeForceConfigOverwritesWorkflowYAML(t *testing.T) {
 		t.Fatalf("failed to write existing workflow.yaml: %v", err)
 	}
 
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
 	exitCode := cmdUpgrade([]string{tmpDir, "--no-commit", "--no-generate", "--force-config", "--preset", "generic"})
 	if exitCode != 0 {
 		t.Fatalf("cmdUpgrade() exit code = %d, want 0", exitCode)
@@ -300,6 +307,250 @@ func TestUpgradeForceConfigOverwritesWorkflowYAML(t *testing.T) {
 	}
 	if string(updated) == original {
 		t.Fatal("workflow.yaml was not overwritten with upgrade --force-config")
+	}
+}
+
+// awkit init writes a CI workflow for every repo of the preset. awkit upgrade
+// leaves the project's workflows alone: it adds none and rewrites none.
+func TestInitWritesCIWorkflows_UpgradeLeavesThemAlone(t *testing.T) {
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+	workflows := filepath.Join(tmpDir, ".github", "workflows")
+	backendCI := filepath.Join(workflows, "ci-backend.yml")
+	frontendCI := filepath.Join(workflows, "ci-frontend.yml")
+
+	if exitCode := cmdInit([]string{"--preset", "godot-go", tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	for _, path := range []string{backendCI, frontendCI} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("init should write %s: %v", filepath.Base(path), err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "CLAUDE.md")); err != nil {
+		t.Errorf("init should also write the other generated files: %v", err)
+	}
+
+	// The project edits one workflow and drops the other.
+	const own = "name: mine\n"
+	if err := os.WriteFile(backendCI, []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(frontendCI); err != nil {
+		t.Fatal(err)
+	}
+
+	if exitCode := cmdUpgrade([]string{tmpDir, "--no-commit"}); exitCode != 0 {
+		t.Fatalf("cmdUpgrade() = %d, want 0", exitCode)
+	}
+	if got, _ := os.ReadFile(backendCI); string(got) != own {
+		t.Errorf("upgrade rewrote the project's workflow:\n%s", got)
+	}
+	if _, err := os.Stat(frontendCI); !os.IsNotExist(err) {
+		t.Error("upgrade brought back a workflow the project removed")
+	}
+
+	// Running init again restores the missing one and keeps the edited one.
+	if exitCode := cmdInit([]string{"--preset", "godot-go", tmpDir}); exitCode != 0 {
+		t.Fatalf("second cmdInit() = %d, want 0", exitCode)
+	}
+	if got, _ := os.ReadFile(backendCI); string(got) != own {
+		t.Errorf("init without --force rewrote the project's workflow:\n%s", got)
+	}
+	if _, err := os.Stat(frontendCI); err != nil {
+		t.Errorf("init should write the workflow that is missing: %v", err)
+	}
+}
+
+// The generic preset names no build or test command, so init writes no CI
+// workflow: there is nothing it could run.
+func TestInitGenericWritesNoCIWorkflow(t *testing.T) {
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+
+	if exitCode := cmdInit([]string{tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(tmpDir, ".github", "workflows")); len(entries) != 0 {
+		t.Errorf("init wrote %d workflow files for the generic preset", len(entries))
+	}
+}
+
+// An upgrade brings the workflows awkit generated in step with the new kit,
+// and its commit takes them along: the project is not left with changes it
+// never made.
+func TestUpgradeRefreshesAwkitsWorkflowsAndCommitsThem(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return string(out)
+	}
+	git("init")
+	git("config", "user.email", "test@example.com")
+	git("config", "user.name", "Test User")
+	git("config", "commit.gpgsign", "false")
+
+	if exitCode := cmdInit([]string{"--preset", "godot-go", tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	backendCI := filepath.Join(tmpDir, ".github", "workflows", "ci-backend.yml")
+	frontendCI := filepath.Join(tmpDir, ".github", "workflows", "ci-frontend.yml")
+	current, err := os.ReadFile(backendCI)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The backend workflow as an older kit wrote it (still awkit's: the header
+	// is there). The frontend workflow is the project's own.
+	older := strings.Replace(string(current), "go test ./...", "go test -short ./...", 1)
+	if older == string(current) {
+		t.Fatal("could not make the workflow look out of date")
+	}
+	if err := os.WriteFile(backendCI, []byte(older), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const own = "name: mine\n"
+	if err := os.WriteFile(frontendCI, []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-m", "project as an older kit left it")
+
+	if exitCode := cmdUpgrade([]string{tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdUpgrade() = %d, want 0", exitCode)
+	}
+
+	if got, _ := os.ReadFile(backendCI); string(got) != string(current) {
+		t.Errorf("awkit's workflow was not refreshed:\n%s", got)
+	}
+	if got, _ := os.ReadFile(frontendCI); string(got) != own {
+		t.Errorf("the project's own workflow was changed:\n%s", got)
+	}
+	if status := git("status", "--porcelain"); strings.TrimSpace(status) != "" {
+		t.Errorf("the upgrade left uncommitted changes:\n%s", status)
+	}
+	if subject := strings.TrimSpace(git("log", "-1", "--format=%s")); subject != "[chore] upgrade awkit" {
+		t.Errorf("last commit = %q, want the upgrade commit", subject)
+	}
+	changed := git("show", "--name-only", "--format=", "HEAD")
+	if !strings.Contains(changed, ".github/workflows/ci-backend.yml") {
+		t.Errorf("the upgrade commit should carry the refreshed workflow, it has:\n%s", changed)
+	}
+	if strings.Contains(changed, "ci-frontend.yml") {
+		t.Errorf("the upgrade commit touched the project's own workflow:\n%s", changed)
+	}
+}
+
+// awkit generate keeps the CI workflows in step with the config: it writes
+// the one that is missing, follows the config in the ones awkit owns, and
+// leaves the project's own alone unless --generate-ci.
+func TestGenerateKeepsCIWorkflowsInStepWithTheConfig(t *testing.T) {
+	t.Setenv("AWKIT_SKIP_UPDATE_CHECK", "1")
+	tmpDir := t.TempDir()
+	ci := filepath.Join(tmpDir, ".github", "workflows", "ci.yml")
+	configPath := filepath.Join(tmpDir, ".ai", "config", "workflow.yaml")
+	setTestCommand := func(from, to string) {
+		t.Helper()
+		config, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated := strings.Replace(string(config), "test: "+from, "test: "+to, 1)
+		if updated == string(config) {
+			t.Fatalf("the config has no test command %s to replace:\n%s", from, config)
+		}
+		if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	generate := func(args ...string) {
+		t.Helper()
+		if exitCode := cmdGenerate(append([]string{"--state-root", tmpDir}, args...)); exitCode != 0 {
+			t.Fatalf("cmdGenerate(%v) = %d, want 0", args, exitCode)
+		}
+	}
+	workflow := func() string {
+		t.Helper()
+		data, err := os.ReadFile(ci)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	// The generic preset names no commands: no workflow yet.
+	if exitCode := cmdInit([]string{tmpDir}); exitCode != 0 {
+		t.Fatalf("cmdInit() = %d, want 0", exitCode)
+	}
+	if _, err := os.Stat(ci); !os.IsNotExist(err) {
+		t.Fatal("a workflow exists before the project named any command")
+	}
+
+	// The project names its test command: generate writes the workflow.
+	setTestCommand(`""`, `"make test"`)
+	generate()
+	if got := workflow(); !strings.Contains(got, "make test") {
+		t.Fatalf("the workflow should run the test command:\n%s", got)
+	}
+
+	// The command changes: the workflow follows.
+	setTestCommand(`"make test"`, `"make check"`)
+	generate()
+	if got := workflow(); !strings.Contains(got, "make check") || strings.Contains(got, "make test") {
+		t.Errorf("the workflow did not follow the config:\n%s", got)
+	}
+
+	// A dry run changes nothing.
+	setTestCommand(`"make check"`, `"make verify"`)
+	generate("--dry-run")
+	if got := workflow(); !strings.Contains(got, "make check") {
+		t.Errorf("a dry run rewrote the workflow:\n%s", got)
+	}
+
+	// The project takes the workflow over: generate leaves it alone,
+	// --generate-ci writes it from the config again.
+	const own = "name: mine\n"
+	if err := os.WriteFile(ci, []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	generate()
+	if got := workflow(); got != own {
+		t.Errorf("generate overwrote the project's own workflow:\n%s", got)
+	}
+	generate("--generate-ci")
+	if got := workflow(); !strings.Contains(got, "make verify") {
+		t.Errorf("--generate-ci should write the workflow from the config:\n%s", got)
+	}
+}
+
+func TestProjectWorkflowPaths(t *testing.T) {
+	root := filepath.Join("work", "proj")
+	workflows := filepath.Join(root, ".github", "workflows")
+	written := []string{
+		filepath.Join(workflows, "ci-backend.yml"),
+		// A submodule's workflow is in another repository.
+		filepath.Join(root, "engine", ".github", "workflows", "ci.yml"),
+	}
+	removed := []string{filepath.Join(workflows, "ci-frontend.yml")}
+
+	got := projectWorkflowPaths(root, written, removed)
+
+	want := []string{".github/workflows/ci-backend.yml", ".github/workflows/ci-frontend.yml"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("projectWorkflowPaths = %v, want %v", got, want)
+	}
+	if got := projectWorkflowPaths(root); len(got) != 0 {
+		t.Errorf("projectWorkflowPaths with nothing written = %v", got)
 	}
 }
 
@@ -324,11 +575,8 @@ func TestScaffoldVerifyCompatibility(t *testing.T) {
 		preset     string
 		verifyFile string // File that must exist for verify to work
 	}{
-		{"Go", "go", "go.mod"},
-		{"Python", "python", "pyproject.toml"},
-		{"Rust", "rust", "Cargo.toml"},
-		{"Dotnet", "dotnet", "Program.cs"},
-		{"Node", "node", "package.json"},
+		{"Go backend", install.PresetGodotGo, "backend/go.mod"},
+		{"Godot C# frontend", install.PresetGodotGo, "frontend/Frontend.sln"},
 	}
 
 	for _, tc := range testCases {
@@ -352,7 +600,7 @@ func TestScaffoldVerifyCompatibility(t *testing.T) {
 			}
 
 			// Verify the critical file exists
-			if _, err := os.Stat(filepath.Join(tmpDir, tc.verifyFile)); os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(tmpDir, filepath.FromSlash(tc.verifyFile))); os.IsNotExist(err) {
 				t.Errorf("%s should exist for verify compatibility", tc.verifyFile)
 			}
 		})
@@ -373,14 +621,12 @@ func TestListPresetsOutput(t *testing.T) {
 		}
 	}
 
-	// Should have 6 single-repo presets
-	if singleRepoCount != 6 {
-		t.Errorf("expected 6 single-repo presets, got %d", singleRepoCount)
+	// One preset of each kind: generic and godot-go
+	if singleRepoCount != 1 {
+		t.Errorf("expected 1 single-repo preset, got %d", singleRepoCount)
 	}
-
-	// Should have 5 monorepo presets
-	if monorepoCount != 5 {
-		t.Errorf("expected 5 monorepo presets, got %d", monorepoCount)
+	if monorepoCount != 1 {
+		t.Errorf("expected 1 monorepo preset, got %d", monorepoCount)
 	}
 }
 
@@ -409,10 +655,7 @@ func TestInvalidPresetError(t *testing.T) {
 
 func TestAllPresetsExist(t *testing.T) {
 	// Verify all expected presets exist (Req 7.5)
-	expectedPresets := []string{
-		"generic", "go", "python", "rust", "dotnet", "node",
-		"react-go", "react-python", "unity-go", "godot-go", "unreal-go",
-	}
+	expectedPresets := install.Presets
 
 	for _, expected := range expectedPresets {
 		found := false
@@ -430,10 +673,7 @@ func TestAllPresetsExist(t *testing.T) {
 
 func TestShellCompletionContainsAllPresets(t *testing.T) {
 	// Verify shell completions include all presets (Req 5.4)
-	expectedPresets := []string{
-		"generic", "go", "python", "rust", "dotnet", "node",
-		"react-go", "react-python", "unity-go", "godot-go", "unreal-go",
-	}
+	expectedPresets := install.Presets
 
 	for _, preset := range expectedPresets {
 		if !strings.Contains(bashCompletion, preset) {
@@ -444,6 +684,15 @@ func TestShellCompletionContainsAllPresets(t *testing.T) {
 		}
 		if !strings.Contains(fishCompletion, preset) {
 			t.Errorf("fish completion missing preset: %s", preset)
+		}
+	}
+
+	// Presets that were removed must not be offered any more.
+	for _, removed := range []string{"react-go", "react-python", "unity-go", "unreal-go", "python", "rust", "dotnet"} {
+		for shell, script := range map[string]string{"bash": bashCompletion, "zsh": zshCompletion, "fish": fishCompletion} {
+			if strings.Contains(script, removed) {
+				t.Errorf("%s completion still offers the removed preset %s", shell, removed)
+			}
 		}
 	}
 }
@@ -508,17 +757,17 @@ func TestInitFlagOrderIndependence(t *testing.T) {
 	}{
 		{
 			name:     "flags before path",
-			args:     []string{"--preset", "react-go", "--dry-run", "."},
+			args:     []string{"--preset", "godot-go", "--dry-run", "."},
 			wantExit: 0,
 		},
 		{
 			name:     "flags after path",
-			args:     []string{".", "--preset", "react-go", "--dry-run"},
+			args:     []string{".", "--preset", "godot-go", "--dry-run"},
 			wantExit: 0,
 		},
 		{
 			name:     "flags mixed with path",
-			args:     []string{"--preset", "react-go", ".", "--dry-run"},
+			args:     []string{"--preset", "godot-go", ".", "--dry-run"},
 			wantExit: 0,
 		},
 	}

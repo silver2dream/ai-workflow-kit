@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 )
 
 // CriteriaVerification represents a single criteria verification entry
@@ -22,7 +24,7 @@ type CriteriaVerification struct {
 
 // EvidenceError represents an evidence verification error
 type EvidenceError struct {
-	Code    int    // 0=OK, 1=missing, 2=test failed, 3=assertion not found
+	Code    int // 0=OK, 1=missing, 2=test failed, 3=assertion not found
 	Message string
 	Details []string
 }
@@ -103,6 +105,19 @@ func (v *PythonTestValidator) FormatHint() string {
 	return "Python test like test_xxx or TestClass::test_method"
 }
 
+// DotnetTestValidator validates .NET test names. A review cites a test by its
+// method, by class and method, or by its full name, and a test that has a
+// DisplayName is free text, so only what is plainly not a name is refused.
+type DotnetTestValidator struct{}
+
+func (v *DotnetTestValidator) IsValid(name string) bool {
+	return (&NodeTestValidator{}).IsValid(name)
+}
+
+func (v *DotnetTestValidator) FormatHint() string {
+	return "test method like Increment_AddsOne, CounterTests.Increment_AddsOne, or its full name"
+}
+
 // PermissiveValidator allows any non-empty test name (fallback)
 type PermissiveValidator struct{}
 
@@ -126,13 +141,15 @@ func (v *PermissiveValidator) FormatHint() string {
 
 // GetTestNameValidator returns appropriate validator for the given language
 func GetTestNameValidator(language string) TestNameValidator {
-	switch strings.ToLower(language) {
-	case "go", "golang":
+	switch repo.ToolchainOf(language) {
+	case repo.ToolchainGo:
 		return &GoTestValidator{}
-	case "node", "nodejs", "typescript", "javascript", "ts", "js":
+	case repo.ToolchainNode:
 		return &NodeTestValidator{}
-	case "python", "py":
+	case repo.ToolchainPython:
 		return &PythonTestValidator{}
+	case repo.ToolchainDotnet:
+		return &DotnetTestValidator{}
 	default:
 		// For unknown languages, use permissive validator
 		return &PermissiveValidator{}
@@ -146,15 +163,18 @@ func EnhanceTestCommandForVerbose(testCmd, language string) string {
 		return testCmd
 	}
 
-	switch strings.ToLower(language) {
-	case "go", "golang":
+	switch repo.ToolchainOf(language) {
+	case repo.ToolchainGo:
 		// Go: add -v for subtest output (if not already present)
 		if !strings.Contains(testCmd, " -v") && !strings.Contains(testCmd, " -v ") {
 			return testCmd + " -v"
 		}
 		return testCmd
 
-	case "node", "nodejs", "typescript", "javascript", "ts", "js":
+	case repo.ToolchainDotnet:
+		return enhanceDotnetTestCommand(testCmd)
+
+	case repo.ToolchainNode:
 		// Already has a reporter/verbose flag — leave as-is
 		if strings.Contains(testCmd, "--reporter") || strings.Contains(testCmd, "--verbose") {
 			return testCmd
@@ -173,7 +193,7 @@ func EnhanceTestCommandForVerbose(testCmd, language string) string {
 		}
 		return testCmd
 
-	case "python", "py":
+	case repo.ToolchainPython:
 		if !strings.Contains(testCmd, " -v") {
 			return testCmd + " -v"
 		}
@@ -294,7 +314,7 @@ func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*Ver
 	fileLevelOnly := testErr == nil && !hasIndividualTestNames(testOutput)
 	report.FileLevelOnly = fileLevelOnly
 	if fileLevelOnly {
-		fmt.Printf("[VERIFY] ⚠ Verbose enhancement did not produce individual test names; "+
+		fmt.Printf("[VERIFY] ⚠ Verbose enhancement did not produce individual test names; " +
 			"falling back to file-level pass (per-test matching and assertion check skipped)\n")
 	} else {
 		var missingTests []string
@@ -314,7 +334,14 @@ func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*Ver
 				continue
 			}
 
-			// 2. Exact match failed, try fuzzy matching
+			// 2. The cited test ran and failed. That settles it: a passing test
+			// with a similar name is a different test, not this one.
+			if failedTests[v.TestName] {
+				missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
+				continue
+			}
+
+			// 3. Not in the output under that name: try fuzzy matching
 			found := false
 			var matchedName string
 			for passedName := range passedTests {
@@ -330,22 +357,17 @@ func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*Ver
 				continue
 			}
 
-			// 3. Fuzzy match also failed, check if in failed tests
-			if failedTests[v.TestName] {
-				missingTests = append(missingTests, fmt.Sprintf("%s (FAILED)", v.TestName))
+			// 4. Not found: say why, as far as the language lets us tell
+			validator := GetTestNameValidator(opts.Language)
+			if !validator.IsValid(v.TestName) {
+				missingTests = append(missingTests, fmt.Sprintf("%s (invalid format for %s: expected %s)", v.TestName, opts.Language, validator.FormatHint()))
 			} else {
-				// Provide language-aware diagnostic for why test was not found
-				validator := GetTestNameValidator(opts.Language)
-				if !validator.IsValid(v.TestName) {
-					missingTests = append(missingTests, fmt.Sprintf("%s (invalid format for %s: expected %s)", v.TestName, opts.Language, validator.FormatHint()))
+				// Find similar tests to provide better diagnostics
+				similar := findSimilarTests(v.TestName, passedTests, 0.5)
+				if len(similar) > 0 {
+					missingTests = append(missingTests, fmt.Sprintf("%s (not found, similar: %v)", v.TestName, similar))
 				} else {
-					// Find similar tests to provide better diagnostics
-					similar := findSimilarTests(v.TestName, passedTests, 0.5)
-					if len(similar) > 0 {
-						missingTests = append(missingTests, fmt.Sprintf("%s (not found, similar: %v)", v.TestName, similar))
-					} else {
-						missingTests = append(missingTests, fmt.Sprintf("%s (not found in test output)", v.TestName))
-					}
+					missingTests = append(missingTests, fmt.Sprintf("%s (not found in test output)", v.TestName))
 				}
 			}
 		}
@@ -801,6 +823,15 @@ func ParseTestResults(output string) (passed map[string]bool, failed map[string]
 		}
 	}
 
+	// dotnet test format: "  Passed Namespace.Class.Method [6 ms]"
+	dotnetPassed, dotnetFailed := parseDotnetResults(output)
+	for name := range dotnetPassed {
+		passed[name] = true
+	}
+	for name := range dotnetFailed {
+		failed[name] = true
+	}
+
 	return passed, failed
 }
 
@@ -888,6 +919,12 @@ func extractAssertionFuncName(assertion string) string {
 		return m
 	}
 
+	// C#-style: Assert.Equal, Assert.Throws, etc. (xUnit, NUnit, MSTest)
+	csRe := regexp.MustCompile(`\bAssert\.\w+`)
+	if m := csRe.FindString(assertion); m != "" {
+		return m
+	}
+
 	// JS/TS-style: expect(...).toBeTruthy(), .toEqual(), .toBe(), etc.
 	jsMethodRe := regexp.MustCompile(`\.(to\w+)\(`)
 	if m := jsMethodRe.FindStringSubmatch(assertion); len(m) > 1 {
@@ -944,13 +981,14 @@ func findTestFiles(root string) ([]string, error) {
 			return nil
 		}
 
-		// Match test files
-		name := info.Name()
-		if strings.HasSuffix(name, "_test.go") ||
-			strings.HasSuffix(name, ".test.js") ||
-			strings.HasSuffix(name, ".test.ts") ||
-			strings.HasSuffix(name, ".spec.js") ||
-			strings.HasSuffix(name, ".spec.ts") {
+		// Judged by its place in the worktree: a C# file counts by the
+		// project it sits in, and the directories above the worktree say
+		// nothing about that.
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			rel = info.Name()
+		}
+		if repo.IsTestFile(rel) {
 			testFiles = append(testFiles, path)
 		}
 
@@ -1253,6 +1291,11 @@ func hasIndividualTestNames(output string) bool {
 	// Go test format: "--- PASS: TestName" or "--- FAIL: TestName"
 	goRe := regexp.MustCompile(`--- (?:PASS|FAIL): [\w/]+`)
 	if goRe.MatchString(output) {
+		return true
+	}
+
+	// dotnet test format: "  Passed Namespace.Class.Method [6 ms]"
+	if dotnetResultLine.MatchString(output) {
 		return true
 	}
 

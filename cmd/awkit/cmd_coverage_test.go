@@ -959,7 +959,7 @@ func TestCmdValidate_BadConfigPath(t *testing.T) {
 
 func TestCmdInit_DryRun(t *testing.T) {
 	tmpDir := t.TempDir()
-	exitCode := cmdInit([]string{"--dry-run", "--preset", "go", tmpDir})
+	exitCode := cmdInit([]string{"--dry-run", "--preset", "generic", tmpDir})
 	if exitCode != 0 {
 		t.Errorf("cmdInit(--dry-run) = %d, want 0", exitCode)
 	}
@@ -967,9 +967,28 @@ func TestCmdInit_DryRun(t *testing.T) {
 
 func TestCmdInit_DryRunWithScaffold(t *testing.T) {
 	tmpDir := t.TempDir()
-	exitCode := cmdInit([]string{"--dry-run", "--preset", "go", "--scaffold", tmpDir})
+	exitCode := cmdInit([]string{"--dry-run", "--preset", "godot-go", "--scaffold", tmpDir})
 	if exitCode != 0 {
 		t.Errorf("cmdInit(--dry-run --scaffold) = %d, want 0", exitCode)
+	}
+}
+
+// A skeleton is asked of a preset that has none: a usage error, and nothing
+// is installed.
+func TestCmdInit_ScaffoldNeedsAPresetWithASkeleton(t *testing.T) {
+	tmpDir := t.TempDir()
+	var exitCode int
+	stderr := captureStderr(func() {
+		exitCode = cmdInit([]string{"--preset", "generic", "--scaffold", tmpDir})
+	})
+	if exitCode != 2 {
+		t.Errorf("cmdInit(--preset generic --scaffold) = %d, want 2", exitCode)
+	}
+	if !strings.Contains(stderr, "no project skeleton") || !strings.Contains(stderr, "godot-go") {
+		t.Errorf("the error should say why and name a preset that has a skeleton, got: %s", stderr)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, ".ai")); !os.IsNotExist(err) {
+		t.Error("nothing should be installed when the request cannot be met")
 	}
 }
 

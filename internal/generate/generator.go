@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
-	"github.com/silver2dream/ai-workflow-kit/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,14 +17,16 @@ const bt = "`"
 
 // Options configures the generate operation
 type Options struct {
-	StateRoot   string
-	GenerateCI  bool
-	DryRun      bool // show what would be generated without writing
-	InstallDeps bool // ignored in Go implementation
+	StateRoot string
+	CI        CIPolicy // what to do about the CI workflows; the zero value leaves them alone
+	DryRun    bool     // show what would be generated without writing
 }
 
 // Result holds the result of the generate operation
 type Result struct {
+	// RemovedFiles are the CI workflows awkit owned that no repo of the
+	// config accounts for any more.
+	RemovedFiles   []string
 	GeneratedFiles []string
 }
 
@@ -349,6 +350,11 @@ func Generate(opts Options) (*Result, error) {
 
 	// If dry-run, just return the list
 	if opts.DryRun {
+		ciPlan := planCIWorkflows(opts.StateRoot, ctx, opts.CI)
+		for _, file := range ciPlan.write {
+			result.GeneratedFiles = append(result.GeneratedFiles, file.path)
+		}
+		result.RemovedFiles = ciPlan.remove
 		return result, nil
 	}
 
@@ -372,16 +378,6 @@ func Generate(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("failed to generate git-workflow.md: %w", err)
 	}
 	fmt.Printf("[generate] Created: %s\n", gitWorkflowPath)
-
-	// Generate CI workflows if requested
-	if opts.GenerateCI {
-		ciFiles, err := generateCIWorkflows(opts.StateRoot, ctx)
-		if err != nil {
-			fmt.Printf("[generate] WARNING: CI generation failed: %v\n", err)
-		} else {
-			result.GeneratedFiles = append(result.GeneratedFiles, ciFiles...)
-		}
-	}
 
 	// Setup .claude directory
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
@@ -411,6 +407,15 @@ func Generate(opts Options) (*Result, error) {
 	aiRoot := filepath.Join(opts.StateRoot, ".ai")
 	if err := setupClaudeSymlinks(aiRoot, claudeDir); err != nil {
 		fmt.Printf("[generate] WARNING: symlink setup failed: %v\n", err)
+	}
+
+	// CI workflows, as the policy says. They come last: a workflow that cannot
+	// be written fails the run, and everything else is in place by then.
+	ciWritten, ciRemoved, err := generateCIWorkflows(opts.StateRoot, ctx, opts.CI)
+	result.GeneratedFiles = append(result.GeneratedFiles, ciWritten...)
+	result.RemovedFiles = ciRemoved
+	if err != nil {
+		return result, err
 	}
 
 	fmt.Println("[generate] Done!")
@@ -979,14 +984,29 @@ func setupClaudeSymlinks(aiRoot, claudeDir string) error {
 	return lastErr
 }
 
+// removeGenerated takes away whatever is at a path the generator owns, so
+// that a link or a copy can be put there.
+//
+// os.Remove removes a link of any kind without following it: a symlink, a
+// junction, or the link another tool made that Go sees as neither a symlink
+// nor a directory. Only a real directory, an earlier copy, is emptied.
+func removeGenerated(target string) error {
+	info, err := os.Lstat(target)
+	if err != nil {
+		return nil // nothing there
+	}
+	if err := os.Remove(target); err == nil {
+		return nil
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return os.RemoveAll(target)
+	}
+	return fmt.Errorf("cannot replace %s: it is neither a link nor a directory that can be removed", target)
+}
+
 func createSymlinkOrCopy(source, target, name string) error {
-	// Remove existing
-	if info, err := os.Lstat(target); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			os.Remove(target)
-		} else if info.IsDir() {
-			os.RemoveAll(target)
-		}
+	if err := removeGenerated(target); err != nil {
+		return err
 	}
 
 	// Try symlink first
@@ -1037,512 +1057,4 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(dstPath, data, info.Mode())
 	})
-}
-
-func generateCIWorkflows(stateRoot string, ctx *TemplateContext) ([]string, error) {
-	var generated []string
-
-	languageTemplates := map[string]string{
-		// Go
-		"go": "go", "golang": "go",
-		// Node.js
-		"node": "node", "nodejs": "node", "typescript": "node", "javascript": "node",
-		"react": "node", "vue": "node", "angular": "node", "nextjs": "node",
-		"nuxt": "node", "svelte": "node", "express": "node", "nestjs": "node",
-		// Python
-		"python": "python", "django": "python", "flask": "python", "fastapi": "python",
-		// Rust
-		"rust": "rust",
-		// .NET
-		"dotnet": "dotnet", "csharp": "dotnet", "aspnet": "dotnet", "blazor": "dotnet",
-		// Game engines
-		"unity":  "unity",
-		"unreal": "unreal", "ue4": "unreal", "ue5": "unreal",
-		"godot": "godot",
-	}
-
-	for _, repo := range ctx.Repos {
-		var workflowDir, workflowFile string
-
-		if repo.Type == "submodule" {
-			workflowDir = filepath.Join(stateRoot, repo.Path, ".github", "workflows")
-			workflowFile = filepath.Join(workflowDir, "ci.yml")
-		} else {
-			workflowDir = filepath.Join(stateRoot, ".github", "workflows")
-			if repo.Type == "directory" {
-				workflowFile = filepath.Join(workflowDir, fmt.Sprintf("ci-%s.yml", repo.Name))
-			} else {
-				workflowFile = filepath.Join(workflowDir, "ci.yml")
-			}
-		}
-
-		if err := os.MkdirAll(workflowDir, 0755); err != nil {
-			continue
-		}
-
-		lang := strings.ToLower(repo.Language)
-		templateType := languageTemplates[lang]
-		if templateType == "" {
-			templateType = "generic"
-		}
-
-		content := generateCIContent(repo, ctx.Git, templateType)
-		if err := os.WriteFile(workflowFile, []byte(content), 0644); err != nil {
-			continue
-		}
-		generated = append(generated, workflowFile)
-		fmt.Printf("[generate] Created: %s\n", workflowFile)
-	}
-
-	// Generate validate-submodules.yml for monorepo with submodules
-	if ctx.Project.Type == "monorepo" && ctx.HasSubmodules {
-		workflowDir := filepath.Join(stateRoot, ".github", "workflows")
-		if err := os.MkdirAll(workflowDir, 0755); err == nil {
-			workflowFile := filepath.Join(workflowDir, "validate-submodules.yml")
-			content := generateValidateSubmodulesWorkflow(ctx.Git)
-			if err := os.WriteFile(workflowFile, []byte(content), 0644); err == nil {
-				generated = append(generated, workflowFile)
-				fmt.Printf("[generate] Created: %s\n", workflowFile)
-			}
-		}
-	}
-
-	return generated, nil
-}
-
-func generateValidateSubmodulesWorkflow(git GitConfig) string {
-	var sb strings.Builder
-
-	sb.WriteString("name: validate-submodules\n\n")
-	sb.WriteString("on:\n")
-	sb.WriteString("  pull_request:\n")
-	if git.IntegrationBranch != git.ReleaseBranch && git.ReleaseBranch != "" {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\", \"%s\"]\n", git.IntegrationBranch, git.ReleaseBranch))
-	} else {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n", git.IntegrationBranch))
-	}
-	sb.WriteString("  push:\n")
-	sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n\n", git.IntegrationBranch))
-
-	sb.WriteString("jobs:\n")
-	sb.WriteString("  validate:\n")
-	sb.WriteString("    runs-on: ubuntu-latest\n")
-	sb.WriteString("    steps:\n")
-	sb.WriteString("      - name: Checkout (with submodules)\n")
-	sb.WriteString("        uses: actions/checkout@v4\n")
-	sb.WriteString("        with:\n")
-	sb.WriteString("          submodules: recursive\n")
-	sb.WriteString("          fetch-depth: 0\n")
-	sb.WriteString("          token: ${{ secrets.SUBMODULES_TOKEN }}\n\n")
-
-	sb.WriteString("      - name: Ensure submodules initialised\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          git submodule update --init --recursive\n")
-	sb.WriteString("          git submodule status --recursive\n\n")
-
-	sb.WriteString("      - name: Verify submodule SHAs are on allowed branches\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n")
-	sb.WriteString(fmt.Sprintf("          ALLOWED_BRANCHES=(\"%s\" \"%s\")\n\n", git.IntegrationBranch, git.ReleaseBranch))
-	sb.WriteString("          paths=$(git config -f .gitmodules --get-regexp path | awk '{print $2}')\n")
-	sb.WriteString("          for p in $paths; do\n")
-	sb.WriteString("            echo \"== Checking submodule: $p ==\"\n")
-	sb.WriteString("            sha=$(git -C \"$p\" rev-parse HEAD)\n")
-	sb.WriteString("            echo \"SHA: $sha\"\n\n")
-	sb.WriteString("            git -C \"$p\" fetch origin --prune\n\n")
-	sb.WriteString("            ok=0\n")
-	sb.WriteString("            for b in \"${ALLOWED_BRANCHES[@]}\"; do\n")
-	sb.WriteString("              if git -C \"$p\" branch -r --contains \"$sha\" | grep -q \"origin/$b\"; then\n")
-	sb.WriteString("                echo \"OK: $sha is contained in origin/$b\"\n")
-	sb.WriteString("                ok=1\n")
-	sb.WriteString("                break\n")
-	sb.WriteString("              fi\n")
-	sb.WriteString("            done\n\n")
-	sb.WriteString("            if [[ \"$ok\" -ne 1 ]]; then\n")
-	sb.WriteString("              echo \"ERROR: $p SHA $sha is NOT on allowed branches: ${ALLOWED_BRANCHES[*]}\"\n")
-	sb.WriteString("              exit 2\n")
-	sb.WriteString("            fi\n")
-	sb.WriteString("          done\n")
-
-	return sb.String()
-}
-
-func generateCIContent(repo RepoConfig, git GitConfig, templateType string) string {
-	// Game engines have special templates
-	switch templateType {
-	case "unity":
-		return generateUnityCIContent(repo, git)
-	case "unreal":
-		return generateUnrealCIContent(repo, git)
-	case "godot":
-		return generateGodotCIContent(repo, git)
-	}
-
-	workingDir := ""
-	if repo.Type == "directory" && !util.IsRootPath(repo.Path) {
-		workingDir = util.NormalizePath(repo.Path)
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("name: %s CI\n\n", repo.Name))
-	sb.WriteString("on:\n")
-	sb.WriteString("  push:\n")
-	sb.WriteString(fmt.Sprintf("    branches: [%s, %s]\n", git.IntegrationBranch, git.ReleaseBranch))
-	sb.WriteString("  pull_request:\n")
-	sb.WriteString(fmt.Sprintf("    branches: [%s]\n\n", git.IntegrationBranch))
-	sb.WriteString("jobs:\n")
-	sb.WriteString("  build:\n")
-	sb.WriteString("    runs-on: ubuntu-latest\n")
-
-	if workingDir != "" {
-		sb.WriteString("    defaults:\n")
-		sb.WriteString("      run:\n")
-		sb.WriteString(fmt.Sprintf("        working-directory: %s\n", workingDir))
-	}
-
-	sb.WriteString("    steps:\n")
-	sb.WriteString("      - uses: actions/checkout@v4\n")
-	sb.WriteString("        with:\n")
-	sb.WriteString("          fetch-depth: 0\n")
-
-	switch templateType {
-	case "go":
-		sb.WriteString("      - uses: actions/setup-go@v5\n")
-		sb.WriteString("        with:\n")
-		sb.WriteString("          go-version: '1.25.5'\n")
-	case "node":
-		sb.WriteString("      - uses: actions/setup-node@v4\n")
-		sb.WriteString("        with:\n")
-		sb.WriteString("          node-version: '20'\n")
-		sb.WriteString("      - run: npm ci\n")
-	case "python":
-		sb.WriteString("      - uses: actions/setup-python@v5\n")
-		sb.WriteString("        with:\n")
-		sb.WriteString("          python-version: '3.11'\n")
-		sb.WriteString("      - run: pip install -r requirements.txt\n")
-	case "rust":
-		sb.WriteString("      - name: Setup Rust\n")
-		sb.WriteString("        uses: dtolnay/rust-toolchain@stable\n")
-		sb.WriteString("        with:\n")
-		sb.WriteString("          toolchain: stable\n")
-		sb.WriteString("      - name: Cache cargo\n")
-		sb.WriteString("        uses: Swatinem/rust-cache@v2\n")
-	case "dotnet":
-		sb.WriteString("      - name: Setup .NET\n")
-		sb.WriteString("        uses: actions/setup-dotnet@v4\n")
-		sb.WriteString("        with:\n")
-		sb.WriteString("          dotnet-version: '8.0.x'\n")
-		sb.WriteString("      - name: Restore dependencies\n")
-		sb.WriteString("        run: dotnet restore\n")
-	}
-
-	sb.WriteString("      - name: Build\n")
-	sb.WriteString(fmt.Sprintf("        run: %s\n", repo.Verify.Build))
-	sb.WriteString("      - name: Test\n")
-	sb.WriteString(fmt.Sprintf("        run: %s\n", repo.Verify.Test))
-
-	return sb.String()
-}
-
-func generateUnityCIContent(repo RepoConfig, git GitConfig) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("name: %s CI\n\n", repo.Name))
-	sb.WriteString("on:\n")
-	sb.WriteString("  pull_request:\n")
-	if git.IntegrationBranch != git.ReleaseBranch && git.ReleaseBranch != "" {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\", \"%s\"]\n", git.IntegrationBranch, git.ReleaseBranch))
-	} else {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n", git.IntegrationBranch))
-	}
-	sb.WriteString("  push:\n")
-	sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n\n", git.IntegrationBranch))
-
-	sb.WriteString("jobs:\n")
-	sb.WriteString("  sanity:\n")
-	sb.WriteString("    runs-on: ubuntu-latest\n")
-	sb.WriteString("    steps:\n")
-	sb.WriteString("      - name: Checkout (with LFS)\n")
-	sb.WriteString("        uses: actions/checkout@v4\n")
-	sb.WriteString("        with:\n")
-	sb.WriteString("          fetch-depth: 0\n")
-	sb.WriteString("          lfs: true\n\n")
-
-	sb.WriteString("      - name: Basic Unity project structure checks\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n\n")
-	sb.WriteString("          echo \"== Check Packages files ==\"\n")
-	sb.WriteString("          test -f Packages/manifest.json\n")
-	sb.WriteString("          echo \"OK: Packages/manifest.json exists\"\n")
-	sb.WriteString("          if [ -f Packages/packages-lock.json ]; then\n")
-	sb.WriteString("            echo \"OK: Packages/packages-lock.json exists\"\n")
-	sb.WriteString("          else\n")
-	sb.WriteString("            echo \"WARN: Packages/packages-lock.json missing (not fatal)\"\n")
-	sb.WriteString("          fi\n\n")
-	sb.WriteString("          echo \"== Validate JSON syntax (manifest/lock) ==\"\n")
-	sb.WriteString("          python3 - <<'PY'\n")
-	sb.WriteString("          import json, pathlib, sys\n")
-	sb.WriteString("          files = [\"Packages/manifest.json\", \"Packages/packages-lock.json\"]\n")
-	sb.WriteString("          for f in files:\n")
-	sb.WriteString("            p = pathlib.Path(f)\n")
-	sb.WriteString("            if not p.exists():\n")
-	sb.WriteString("              print(f\"skip: {f} (missing)\")\n")
-	sb.WriteString("              continue\n")
-	sb.WriteString("            try:\n")
-	sb.WriteString("              json.loads(p.read_text(encoding=\"utf-8\"))\n")
-	sb.WriteString("              print(f\"ok: {f} json valid\")\n")
-	sb.WriteString("            except Exception as e:\n")
-	sb.WriteString("              print(f\"ERROR: {f} invalid json: {e}\")\n")
-	sb.WriteString("              sys.exit(2)\n")
-	sb.WriteString("          PY\n\n")
-	sb.WriteString("          echo \"== Check Assets folder ==\"\n")
-	sb.WriteString("          test -d Assets\n")
-	sb.WriteString("          echo \"OK: Assets exists\"\n\n")
-
-	sb.WriteString("      - name: Basic .meta presence check\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n")
-	sb.WriteString("          count_files=$(find Assets -type f ! -name \"*.meta\" | wc -l | tr -d ' ')\n")
-	sb.WriteString("          count_meta=$(find Assets -type f -name \"*.meta\" | wc -l | tr -d ' ')\n")
-	sb.WriteString("          echo \"Assets non-meta files: $count_files\"\n")
-	sb.WriteString("          echo \"Assets meta files:     $count_meta\"\n\n")
-	sb.WriteString("          if [ \"$count_files\" -gt 0 ] && [ \"$count_meta\" -eq 0 ]; then\n")
-	sb.WriteString("            echo \"ERROR: Assets has files but no .meta files found.\"\n")
-	sb.WriteString("            exit 3\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          echo \"OK: meta presence sanity check passed\"\n\n")
-
-	sb.WriteString("      - name: Ensure no huge files\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n")
-	sb.WriteString("          big=$(find . -type f -size +200M -not -path \"./.git/*\" | head -n 1 || true)\n")
-	sb.WriteString("          if [ -n \"$big\" ]; then\n")
-	sb.WriteString("            echo \"ERROR: Found very large file: $big\"\n")
-	sb.WriteString("            exit 4\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          echo \"OK: no huge files detected\"\n")
-
-	return sb.String()
-}
-
-func generateUnrealCIContent(repo RepoConfig, git GitConfig) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("name: %s CI\n\n", repo.Name))
-	sb.WriteString("on:\n")
-	sb.WriteString("  pull_request:\n")
-	if git.IntegrationBranch != git.ReleaseBranch && git.ReleaseBranch != "" {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\", \"%s\"]\n", git.IntegrationBranch, git.ReleaseBranch))
-	} else {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n", git.IntegrationBranch))
-	}
-	sb.WriteString("  push:\n")
-	sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n\n", git.IntegrationBranch))
-
-	sb.WriteString("# Unreal Engine CI: sanity-check mode (no UE required)\n")
-	sb.WriteString("# For full builds, configure self-hosted runner with UE installed\n\n")
-
-	sb.WriteString("jobs:\n")
-	sb.WriteString("  sanity-check:\n")
-	sb.WriteString("    runs-on: ubuntu-latest\n")
-	sb.WriteString("    steps:\n")
-	sb.WriteString("      - name: Checkout\n")
-	sb.WriteString("        uses: actions/checkout@v4\n")
-	sb.WriteString("        with:\n")
-	sb.WriteString("          fetch-depth: 0\n")
-	sb.WriteString("          lfs: true\n\n")
-
-	sb.WriteString("      - name: Check Unreal project structure\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          echo \"== Check .uproject file ==\"\n")
-	sb.WriteString("          UPROJECT=$(find . -maxdepth 2 -name \"*.uproject\" | head -n 1)\n")
-	sb.WriteString("          if [ -z \"$UPROJECT\" ]; then\n")
-	sb.WriteString("            echo \"ERROR: No .uproject file found\"\n")
-	sb.WriteString("            exit 1\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          echo \"OK: Found $UPROJECT\"\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          echo \"== Validate .uproject JSON ==\"\n")
-	sb.WriteString("          python3 -c \"import json; json.load(open('$UPROJECT'))\"\n")
-	sb.WriteString("          echo \"OK: .uproject is valid JSON\"\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          echo \"== Check required folders ==\"\n")
-	sb.WriteString("          for dir in Source Content Config; do\n")
-	sb.WriteString("            if [ -d \"$dir\" ]; then\n")
-	sb.WriteString("              echo \"OK: $dir exists\"\n")
-	sb.WriteString("            else\n")
-	sb.WriteString("              echo \"WARN: $dir not found\"\n")
-	sb.WriteString("            fi\n")
-	sb.WriteString("          done\n\n")
-
-	sb.WriteString("      - name: UE C++ code quality checks\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          if [ ! -d \"Source\" ]; then\n")
-	sb.WriteString("            echo \"No Source folder, skipping\"\n")
-	sb.WriteString("            exit 0\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          echo \"== UE C++ Code Quality Checks ==\"\n")
-	sb.WriteString("          ERRORS=0\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          # Check UCLASS and GENERATED_BODY\n")
-	sb.WriteString("          for file in $(find Source -name \"*.h\" 2>/dev/null); do\n")
-	sb.WriteString("            if grep -q \"class.*:.*public.*UObject\\|AActor\\|UActorComponent\" \"$file\"; then\n")
-	sb.WriteString("              if ! grep -q \"UCLASS(\" \"$file\"; then\n")
-	sb.WriteString("                echo \"  ERROR: $file - inherits UE class but missing UCLASS()\"\n")
-	sb.WriteString("                ERRORS=$((ERRORS + 1))\n")
-	sb.WriteString("              elif ! grep -q \"GENERATED_BODY()\\|GENERATED_UCLASS_BODY()\" \"$file\"; then\n")
-	sb.WriteString("                echo \"  ERROR: $file - has UCLASS but missing GENERATED_BODY()\"\n")
-	sb.WriteString("                ERRORS=$((ERRORS + 1))\n")
-	sb.WriteString("              fi\n")
-	sb.WriteString("            fi\n")
-	sb.WriteString("          done\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          # Check Build.cs\n")
-	sb.WriteString("          if ! find Source -name \"*.Build.cs\" | grep -q .; then\n")
-	sb.WriteString("            echo \"  ERROR: No .Build.cs file found\"\n")
-	sb.WriteString("            ERRORS=$((ERRORS + 1))\n")
-	sb.WriteString("          else\n")
-	sb.WriteString("            echo \"  OK: .Build.cs found\"\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          if [ $ERRORS -gt 0 ]; then\n")
-	sb.WriteString("            exit 1\n")
-	sb.WriteString("          fi\n\n")
-
-	sb.WriteString("      - name: Check assets and LFS\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          echo \"== Asset checks ==\"\n")
-	sb.WriteString("          big=$(find . -type f -size +100M -not -path \"./.git/*\" 2>/dev/null | head -5 || true)\n")
-	sb.WriteString("          if [ -n \"$big\" ]; then\n")
-	sb.WriteString("            echo \"WARN: Large files found (consider Git LFS):\"\n")
-	sb.WriteString("            echo \"$big\"\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          if [ -f \".gitattributes\" ] && grep -q \"lfs\" .gitattributes; then\n")
-	sb.WriteString("            echo \"OK: Git LFS configured\"\n")
-	sb.WriteString("          else\n")
-	sb.WriteString("            echo \"WARN: Consider adding Git LFS for .uasset, .umap files\"\n")
-	sb.WriteString("          fi\n")
-
-	return sb.String()
-}
-
-func generateGodotCIContent(repo RepoConfig, git GitConfig) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("name: %s CI\n\n", repo.Name))
-	sb.WriteString("on:\n")
-	sb.WriteString("  pull_request:\n")
-	if git.IntegrationBranch != git.ReleaseBranch && git.ReleaseBranch != "" {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\", \"%s\"]\n", git.IntegrationBranch, git.ReleaseBranch))
-	} else {
-		sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n", git.IntegrationBranch))
-	}
-	sb.WriteString("  push:\n")
-	sb.WriteString(fmt.Sprintf("    branches: [\"%s\"]\n\n", git.IntegrationBranch))
-
-	sb.WriteString("# Godot CI: uses headless Godot for validation\n\n")
-
-	sb.WriteString("env:\n")
-	sb.WriteString("  GODOT_VERSION: '4.2.2'\n\n")
-
-	sb.WriteString("jobs:\n")
-	sb.WriteString("  sanity-check:\n")
-	sb.WriteString("    runs-on: ubuntu-latest\n")
-	sb.WriteString("    steps:\n")
-	sb.WriteString("      - name: Checkout\n")
-	sb.WriteString("        uses: actions/checkout@v4\n")
-	sb.WriteString("        with:\n")
-	sb.WriteString("          fetch-depth: 0\n")
-	sb.WriteString("          lfs: true\n\n")
-
-	sb.WriteString("      - name: Check Godot project structure\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          echo \"== Check project.godot ==\"\n")
-	sb.WriteString("          if [ ! -f \"project.godot\" ]; then\n")
-	sb.WriteString("            echo \"ERROR: project.godot not found\"\n")
-	sb.WriteString("            exit 1\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          echo \"OK: project.godot found\"\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          echo \"== Parse project config ==\"\n")
-	sb.WriteString("          if grep -q \"config/name\" project.godot; then\n")
-	sb.WriteString("            PROJECT_NAME=$(grep \"config/name\" project.godot | sed 's/.*=\"\\(.*\\)\"/\\1/')\n")
-	sb.WriteString("            echo \"Project name: $PROJECT_NAME\"\n")
-	sb.WriteString("          fi\n\n")
-
-	sb.WriteString("      - name: GDScript code quality checks\n")
-	sb.WriteString("        shell: bash\n")
-	sb.WriteString("        run: |\n")
-	sb.WriteString("          set -euo pipefail\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          GD_FILES=$(find . -name \"*.gd\" -not -path \"./.git/*\" -not -path \"./addons/*\" 2>/dev/null || true)\n")
-	sb.WriteString("          if [ -z \"$GD_FILES\" ]; then\n")
-	sb.WriteString("            echo \"No GDScript files found, skipping\"\n")
-	sb.WriteString("            exit 0\n")
-	sb.WriteString("          fi\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          echo \"== GDScript Code Quality Checks ==\"\n")
-	sb.WriteString("          ERRORS=0\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          for file in $GD_FILES; do\n")
-	sb.WriteString("            # Check deprecated yield (Godot 4 should use await)\n")
-	sb.WriteString("            if grep -qE \"\\byield\\s*\\(\" \"$file\"; then\n")
-	sb.WriteString("              echo \"  ERROR: $file - uses deprecated 'yield' (use 'await' in Godot 4)\"\n")
-	sb.WriteString("              ERRORS=$((ERRORS + 1))\n")
-	sb.WriteString("            fi\n")
-	sb.WriteString("            \n")
-	sb.WriteString("            # Check old export syntax\n")
-	sb.WriteString("            if grep -qE \"^export\\s*\\(\" \"$file\"; then\n")
-	sb.WriteString("              echo \"  ERROR: $file - uses old 'export()' syntax (use '@export' in Godot 4)\"\n")
-	sb.WriteString("              ERRORS=$((ERRORS + 1))\n")
-	sb.WriteString("            fi\n")
-	sb.WriteString("            \n")
-	sb.WriteString("            # Check old onready syntax\n")
-	sb.WriteString("            if grep -qE \"^onready\\s+\" \"$file\"; then\n")
-	sb.WriteString("              echo \"  ERROR: $file - uses old 'onready' syntax (use '@onready' in Godot 4)\"\n")
-	sb.WriteString("              ERRORS=$((ERRORS + 1))\n")
-	sb.WriteString("            fi\n")
-	sb.WriteString("          done\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          GD_COUNT=$(echo \"$GD_FILES\" | wc -w)\n")
-	sb.WriteString("          TSCN_COUNT=$(find . -name \"*.tscn\" -not -path \"./.git/*\" | wc -l)\n")
-	sb.WriteString("          echo \"Stats: $GD_COUNT scripts, $TSCN_COUNT scenes\"\n")
-	sb.WriteString("          echo \"Results: $ERRORS errors\"\n")
-	sb.WriteString("          \n")
-	sb.WriteString("          if [ $ERRORS -gt 0 ]; then\n")
-	sb.WriteString("            exit 1\n")
-	sb.WriteString("          fi\n\n")
-
-	sb.WriteString("      - name: Setup Godot\n")
-	sb.WriteString("        uses: chickensoft-games/setup-godot@v2\n")
-	sb.WriteString("        with:\n")
-	sb.WriteString("          version: ${{ env.GODOT_VERSION }}\n")
-	sb.WriteString("          use-dotnet: false\n\n")
-
-	sb.WriteString("      - name: Verify Godot installation\n")
-	sb.WriteString("        run: godot --version\n\n")
-
-	sb.WriteString("      - name: Import project\n")
-	sb.WriteString("        run: timeout 120 godot --headless --import || true\n\n")
-
-	sb.WriteString("      - name: Validate GDScript syntax\n")
-	sb.WriteString("        run: godot --headless --check-only --script res://project.godot 2>&1 || echo \"Script validation completed\"\n")
-
-	return sb.String()
 }
