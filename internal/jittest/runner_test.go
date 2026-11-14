@@ -3,9 +3,11 @@ package jittest
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunTests_EmptyTests(t *testing.T) {
@@ -184,5 +186,39 @@ func TestExtractTestError_EmptyOutput(t *testing.T) {
 	err := extractTestError("", "test.go")
 	if err != "test failed (no details)" {
 		t.Errorf("expected fallback message, got: %s", err)
+	}
+}
+
+// The tests generated at review time have a time limit, and at the limit the
+// command is stopped together with what it started. The sleep is a child of
+// the shell and holds its output open: with the shell alone killed, the run
+// was waited for until the sleep was done, however long the limit.
+func TestExecuteTests_OutOfTimeStopsWhatTheCommandStarted(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not on the PATH")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	outcome := executeTests(ctx, t.TempDir(), "echo started; sleep 5; echo finished", nil)
+	if took := time.Since(started); took > 3*time.Second {
+		t.Errorf("the run was waited for %v after a limit of 300ms", took)
+	}
+	if !outcome.timedOut || !outcome.failed {
+		t.Errorf("a run out of time: %+v, want it timed out and failed", outcome)
+	}
+	if !strings.Contains(outcome.stdout, "started") || strings.Contains(outcome.stdout, "finished") {
+		t.Errorf("output = %q, want what was printed before the limit and nothing after", outcome.stdout)
+	}
+
+	// A run that ends by itself is not timed out, whatever its result.
+	passed := executeTests(context.Background(), t.TempDir(), "echo ok", nil)
+	if passed.timedOut || passed.failed || !strings.Contains(passed.stdout, "ok") {
+		t.Errorf("a run that passes: %+v", passed)
+	}
+	broken := executeTests(context.Background(), t.TempDir(), "echo no >&2; exit 3", nil)
+	if broken.timedOut || !broken.failed || broken.exitCode != 3 || !strings.Contains(broken.stderr, "no") {
+		t.Errorf("a run that fails: %+v, want exit code 3 and no timeout", broken)
 	}
 }
