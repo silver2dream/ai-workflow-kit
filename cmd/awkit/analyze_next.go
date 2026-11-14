@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
@@ -53,6 +54,10 @@ func analyzerFor(stateRoot string, issue int) (*analyzer.Analyzer, error) {
 	a.LimitTo(issue)
 	return a, nil
 }
+
+// repairStructuralState is the repair analyze-next makes before it decides. A
+// variable, so that a test can see whether it was made.
+var repairStructuralState = reconcileStructuralState
 
 func cmdAnalyzeNext(args []string) int {
 	fs := flag.NewFlagSet("analyze-next", flag.ContinueOnError)
@@ -112,7 +117,12 @@ func cmdAnalyzeNext(args []string) int {
 	// otherwise every worker branches from an empty tree and the loop stalls.
 	// Output is confined to stderr/trace so it never corrupts the decision on
 	// stdout that the principal evals.
-	reconcileStructuralState(*stateRoot)
+	//
+	// Not once the run was asked to stop: the repair commits and pushes to
+	// the integration branch, and a run that is stopping changes nothing more.
+	if _, stopping := stopmark.Read(*stateRoot); !stopping {
+		repairStructuralState(*stateRoot)
+	}
 
 	// Decide next action
 	ctx := context.Background()

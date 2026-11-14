@@ -215,6 +215,13 @@ func TestPrintDoctor(t *testing.T) {
 		t.Errorf("a project with nothing wrong:\n%s", out.String())
 	}
 
+	// A reset is offered for what a reset clears, and for nothing else.
+	out.Reset()
+	printDoctor(&out, setup[:1], []doctor.CheckResult{{Name: "Stop Marker", Status: "ok", Message: "No stop marker"}})
+	if !strings.Contains(out.String(), "  ✓ Stop Marker: No stop marker\n") || strings.Contains(out.String(), "awkit reset") {
+		t.Errorf("a project whose earlier runs left nothing to clear:\n%s", out.String())
+	}
+
 	for _, tc := range []struct {
 		errors, warnings int
 		want             string

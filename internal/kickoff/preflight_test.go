@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1095,5 +1096,75 @@ func TestCheckGitRemote(t *testing.T) {
 	}
 	if got := checker.CheckGitRemote(); got.Passed || !strings.Contains(got.Message, "not a git repository") {
 		t.Errorf("a directory that is no repository: %+v, want a failure that says so", got)
+	}
+}
+
+// Which checks stop a run. A missing remote and a missing integration branch
+// do: every ticket fails without them, and a run that started all the same
+// spent its retries on each ticket before it said so.
+func TestPreflightSteps_WhichStopARun(t *testing.T) {
+	stops := map[string]bool{}
+	var order []string
+	for _, step := range NewPreflightChecker("", "").steps() {
+		stops[step.name] = step.fatal
+		order = append(order, step.name)
+	}
+	want := map[string]bool{
+		"gh CLI": true, "gh auth": true, "claude CLI": true, "worker backend": false,
+		"git remote": true, "git": true, "stop marker": false, "lock": true,
+		"config": true, "repo paths": true, "integration branch": true,
+		"GitHub repo": false, "repo write access": true,
+		"PTY": false, "permissions": false, "agents": false,
+	}
+	if !reflect.DeepEqual(stops, want) {
+		t.Errorf("the checks that stop a run:\n%v\nwant\n%v", stops, want)
+	}
+	// The tools before what is asked of them, the configuration before what
+	// it names.
+	before := func(a, b string) {
+		t.Helper()
+		ia, ib := -1, -1
+		for i, name := range order {
+			if name == a {
+				ia = i
+			}
+			if name == b {
+				ib = i
+			}
+		}
+		if ia < 0 || ib < 0 || ia > ib {
+			t.Errorf("%q is not checked before %q: %v", a, b, order)
+		}
+	}
+	before("gh CLI", "gh auth")
+	before("gh auth", "repo write access")
+	before("git remote", "integration branch")
+	before("config", "repo paths")
+	before("config", "integration branch")
+}
+
+// A run stops at the first check that fails and stops it, names the check,
+// and makes none after it. A check that only warns does not stop it.
+func TestRunSteps(t *testing.T) {
+	var made []string
+	step := func(name string, passed, fatal bool) preflightStep {
+		return preflightStep{name: name, fatal: fatal, check: func() CheckResult {
+			made = append(made, name)
+			return CheckResult{Name: name, Passed: passed, Message: name + " said so"}
+		}}
+	}
+
+	results, err := runSteps([]preflightStep{step("first", true, true), step("second", false, false), step("third", false, true), step("fourth", true, true)})
+	if err == nil || err.Error() != "third check failed: third said so" {
+		t.Errorf("err = %v, want the third check named", err)
+	}
+	if !reflect.DeepEqual(made, []string{"first", "second", "third"}) || len(results) != 3 {
+		t.Errorf("checks made: %v (%d results), want the first three", made, len(results))
+	}
+
+	made = nil
+	results, err = runSteps([]preflightStep{step("first", true, true), step("second", false, false), step("third", true, true)})
+	if err != nil || len(results) != 3 || results[1].Passed {
+		t.Errorf("a check that only warns: err = %v, results = %+v", err, results)
 	}
 }
