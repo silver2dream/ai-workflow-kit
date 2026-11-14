@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"gopkg.in/yaml.v3"
 )
 
@@ -78,8 +80,60 @@ func TestPreset_GenericAssumesNoStack(t *testing.T) {
 		if len(cfg.Rules.Custom) != 0 {
 			t.Errorf("preset %q: rules.custom = %v, want none", preset, cfg.Rules.Custom)
 		}
+	}
+}
+
+// A new project's configuration holds what a person sets. It has no key that
+// nothing reads (the presets used to write a dozen: an audit section, limits
+// on the size of a pull request, triggers that were to ask for a person),
+// it does not spell out the names of the labels, which cannot be changed, and
+// what it leaves out has its default: the kit's git rule is listed without
+// being written.
+func TestPresets_WriteOnlyWhatIsRead(t *testing.T) {
+	for _, preset := range Presets {
+		dir := t.TempDir()
+		if _, err := Install(createMinimalMockFS(), dir, Options{Preset: preset, ProjectName: "demo", NoGenerate: true}); err != nil {
+			t.Fatalf("Install(%q): %v", preset, err)
+		}
+		unread, err := config.UnreadKeys(layout.Config(dir))
+		if err != nil || len(unread) != 0 {
+			t.Errorf("preset %q writes keys nothing reads: %v (err %v)", preset, unread, err)
+		}
+		data, err := os.ReadFile(layout.Config(dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, gone := range []string{"labels:", "description:", "commit_format", "agents:", "timeouts:", "escalation:", "feedback:", "hooks:"} {
+			if strings.Contains(string(data), gone) {
+				t.Errorf("preset %q still writes %q", preset, gone)
+			}
+		}
+
+		cfg, err := config.Load(dir)
+		if err != nil {
+			t.Fatalf("preset %q: %v", preset, err)
+		}
+		if problems := cfg.Validate(); len(problems) != 0 {
+			t.Errorf("preset %q wrote a configuration that is not valid: %v", preset, problems)
+		}
 		if want := []string{"git-workflow"}; !reflect.DeepEqual(cfg.Rules.Kit, want) {
-			t.Errorf("preset %q: rules.kit = %v, want %v: the guides point at the kit's git rule only when it is listed", preset, cfg.Rules.Kit, want)
+			t.Errorf("preset %q: rules.kit = %v, want %v", preset, cfg.Rules.Kit, want)
+		}
+		if cfg.Worker.Backend != "codex" || cfg.Review.ScoreThreshold != 7 || cfg.Review.MergeStrategy != "squash" {
+			t.Errorf("preset %q: worker %q, review %d/%s; want codex, 7, squash", preset, cfg.Worker.Backend, cfg.Review.ScoreThreshold, cfg.Review.MergeStrategy)
+		}
+		if cfg.GitHub.Labels != config.DefaultLabels() {
+			t.Errorf("preset %q: labels = %+v, want the workflow's own", preset, cfg.GitHub.Labels)
+		}
+		// The file is in the format of this awkit: an upgrade has nothing to
+		// migrate in a project that was just set up. A file without a version
+		// counts as the oldest one.
+		if version, needed, err := migrate.NeedsMigration(layout.Config(dir)); err != nil || needed || version != migrate.LatestVersion {
+			t.Errorf("preset %q: version %q, migration needed: %v (err %v); want %s and nothing to migrate", preset, version, needed, err, migrate.LatestVersion)
+		}
+		// The file says where every key is described.
+		if !strings.Contains(string(data), "docs/user/configuration.md") || !strings.Contains(string(data), "awkit validate") {
+			t.Errorf("preset %q does not say where its keys are described:\n%s", preset, data)
 		}
 	}
 }
@@ -107,9 +161,6 @@ func TestPreset_GodotGoIsGoBackendAndCSharpFrontend(t *testing.T) {
 	// are the ones the preset writes (starter_rules_test.go).
 	if want := []string{"backend", "frontend", "testing"}; !reflect.DeepEqual(cfg.Rules.Custom, want) {
 		t.Errorf("rules.custom = %v, want %v", cfg.Rules.Custom, want)
-	}
-	if want := []string{"git-workflow"}; !reflect.DeepEqual(cfg.Rules.Kit, want) {
-		t.Errorf("rules.kit = %v, want %v", cfg.Rules.Kit, want)
 	}
 	if cfg.Worker.Backend != "codex" {
 		t.Errorf("worker.backend = %q, want the shared default", cfg.Worker.Backend)

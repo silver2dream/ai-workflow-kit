@@ -25,7 +25,9 @@ const File = layout.ConfigFile
 // Path returns the configuration file of the project at root.
 func Path(root string) string { return layout.Config(root) }
 
-// Config is the configuration of a project.
+// Config is the configuration of a project. It has a field for every key
+// that is read, and for no other: UnreadKeys names what a file holds beyond
+// them.
 type Config struct {
 	Version    string     `yaml:"version"`
 	Project    Project    `yaml:"project"`
@@ -45,7 +47,8 @@ type Config struct {
 
 // Project says what the project is.
 type Project struct {
-	Name        string `yaml:"name"`
+	Name string `yaml:"name"`
+	// Description is for whoever reads the file. Nothing else reads it.
 	Description string `yaml:"description"`
 	// Type is monorepo or single-repo.
 	Type string `yaml:"type"`
@@ -62,8 +65,6 @@ type Repo struct {
 	// dependencies when verify.setup names none: npm, yarn or pnpm.
 	PackageManager string `yaml:"package_manager"`
 	Verify         Verify `yaml:"verify"`
-	// Rules is read from the file and used by nothing.
-	Rules []string `yaml:"rules"`
 }
 
 // Verify holds the commands that set up, build and test a repo.
@@ -77,8 +78,12 @@ type Verify struct {
 type Git struct {
 	IntegrationBranch string `yaml:"integration_branch"`
 	ReleaseBranch     string `yaml:"release_branch"`
-	CommitFormat      string `yaml:"commit_format"`
 }
+
+// CommitFormat is the format of a commit message and of a pull request's
+// title. It is not a setting: the Worker's runner writes its commits this way
+// whatever a file says, so the rule agents are given says the same.
+const CommitFormat = "[type] subject"
 
 // GitHub holds what AWK needs to know about the project on GitHub.
 type GitHub struct {
@@ -89,6 +94,10 @@ type GitHub struct {
 
 // Labels are the names of the labels the workflow puts on issues and pull
 // requests.
+//
+// The names are fixed for now, and Validate refuses a file that changes one:
+// the analyzer and `awkit status` read them from here, while dispatch, the
+// result check and the review write the default names.
 type Labels struct {
 	Task             string `yaml:"task"`
 	InProgress       string `yaml:"in_progress"`
@@ -229,11 +238,12 @@ type Timeouts struct {
 
 // Feedback configures what a Worker is told about earlier reviews.
 type Feedback struct {
-	Enabled            *bool `yaml:"enabled"`
-	MaxHistoryInPrompt int   `yaml:"max_history_in_prompt"`
+	Enabled *bool `yaml:"enabled"`
 }
 
-// IsEnabled reports whether review feedback is recorded (default).
+// IsEnabled reports whether a Worker's prompt carries the kinds of finding
+// reviews turn changes back for most often (default). The record of what
+// reviews found is kept either way.
 func (c *Feedback) IsEnabled() bool {
 	return c.Enabled == nil || *c.Enabled
 }
@@ -292,8 +302,7 @@ type Worker struct {
 
 // Codex holds the settings of the codex backend.
 type Codex struct {
-	FullAuto    *bool `yaml:"full_auto"`
-	MaxAttempts int   `yaml:"max_attempts"`
+	FullAuto *bool `yaml:"full_auto"`
 }
 
 // IsFullAuto reports whether codex runs in full-auto mode (default).
@@ -322,9 +331,9 @@ func (c *Lessons) IsEnabled() bool {
 	return c.Enabled == nil || *c.Enabled
 }
 
-// LessonsDistiller configures the model that turns reviews into lessons.
+// LessonsDistiller configures the model that turns reviews into lessons. It
+// is asked through the claude CLI.
 type LessonsDistiller struct {
-	Backend        string `yaml:"backend"`
 	Model          string `yaml:"model"`
 	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
@@ -442,9 +451,6 @@ func (c *Config) applyDefaults() {
 	if c.Git.ReleaseBranch == "" {
 		c.Git.ReleaseBranch = "main"
 	}
-	if c.Git.CommitFormat == "" {
-		c.Git.CommitFormat = "[type] subject"
-	}
 	if len(c.Rules.Kit) == 0 {
 		c.Rules.Kit = []string{"git-workflow"}
 	}
@@ -462,7 +468,7 @@ func (c *Config) applyDefaults() {
 		c.Review.JiTTest.FailurePolicy = "warn"
 	}
 	if c.Review.JiTTest.Model == "" {
-		c.Review.JiTTest.Model = "claude-sonnet-4-6"
+		c.Review.JiTTest.Model = "sonnet"
 	}
 
 	positive(&c.Escalation.MaxReviewAttempts, 3)
@@ -482,12 +488,9 @@ func (c *Config) applyDefaults() {
 	positive(&c.Timeouts.GHRetryCount, 3)
 	positive(&c.Timeouts.GHRetryBaseDelay, 2)
 
-	positive(&c.Feedback.MaxHistoryInPrompt, 10)
-
 	if c.Worker.Backend == "" {
 		c.Worker.Backend = "codex"
 	}
-	positive(&c.Worker.Codex.MaxAttempts, 1)
 	if c.Worker.ClaudeCode.Model == "" {
 		c.Worker.ClaudeCode.Model = "sonnet"
 	}

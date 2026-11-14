@@ -61,6 +61,30 @@ func (c *Config) Validate() []ValidationError {
 		missing("git.integration_branch")
 	}
 
+	// A label under another name: half of the workflow would look for the
+	// new name and the other half write the old one, and every ticket would
+	// be refused at dispatch. Said here, before a run starts.
+	fixed := DefaultLabels()
+	for _, label := range []struct{ key, name, fixed string }{
+		{"task", c.GitHub.Labels.Task, fixed.Task},
+		{"in_progress", c.GitHub.Labels.InProgress, fixed.InProgress},
+		{"pr_ready", c.GitHub.Labels.PRReady, fixed.PRReady},
+		{"worker_failed", c.GitHub.Labels.WorkerFailed, fixed.WorkerFailed},
+		{"needs_human_review", c.GitHub.Labels.NeedsHumanReview, fixed.NeedsHumanReview},
+		{"review_failed", c.GitHub.Labels.ReviewFailed, fixed.ReviewFailed},
+		{"merge_conflict", c.GitHub.Labels.MergeConflict, fixed.MergeConflict},
+		{"needs_rebase", c.GitHub.Labels.NeedsRebase, fixed.NeedsRebase},
+		{"completed", c.GitHub.Labels.Completed, fixed.Completed},
+	} {
+		if label.name != "" && label.name != label.fixed {
+			errors = append(errors, ValidationError{
+				Field:    "github.labels." + label.key,
+				Message:  fmt.Sprintf("the label cannot be renamed (%q): the workflow writes it under its own name. Remove the key", label.name),
+				Expected: label.fixed,
+			})
+		}
+	}
+
 	builtin := map[string]bool{}
 	for _, name := range c.Agents.Builtin {
 		builtin[name] = true

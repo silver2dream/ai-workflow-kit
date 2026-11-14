@@ -35,7 +35,7 @@ func godotGoProject() Config {
 			{Name: "backend", Path: "backend/", Type: "directory", Language: "go"},
 			{Name: "frontend", Path: "frontend/", Type: "directory", Language: "csharp"},
 		},
-		Git:   GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:   GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Rules: RulesConfig{Kit: []string{"git-workflow"}, Custom: []string{"backend", "frontend"}},
 	}
 }
@@ -153,18 +153,18 @@ func TestGenerateGitWorkflowMd_Rules(t *testing.T) {
 	}
 }
 
-// The bracket rules describe the default format. A project that configured
-// another one is told its format, and nothing about brackets.
-func TestGenerateGitWorkflowMd_AnotherCommitFormat(t *testing.T) {
-	cfg := godotGoProject()
-	cfg.Git.CommitFormat = "type(scope): subject"
-	got := generated(t, generateGitWorkflowMd, cfg)
-	if !strings.Contains(got, "- Format: `type(scope): subject`\n") {
-		t.Errorf("the configured format is not stated:\n%s", got)
-	}
-	for _, bracket := range []string{"square brackets", "[feat]", "Conventional Commits"} {
-		if strings.Contains(got, bracket) {
-			t.Errorf("a project with its own commit format is told %q", bracket)
+// The commit format is not a setting. The Worker's runner writes its commits
+// and the titles of its pull requests as "[type] subject" whatever a project
+// would like, so the rule agents are given says that, with the example.
+func TestGenerateGitWorkflowMd_TheCommitFormatIsTheWorkflows(t *testing.T) {
+	got := generated(t, generateGitWorkflowMd, godotGoProject())
+	for _, want := range []string{
+		"- Format: `[type] subject`\n",
+		"- The type is in square brackets with no colon after them, and the subject is lowercase.",
+		"- Example: `[feat] add login endpoint`\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the git rule file lacks %q:\n%s", want, got)
 		}
 	}
 }

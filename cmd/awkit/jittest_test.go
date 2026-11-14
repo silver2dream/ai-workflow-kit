@@ -43,7 +43,7 @@ func TestCmdJiTTest_AProjectWithoutRepos(t *testing.T) {
 	out = captureStdout(t, func() {
 		code = cmdJiTTest([]string{"--pr", "1", "--issue", "2", "--state-root", dir, "--dry-run"})
 	})
-	for _, want := range []string{"Max tests: 5", "Timeout: 120s", "Failure policy: warn", "Model: claude-sonnet-4-6"} {
+	for _, want := range []string{"Max tests: 5", "Timeout: 120s", "Failure policy: warn", "Model: sonnet"} {
 		if code != 0 || !strings.Contains(out, want) {
 			t.Errorf("the dry run (%d) should show %q:\n%s", code, want, out)
 		}

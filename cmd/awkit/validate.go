@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
@@ -15,7 +16,9 @@ func usageValidate() {
 	fmt.Fprint(os.Stderr, `Validate workflow configuration
 
 Checks `+layout.ConfigFile+` and, when the project has one, the roster of
-the planning council (`+layout.RosterFile+`).
+the planning council (`+layout.RosterFile+`). It also names the keys of the
+configuration that nothing reads: a key an earlier awkit wrote, or one that
+is misspelt, changes nothing.
 
 Usage:
   awkit validate [options]
@@ -54,7 +57,7 @@ func cmdValidate(args []string) int {
 	fmt.Println("")
 
 	// Load config
-	config, err := kickoff.LoadConfig(*configPath)
+	cfg, err := kickoff.LoadConfig(*configPath)
 	if err != nil {
 		output.Error(fmt.Sprintf("Failed to load config: %v", err))
 		return 1
@@ -63,7 +66,7 @@ func cmdValidate(args []string) int {
 	output.Success(fmt.Sprintf("Loaded: %s", *configPath))
 
 	// Validate required fields
-	errors := config.Validate()
+	errors := cfg.Validate()
 	if len(errors) > 0 {
 		fmt.Println("")
 		output.Error("Validation errors:")
@@ -82,7 +85,7 @@ func cmdValidate(args []string) int {
 		baseDir, _ = os.Getwd()
 	}
 
-	pathErrors := config.ValidatePaths(baseDir)
+	pathErrors := cfg.ValidatePaths(baseDir)
 	if len(pathErrors) > 0 {
 		fmt.Println("")
 		output.Warning("Path warnings:")
@@ -107,15 +110,39 @@ func cmdValidate(args []string) int {
 	}
 
 	fmt.Println("")
-	fmt.Printf("Project: %s\n", output.Cyan(config.Project.Name))
-	fmt.Printf("Type:    %s\n", output.Cyan(config.Project.Type))
-	fmt.Printf("Repos:   %d\n", len(config.Repos))
-	for _, repo := range config.Repos {
+	fmt.Printf("Project: %s\n", output.Cyan(cfg.Project.Name))
+	fmt.Printf("Type:    %s\n", output.Cyan(cfg.Project.Type))
+	fmt.Printf("Repos:   %d\n", len(cfg.Repos))
+	for _, repo := range cfg.Repos {
 		fmt.Printf("  - %s (%s)\n", repo.Name, repo.Path)
 	}
 
 	fmt.Println("")
 	output.Success("Configuration is valid")
 
+	if unread, err := config.UnreadKeys(*configPath); err == nil {
+		printUnreadKeys(os.Stdout, unread)
+	}
+
 	return 0
+}
+
+// printUnreadKeys names the keys of the configuration that nothing reads.
+// The file is valid all the same; what the list is for is the person who set
+// one of them and takes it to be in force.
+func printUnreadKeys(w io.Writer, unread []config.UnreadKey) {
+	if len(unread) == 0 {
+		return
+	}
+	fmt.Fprintln(w)
+	if len(unread) == 1 {
+		fmt.Fprintln(w, "1 key of the configuration is read by nothing, and changes nothing:")
+	} else {
+		fmt.Fprintf(w, "%d keys of the configuration are read by nothing, and change nothing:\n", len(unread))
+	}
+	for _, key := range unread {
+		fmt.Fprintf(w, "  - %s\n", key)
+	}
+	fmt.Fprintln(w, "An earlier awkit wrote some of these, and a key that is misspelt is listed too.")
+	fmt.Fprintln(w, "Delete them, or correct the spelling.")
 }

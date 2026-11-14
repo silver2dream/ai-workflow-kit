@@ -383,6 +383,36 @@ func TestCIWorkflows_ProjectsOwnCIYmlCoversEveryRepo(t *testing.T) {
 	}
 }
 
+// What the generator says about a workflow it keeps names the file from the
+// project's root, as its other lines do: not with the full path of the
+// project on the machine it runs on.
+func TestCIWorkflows_NotesNameFilesFromTheProjectsRoot(t *testing.T) {
+	const own = "name: ci\non: push\njobs:\n  backend:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make\n"
+
+	// The project's own ci.yml covers the repos.
+	dir := t.TempDir()
+	writeWorkflowFile(t, dir, "ci.yml", own)
+	covered := planCIWorkflows(dir, ciContext(goBackend, csharpFrontend), CISync).notes
+	if want := []string{"Kept: .github/workflows/ci.yml is the project's own and is taken to cover every repo, so no per-repo workflow is added (awkit generate --generate-ci writes them)"}; !reflect.DeepEqual(covered, want) {
+		t.Errorf("notes = %q, want %q", covered, want)
+	}
+	// Asked to rewrite: the per-repo workflows are written, and ci.yml is
+	// pointed out.
+	rewrite := planCIWorkflows(dir, ciContext(goBackend, csharpFrontend), CIRewrite).notes
+	if want := []string{"NOTE: .github/workflows/ci.yml does not come from this config; remove it if it repeats the per-repo workflows"}; !reflect.DeepEqual(rewrite, want) {
+		t.Errorf("notes = %q, want %q", rewrite, want)
+	}
+
+	// A per-repo workflow the project took over.
+	dir = t.TempDir()
+	runCI(t, dir, ciContext(goBackend), CISync)
+	takeOver(t, dir, "ci-backend.yml")
+	kept := planCIWorkflows(dir, ciContext(goBackend), CISync).notes
+	if want := []string{"Kept: .github/workflows/ci-backend.yml is the project's own"}; !reflect.DeepEqual(kept, want) {
+		t.Errorf("notes = %q, want %q", kept, want)
+	}
+}
+
 // A per-repo workflow awkit already owns keeps following the config even
 // where the project owns ci.yml; only adding one next to it is held back.
 func TestCIWorkflows_ProjectsOwnCIYmlDoesNotFreezeAwkitsWorkflows(t *testing.T) {
