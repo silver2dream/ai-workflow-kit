@@ -1286,8 +1286,8 @@ func TestRunVerificationCommand_HasItsOwnTimeLimit(t *testing.T) {
 	hurried := RunIssueOptions{GitTimeout: time.Hour, VerifyTimeout: 200 * time.Millisecond}
 	started := time.Now()
 	err := hurried.runVerificationCommand(ctx, dir, "sleep 4; echo done")
-	if err == nil || !strings.Contains(err.Error(), "timeout after 200ms") {
-		t.Errorf("a command past the limit of verification: err = %v, want a timeout after 200ms", err)
+	if err == nil || !strings.Contains(err.Error(), "timeout after 200ms") || !strings.Contains(err.Error(), "timeouts.verify_minutes in .ai/config.yaml") {
+		t.Errorf("a command past the limit of verification: err = %v, want a timeout after 200ms that names the setting", err)
 	}
 	if took := time.Since(started); took > 3*time.Second {
 		t.Errorf("the command was waited for %v after its limit of 200ms: what it started was not stopped with it", took)

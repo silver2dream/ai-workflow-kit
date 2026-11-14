@@ -3,6 +3,7 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
@@ -293,6 +295,17 @@ func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*Ver
 			passedNames = append(passedNames, name)
 		}
 		fmt.Printf("[VERIFY] Passed tests: %v\n", passedNames)
+	}
+
+	// A suite that was cut off at the time limit proves nothing, also where
+	// some of its tests had passed by then: what was to run after the cut is
+	// not known to pass.
+	if testsCutOff(testErr) {
+		return nil, &EvidenceError{
+			Code:    2,
+			Message: testErr.Error(),
+			Details: []string{fmt.Sprintf("%d test(s) had passed and %d had failed when the run was stopped", len(passedTests), len(failedTests))},
+		}
 	}
 
 	if testErr != nil && len(passedTests) == 0 {
@@ -713,7 +726,16 @@ func ExecuteTests(ctx context.Context, worktreePath, testCommand string, timeout
 	cmd.WaitDelay = 5 * time.Second
 
 	err := util.RunWithChildren(cmd)
+	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("the tests ran out of time after %v, the limit of one build or test command (timeouts.verify_minutes in %s): %w",
+			timeout, layout.ConfigFile, context.DeadlineExceeded)
+	}
 	return output.String(), err
+}
+
+// testsCutOff reports whether a run of the tests ended at its time limit.
+func testsCutOff(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // ParseTestResults extracts passed and failed tests from output

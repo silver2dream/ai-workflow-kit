@@ -2170,7 +2170,7 @@ func (opts *RunIssueOptions) runVerificationCommand(ctx context.Context, workDir
 	err := util.RunWithChildren(cmd)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("timeout after %v", timeout)
+			return fmt.Errorf("timeout after %v, the limit of one build or test command (timeouts.verify_minutes in %s)", timeout, layout.ConfigFile)
 		}
 		// Include stderr in error message for debugging
 		errOutput := strings.TrimSpace(stderr.String())
