@@ -1,359 +1,90 @@
-# Contributing Guide
+# 貢獻
 
-本文件說明如何為 AI Workflow Kit 貢獻程式碼。
+怎麼建置、測試、提交與發版。AWK 的內部結構見[架構](architecture.md)。
 
 ---
 
-## 開發環境設定
+## 環境
 
-### 必要條件
-
-- Go 1.25+
-- Git
-- GitHub CLI (`gh`)
-- Bash (Windows 使用者需要 Git Bash 或 WSL)
-
-### 安裝開發依賴
-
-AWK 是純 Go 專案,不需要額外的執行期依賴:
+- Go 1.25 以上
+- `git`、[`gh`](https://cli.github.com/)
+- Windows：Git for Windows，而且 `sh`、`bash` 要在 `PATH` 上（從 Git Bash 執行測試最省事）。有些測試會真的執行 shell 指令
 
 ```bash
 go build ./...
+go vet ./...
 go test ./...
+go build -o awkit ./cmd/awkit   # 本機試用的 binary
 ```
 
-### 專案結構
+AWK 沒有 Go 以外的執行期相依。
 
-```
-.
-├── cmd/awkit/        # CLI 進入點
-├── internal/         # 核心套件（analyzer, reviewer, worker, lessons, kickoff, ...）
-├── .ai/              # 這個 repo 自己的 config.yaml（不隨 kit 發佈）
-├── .claude/          # kit 本體：rules/_kit、skills（principal-workflow、post-mortem、release-checklist）、agents
-└── docs/             # 文件 (你正在讀的)；developer/specs 是 AWK 自己的設計文件
-```
+## 這個 repository 的幾件事
 
----
+- **它自己就是一個 AWK 專案。** `.claude/` 是 kit 本體，會被嵌進 binary 再裝進使用者的專案（`kit_embed.go`）；改 skill 或 subagent 就是改產品。
+- **`CLAUDE.md`、`AGENTS.md`、`.claude/rules/_kit/git-workflow.md` 是產生的。** 要改內容，改 `internal/generate/generator.go`，再執行 `go run ./cmd/awkit generate` 把這幾份更新成新的輸出。
+- **設定檔的每個鍵都要有程式讀，也都要有說明。** 加一個鍵：在 `internal/config/config.go` 加欄位與預設值、在 `config_test.go` 的 `full` 範例加上它、在 [`docs/user/configuration.md`](../user/configuration.md) 對應的小節說明它。少了後兩步的任何一步，`internal/config` 的測試都會失敗；文件裡列了一個沒有欄位的鍵也會。
+- **文件說的要是程式做的。** 改了行為，同一個 pull request 裡改 README 與 `docs/`。
 
-## 開發流程
+## 分支與 commit
 
-### 1. Fork 與 Clone
+- pull request 開向 `develop`；`main` 只收發版。
+- 分支名稱：`feat/<主題>`、`fix/<主題>`，或其他 commit type 開頭（`refactor/…`、`chore/…`）。
+- commit 訊息與 pull request 標題：`[type] subject`，type 是 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`chore` 之一，subject 小寫。不是 Conventional Commits 的 `feat: …`。
+- pull request 以 squash 合併。`develop` 要求簽章的 commit，squash 合併時由 GitHub 簽。
 
 ```bash
-# Fork 專案後 clone
-git clone https://github.com/<your-username>/ai-workflow-kit.git
-cd ai-workflow-kit
-
-# 加入 upstream remote
-git remote add upstream https://github.com/silver2dream/ai-workflow-kit.git
+git checkout develop && git pull
+git checkout -b feat/your-topic
+# …
+git commit -m "[feat] add a health endpoint"
+git push -u origin feat/your-topic
+gh pr create --base develop --title "[feat] add a health endpoint"
 ```
 
-### 2. 建立分支
+## 測試
 
 ```bash
-# 從 main 建立功能分支
-git checkout main
-git pull upstream main
-git checkout -b feat/your-feature
+go test ./...                                   # 全部
+go test ./internal/reviewer/ -run TestName -v   # 一個
+go test -race ./...                             # 競態檢查（Linux、macOS；Windows 需要 cgo 與 gcc）
+go test -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 ```
 
-### 分支命名規範
+- 測試檔與被測的程式放在同一個套件裡，一個行為一個測試，測試上方的註解寫它保護的是哪一條規則。
+- 對外部工具的呼叫（`gh`、`claude`、`git`）用套件層級的函式變數隔開，測試換成假的；不要在測試裡真的打 GitHub。
+- **有些測試只在特定環境才會跑。** `TestIntegration_PreflightToLockRelease` 需要已登入的 `gh`、`claude`，而且工作目錄是乾淨的，否則跳過。所以送出之前，在 commit 之後的乾淨工作目錄再跑一次 `go test ./...`。
+- 改了規則，問自己：把這條規則改壞，會有測試失敗嗎？沒有就補一個。
 
-| 類型 | 格式 | 範例 |
-|------|------|------|
-| 功能 | `feat/description` | `feat/add-gitlab-support` |
-| 修復 | `fix/description` | `fix/yaml-parsing-error` |
-| 文件 | `docs/description` | `docs/update-api-reference` |
-| 重構 | `refactor/description` | `refactor/error-handling` |
+## CI
 
-### 3. 開發與測試
+`.github/workflows/ci.yml` 是手寫的（`awkit generate` 不會動它），三個 job：
 
-```bash
-# 執行所有 Go 測試
-go test ./...
+| Job | 做什麼 |
+|---|---|
+| `awkit_cli`（ubuntu） | `go vet`、`go test -race` 並要求整體覆蓋率 60% 以上、`awkit evaluate --offline --strict` |
+| `awkit_cli_windows`（windows） | 在 Windows 上跑完整的 `go test ./...`，守住路徑、ConPTY 與行程相關的行為 |
+| `skeleton`（ubuntu） | 用 `godot-go` preset 建一個專案，以它產生的 CI workflow 的指令建置並測試 |
 
-# 執行特定套件測試
-go test ./internal/lessons/... -v
+`awkit evaluate --offline` 是給這個 CI 用的檢查：`.gitignore` 是否忽略了執行期的檔案、專案稽核有沒有 P0 的發現、設定檔是否有效、`internal/buildinfo/version.go` 在不在、文字檔的編碼與行尾是否一致。`--strict` 讓任何一項失敗都以非零結束。
 
-# 執行測試覆蓋率
-go test ./... -cover
+## 發版
 
-# 驗證配置
-awkit validate
-```
+版本號只來自 git tag（建置時由 ldflags 寫進 `internal/buildinfo`）；不必手動改版本號，也沒有 CHANGELOG 要維護（release 的說明由 GitHub 從合併的 pull request 產生）。
 
-### 4. 提交變更
+1. 在 `develop` 上確認可以發版：`release-checklist` skill 會逐項檢查並給出 GO 或 NO-GO。
+2. `develop` 若落後 `main`（例如 dependabot 直接合進 `main` 的更新），先把 `main` 合回 `develop`。
+3. 開 pull request：`develop` → `main`，標題 `[release] merge develop into main`，以 merge commit 合併（不是 squash）。
+4. 在 `main` 的合併 commit 上打 tag 並推上去：
 
-```bash
-# 遵循 commit 格式
-git add .
-git commit -m "[feat] add GitLab support"
-```
+   ```bash
+   git fetch origin main
+   git tag vX.Y.Z origin/main
+   git push origin vX.Y.Z
+   ```
 
-### Commit 格式
+   推 tag 會觸發 `.github/workflows/release.yml`：建置五個平台的 binary 並發佈 GitHub release。**推出去就是公開發佈，收不回來。**
 
-```
-[type] subject
+## 回報問題
 
-body (optional)
-```
-
-**Type 類型：**
-
-| Type | 說明 |
-|------|------|
-| `feat` | 新功能 |
-| `fix` | 修復 bug |
-| `docs` | 文件變更 |
-| `refactor` | 重構 (不改變功能) |
-| `test` | 測試相關 |
-| `chore` | 維護性工作 |
-
-**範例：**
-```
-[feat] add retry mechanism for failed executions
-
-- Add retry_count and retry_delay_seconds to config
-- Implement exponential backoff
-- Record retry count in the issue result
-```
-
-### 5. 推送與建立 PR
-
-```bash
-# 推送分支
-git push origin feat/your-feature
-
-# 建立 PR
-gh pr create --base main --title "[feat] add GitLab support" --body "..."
-```
-
----
-
-## 程式碼規範
-
-AWK 是純 Go 專案,遵循標準 Go 慣例:
-
-- 提交前跑 `gofmt`(或 `goimports`)與 `go vet ./...`
-- 命名依 [Effective Go](https://go.dev/doc/effective_go):exported 用 `CamelCase`、unexported 用 `camelCase`,縮寫維持大小寫一致(`URL`、`ID`、`PR`)
-- 錯誤處理:回傳 `error` 而非 panic;用 `fmt.Errorf("...: %w", err)` 包裝以保留 error chain
-- 每個 exported 型別/函式都要有以名稱開頭的 doc comment
-- 平台特定程式碼用 `//go:build` 標籤分檔(如 `*_windows.go` / `*_unix.go`)
-- 對 agent/LLM 輸出的解析一律 **fail-closed**:格式不符即明確錯誤,不要用寬鬆預設值掩蓋(參見 `internal/reviewer` 的結構化 review 契約)
-
----
-
-## 測試規範
-
-### 測試檔案結構
-
-```
-# Go 測試 (主要測試架構)
-cmd/awkit/
-├── main_test.go
-├── kickoff_test.go
-└── *_test.go
-
-internal/
-├── errors/errors_test.go
-├── audit/auditor_test.go
-├── evaluate/evaluate_test.go
-├── generate/generator_test.go
-├── git/operations_test.go
-├── lessons/lessons_test.go
-├── reviewer/structured_test.go
-└── ...
-```
-
-### 撰寫測試 (Go)
-
-```go
-package errors
-
-import (
-    "testing"
-)
-
-func TestAWKError(t *testing.T) {
-    t.Run("creates error with message", func(t *testing.T) {
-        err := NewError("test message")
-        if err.Error() != "test message" {
-            t.Errorf("expected 'test message', got %s", err.Error())
-        }
-    })
-
-    t.Run("returns correct exit code", func(t *testing.T) {
-        err := NewConfigError("config error")
-        if err.ExitCode() != 2 {
-            t.Errorf("expected exit code 2, got %d", err.ExitCode())
-        }
-    })
-}
-```
-
-### 測試命令
-
-```bash
-# 執行所有測試
-go test ./...
-
-# 帶覆蓋率執行
-go test ./... -cover
-
-# 帶 verbose 輸出
-go test ./... -v
-
-# 執行特定測試函數
-go test ./internal/lessons -run TestStore_SaveLoadRoundTrip -v
-```
-
-### 測試覆蓋率要求
-
-- 新增的程式碼應有對應的測試
-- 核心套件 (`internal/analyzer`, `internal/reviewer`, `internal/worker`) 覆蓋率應 > 70%
-- PR 不應降低整體覆蓋率
-
----
-
-## 文件規範
-
-### 文件類型
-
-| 類型 | 位置 | 對象 |
-|------|------|------|
-| 使用者文件 | `docs/user/` | Kit 使用者 |
-| 開發者文件 | `docs/developer/` | Kit 貢獻者 |
-| API 文件 | 程式碼內 docstring | 開發者 |
-
-### Markdown 風格
-
-- 使用 ATX 風格標題 (`#`)
-- 程式碼區塊標註語言
-- 使用表格呈現結構化資訊
-- 中英文之間加空格
-
-### API 文件格式
-
-Go doc comment 以符號名稱開頭,說明用途、參數語義與回傳/錯誤條件:
-
-```go
-// SubmitReview submits a PR review and handles the outcome (merge,
-// changes_requested, review_blocked, ...). A structured submission
-// (opts.Structured) bypasses markdown parsing; ctx bounds all GitHub calls.
-// Returns the verdict, or an error on an operational failure.
-func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (*SubmitReviewResult, error) {
-    // ...
-}
-```
-
----
-
-## Pull Request 流程
-
-### PR Checklist
-
-提交 PR 前請確認：
-
-- [ ] 程式碼符合風格規範
-- [ ] 所有測試通過 (`go test ./...`)
-- [ ] 新功能有對應測試
-- [ ] 文件已更新 (如適用)
-- [ ] Commit 格式正確
-
-### PR 描述模板
-
-```markdown
-## Summary
-
-簡述變更內容。
-
-## Changes
-
-- 變更項目 1
-- 變更項目 2
-
-## Testing
-
-說明如何測試這些變更。
-
-## Related Issues
-
-Closes #123
-```
-
-### Review 流程
-
-1. **自動檢查** - CI 執行測試
-2. **Code Review** - 維護者審查
-3. **修改** - 根據回饋修改
-4. **合併** - 審查通過後 squash merge
-
----
-
-## 發布流程
-
-### 版本號規則
-
-遵循 Semantic Versioning：
-
-- **MAJOR** - 不相容的 API 變更
-- **MINOR** - 向後相容的新功能
-- **PATCH** - 向後相容的 bug 修復
-
-### 發布 Checklist
-
-1. 更新 CHANGELOG.md
-2. 更新版本號
-3. 建立 Release PR
-4. 合併後建立 Git tag
-5. 發布 GitHub Release
-
----
-
-## 常見問題
-
-### Q: 測試失敗怎麼辦？
-
-```bash
-# 查看詳細輸出 (Go)
-go test ./... -v
-
-# 執行特定套件測試
-go test ./internal/lessons/... -v
-
-# 跑單一測試
-go test ./internal/reviewer/ -run TestParseStructuredReview -v
-```
-
-### Q: 如何在本地端到端試跑工作流?
-
-```bash
-# 使用 awkit CLI
-awkit run --dry-run
-
-# 啟用 debug 輸出
-awkit generate
-```
-
-### Q: Windows 上腳本執行失敗？
-
-確保使用 Git Bash 或 WSL，並檢查行尾符號：
-
-```bash
-git config --global core.autocrlf input
-```
-
----
-
-## 聯繫方式
-
-- **Issues**: [GitHub Issues](https://github.com/silver2dream/ai-workflow-kit/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/silver2dream/ai-workflow-kit/discussions)
-
----
-
-## 更多資源
-
-- [架構說明](architecture.md) - 系統內部架構
-- [API 參考](api-reference.md) - 函數與模組說明
-- [測試說明](testing.md) - 測試架構與執行
+[GitHub Issues](https://github.com/silver2dream/ai-workflow-kit/issues)。安全性問題照 [SECURITY.md](../../SECURITY.md) 的方式回報，不要開公開的 issue。

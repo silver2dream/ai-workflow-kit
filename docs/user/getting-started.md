@@ -1,314 +1,146 @@
-# Getting Started
+# 開始使用
 
-> **Looking for the English quick start?** See [Quick Start Guide](quick-start.md) for a streamlined 5-minute setup.
-
-本指南幫助你快速上手 AI Workflow Kit (AWK)。
+從零到第一次 run。每一步之後 `awkit` 都會說下一步是什麼；這份文件多說明「為什麼」與「卡住時怎麼辦」。
 
 ---
 
-## 系統需求
+## 1. 準備
 
-### 必要條件
+| 需要 | 用途 |
+|---|---|
+| `git`，專案的 `origin` 是一個 GitHub repository | 票券是 issue，Worker 把分支推到 `origin` 再開 pull request |
+| [`gh`](https://cli.github.com/)，`gh auth login` 完成，對該 repository 有寫入權限 | 建 issue、改標籤、審查與合併 |
+| [`claude`](https://claude.com/claude-code)（Claude Code CLI） | 扮演 Principal、審查者與議會 |
+| `codex` 或 `claude` | 扮演 Worker；用哪個由 `worker.backend` 決定，預設 `codex` |
+| Windows：Git for Windows | Claude Code 需要它的 Git Bash，建置與測試指令也透過它執行 |
 
-| 工具 | 版本 | 說明 |
-|------|------|------|
-| Bash | 4.0+ | Shell 腳本 (Windows 可用 Git Bash 或 WSL) |
-| Git | 2.20+ | 版本控制 |
-
-`awkit` 是單一靜態 Go binary,不需要 Python 或其他執行期依賴。
-
-### 可選條件 (完整工作流程)
-
-| 工具 | 說明 |
-|------|------|
-| [GitHub CLI (gh)](https://cli.github.com/) | Issue/PR 操作 |
-| Claude Code | Principal AI |
-| Codex | Worker AI |
-
----
-
-## 安裝方式
-
-### 方式一：使用 awkit CLI (推薦)
-
-**macOS / Linux:**
+安裝 `awkit`：
 
 ```bash
 curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
 ```
 
-**Windows (PowerShell):**
-
 ```powershell
 irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.ps1 | iex
 ```
 
-安裝到專案：
+## 2. 設定專案
+
+在要讓它工作的 repository 根目錄：
 
 ```bash
-# 在當前目錄初始化 AWK
-awkit init
-
-# 或使用 preset（Go 後端 + Godot C# 前端）
-awkit init --preset godot-go
-
-# 或指定路徑
-awkit init /path/to/your-project --preset godot-go
+awkit init                                # 單一 repo、不限技術棧
+awkit init --preset godot-go --scaffold   # Go 後端 + Godot C# 前端，附能建置的骨架
+awkit init --dry-run                      # 只看會寫哪些檔
 ```
 
-升級現有專案：
+`awkit init` 結尾會列出它寫了什麼。要看的是設定檔 `.ai/config.yaml`：
+
+- **分支**（`git.integration_branch`、`git.release_branch`）：填的是 repository 裡已有的分支。有 `develop` 就是 `develop` 合併、預設分支發版；沒有就是單一主幹。pull request 都開向 integration branch。
+- **建置與測試指令**（每個 repo 的 `verify.build`、`verify.test`）：Worker 交付前會跑，審查時測試會再跑一次。`generic` preset 留空，**開工前一定要填**；`godot-go` 已填好 `go build ./...`、`go test ./...`、`dotnet build`、`dotnet test`。
+- **誰來寫程式**（`worker.backend`）：`codex` 或 `claude-code`。
+
+改過設定檔之後執行 `awkit generate`，`CLAUDE.md`、`AGENTS.md` 與 CI workflow 會跟著更新；`awkit validate` 檢查設定檔。每個鍵的說明在[設定檔](configuration.md)。
+
+然後把這些檔案 commit 並推上去。run 從乾淨的工作目錄開始，而且 integration branch 必須在 `origin` 上：
 
 ```bash
-# 升級 kit 檔案（保留你的 config.yaml）
-awkit upgrade
-
-# 重新生成輔助檔案
-awkit generate
+git add -A && git commit -m "[chore] set up awkit"
+git push          # 分支還沒有 upstream 時：git push -u origin <分支>
 ```
 
-### 方式二：手動安裝
-
-1. 複製 `.ai/` 目錄到你的專案
-2. 執行生成命令：`awkit generate`
-
----
-
-## 初始化專案
-
-### 步驟 1：配置 config.yaml
-
-編輯 `.ai/config.yaml`，設定你的專案結構：
-
-**Single Repo 範例：**
-
-```yaml
-project:
-  name: "my-project"
-  type: "single-repo"
-
-repos:
-  - name: root
-    path: ./
-    type: root
-    language: python
-    verify:
-      build: "python -m py_compile *.py"
-      test: "pytest"
-```
-
-**Monorepo 範例：**
-
-```yaml
-project:
-  name: "my-monorepo"
-  type: "monorepo"
-
-repos:
-  - name: backend
-    path: backend/
-    type: directory
-    language: go
-    verify:
-      build: "go build ./..."
-      test: "go test ./..."
-
-  - name: frontend
-    path: frontend/
-    type: directory
-    language: csharp
-    verify:
-      build: "dotnet build"
-      test: "dotnet test"
-```
-
-### 步驟 2：生成設定檔
+## 3. 檢查
 
 ```bash
-awkit generate
+awkit doctor
 ```
 
-這會產生：
-- `CLAUDE.md` - Principal AI 的指令檔
-- `AGENTS.md` - Worker AI 的指令檔
-- `.claude/rules/_kit/git-workflow.md` - Git 工作流程規則
-- `.claude/settings.local.json` - Claude Code 權限設定（自動批准 gh、git 等命令）
+它把 run 開始前會檢查的事一次問完：工具與登入、設定檔是否有效、`origin` 是否存在、integration branch 是否在 `origin` 上、對 repository 有沒有寫入權限。每個問題都附怎麼修。全部通過再往下。
 
-### 步驟 3：驗證設定
+## 4. 規劃
 
 ```bash
-awkit validate
+awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 ```
 
-如果看到 `Configuration is valid` 表示設定正確。
+議會（`.ai/roster.yaml` 裡的角色）會辯論這份需求，寫下文件與決策，最後提出一份票券清單：
 
----
+- `docs/plans/<plan>/tickets.yaml`：票券提案。**這是你要看的東西**，可以直接改。
+- `docs/plans/<plan>/minutes.md`、`docs/decisions.md`、`docs/<area>/*.md`：會議紀錄、決策、各角色的文件。
 
-## 第一個工作流程
+想在規劃途中被問問題，用 `awkit plan --ask "…"`。
 
-較大的需求可以先交給議會規劃，由它產出文件與票券：
+Worker 是從 integration branch 讀專案的，所以議會寫在 `docs/` 下的東西要先 commit 並推上去；然後核可清單：
 
 ```bash
-awkit plan "幫 API server 加上健康檢查端點，回報 build 版本與資料庫狀態"
-awkit plan approve <plan>    # 讀過 docs/plans/<plan>/tickets.yaml 之後，建立 Issue
+git add docs && git commit -m "[docs] plan the daily login reward" && git push
+awkit plan approve <plan> --dry-run   # 先看會建哪些 issue
+awkit plan approve <plan>             # 建立 issue
 ```
 
-`.ai/roster.yaml` 裡的角色會辯論這個需求，寫出 `docs/` 下各自擁有的文件，把決策記入 `docs/decisions.md`，並提出票券；你核可之前，GitHub 上不會有任何東西。加上 `--ask`，議會會在辯論前先把問題拿來問你；不加的話，它會寫明自己做了哪些假設。核可之後，直接跳到「3. 啟動前檢查」。
-
-只有一件事要做時，照下面的步驟自己寫一張票。
-
-### 1. 寫一張票券
-
-工作就是一串票券：帶有 task 標籤（`ai-task`）的 GitHub Issue。內文說明要做什麼，並用一個小區塊寫明這張票屬於哪個 repo。
-
-把內文寫進檔案，例如 `ticket.md`：
-
-````markdown
-## Summary
-新增 health endpoint。
-
-## Scope
-- API server 的 GET /healthz
-
-## Acceptance Criteria
-- [ ] GET /healthz 回 200，並帶上 build 版本
-- [ ] Unit tests added for new functionality
-
-## Testing Requirements
-- handler 要有單元測試，涵蓋正常與錯誤情況
-
-```yaml awk-ticket
-schema: 1
-repo: root
-```
-````
-
-`yaml awk-ticket` 區塊的欄位：`schema` 固定為 `1`；`repo` 是 `config.yaml` 裡的 repo 名稱或 `root`；需要等其他 Issue 先完成時，加上 `depends_on: [12, 15]`。完整說明見 `.claude/skills/principal-workflow/references/ticket.md`。
-
-### 2. 建立 Issue
+只想補一張票，不必開會：照 `.claude/skills/principal-workflow/references/ticket.md` 的格式寫內文，再
 
 ```bash
 awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
 ```
 
-內文不合格（缺少 section、沒有區塊、repo 不在設定檔裡）時不會建立 Issue，並說明原因。
-
-### 3. 啟動前檢查
+## 5. 開工
 
 ```bash
-awkit run --dry-run
+awkit run              # 處理所有開著的票
+awkit run --issue 42   # 只做一張
+awkit run --dry-run    # 只跑啟動前的檢查
 ```
 
-`--dry-run` 只做啟動前檢查，不會開始工作。
+`awkit run` 會在這個終端機裡啟動 Claude Code 當 Principal。每張票的流程：Worker 在自己的 worktree 裡寫變更並開 pull request → 審查（重跑測試、逐條核對驗收條件；CI 要通過）→ 通過就合併並關閉 issue，不通過就帶著意見退回給 Worker。票券依編號由小到大處理，依賴沒完成的會先跳過。
 
-### 4. 開始工作流程
-
-確認無誤後，執行完整流程：
+另一個終端機可以看進度或請它停下：
 
 ```bash
-# 先登入 GitHub CLI
-gh auth login
-
-# 啟動工作流程：處理所有未完成的票券
-awkit run
-
-# 或只做一張票
-awkit run --issue 42
+awkit status   # run 的狀態、每張票在哪個階段、下一步
+awkit stop     # 做完手上這一步就停；Worker 正在跑的話會等它做完
 ```
 
-票券依 Issue 編號由小到大處理，`depends_on` 裡的 Issue 都完成後才會開始。沒有票券可做、或有事情需要人處理時，執行就會停下；`awkit status` 會顯示目前的狀況。
+你也可以在 run 進行中直接到 GitHub 上審 pull request：有你未解決的審查意見時不會合併，Worker 會帶著你的意見重做。合併不會等你；合併之後才寫的意見，會在下一張票開工前被讀進來，變成教訓。
 
-### 5. 停止工作流程
+## 6. run 結束時
+
+`awkit run` 最後會說為什麼結束、接下來做什麼。
+
+| 它說 | 意思 | 你要做的 |
+|---|---|---|
+| Every ticket is done. | 沒有票了 | 規劃下一批（`awkit plan`），或補一張票 |
+| The run was stopped, as asked. | 你用 `awkit stop` 停的 | `awkit run` 接著做 |
+| A ticket needs you. | 有 issue 被標上 `needs-human-review` | `awkit status` 看是哪張、為什麼；處理後拿掉標籤，再 `awkit run` |
+| A pull request was turned back by the review as often as a review is tried. | 同一個 pull request 被審查退回太多次 | 看 pull request 上的審查留言；處理後 `awkit run` |
+| A ticket's Worker failed on every attempt. | Worker 的嘗試用完了 | issue 上有最後一次的錯誤；修正原因或改寫票，`awkit reset --labels`，再 `awkit run` |
+| A ticket cannot be read. | 票的 `awk-ticket` 區塊有誤 | issue 上有留言說明；改正區塊、拿掉 `needs-human-review`，再 `awkit run` |
+| Every open ticket waits for an issue that is not done. | 剩下的票都卡在依賴上 | 完成或重開被依賴的 issue，或修正 `depends_on` |
+| Too many attempts failed in a row. / The run reached the limit of its loop. | 連續失敗，或某張票在繞圈 | `awkit events --level error` 看發生了什麼；修正共同原因，`awkit reset`，再 `awkit run` |
+
+結束碼：工作做完或被你停下是 0，其餘是 1。
+
+想知道某張票到底發生了什麼：
 
 ```bash
-touch .ai/state/STOP
+awkit events --issue 42      # 這張票的完整經過
+awkit status --issue 42      # 它留下的結果檔與 log 在哪裡
+gh issue view 42 --comments  # 流程在 issue 上的留言
 ```
 
----
+## 7. 升級
 
-## 常見安裝問題
-
-### Bash 版本過舊 (macOS)
-
-**問題：** macOS 內建 bash 版本為 3.x
-
-**解決：**
 ```bash
-brew install bash
+awkit check-update   # 有沒有新版
+awkit upgrade        # 把專案裡的 kit 檔案更新到已安裝的版本，並 commit
 ```
 
-### Windows 路徑問題
-
-**問題：** 腳本執行時路徑錯誤
-
-**解決：** 使用 Git Bash 或 WSL，避免使用 cmd.exe
-
-### YAML 解析錯誤
-
-**問題：** `yaml.scanner.ScannerError`
-
-**解決：** 檢查 `config.yaml` 的縮排是否使用空格 (不要用 Tab)
+升級會保留你的設定檔、規則與自己加的 skill。
 
 ---
 
 ## 下一步
 
-- [配置說明](configuration.md) - 完整的 config.yaml 設定
-- [故障排除](troubleshooting.md) - 常見錯誤與解決方案
-- [FAQ](faq.md) - 常見問題
-
----
-
-## awkit CLI 命令參考
-
-| 命令 | 說明 |
-|------|------|
-| `awkit init` | 初始化新專案 |
-| `awkit init --preset <name>` | 使用指定 preset 初始化 |
-| `awkit upgrade` | 升級 kit 檔案，保留 config.yaml |
-| `awkit uninstall` | 移除 AWK |
-| `awkit list-presets` | 列出可用 preset |
-| `awkit check-update` | 檢查 CLI 更新 |
-| `awkit version` | 顯示版本 |
-| `awkit help <command>` | 顯示命令說明 |
-| `awkit plan "<需求>"` | 讓議會規劃：產出文件、決策與提案的票券（`--ask` 會先問你問題） |
-| `awkit plan approve <plan>` | 核可工作清單，建立 Issue |
-| `awkit create-task` | 從寫好的內文建立一張票券 |
-| `awkit run` | 啟動工作流程 |
-| `awkit run --dry-run` | 預覽工作流程 |
-| `awkit validate` | 驗證配置 |
-| `awkit doctor` | 檢查專案健康狀態，報告問題 |
-| `awkit reset` | 重設專案狀態（支援 `--all`、`--dry-run` 等 flags） |
-| `awkit generate` | 生成輔助文件與 scaffolding |
-| `awkit evaluate` | 執行品質評估（離線/線上 gate 檢查與評分；`--offline`、`--strict`） |
-| `awkit lessons` | 學習迴圈：`list` / `stats` / `add` / `distill` / `promote` |
-
-### init 選項
-
-```bash
-awkit init [path] [options]
-
-Options:
-  --preset <name>     使用指定 preset (generic 或 godot-go)
-  --scaffold          建立專案骨架（僅 godot-go）
-  --force             覆蓋所有現有檔案
-  --force-config      只覆蓋 config.yaml
-  --dry-run           預覽操作，不實際執行
-  --no-generate       跳過執行 awkit generate
-  --project-name      覆蓋專案名稱
-```
-
-### upgrade 選項
-
-```bash
-awkit upgrade [path] [options]
-
-Options:
-  --scaffold          補充 scaffold 檔案 (需要 --preset)
-  --preset <name>     scaffold 使用的 preset
-  --force             覆蓋 scaffold 檔案
-  --dry-run           預覽操作，不實際執行
-  --no-generate       跳過執行 awkit generate
-  --no-commit         跳過自動 commit
-```
-
-> **注意：** CI workflow 會在 `init` 時自動建立，`upgrade` 時會自動遷移（移除舊版的 awk job）。
+- [設定檔](configuration.md)：每個鍵，以及議會的名冊
+- [Skills 與規則](skills.md)：告訴 agent 的事，以及怎麼加自己的規則
+- [疑難排解](troubleshooting.md)、[FAQ](faq.md)

@@ -1,52 +1,26 @@
-# Configuration Guide
+# 設定檔
 
-本文件詳細說明 `.ai/config.yaml` 的所有配置選項。
+`.ai/config.yaml` 是專案對 AWK 說的話：有哪些 repo、往哪個分支合併、用什麼指令建置與測試。`awkit init` 寫下第一份。
+
+- 改過之後執行 `awkit generate`：`CLAUDE.md`、`AGENTS.md`、`.claude/rules/_kit/` 與 CI workflow 都是從這份檔案產生的。
+- `awkit validate` 檢查這份檔案，並列出**檔案裡有、但沒有任何程式會讀的鍵**：舊版寫下而現在不用的、拼錯的。那些鍵不會有任何作用，可以刪掉。
+- 沒寫的鍵用預設值。必填的只有 `project.name`、`project.type`、`git.integration_branch`，以及每個 repo 的 `name` 與 `path`。
+
+規劃議會的名冊是另一個檔案，見[最後一節](#名冊airosteryaml)。
 
 ---
 
-## 配置檔結構
+## 新專案的設定檔
+
+`awkit init --preset godot-go` 寫下的就是這些；其他的鍵都用預設值，要改再加。
 
 ```yaml
 version: "1.2"
-project: { ... }
-repos: [ ... ]
-git: { ... }
-audit: { ... }
-github: { ... }
-rules: { ... }
-agents: { ... }
-timeouts: { ... }
-escalation: { ... }
-review: { ... }
-feedback: { ... }
-lessons: { ... }
-hooks: { ... }
-worker: { ... }
-# notifications: (planned for future release)
-```
 
----
-
-## project - 專案設定
-
-```yaml
 project:
-  name: "my-project"           # 專案名稱
-  description: "Description"   # 專案描述
-  type: "monorepo"             # monorepo | single-repo
-```
+  name: "demo"
+  type: "monorepo"
 
-| 欄位 | 必填 | 說明 |
-|------|------|------|
-| `name` | 是 | 專案識別名稱 |
-| `description` | 否 | 專案描述 |
-| `type` | 是 | `monorepo` 或 `single-repo` |
-
----
-
-## repos - 倉庫設定
-
-```yaml
 repos:
   - name: backend
     path: backend/
@@ -55,606 +29,254 @@ repos:
     verify:
       build: "go build ./..."
       test: "go test ./..."
-```
-
-### 欄位說明
-
-| 欄位 | 必填 | 說明 |
-|------|------|------|
-| `name` | 是 | 倉庫識別名稱 |
-| `path` | 是 | 相對於專案根目錄的路徑 |
-| `type` | 是 | `root` / `directory` / `submodule` |
-| `language` | 是 | 程式語言 (影響 CI 模板) |
-| `verify.setup` | 否 | 建置/測試前的依賴安裝指令（未設定時依 language/package_manager 自動推斷,如 `npm ci`、`pip install -r requirements.txt`） |
-| `verify.build` | 是 | 建置指令 |
-| `verify.test` | 是 | 測試指令 |
-
-### type 類型說明
-
-| 類型 | 使用時機 | 特點 |
-|------|----------|------|
-| `root` | Single-repo | 整個專案只有一個 repo，path 設為 `./` |
-| `directory` | Monorepo 子目錄 | 多個專案在同一個 git repo，共用歷史記錄 |
-| `submodule` | Git submodule | 各子專案有獨立的 git repo 和版本控制 |
-
-### language 支援的語言
-
-`language` 可以填任何名稱。下列語言 AWK 有額外支援，其他語言（或 `generic`）只會執行 `verify` 的指令，不做任何假設。
-
-| 語言 | 值 | 額外支援 |
-|------|-----|---------|
-| Go | `go` | CI 依 `go.mod` 安裝 Go；審查時逐一核對測試名稱 |
-| C# / Godot | `csharp` / `godot` | CI 安裝 .NET SDK；審查時以 `dotnet test` 逐一核對測試名稱 |
-| Node.js | `node` / `typescript` / `javascript` | 審查時核對測試名稱；依 `package_manager` 推斷安裝指令 |
-| Python | `python` | 審查時核對測試名稱 |
-
-CI workflow 由 `awkit init` / `awkit generate` 依每個 repo 的 `verify.setup` / `build` / `test` 產生：`root` repo 是 `.github/workflows/ci.yml`，`directory` repo 各一份 `ci-<repo>.yml`。build 與 test 都沒設的 repo 不會有 workflow。產生的 workflow 開頭有一段註解，註解還在時 awkit 會讓它跟著設定檔更新；要自己改就先刪掉註解，之後 awkit 不再動它。
-
-### 範例：Go 後端 + Godot C# 前端
-
-```yaml
-repos:
-  - name: backend
-    path: backend/
-    type: directory
-    language: go                # Go 版本取自 backend/go.mod
-    verify:
-      build: "go build ./..."
-      test: "go test ./..."
-
   - name: frontend
     path: frontend/
     type: directory
-    language: csharp            # Godot C#：只需要 .NET SDK
+    language: csharp
     verify:
-      setup: "dotnet tool restore"   # 可省略：建置前要先跑的指令
       build: "dotnet build"
       test: "dotnet test"
-```
 
----
-
-## git - Git 設定
-
-```yaml
 git:
-  integration_branch: "develop"         # PR 合併進這個分支；awkit init 會填 repo 裡已有的分支
-  release_branch: "main"                # 發版分支；只有一條主幹時兩者相同
-  commit_format: "[type] subject"       # Commit 格式
-  pr_body_template: |                   # PR 描述模板
-    Closes #${ISSUE_ID}
+  integration_branch: "develop"
+  release_branch: "main"
 
-    ${COMMIT_MSG}
-```
-
-| 欄位 | 必填 | 說明 |
-|------|------|------|
-| `integration_branch` | 是 | PR 預設的 base branch |
-| `release_branch` | 是 | 正式發布的分支 |
-| `commit_format` | 是 | Commit message 格式 |
-| `pr_body_template` | 否 | PR 描述模板，支援變數 |
-
----
-
-## audit - 審計設定
-
-```yaml
-audit:
-  checks:
-    - dirty-worktree        # 檢查工作目錄是否乾淨
-    - submodule-sync        # 檢查 submodule 是否同步
-    - missing-tests         # 檢查是否缺少測試
-    - missing-ci            # 檢查是否缺少 CI
-  custom: []                # 自訂檢查項目
-```
-
----
-
-## github - GitHub 設定
-
-```yaml
-github:
-  repo: ""                  # 留空表示使用 git remote origin
-  labels:
-    task: "ai-task"
-    in_progress: "in-progress"
-    pr_ready: "pr-ready"
-    review_failed: "review-failed"
-    worker_failed: "worker-failed"
-    needs_human_review: "needs-human-review"
-    merge_conflict: "merge-conflict"
-    needs_rebase: "needs-rebase"
-    completed: "completed"
-```
-
-| 欄位 | 說明 |
-|------|------|
-| `repo` | GitHub repo (owner/name)，空白則自動偵測 |
-| `labels.task` | 待處理任務 |
-| `labels.in_progress` | 已派工執行中 |
-| `labels.pr_ready` | Worker 完成、PR 待審 |
-| `labels.review_failed` | 審查/驗證失敗,待重審 |
-| `labels.worker_failed` | Worker 失敗,需人工介入 |
-| `labels.needs_human_review` | 超過重試上限,需人工審查 |
-| `labels.merge_conflict` | PR 有合併衝突 |
-| `labels.needs_rebase` | PR 落後 base,需 rebase |
-| `labels.completed` | 完成（success_no_changes） |
-
----
-
-## rules - 規則設定
-
-```yaml
 rules:
-  kit:
-    - git-workflow          # Kit 核心規則 (自動生成)
-  custom:                   # 使用者自訂規則
-    - backend-architecture
-    - frontend-patterns
-```
+  custom:
+    - backend
+    - frontend
+    - testing
 
-### 規則檔的位置
+worker:
+  backend: codex
 
-- `rules.kit` 的每一項對應 `.claude/rules/_kit/{rule}.md`：AWK 附的，升級時更新。
-- `rules.custom` 的每一項對應 `.claude/rules/{rule}.md`：專案自己的，升級不會動。列在這裡，`AGENTS.md` 才會要求 Worker 讀它；檔案不存在時 `awkit generate` 會警告。
-
-`godot-go` preset 建立專案時會寫下 `backend`、`frontend`、`testing` 三份起始規則並列在 `rules.custom`。規則檔的寫法見 [Skills 與規則](skills.md#規則檔)。
-
----
-
-## agents - Agent 設定
-
-```yaml
-agents:
-  builtin:
-    - pr-reviewer           # PR 審查 agent
-    - conflict-resolver     # 合併衝突解決 agent
-  custom: []                # 自訂 subagent
-```
-
-`builtin` 為 kit 內建 agent（由 `awkit generate` 管理）。`custom` 可定義額外 subagent,每個會在 `awkit generate` 時生成到 `.claude/agents/`。
-
-自訂 agent 欄位：
-
-| 欄位 | 說明 |
-|------|------|
-| `name` | Agent 名稱（小寫字母、數字、連字號） |
-| `description` | 描述（必填） |
-| `tools` | 允許的工具（預設 `Read, Grep, Glob, Bash`） |
-| `model` | `haiku` \| `sonnet` \| `opus`（預設 `opus`） |
-| `trigger` | `review_pr` \| `check_result` \| `dispatch_worker` \| `generate_tasks` |
-| `condition` | 觸發條件表達式 |
-
----
-
-## escalation - 升級設定
-
-```yaml
-escalation:
-  triggers:
-    - pattern: "security|vulnerability"
-      action: "require_human_approval"
-    - pattern: "delete|drop|destroy"
-      action: "pause_and_ask"
-    - pattern: "migration|schema"
-      action: "notify_only"
-
-  max_consecutive_failures: 3
-  retry_count: 2
-  retry_delay_seconds: 5
-  max_single_pr_files: 50
-  max_single_pr_lines: 500
-```
-
-### action 類型
-
-| Action | 說明 |
-|--------|------|
-| `require_human_approval` | 必須人工審批 |
-| `pause_and_ask` | 暫停並詢問 |
-| `notify_only` | 僅通知 |
-
----
-
-## timeouts - 逾時設定
-
-```yaml
-timeouts:
-  git_seconds: 120        # Git 操作逾時（秒）
-  gh_seconds: 60          # GitHub CLI 操作逾時（秒）
-  codex_minutes: 30       # Codex Worker 執行逾時（分鐘）
-  gh_retry_count: 3       # GitHub API 重試次數
-  gh_retry_base_delay: 2  # 重試基礎延遲（秒，指數退避）
-```
-
-各項操作的超時與重試設定。如果未設定，將使用上述預設值。
-
-| 欄位 | 預設值 | 說明 |
-|------|--------|------|
-| `git_seconds` | `120` | Git 操作（如 fetch、push、rebase）的逾時秒數 |
-| `gh_seconds` | `60` | GitHub CLI 操作（如 issue view、pr view）的逾時秒數 |
-| `codex_minutes` | `30` | Codex Worker 單次執行的逾時分鐘數 |
-| `gh_retry_count` | `3` | GitHub API 呼叫失敗時的最大重試次數 |
-| `gh_retry_base_delay` | `2` | 重試的基礎延遲秒數，採用指數退避策略（2s → 4s → 8s） |
-
----
-
-## review - 審查設定
-
-```yaml
 review:
-  score_threshold: 7           # PR 審核通過的最低分數（1-10）
-  merge_strategy: squash       # 合併策略：squash | merge | rebase
-  severity_consistency: true   # severity/verdict 一致性閘門（預設開）
-  human_feedback: true         # 維護者的審查意見優先於自動審查（預設開）
-  multi_model: false           # multi-model 共識審查
-  # secondary_reviewers:
-  #   - backend: claude
-  #     model: opus
-  #     focus_area: architecture
-  # jittest:
-  #   enabled: false
-  #   max_tests: 5
-  #   timeout_seconds: 120
-  #   failure_policy: warn      # warn | block
+  score_threshold: 7
+  merge_strategy: squash
 ```
 
-Principal 審查 Worker 提交的 PR 時使用的設定。
+---
 
-| 欄位 | 預設值 | 說明 |
-|------|--------|------|
-| `score_threshold` | `7` | 審核通過的最低分數（1-10）。分數必須 >= 此值才 approve |
-| `merge_strategy` | `squash` | 合併方式：`squash` / `merge` / `rebase` |
-| `severity_consistency` | `true` | 一致性閘門：低於門檻的分數必須列出 >=1 個 Critical/Important 發現;達門檻的分數不得有 Critical 發現。不符則 `review_blocked` |
-| `multi_model` | `false` | 開啟後,`submit-review` 取 PR diff、平行執行次要審查者,套用加權共識（primary×0.7 + secondaries 均分 0.3），任一審查者回報 `[ERROR]` 時共識分數上限 6 |
-| `secondary_reviewers[]` | — | 次要審查者清單,每項 `{backend, model, focus_area}`。省略時預設一個 architecture-focused opus 審查者 |
-| `jittest` | 停用 | 審查時從 PR diff 生成獨立測試（`awkit jittest`）。`failure_policy: block` 時失敗會 `review_blocked` |
-| `human_feedback` | `true` | 維護者在 PR 上的審查意見優先於自動審查,見下方「人工糾正」 |
+## `version`
 
-### 人工糾正:在 PR 上留審查意見
+設定檔格式的版本，目前是 `"1.2"`。`awkit upgrade` 看到較舊的版本會把檔案轉成新格式，原檔留一份 `.bak`。沒有這個鍵會被當成 `"1.0"`。
 
-AWK 不等人:自動審查通過且 CI 通過就合併,不會為了等人看而停下來。你的審查意見什麼時候留都算數,差別只在 AWK 怎麼處理它。
+## `project`
 
-| 你留意見時,PR 的狀態 | AWK 怎麼做 |
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `name` | 必填 | 專案名稱，出現在 `CLAUDE.md` 與 `awkit status` |
+| `type` | 必填 | `single-repo` 或 `monorepo`。`monorepo` 時，產生的 git 規則會列出各個 repo；有 submodule 的 monorepo 另外多一個檢查 submodule 的 CI workflow |
+| `description` | 空 | 給讀這份檔案的人看；AWK 不讀它 |
+
+## `repos`
+
+一張票只會給一個 repo（票的 `awk-ticket` 區塊的 `repo:`）。`root`（repository 根目錄）永遠可以用，不必列出來；列出來是為了給它建置與測試指令。
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `name` | 必填 | 票券用來指名這個 repo 的名字，大小寫不拘 |
+| `path` | 必填 | 相對於 repository 根目錄的路徑；`root` 是 `./` |
+| `type` | `directory` | `root`：repository 本身。`directory`：同一個 repository 裡的資料夾。`submodule`：git submodule，Worker 先在 submodule 裡 commit、push，再更新外層的參照 |
+| `language` | 空 | 任何名稱都可以。`go`、`csharp`／`godot`／`dotnet` 會讓 CI workflow 先裝好工具鏈；`go`、`csharp`、`typescript`／`javascript`、`python` 會讓審查逐一核對測試名稱。其他語言只執行你給的指令 |
+| `verify.build`、`verify.test` | 空 | 建置與測試指令。Worker 開 pull request 前執行，審查時測試會再跑一次，CI workflow 也用同一組。兩個都沒設的 repo 不會有 CI workflow，也沒有任何東西能證明變更是對的：**開工前要填** |
+| `verify.setup` | 空 | 建置前先跑的指令（安裝相依套件）。沒填時 Worker 依語言推斷：Node 用 `package_manager` 指定的工具安裝，Python 執行 `pip install -r requirements.txt`，.NET 執行 `dotnet restore`；其他語言不做事。CI workflow 只在有填的時候才有這一步 |
+| `package_manager` | `npm` | `npm`、`yarn` 或 `pnpm`；只在 Node 的 repo 沒填 `verify.setup` 時有用 |
+
+指令在 repo 的目錄裡執行；在 Windows 上透過 Git Bash。
+
+## `git`
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `integration_branch` | 必填 | pull request 合併進去的分支。Worker 的分支從它切出來，所以它必須已經在 `origin` 上 |
+| `release_branch` | `main` | 發版用的分支。只有一條主幹的專案，兩個鍵填同一個分支 |
+
+`awkit init` 會填 repository 裡已有的分支：有 `develop` 就是 `develop` 合併、預設分支發版；沒有就是單一主幹。
+
+commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如 `[feat] add login endpoint`），不是設定。
+
+## `github`
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `repo` | 空 | `owner/name`。空的時候用 `gh` 從 `origin` 認出來的 repository |
+
+工作流程用九個標籤記錄每張票走到哪裡：`ai-task`、`in-progress`、`pr-ready`、`review-failed`、`worker-failed`、`needs-human-review`、`merge-conflict`、`needs-rebase`、`completed`。`awkit run` 開始時會建立缺少的標籤。**這些名字不能改**：設定檔的 `github.labels` 若寫了別的名字，`awkit validate` 會報錯，run 也不會開始。
+
+## `rules`
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `kit` | `[git-workflow]` | kit 的規則，`awkit generate` 寫到 `.claude/rules/_kit/`，升級時會更新 |
+| `custom` | `[]` | 專案自己的規則。名稱 `backend` 對應 `.claude/rules/backend.md`；列在這裡，`AGENTS.md` 才會要 Worker 讀它。檔案不存在時 `awkit generate` 會警告 |
+
+寫規則的方式見 [Skills 與規則](skills.md)。
+
+## `agents`
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `builtin` | `[pr-reviewer, conflict-resolver]` | kit 的 subagent |
+| `custom` | `[]` | 專案自己的 subagent，`awkit generate` 會把每一個寫成 `.claude/agents/<name>.md` |
+
+`custom` 的每一項：
+
+| 鍵 | 說明 |
 |---|---|
-| 還沒合併 | 不會越過它合併:退回給 Worker 在同一個 PR 修,修完由審查者逐則核對 |
-| 已經合併 | 記成教訓,下一次派工前就生效;已合併的程式不會被自動修改 |
+| `name` | 必填。小寫字母、數字與連字號，字母開頭；不能和內建的同名 |
+| `description` | 必填。Claude Code 依它決定何時使用這個 subagent |
+| `tools` | 允許的工具，例如 `Read, Grep, Glob, Bash` |
+| `model` | `haiku`、`sonnet` 或 `opus` |
+| `trigger` | `review_pr`、`check_result` 或 `dispatch_worker`：寫進 subagent 的檔案，說明它在流程的哪一步被用到 |
+| `condition` | 一句話，寫進 subagent 的檔案，說明什麼情況下用它 |
 
-意見要用 GitHub 的審查介面留在 AWK 開的 PR 上:在 diff 的某一行留言,或用「Review changes」送出一段說明。只認有寫入權限的帳號。
+## `worker`
 
-**PR 還沒合併時**
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `backend` | `codex` | 誰來寫程式：`codex` 或 `claude-code`。對應的 CLI 必須裝好並登入，`awkit doctor` 會檢查 |
+| `codex.full_auto` | `true` | 用 `--full-auto` 執行 codex |
+| `claude_code.model` | `sonnet` | Claude Code 當 Worker 時用的模型 |
+| `claude_code.max_turns` | `50` | 一次嘗試最多幾輪 |
+| `claude_code.dangerously_skip_permissions` | `false` | 以 `--dangerously-skip-permissions` 執行。Worker 在自己的 worktree 裡工作，但這個旗標讓它不再受任何權限設定限制；只在隔離的機器上打開 |
+| `knowledge_graph` | `auto` | `auto`：專案有 `.understand-anything/knowledge-graph.json` 時，把和這張票有關的一小段放進 Worker 的 prompt。`off`：不放 |
 
-- **不會越過它合併。** PR 目前的 commit 上若有尚未解決的意見,即使自動審查給了通過的分數,AWK 也不會 approve 或合併,而是把 issue 退回給 Worker,並把你的意見原文交給它。
-- **Worker 改完後會被核對。** 下一輪審查時,審查者會拿到你留過的每一則意見,逐一對照目前的程式碼;沒處理到的會被列為 Critical。
-- **成為教訓。** 每則意見記入 `.ai/state/review_feedback.jsonl`（`source: human`）。這個 PR 通過後,蒸餾會以你的意見為主軸,產生的教訓直接是 `active`,不必先當 `candidate`。
-- **你自己動手也算。** AWK 判定不通過或交給人工的 PR,若你推了修正再自行合併,下一次蒸餾會自動發現並把「被拒 → 你修好」當成一個案例。
+## `review`
 
-**PR 已經合併時**
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `score_threshold` | `7` | 審查分數（1–10）達到這個數字才算通過 |
+| `merge_strategy` | `squash` | `squash`、`merge` 或 `rebase` |
+| `severity_consistency` | `true` | 分數與發現的問題要對得上：低於門檻的審查至少要列一項 Critical 或 Important，通過的審查不能有 Critical |
+| `human_feedback` | `true` | 有寫入權限的人在 pull request 上留下、還沒解決的審查意見，會擋住合併並把票退回給 Worker；合併之後才留下的意見會在下一次派工前被讀進來，變成教訓。合併本身不等人 |
+| `multi_model` | `false` | 除了主要的審查者，再請其他模型各看一次，分數合併：主要審查者占 0.7，其餘平分 0.3；任何一位回報 `[ERROR]` 等級的問題時，最後分數不超過 6 |
+| `secondary_reviewers` | 一位著重架構的 `opus` | `multi_model` 打開時的其他審查者。每一項有 `model`、`focus_area`（例如 `architecture`、`security`），以及只用來顯示的 `backend` |
+| `jittest.enabled` | `false` | 審查時依 diff 產生測試、跑一次、然後丟掉 |
+| `jittest.max_tests` | `5` | 最多產生幾個測試 |
+| `jittest.timeout_seconds` | `120` | 產生與執行的時間上限 |
+| `jittest.failure_policy` | `warn` | `warn`：失敗的測試寫進審查留言。`block`：失敗的測試讓審查不通過 |
+| `jittest.model` | `sonnet` | 產生測試的模型 |
 
-- **會被看到。** 每次派工前、每次合併後,以及執行 `awkit lessons distill` 時,AWK 都會檢查它合併過的 PR 有沒有新的審查意見。有的話記入 `review_feedback.jsonl`（`source: human`、`after_merge: true`）,連同你留言的那段程式碼。
-- **立刻成為教訓。** 這種意見不需要等修正出現,你寫的話就是依據。能推廣到其他票的,蒸餾成 `active` 教訓,之後派出的 Worker 只要票的範圍相關就會帶著它。只跟那一次修改有關的意見（錯字、單純的提問）不會變成教訓。
-- **已合併的程式不會被回頭修改。** 想修,請另開一張票。
-- 想收回某則意見:在 AWK 下次檢查前把那串對話標為已解決（Resolve conversation）。
+## `escalation`
 
-幾個細節:
+工作流程重試幾次之後才找人。
 
-- 只認審查介面寫的內容（review 的說明、行內留言）。PR 與 issue 下方的一般對話留言不算,留給討論用。
-- PR 還開著時,想讓 AWK 放行某則意見:把那串對話標為已解決,或撤銷那次 review。
-- AWK 唯一會停下來等你的情況:你在還沒合併的 PR 上留了意見,Worker 被退回一輪卻沒有推任何修改（例如你的留言是個問題）。這時 AWK 不會再退一輪,也不會合併,而是標上 `needs-human-review`。
-- AWK 與你共用同一個 GitHub 帳號也沒關係:AWK 自己貼的內容都帶有標記,不會被當成你的意見。
-- `lessons.enabled: false` 時不會檢查已合併的 PR。
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `max_review_attempts` | `3` | 同一個 pull request 被審查退回這麼多次之後，票會被標上 `needs-human-review` |
+| `retry_count` | `2` | Worker 的一次派工裡，失敗後再試幾次。`0` 會被當成沒寫（也就是 2）；不要重試請寫 `-1` |
+| `retry_delay_seconds` | `5` | 兩次嘗試之間等幾秒 |
 
----
+另外有兩個不在設定檔裡的上限：同一張票的派工失敗 3 次之後會被標上 `worker-failed`；連續 5 次失敗時整個 run 停下來。
 
-## feedback - 審查回饋設定
+## `timeouts`
 
-```yaml
-feedback:
-  enabled: true               # 記錄審查拒絕並注入 Worker prompt
-  max_history_in_prompt: 10   # 注入 Worker prompt 的最大歷史筆數
-```
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `git_seconds` | `120` | Worker 的每個 git 指令 |
+| `gh_seconds` | `60` | Worker 的每個 `gh` 指令 |
+| `codex_minutes` | `30` | Worker 的一次嘗試，不論 backend 是 `codex` 或 `claude-code` |
+| `verify_minutes` | `10` | 一個建置、測試或 setup 指令：Worker 交付前跑的每一個，以及審查重跑的測試。超過就連同它啟動的行程一起停掉，算驗證失敗 |
+| `gh_retry_count` | `3` | `gh` 指令失敗時重試幾次 |
+| `gh_retry_base_delay` | `2` | 重試之間的基本等待秒數，每次加倍 |
 
-Review 拒絕會被記錄到 `.ai/state/review_feedback.jsonl`,並將 top rejection categories 注入後續 Worker prompt。此系統也是[學習迴圈](#lessons---學習迴圈設定)的資料來源。
+一次派工最多等 Worker 60 分鐘。`codex_minutes` 乘上嘗試次數、再加上驗證指令的時間若超過這個數字，派工會先放棄。測試跑得久的專案，調高 `verify_minutes`。
 
-| 欄位 | 預設值 | 說明 |
-|------|--------|------|
-| `enabled` | `true` | 是否記錄與注入 feedback |
-| `max_history_in_prompt` | `10` | 注入 prompt 的最大歷史筆數 |
+## `feedback`
 
----
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `enabled` | `true` | Worker 的 prompt 帶上「審查最常退回的三類問題」。關掉只是不帶，紀錄仍會留下（`.ai/state/review_feedback.jsonl`） |
 
-## lessons - 學習迴圈設定
+## `lessons`
 
-```yaml
-lessons:
-  enabled: true               # 學習迴圈總開關
-  max_active: 30              # active+proven 教訓上限
-  inject_top_k: 3             # 每個 prompt 注入的教訓數上限
-  inject_max_chars: 800       # 注入區段的字元上限
-  distiller:
-    backend: claude           # 蒸餾器後端（claude --print）
-    model: sonnet
-    timeout_seconds: 60
-```
+被審查退回、後來終於通過的變更，會被濃縮成教訓，放進之後動到同樣檔案的 Worker 與審查者的 prompt。教訓存在 `.ai/state/lessons.json`：只在這份 checkout 裡，不進版控。
 
-學習迴圈:被拒絕的 PR 之後通過時,LLM 以「審查者反對什麼」加上「從被拒版本到通過版本改了什麼」蒸餾成精簡教訓（存於可提交的 `.ai/state/lessons.json`），注入後續 Worker/Reviewer prompt,並依 PR 結果結算命中/落空。已驗證（proven）的教訓可用 `awkit lessons promote <id>` 開一個人審 issue,固化成硬閘門。
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `enabled` | `true` | 關掉之後不再濃縮、也不再放進 prompt |
+| `max_active` | `30` | 最多保留幾條有效的教訓；超過時分數最低的先退場 |
+| `inject_top_k` | `3` | 一個 prompt 最多放幾條 |
+| `inject_max_chars` | `800` | 教訓那一段的字元上限 |
+| `distiller.model` | `sonnet` | 濃縮教訓用的模型 |
+| `distiller.timeout_seconds` | `60` | 濃縮一次的時間上限 |
 
-會影響你看到的數字的幾條規則:
+## `hooks`
 
-- 拒絕不會單獨蒸餾,要等同一個 issue 通過。一直沒通過的 issue 不會自動產生教訓,請用 `awkit lessons add --issue N` 手動記錄;`awkit lessons stats` 會顯示有幾筆拒絕在等待。
-- 有 scope 的教訓,只有 PR 改到該 scope 底下的檔案時才計命中或落空;讀不到 PR 的檔案清單時不計。
-- 同一個 issue 對一條教訓最多計一次落空,落空之後該 issue 的合併不算命中。
-
-指令:`awkit lessons list | stats | add | distill | promote`。
-
-| 欄位 | 預設值 | 說明 |
-|------|--------|------|
-| `enabled` | `true` | 關閉後仍會記錄 feedback,但不注入/蒸餾教訓 |
-| `max_active` | `30` | active+proven 教訓上限,超過時淘汰分數最低者 |
-| `inject_top_k` | `3` | 每個 prompt 注入的教訓數上限（小 k 較佳） |
-| `inject_max_chars` | `800` | 注入區段的硬字元上限 |
-| `distiller.backend` | `claude` | 蒸餾器後端 |
-| `distiller.model` | `sonnet` | 蒸餾器模型 |
-| `distiller.timeout_seconds` | `60` | 蒸餾單筆的逾時 |
-
----
-
-## hooks - 生命週期 Hook
+在流程的幾個時間點執行你的指令。指令在專案根目錄執行（Unix 用 `sh -c`，Windows 用 `cmd /c`），輸出會出現在 run 的輸出裡。
 
 ```yaml
 hooks:
   pre_dispatch:
     - command: "echo dispatching issue $AWK_ISSUE"
       timeout: "30s"
-      on_failure: warn        # warn（預設）| abort | ignore
+      on_failure: warn
   on_merge:
-    - command: "curl -X POST $SLACK_WEBHOOK -d '{\"text\": \"PR merged\"}'"
-      timeout: "10s"
-      on_failure: ignore
+    - command: "./scripts/notify.sh"
+      env:
+        CHANNEL: "dev"
 ```
 
-在工作流事件執行自訂 shell 命令。事件:`pre_dispatch`、`post_dispatch`、`pre_review`、`post_review`、`on_merge`、`on_failure`。
+| 事件 | 何時 | 指令拿到的環境變數 |
+|---|---|---|
+| `pre_dispatch` | Worker 開始之前 | `AWK_ISSUE`、`AWK_REPO` |
+| `post_dispatch` | Worker 結束之後 | `AWK_ISSUE`、`AWK_STATUS`，成功時還有 `AWK_PR_URL` |
+| `on_failure` | 一張票的派工失敗次數用完之後 | `AWK_ISSUE`、`AWK_FAILURE_REASON`、`AWK_ATTEMPTS` |
+| `pre_review` | 審查結果送出、還沒處理之前 | `AWK_PR`、`AWK_ISSUE` |
+| `post_review` | 審查結果處理完之後 | `AWK_PR`、`AWK_ISSUE`、`AWK_SCORE`、`AWK_DECISION` |
+| `on_merge` | pull request 合併之後 | `AWK_PR`、`AWK_ISSUE` |
 
-| 欄位 | 說明 |
-|------|------|
-| `command` | 要執行的 shell 命令 |
-| `timeout` | 逾時（如 `30s`，經 `time.ParseDuration`） |
-| `on_failure` | `warn`（預設，記錄）\| `abort`（中止工作流）\| `ignore` |
-| `env` | 額外環境變數 |
+每個事件還會拿到 `AWK_EVENT`。每一項的鍵：
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `command` | 必填 | 要執行的指令 |
+| `timeout` | 無 | 例如 `30s`、`2m` |
+| `on_failure` | `warn` | 指令失敗時：`warn` 印出警告後繼續；`ignore` 不說話；`abort` 讓這一步停下來（只對 `pre_dispatch` 與 `pre_review` 有意義） |
+| `env` | 無 | 額外的環境變數 |
 
 ---
 
-## worker - Worker 設定
+## 名冊：`.ai/roster.yaml`
+
+`awkit plan` 開會時坐在桌邊的角色。`awkit init` 依 preset 寫下第一份；這個檔案是你的，升級不會動它。名冊裡未知的鍵是錯誤，`awkit validate` 會檢查。
 
 ```yaml
-worker:
-  backend: codex              # codex（預設）| claude-code
-  knowledge_graph: auto       # auto（存在時注入）| off
-  # codex:
-  #   full_auto: true
-  #   max_attempts: 1
-  # claude_code:
-  #   model: sonnet
-  #   max_turns: 50
-  #   dangerously_skip_permissions: false
-```
-
-| 欄位 | 預設值 | 說明 |
-|------|--------|------|
-| `backend` | `codex` | Worker 後端:`codex` 或 `claude-code` |
-| `knowledge_graph` | `auto` | 當 `.understand-anything/knowledge-graph.json` 存在時,把票券相關的程式碼地圖切片注入 Worker prompt;`off` 停用 |
-| `codex.full_auto` | `true` | codex 使用 `--full-auto` |
-| `codex.max_attempts` | `1` | codex 層級的重試次數 |
-| `claude_code.model` | `sonnet` | claude-code Worker 的模型 |
-| `claude_code.max_turns` | `50` | claude-code 的最大回合數 |
-| `claude_code.dangerously_skip_permissions` | `false` | 是否跳過權限確認 |
-
----
-
-## notifications - 通知設定 (planned for future release)
-
-Slack/Discord webhook notifications are defined in the configuration schema but **not yet implemented** in the Go codebase. This section is reserved for a future release.
-
-```yaml
-# notifications: (planned for future release)
-# slack_webhook: "${AI_SLACK_WEBHOOK}"
-# discord_webhook: "${AI_DISCORD_WEBHOOK}"
-# system_notify: true
-```
-
----
-
-## 完整範例
-
-### Single-Repo (Python)
-
-```yaml
-version: "1.2"
-
-project:
-  name: "my-python-app"
-  type: "single-repo"
-
-repos:
-  - name: root
-    path: ./
-    type: root
-    language: python
-    verify:
-      build: "python -m py_compile src/*.py"
-      test: "pytest"
-
-git:
-  integration_branch: "develop"
-  release_branch: "main"
-  commit_format: "[type] subject"
-
-github:
-  repo: ""
-
-rules:
-  kit:
-    - git-workflow
-  custom: []
-
-escalation:
-  max_consecutive_failures: 3
-```
-
-### Monorepo (Go + React)
-
-```yaml
-version: "1.2"
-
-project:
-  name: "fullstack-app"
-  type: "monorepo"
-
-repos:
-  - name: api
-    path: api/
-    type: directory
-    language: go
-    verify:
-      build: "go build ./..."
-      test: "go test ./..."
-
-  - name: web
-    path: web/
-    type: directory
-    language: node
-    package_manager: "pnpm"
-    verify:
-      build: "pnpm build"
-      test: "pnpm test"
-
-git:
-  integration_branch: "develop"
-  release_branch: "main"
-  commit_format: "[type] subject"
-
-github:
-  repo: ""
-
-rules:
-  kit:
-    - git-workflow
-  custom: []
-
-escalation:
-  max_consecutive_failures: 3
-```
-
----
-
-## 議會名冊：`.ai/roster.yaml`
-
-`awkit plan` 規劃時坐在桌邊的角色，寫在 `.ai/roster.yaml`，不在 `config.yaml` 裡。`awkit init` 會依 preset 寫出一份（`godot-go` 是小型遊戲工作室：producer、game-designer、numerical-designer、tech-lead、qa；其他 preset 是 product-owner、user-advocate、architect、skeptic）；專案沒有名冊時，第一次執行 `awkit plan` 也會寫一份。這個檔案是專案自己的，升級不會覆寫它。
-
-```yaml
-# language: 繁體中文      # 議會書寫的語言；不寫就跟著需求的語言
-model: sonnet            # 沒有另外指定 model 的角色都用它，主持人也是
-
+language: ""           # 議會用什麼語言寫；空的時候跟需求的語言走
+model: sonnet          # 沒有自己指定模型的角色用這個
 limits:
-  disputes: 5            # 拿出來對辯的爭點數
-  dispute_rounds: 2      # 每個爭點來回的次數
-  calls: 80              # 一次規劃的模型呼叫上限
-  parallel: 3            # 同時進行的呼叫數
-  timeout_seconds: 600   # 單次呼叫的時限
-
+  disputes: 5          # 最多辯幾個爭點；其餘直接交給決策角色
+  dispute_rounds: 2    # 每個爭點來回幾次
+  calls: 80            # 一次規劃最多幾次模型呼叫
+  parallel: 3          # 同時幾個呼叫
+  timeout_seconds: 600 # 每次呼叫的時間上限
 roles:
-  - id: product-owner
-    title: Product Owner
-    decides: true        # 仍有爭議時由它裁決；整份名冊恰好一個
+  - id: producer
+    title: Producer
+    decides: true      # 由這個角色裁定談不攏的爭點（恰好一個）
     stance: |
-      You answer for the outcome: what is built, for whom, and what is left out...
+      你為「做得完、值得做」負責：範圍、時程、砍什麼。
+      反對不在核心循環裡的功能，也反對「順便做一下」。
     owns:
-      - docs/product/requirements.md
-  - id: architect
-    title: Architect
-    plans: true          # 由它擬出票券；整份名冊恰好一個
-    model: opus          # 這個角色改用別的模型
+      - docs/product/vision.md
+  - id: tech-lead
+    title: Tech Lead
+    plans: true        # 由這個角色擬票券清單（恰好一個）
     stance: |
-      You answer for how it is built and in what order...
+      你為「做得出來、維護得動」負責。反對沒有驗收條件的需求，
+      也反對還沒量過就說做不到。
     owns:
       - docs/tech/architecture.md
 ```
 
-| 欄位 | 說明 |
-|------|------|
-| `roles[].id` | 小寫英數與連字號；出現在會議記錄與其他角色的發言裡 |
-| `roles[].stance` | 這個角色主張什麼、反對什麼。立場要寫到彼此會衝突：大家都點頭的議會，產出的是沒人檢驗過的計畫 |
-| `roles[].owns` | 只有這個角色會寫的文件。必須是 `docs/` 底下的 `.md`，一份文件只能有一個擁有者；`docs/decisions.md`、`docs/README.md` 與 `docs/plans/` 由議會自己維護，不能指派 |
-| `roles[].decides` / `plans` | 各恰好一個角色；可以是同一個角色，但分開比較好 |
-| `limits.calls` | 超過就停下，已完成的部分會保留，用 `awkit plan --resume <plan>` 接著做 |
+| 角色的鍵 | 說明 |
+|---|---|
+| `id` | 必填。小寫字母、數字與連字號。出現在會議紀錄與其他角色的發言裡 |
+| `title` | 介紹這個角色時用的稱呼；沒寫就用 `id` |
+| `stance` | 必填。這個角色主張什麼、反對什麼。立場要寫得會互相衝突：一桌人都點頭的規劃沒有被檢驗過 |
+| `owns` | 這個角色擁有的文件，路徑在 `docs/` 下。一份文件只能有一個擁有者，而且只有擁有者會寫它 |
+| `model` | 扮演這個角色的模型；沒寫就用名冊的 `model` |
+| `decides`、`plans` | 各恰好一個角色為 `true`，可以是同一個角色 |
 
-一份文件最長約 40,000 位元組：角色每次都是整份重寫，超過這個長度的文件議會不會動它，並在會議記錄裡說明。名冊寫錯（沒有人裁決、兩個角色擁有同一份文件、拼錯欄位）會在 `awkit validate` 與 `awkit plan` 一開始就報錯。
-
----
-
-## Config Migration
-
-AWK 升級時可能引入 config 格式變更。Migration 系統會自動處理這些變更。
-
-### 自動遷移
-
-`awkit upgrade` 會自動偵測 `config.yaml` 的版本並執行所需的 migration：
-
-```bash
-# 升級 AWK 並自動遷移 config
-awkit upgrade
-
-# 預覽會執行的 migration（不修改檔案）
-awkit upgrade --dry-run
-
-# 跳過 config migration
-awkit upgrade --skip-migrate
-```
-
-### 偵測過期 Config
-
-使用 `awkit doctor` 可以檢查 config 是否需要遷移：
-
-```bash
-awkit doctor
-```
-
-如果 config 版本過舊，doctor 會顯示警告並建議執行 `awkit upgrade`。
-
-### 手動遷移
-
-通常執行 `awkit upgrade` 即可自動遷移。以下為各版本的主要變更。
-
-**v1.0 → v1.1：**
-
-1. **Label 值修正**：`review_failed: "review-fail"` → `review_failed: "review-failed"`
-2. **新增 labels**：`merge_conflict`、`needs_rebase`、`completed`
-3. **新增 timeout 欄位**：`gh_retry_count`、`gh_retry_base_delay`
-4. **新增 review section**：`score_threshold`、`merge_strategy`
-5. **版本號更新**：`version: "1.0"` → `version: "1.1"`
-
-**v1.1 → v1.2：**
-
-1. **新增 `agents` section**：`builtin`（pr-reviewer、conflict-resolver）+ `custom`
-2. **新增 `feedback` section**：`enabled`、`max_history_in_prompt`
-3. **新增 `lessons` section**（學習迴圈）：`enabled`、`max_active`、`inject_top_k`、`inject_max_chars`、`distiller.*`
-4. **新增 `hooks` section**：生命週期 shell 命令
-5. **新增 `worker` section**：`backend`（codex/claude-code）、`knowledge_graph`、`codex.*`、`claude_code.*`
-6. **擴充 `review`**：`severity_consistency`、`multi_model`、`secondary_reviewers[]`、`jittest.*`
-7. **新增 `verify.setup`**：建置前依賴安裝
-8. **版本號更新**：`version: "1.1"` → `version: "1.2"`
-
-### 備份
-
-Migration 執行前會自動建立 `config.yaml.bak` 備份。如果遷移結果有問題，可以還原：
-
-```bash
-cp .ai/config.yaml.bak .ai/config.yaml
-```
-
----
-
-## 下一步
-
-- [故障排除](troubleshooting.md) - 配置錯誤的解決方案
-- [FAQ](faq.md) - 常見問題
+至少要有兩個角色。
