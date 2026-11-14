@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -179,12 +181,12 @@ func TestMigrateV1_0ToV1_1_Basic(t *testing.T) {
 	assertYAMLReviewValue(t, data, "score_threshold", "7")
 	assertYAMLReviewValue(t, data, "merge_strategy", "squash")
 
-	// v1.1→v1.2 changes
-	assertYAMLSectionExists(t, data, "agents")
-	assertYAMLSectionExists(t, data, "escalation")
-	assertYAMLSectionExists(t, data, "feedback")
-	assertYAMLSectionExists(t, data, "hooks")
-	assertYAMLSectionExists(t, data, "worker")
+	// v1.1→v1.2 changes the version and writes no section.
+	for _, section := range []string{"agents:", "escalation:", "feedback:", "hooks:", "worker:"} {
+		if strings.Contains(string(data), section) {
+			t.Errorf("the migration wrote %q:\n%s", section, data)
+		}
+	}
 }
 
 func TestMigrateV1_0ToV1_1_AlreadyHasFields(t *testing.T) {
@@ -251,22 +253,25 @@ func TestMigrateV1_1ToV1_2_Basic(t *testing.T) {
 
 	assertYAMLVersion(t, data, "1.2")
 
-	// Verify new sections added
-	assertYAMLSectionExists(t, data, "agents")
-	assertYAMLSectionExists(t, data, "escalation")
-	assertYAMLSectionExists(t, data, "feedback")
-	assertYAMLSectionExists(t, data, "hooks")
-	assertYAMLSectionExists(t, data, "worker")
-
-	// Verify default values
-	assertYAMLMapValue(t, data, "feedback", "enabled", "true")
-	assertYAMLMapValue(t, data, "feedback", "max_history_in_prompt", "10")
-	assertYAMLMapValue(t, data, "worker", "backend", "codex")
-	assertYAMLMapValue(t, data, "escalation", "max_consecutive_failures", "3")
-	assertYAMLMapValue(t, data, "escalation", "retry_count", "2")
-	assertYAMLMapValue(t, data, "escalation", "retry_delay_seconds", "5")
-	assertYAMLMapValue(t, data, "escalation", "max_single_pr_files", "50")
-	assertYAMLMapValue(t, data, "escalation", "max_single_pr_lines", "500")
+	// The sections version 1.2 reads are not written: a file that leaves
+	// them out has their defaults. The migration used to fill them in, with
+	// keys nothing reads among them.
+	for _, section := range []string{"agents:", "escalation:", "feedback:", "hooks:", "worker:", "triggers", "max_single_pr", "max_history_in_prompt", "max_consecutive_failures"} {
+		if strings.Contains(string(data), section) {
+			t.Errorf("the migration wrote %q:\n%s", section, data)
+		}
+	}
+	if unread, err := config.UnreadKeys(configPath); err != nil || len(unread) != 0 {
+		t.Errorf("the migrated file has keys nothing reads: %v (err %v)", unread, err)
+	}
+	cfg, err := config.LoadFile(configPath)
+	if err != nil {
+		t.Fatalf("the migrated file cannot be read: %v", err)
+	}
+	if cfg.Worker.Backend != "codex" || cfg.Escalation.RetryCount != 2 || cfg.Escalation.RetryDelaySeconds != 5 || !cfg.Feedback.IsEnabled() ||
+		!reflect.DeepEqual(cfg.Agents.Builtin, []string{"pr-reviewer", "conflict-resolver"}) {
+		t.Errorf("the sections that were left out do not have their defaults: %+v", cfg)
+	}
 }
 
 func TestMigrateV1_1ToV1_2_AlreadyHasSections(t *testing.T) {
@@ -335,13 +340,11 @@ func TestMigrateV1_0ToV1_2_Chain(t *testing.T) {
 	assertYAMLLabelValue(t, data, "review_failed", "review-failed")
 	assertYAMLReviewValue(t, data, "score_threshold", "7")
 
-	// v1.1→v1.2 changes present
-	assertYAMLSectionExists(t, data, "agents")
-	assertYAMLSectionExists(t, data, "escalation")
-	assertYAMLSectionExists(t, data, "feedback")
-	assertYAMLSectionExists(t, data, "hooks")
-	assertYAMLSectionExists(t, data, "worker")
-	assertYAMLMapValue(t, data, "worker", "backend", "codex")
+	// v1.1→v1.2 writes no section; what it leaves out has its default.
+	cfg, err := config.LoadFile(configPath)
+	if err != nil || cfg.Worker.Backend != "codex" {
+		t.Errorf("the migrated file: worker backend %v (err %v), want the default", cfg, err)
+	}
 }
 
 // --- General migration tests ---
@@ -625,17 +628,6 @@ func assertYAMLReviewValue(t *testing.T, data []byte, key, expected string) {
 	gotStr := fmt.Sprintf("%v", got)
 	if gotStr != expected {
 		t.Errorf("review %q: expected %q, got %q", key, expected, gotStr)
-	}
-}
-
-func assertYAMLSectionExists(t *testing.T, data []byte, section string) {
-	t.Helper()
-	var doc map[string]interface{}
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if _, ok := doc[section]; !ok {
-		t.Errorf("section %q not found in config", section)
 	}
 }
 

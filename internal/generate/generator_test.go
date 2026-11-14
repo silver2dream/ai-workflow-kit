@@ -213,8 +213,8 @@ repos:
 	}
 
 	// Check defaults
-	if config.Git.CommitFormat != "[type] subject" {
-		t.Errorf("Git.CommitFormat = %q, want %q", config.Git.CommitFormat, "[type] subject")
+	if config.Git.ReleaseBranch != "main" {
+		t.Errorf("Git.ReleaseBranch = %q, want %q", config.Git.ReleaseBranch, "main")
 	}
 }
 
@@ -557,7 +557,6 @@ func TestConfigValidation_ValidConfig(t *testing.T) {
 		Git: GitConfig{
 			IntegrationBranch: "develop",
 			ReleaseBranch:     "main",
-			CommitFormat:      "[type] subject",
 		},
 		Repos: []RepoConfig{
 			{

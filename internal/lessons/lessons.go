@@ -5,8 +5,11 @@
 // hard gates.
 //
 // Design: docs/developer/specs/learning-loop/design.md
-// The store is a committable JSON artifact (like the Understand-Anything
-// knowledge graph): team-shareable, diffable, and survives state resets.
+//
+// The store is one JSON file, .ai/state/lessons.json. The directory it is in
+// is ignored by git, so lessons stay in the checkout they were learned in:
+// they are not shared through the repository. `awkit reset` leaves the file
+// alone.
 package lessons
 
 import (

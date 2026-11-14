@@ -1168,3 +1168,34 @@ func TestRunSteps(t *testing.T) {
 		t.Errorf("a check that only warns: err = %v, results = %+v", err, results)
 	}
 }
+
+// A configuration that is valid passes whatever else its file holds, and the
+// check says how many of the file's keys nothing reads: whoever set one takes
+// it to be in force. A label under another name is not valid, since half of
+// the workflow writes the name it knows.
+func TestCheckConfig_KeysNothingReadsAndRenamedLabels(t *testing.T) {
+	const base = "project: {name: demo, type: single-repo}\ngit: {integration_branch: main}\n"
+	check := func(content string) CheckResult {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return NewPreflightChecker(path, "").CheckConfig()
+	}
+
+	for content, want := range map[string]string{
+		base:                                "Valid config for project: demo",
+		base + "specs: {path: .ai/specs}\n": "Valid config for project: demo (1 key is read by nothing: awkit validate names them)",
+		base + "audit: {}\nescalation: {triggers: [], retry_count: 1}\n": "Valid config for project: demo (2 keys are read by nothing: awkit validate names them)",
+	} {
+		if got := check(content); !got.Passed || got.Message != want {
+			t.Errorf("%q: passed %v, %q; want it to pass with %q", content, got.Passed, got.Message, want)
+		}
+	}
+
+	got := check(base + "github: {labels: {task: todo}}\n")
+	if got.Passed || !strings.Contains(got.Message, "github.labels.task: the label cannot be renamed") {
+		t.Errorf("a renamed label: passed %v, %q; want the check to fail and say which label", got.Passed, got.Message)
+	}
+}

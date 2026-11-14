@@ -285,9 +285,11 @@ func (p *PreflightChecker) CheckLockFile() CheckResult {
 	}
 }
 
-// CheckConfig validates the workflow configuration
+// CheckConfig validates the workflow configuration. A configuration that is
+// valid and holds keys nothing reads passes, and the check says that there
+// are such keys: whoever set one takes it to be in force.
 func (p *PreflightChecker) CheckConfig() CheckResult {
-	config, err := LoadConfig(p.configPath)
+	cfg, err := LoadConfig(p.configPath)
 	if err != nil {
 		return CheckResult{
 			Name:    "Config",
@@ -297,7 +299,7 @@ func (p *PreflightChecker) CheckConfig() CheckResult {
 	}
 
 	// Validate required fields
-	errors := config.Validate()
+	errors := cfg.Validate()
 	if len(errors) > 0 {
 		return CheckResult{
 			Name:    "Config",
@@ -307,12 +309,20 @@ func (p *PreflightChecker) CheckConfig() CheckResult {
 	}
 
 	// Store config for later use
-	p.config = config
+	p.config = cfg
 
+	message := fmt.Sprintf("Valid config for project: %s", cfg.Project.Name)
+	if unread, err := config.UnreadKeys(p.configPath); err == nil && len(unread) > 0 {
+		keys := "keys are"
+		if len(unread) == 1 {
+			keys = "key is"
+		}
+		message += fmt.Sprintf(" (%d %s read by nothing: awkit validate names them)", len(unread), keys)
+	}
 	return CheckResult{
 		Name:    "Config",
 		Passed:  true,
-		Message: fmt.Sprintf("Valid config for project: %s", config.Project.Name),
+		Message: message,
 	}
 }
 

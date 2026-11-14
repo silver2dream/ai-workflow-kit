@@ -208,6 +208,8 @@ Set up:
   init         Set a project up for AWK (--preset godot-go for a Go backend
                and a Godot C# frontend)
   doctor       Check everything a run needs, and say how to fix what is missing
+  generate     Write the guides and the CI workflows again from the configuration
+  validate     Check the configuration, and name the keys in it nothing reads
 
 Work:
   plan         Plan with the council: a brief becomes documents, decisions
@@ -251,8 +253,8 @@ Set up a project:
   doctor        Check everything a run needs, and what earlier runs left behind
   upgrade       Bring a project's kit files up to this version of awkit
   uninstall     Take AWK out of a project
-  generate      Write the files derived from the configuration again
-  validate      Check the configuration
+  generate      Write the guides and the CI workflows again from the configuration
+  validate      Check the configuration, and name the keys in it nothing reads
   list-presets  Show the presets init knows
 
 Run the workflow:

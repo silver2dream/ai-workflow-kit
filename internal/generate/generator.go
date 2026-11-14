@@ -556,12 +556,10 @@ func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- Working branches: " + code("feat/<topic>") + " or " + code("fix/<topic>") + ". The workflow names its own " + code("feat/ai-issue-<id>") + ".\n\n")
 
 	sb.WriteString("## 2. Commit messages\n\n")
-	sb.WriteString("- Format: " + code(ctx.Git.CommitFormat) + "\n")
+	sb.WriteString("- Format: " + code(projectconfig.CommitFormat) + "\n")
 	sb.WriteString("- " + code("type") + " is one of " + code("feat") + ", " + code("fix") + ", " + code("docs") + ", " + code("style") + ", " + code("refactor") + ", " + code("perf") + ", " + code("test") + ", " + code("chore") + ".\n")
-	if ctx.Git.CommitFormat == "[type] subject" {
-		sb.WriteString("- The type is in square brackets with no colon after them, and the subject is lowercase. Conventional Commits (" + code("feat: add feature") + ") is not the format here.\n")
-		sb.WriteString("- Example: " + code("[feat] add login endpoint") + "\n")
-	}
+	sb.WriteString("- The type is in square brackets with no colon after them, and the subject is lowercase. Conventional Commits (" + code("feat: add feature") + ") is not the format here.\n")
+	sb.WriteString("- Example: " + code("[feat] add login endpoint") + "\n")
 	sb.WriteString("\n")
 
 	sb.WriteString("## 3. Pull requests\n\n")

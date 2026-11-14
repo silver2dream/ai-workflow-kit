@@ -39,15 +39,14 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	want := &Config{
-		Git:        Git{ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:        Git{ReleaseBranch: "main"},
 		GitHub:     GitHub{Labels: DefaultLabels()},
 		Rules:      Rules{Kit: []string{"git-workflow"}},
 		Agents:     Agents{Builtin: []string{"pr-reviewer", "conflict-resolver"}},
-		Review:     Review{ScoreThreshold: 7, MergeStrategy: "squash", JiTTest: JiTTest{MaxTests: 5, TimeoutSeconds: 120, FailurePolicy: "warn", Model: "claude-sonnet-4-6"}},
+		Review:     Review{ScoreThreshold: 7, MergeStrategy: "squash", JiTTest: JiTTest{MaxTests: 5, TimeoutSeconds: 120, FailurePolicy: "warn", Model: "sonnet"}},
 		Escalation: Escalation{MaxReviewAttempts: 3, RetryCount: 2, RetryDelaySeconds: 5},
 		Timeouts:   Timeouts{GitSeconds: 120, GHSeconds: 60, CodexMinutes: 30, GHRetryCount: 3, GHRetryBaseDelay: 2},
-		Feedback:   Feedback{MaxHistoryInPrompt: 10},
-		Worker:     Worker{Backend: "codex", Codex: Codex{MaxAttempts: 1}, ClaudeCode: ClaudeCode{Model: "sonnet", MaxTurns: 50}},
+		Worker:     Worker{Backend: "codex", ClaudeCode: ClaudeCode{Model: "sonnet", MaxTurns: 50}},
 		Lessons:    Lessons{MaxActive: 30, InjectTopK: 3, InjectMaxChars: 800, Distiller: LessonsDistiller{Model: "sonnet", TimeoutSeconds: 60}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
@@ -74,6 +73,8 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 }
 
+// full names every key the configuration has, each with a value that is not
+// its default.
 const full = `
 version: "1.2"
 project: {name: demo, description: A demo, type: monorepo}
@@ -84,9 +85,8 @@ repos:
     language: go
     package_manager: npm
     verify: {setup: make deps, build: go build ./..., test: go test ./...}
-    rules: [backend-go]
   - {name: frontend, path: frontend/, type: submodule, language: godot}
-git: {integration_branch: trunk, release_branch: stable, commit_format: "type: subject"}
+git: {integration_branch: trunk, release_branch: stable}
 github:
   repo: someone/demo
   labels: {task: todo, in_progress: doing, pr_ready: ready, worker_failed: broke, needs_human_review: human, review_failed: rejected, merge_conflict: conflict, needs_rebase: rebase, completed: done}
@@ -105,7 +105,7 @@ review:
   human_feedback: false
 escalation: {max_review_attempts: 5, retry_count: 4, retry_delay_seconds: 9}
 timeouts: {git_seconds: 11, gh_seconds: 12, codex_minutes: 13, gh_retry_count: 14, gh_retry_base_delay: 15}
-feedback: {enabled: false, max_history_in_prompt: 4}
+feedback: {enabled: false}
 hooks:
   pre_dispatch: [{command: echo pre, timeout: 5s, on_failure: abort, env: {A: b}}]
   post_dispatch: [{command: echo post}]
@@ -115,7 +115,7 @@ hooks:
   on_failure: [{command: echo failed}]
 worker:
   backend: claude-code
-  codex: {full_auto: false, max_attempts: 3}
+  codex: {full_auto: false}
   claude_code: {model: opus, max_turns: 80, dangerously_skip_permissions: true}
   knowledge_graph: "off"
 lessons:
@@ -123,7 +123,7 @@ lessons:
   max_active: 7
   inject_top_k: 2
   inject_max_chars: 300
-  distiller: {backend: claude, model: haiku, timeout_seconds: 20}
+  distiller: {model: haiku, timeout_seconds: 20}
 `
 
 // What the file says is what the configuration holds: no default writes over
@@ -139,10 +139,10 @@ func TestLoad_WhatTheFileSays(t *testing.T) {
 		Project: Project{Name: "demo", Description: "A demo", Type: "monorepo"},
 		Repos: []Repo{
 			{Name: "Backend", Path: "backend/", Type: "directory", Language: "go", PackageManager: "npm",
-				Verify: Verify{Setup: "make deps", Build: "go build ./...", Test: "go test ./..."}, Rules: []string{"backend-go"}},
+				Verify: Verify{Setup: "make deps", Build: "go build ./...", Test: "go test ./..."}},
 			{Name: "frontend", Path: "frontend/", Type: "submodule", Language: "godot"},
 		},
-		Git: Git{IntegrationBranch: "trunk", ReleaseBranch: "stable", CommitFormat: "type: subject"},
+		Git: Git{IntegrationBranch: "trunk", ReleaseBranch: "stable"},
 		GitHub: GitHub{Repo: "someone/demo", Labels: Labels{Task: "todo", InProgress: "doing", PRReady: "ready", WorkerFailed: "broke",
 			NeedsHumanReview: "human", ReviewFailed: "rejected", MergeConflict: "conflict", NeedsRebase: "rebase", Completed: "done"}},
 		Rules:  Rules{Kit: []string{"git-workflow", "extra"}, Custom: []string{"mine"}},
@@ -153,15 +153,15 @@ func TestLoad_WhatTheFileSays(t *testing.T) {
 			SeverityConsistency: &no, HumanFeedback: &no},
 		Escalation: Escalation{MaxReviewAttempts: 5, RetryCount: 4, RetryDelaySeconds: 9},
 		Timeouts:   Timeouts{GitSeconds: 11, GHSeconds: 12, CodexMinutes: 13, GHRetryCount: 14, GHRetryBaseDelay: 15},
-		Feedback:   Feedback{Enabled: &no, MaxHistoryInPrompt: 4},
+		Feedback:   Feedback{Enabled: &no},
 		Hooks: Hooks{
 			PreDispatch:  []Hook{{Command: "echo pre", Timeout: "5s", OnFailure: "abort", Env: map[string]string{"A": "b"}}},
 			PostDispatch: []Hook{{Command: "echo post"}}, PreReview: []Hook{{Command: "echo pre-review"}}, PostReview: []Hook{{Command: "echo post-review"}},
 			OnMerge: []Hook{{Command: "echo merged"}}, OnFailure: []Hook{{Command: "echo failed"}},
 		},
-		Worker: Worker{Backend: "claude-code", Codex: Codex{FullAuto: &no, MaxAttempts: 3},
+		Worker: Worker{Backend: "claude-code", Codex: Codex{FullAuto: &no},
 			ClaudeCode: ClaudeCode{Model: "opus", MaxTurns: 80, DangerouslySkipPermissions: true}, KnowledgeGraph: "off"},
-		Lessons: Lessons{Enabled: &no, MaxActive: 7, InjectTopK: 2, InjectMaxChars: 300, Distiller: LessonsDistiller{Backend: "claude", Model: "haiku", TimeoutSeconds: 20}},
+		Lessons: Lessons{Enabled: &no, MaxActive: 7, InjectTopK: 2, InjectMaxChars: 300, Distiller: LessonsDistiller{Model: "haiku", TimeoutSeconds: 20}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("the configuration =\n%+v\nwant\n%+v", cfg, want)
@@ -194,9 +194,8 @@ func TestLoad_NumbersOutOfRange(t *testing.T) {
 review: {score_threshold: -1, jittest: {max_tests: 0, timeout_seconds: -5}}
 escalation: {max_review_attempts: -2, retry_count: -1, retry_delay_seconds: -3}
 timeouts: {git_seconds: -1, gh_seconds: 0, codex_minutes: -9, gh_retry_count: -1, gh_retry_base_delay: 0}
-worker: {codex: {max_attempts: -1}, claude_code: {max_turns: -4}}
+worker: {claude_code: {max_turns: -4}}
 lessons: {max_active: -1, inject_top_k: -1, inject_max_chars: -1, distiller: {timeout_seconds: -1}}
-feedback: {max_history_in_prompt: -6}
 `))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -419,6 +418,8 @@ func TestValidate(t *testing.T) {
 		{"an agent with a model that is none", func(c *Config) { c.Agents.Custom[0].Model = "gpt" }, "agents.custom[0].model: invalid model: gpt (expected: haiku, sonnet, or opus)"},
 		{"an agent with a trigger that is none", func(c *Config) { c.Agents.Custom[0].Trigger = "generate_tasks" },
 			"agents.custom[0].trigger: invalid trigger: generate_tasks (expected: review_pr, check_result, or dispatch_worker)"},
+		{"a label under another name", func(c *Config) { c.GitHub.Labels.Task = "todo" },
+			`github.labels.task: the label cannot be renamed ("todo"): the workflow writes it under its own name. Remove the key (expected: ai-task)`},
 	}
 	for _, tt := range tests {
 		cfg := valid()
@@ -427,6 +428,31 @@ func TestValidate(t *testing.T) {
 		if len(errs) != 1 || errs[0].Error() != tt.want {
 			t.Errorf("%s: problems = %v, want exactly %q", tt.name, errs, tt.want)
 		}
+	}
+
+	// The names of the labels are fixed: dispatch, the result check and the
+	// review write the default names whatever the file says, so a file that
+	// renames one is refused before a run. Every label is held to this; the
+	// default names themselves, written out as the presets used to, pass.
+	renamed := valid()
+	renamed.GitHub.Labels = Labels{Task: "a", InProgress: "b", PRReady: "c", WorkerFailed: "d", NeedsHumanReview: "e",
+		ReviewFailed: "f", MergeConflict: "g", NeedsRebase: "h", Completed: "i"}
+	var labels []string
+	for _, err := range renamed.Validate() {
+		labels = append(labels, err.Field+" → "+err.Expected)
+	}
+	if want := []string{
+		"github.labels.task → ai-task", "github.labels.in_progress → in-progress", "github.labels.pr_ready → pr-ready",
+		"github.labels.worker_failed → worker-failed", "github.labels.needs_human_review → needs-human-review",
+		"github.labels.review_failed → review-failed", "github.labels.merge_conflict → merge-conflict",
+		"github.labels.needs_rebase → needs-rebase", "github.labels.completed → completed",
+	}; !reflect.DeepEqual(labels, want) {
+		t.Errorf("nine renamed labels: problems = %v, want %v", labels, want)
+	}
+	written := valid()
+	written.GitHub.Labels = DefaultLabels()
+	if errs := written.Validate(); len(errs) != 0 {
+		t.Errorf("the default names, written out: %v", errs)
 	}
 
 	// Every problem is reported, in the order of the file: project, git,
