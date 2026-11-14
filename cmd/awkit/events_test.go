@@ -199,3 +199,17 @@ func TestFormatEventData_OtherType(t *testing.T) {
 		t.Errorf("formatEventData(string type) = %q, want empty", got)
 	}
 }
+
+// A project that has had no run has no events. `awkit events` says so and
+// ends with 0, whichever way it is asked: it used to print the error of a
+// session file that is not there.
+func TestCmdEvents_AProjectWithoutARun(t *testing.T) {
+	inNewDir(t)
+	for _, args := range [][]string{nil, {"--all"}, {"--issue", "7"}, {"--level", "error"}} {
+		code := -1
+		out := captureStdout(t, func() { code = cmdEvents(args) })
+		if code != 0 || !strings.Contains(out, "No events found") {
+			t.Errorf("awkit events %v = %d: %q; want 0 and a word that there are none", args, code, out)
+		}
+	}
+}
