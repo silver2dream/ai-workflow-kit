@@ -1,604 +1,131 @@
-# Troubleshooting Guide
+# 疑難排解
 
-本文件整理 AI Workflow Kit 常見問題的解決方案。
+東西不動的時候，先問這兩個指令。它們會說出了什麼事，也會說怎麼處理。
 
----
-
-## 快速診斷：awkit doctor
-
-遇到問題時，建議先執行 `awkit doctor` 進行健康檢查。此命令會掃描專案狀態並報告所有潛在問題。
-
-**執行方式：**
 ```bash
-awkit doctor
+awkit doctor   # run 需要的東西是否齊全；之前的 run 留下了什麼
+awkit status   # run 是否在跑、上一次怎麼結束、每張票在哪個階段、下一步
 ```
-
-**檢查項目：**
-
-| 檢查項目 | 說明 |
-|----------|------|
-| Loop Count | 檢查迴圈計數器是否殘留（上一次 session 的狀態） |
-| Consecutive Failures | 檢查連續失敗次數 |
-| Attempt Tracking | 檢查 issue 重試次數追蹤檔案 |
-| Stop Marker | 檢查 STOP 標記是否存在（工作流程已停止） |
-| Lock File | 檢查鎖定檔案是否存在或過期（超過 1 小時視為過期） |
-| GitHub Labels | 檢查 GitHub 上的問題標籤（needs-human-review, review-failed, worker-failed, in-progress） |
-| Deprecated Files | 檢查是否有已棄用的檔案需要移除 |
-| Temp Tickets | 檢查暫存票據檔案是否累積過多（超過 10 個） |
-| Session Files | 檢查 session 檔案是否累積過多（超過 20 個） |
-| Orphan .tmp Files | 檢查是否有超過 1 小時的孤立 .tmp 檔案 |
-| Claude Settings | 檢查 `.claude/settings.local.json` 權限設定是否完整 |
-
-**輸出範例：**
-```
-AWK Health Check
-================
-
-[OK] Stop Marker: No stop marker
-[OK] Lock File: No lock file
-[WARNING] Loop Count: loop_count = 3 (previous session state)
-[WARNING] Consecutive Failures: consecutive_failures = 2
-[WARNING] GitHub: Issues with failed review: 1 issue(s) with 'review-failed' label: #42 [can reset: awkit reset --labels]
-
-Found 3 warning(s)
-
-To reset state, run:
-  awkit reset
-```
-
-如果報告中有可清理的項目，doctor 會建議執行 `awkit reset`。
 
 ---
 
-## 重設狀態：awkit reset
+## `awkit run` 不開始
 
-當 doctor 發現問題或需要從頭開始時，使用 `awkit reset` 清理專案狀態。
+run 開始前會做一串檢查，第一個不過就停下來並說是哪一個。`awkit doctor` 把同一串檢查一次問完。
 
-**執行方式：**
+| 檢查 | 它在說什麼 | 處理 |
+|---|---|---|
+| gh CLI、gh Auth | 沒裝 `gh`，或沒登入 | 安裝 [`gh`](https://cli.github.com/)；`gh auth login` |
+| claude CLI | 沒裝 Claude Code | 安裝 [Claude Code](https://claude.com/claude-code) 並登入 |
+| worker backend | `worker.backend` 指定的 CLI（`codex` 或 `claude`）找不到。run 只警告，但沒有它每張票都會失敗 | 安裝它，或在 `.ai/config.yaml` 換成另一個 backend |
+| Git Remote | repository 沒有 `origin` | `git remote add origin <GitHub repository 的網址>` |
+| Git Status | 工作目錄有還沒 commit 的變更 | `git add -A && git commit`，或 `git stash` |
+| Lock File | 另一個 run 正在這個專案裡跑 | 等它結束，或用 `awkit stop` 請它停。當掉的 run 留下的 lock 會自動清掉；清不掉時 `awkit reset --lock` |
+| Config | 設定檔無效，後面是哪個鍵、哪裡不對 | 改 `.ai/config.yaml`；`awkit validate` 會把所有問題列出來 |
+| Repo Paths | 某個 repo 的 `path` 不存在 | 建立那個目錄，或修正 `repos[].path` |
+| Integration Branch | `git.integration_branch` 不在 `origin` 上 | 分支在本機：`git push -u origin <分支>`。分支不存在：建立它，或把設定改成 pull request 要合併進去的分支 |
+| Repo Write Access | 登入的帳號對 repository 只有讀取權限 | 換一個有寫入權限的帳號或 token 登入 `gh` |
+
+「Stop Marker」只是告知：上一次 run 留下的 STOP 標記，下一次 run 開始時會自己清掉。
+
+## run 一開始就結束
+
+| 它說 | 可能的原因 |
+|---|---|
+| Every ticket is done. | 沒有開著的票。票是帶 `ai-task` 標籤的 open issue：自己開的 issue 要有這個標籤與 `awk-ticket` 區塊（`awkit create-task` 會處理） |
+| Every open ticket waits for an issue that is not done. | 每張票的 `depends_on` 都指向還沒完成的 issue。`awkit status` 會列出誰在等誰 |
+| A ticket cannot be read. | 某張票的 `awk-ticket` 區塊有誤。流程已在那個 issue 上留言說明哪裡錯 |
+| The project has no configuration. / The configuration cannot be used. | 沒有 `.ai/config.yaml`（`awkit init`），或它無效（`awkit validate`） |
+
+## 一張票卡住了
+
+`awkit status` 把每張開著的票依階段列出來。階段是從 issue 的標籤讀的：
+
+| 階段 | 標籤 | 意思 | 你要做的 |
+|---|---|---|---|
+| needs you | `needs-human-review`、`worker-failed`，或 `awk-ticket` 區塊讀不懂 | 流程放棄了，等人處理 | 見下面兩節 |
+| in review | `pr-ready`、`review-failed` | pull request 等審查，或審查要重來一次 | 不用做事；run 會審它 |
+| in progress | `in-progress` | Worker 正在做 | 不用做事。run 被中斷而留下這個標籤也沒關係：下一次 run 會先確認那個 Worker 的結果 |
+| back to a Worker | `merge-conflict`、`needs-rebase` | pull request 與 integration branch 衝突，或落後於它 | 不用做事；run 會解衝突或把票交回給 Worker |
+| ready | 只有 `ai-task` | 可以開工。被審查退回、等 Worker 重做的票也在這裡 | `awkit run` |
+| waiting | 只有 `ai-task` | 在等 `depends_on` 的 issue | 完成那些 issue |
+
+### Worker 每次都失敗（`worker-failed`）
+
+同一張票的派工失敗三次之後，流程會標上 `worker-failed` 並在 issue 上留言。
+
 ```bash
-awkit reset              # 預設清理
-awkit reset --all         # 完整清理（包含所有項目）
-awkit reset --dry-run     # 預覽模式，不實際執行
+gh issue view 42 --comments              # 最後一次的錯誤
+awkit status --issue 42                  # 結果檔與 log 在哪裡
+awkit events --issue 42 --level error    # 這張票出過的錯
 ```
 
-**預設行為（不帶 flag）：** 重設 state（loop_count、consecutive_failures）、attempts、STOP 標記、已棄用檔案、暫存票據、孤立 .tmp 檔案。
+Worker 的 log 在 `.ai/state/logs/issue-42.worker.log`，它拿到的 prompt 與留下的摘要在 `.ai/state/runs/issue-42/`。常見的原因：
 
-**`--all` 行為：** 包含預設項目，加上 lock、results、traces、events、sessions、reports、orphans。
+- **建置或測試指令在乾淨的 checkout 裡跑不起來。** Worker 在 `.worktrees/` 下的新 worktree 裡工作；需要先安裝相依套件的 repo 要設 `verify.setup`。
+- **票太大或太模糊。** 把它拆開，或把驗收條件寫成可以測的句子。
+- **Worker 改了受保護的檔案**（`.claude/`、`.ai/config.yaml`、`.ai/roster.yaml`、`CLAUDE.md`、`AGENTS.md`、`.mcp.json`）。票真的需要改它們時，在 `awk-ticket` 區塊加 `allow_script_changes: true`。
+- **diff 裡有看起來像密碼或金鑰的字串。** 確實需要時（例如測試用的假金鑰），在區塊加 `allow_secrets: true`。
 
-**可用 flags：**
+修正之後把票放回佇列：
 
-| Flag | 說明 |
-|------|------|
-| `--dry-run` | 預覽將清理的項目，不實際執行 |
-| `--all` | 清理所有項目（包含 results、traces、events 等） |
-| `--state` | 重設 state 檔案（loop_count、consecutive_failures） |
-| `--attempts` | 重設 issue 重試追蹤檔案（attempts 目錄和 runs 目錄） |
-| `--stop` | 移除 STOP 標記 |
-| `--lock` | 移除鎖定檔案（kickoff.lock）（謹慎使用） |
-| `--deprecated` | 移除已棄用檔案 |
-| `--results` | 清理 result 檔案（`.ai/state/results/`） |
-| `--traces` | 清理 per-issue trace 檔案（`.ai/state/traces/`，worker 存活記錄，check-result 的 crash/timeout 偵測依賴它；下次 dispatch 會重建） |
-| `--events` | 清理 event stream 檔案（`.ai/state/events/`） |
-| `--labels` | 將 GitHub 上的 `review-failed` 標籤重設為 `pr-ready` |
-| `--temp` | 清理暫存票據檔案（`.ai/state/tmp/ticket-*.md`） |
-| `--sessions` | 清理舊 session 檔案（保留最近 5 個） |
-| `--reports` | 清理舊版工作流程報告（`.ai/state/workflow-report-*.md`） |
-| `--orphans` | 清理超過 1 小時的孤立 .tmp 檔案 |
-
-**輸出範例：**
-```
-AWK Reset
-=========
-
-[OK] loop_count: Deleted
-[OK] consecutive_failures: Deleted
-[OK] STOP marker: Not present
-[OK] temp tickets: Deleted 3 file(s)
-
-4 reset
-```
-
----
-
-## 專案品質評估：awkit evaluate
-
-`awkit evaluate` 是內建的品質評估框架，透過離線門檻（Offline Gates）和線上門檻（Online Gates）評估專案的健康狀態。
-
-**離線門檻（O0-O10）：**
-
-| Gate | 說明 | 權重 |
-|------|------|------|
-| O0 | Git ignore — 檢查 state/result 目錄是否被 git 忽略 | 10 |
-| O1 | Scan repo（預留） | 5 |
-| O3 | Audit project（預留） | 5 |
-| O5 | Config validation — 驗證 config.yaml 結構與必要欄位 | 15 |
-| O7 | Version sync — 檢查版本檔案是否存在 | 5 |
-| O8 | File encoding — 檢查 CRLF 行尾和 UTF-16 BOM 編碼問題 | 10 |
-| O10 | Test suite（預留） | 10 |
-
-**線上門檻（N1-N3）：**
-
-| Gate | 說明 | 權重 |
-|------|------|------|
-| N1 | Kickoff dry-run — 檢查 kickoff 前置條件是否滿足 | 20 |
-| N2 | Rollback output（預留） | 10 |
-| N3 | Stats JSON — 驗證 stats.json 結構 | 10 |
-
-**評分規則：** PASS = 滿分，SKIP = 半分，FAIL = 0 分。總分轉換為等級：A (90+)、B (80+)、C (70+)、D (60+)、F (<60)。
-
-> **注意：** evaluate 功能目前作為內部框架運作，部分 gate 仍為預留狀態。
-
----
-
-## 錯誤類型總覽
-
-| Exit Code | 錯誤類型 | 說明 |
-|-----------|----------|------|
-| 0 | Success | 執行成功 |
-| 1 | Execution Error | 一般執行錯誤 |
-| 2 | Config Error | 配置或依賴缺失 |
-| 3 | Validation Error | 驗證失敗 |
-
----
-
-## Config Error (Exit Code 2)
-
-### 找不到配置檔
-
-**症狀：**
-```
-Config file not found: .ai/config.yaml
-```
-
-**原因：** config.yaml 不存在或路徑錯誤
-
-**解決：**
-1. 確認 `.ai/config.yaml` 存在
-2. 從正確的專案根目錄執行命令
-3. 如果是新專案，使用 `awkit init` 初始化
-
----
-
-### YAML 格式錯誤
-
-**症狀：**
-```
-Invalid YAML: expected <block end>, but found '<scalar>'
-```
-
-**原因：** YAML 語法錯誤，通常是縮排問題
-
-**解決：**
-1. 使用空格縮排，不要使用 Tab
-2. 確認冒號後有空格：`key: value`
-3. 確認列表項目對齊
-
-**錯誤範例：**
-```yaml
-repos:
-- name: backend    # 錯誤：- 前缺少縮排
-  path: backend/
-```
-
-**正確範例：**
-```yaml
-repos:
-  - name: backend
-    path: backend/
-```
-
----
-
-### 缺少必要欄位
-
-**症狀：**
-```
-Validation error: 'repos' is a required property
-```
-
-**原因：** config.yaml 缺少必要欄位
-
-**解決：** 參考 [配置說明](configuration.md) 補齊必要欄位
-
----
-
-### 無效的 repo type
-
-**症狀：**
-```
-Invalid repo type: must be one of [root, directory, submodule]
-```
-
-**原因：** type 欄位值不正確
-
-**解決：**
-```yaml
-repos:
-  - name: backend
-    type: directory    # 只能是 root, directory, 或 submodule
-```
-
----
-
-### Submodule 未初始化
-
-**症狀：**
-```
-Warning: .gitmodules not found but repo has submodule type
-```
-
-**原因：** 配置為 submodule 但專案沒有 .gitmodules
-
-**解決：**
-1. 如果不是用 submodule，改用 `type: directory`
-2. 如果確實是 submodule：
 ```bash
-git submodule init
-git submodule update
+awkit reset --labels   # worker-failed → ai-task、review-failed → pr-ready
+awkit run
 ```
 
----
+### 需要人處理（`needs-human-review`）
 
-## Execution Error (Exit Code 1)
+流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改。issue 上的留言會說是哪一種。
 
-### Git 操作失敗
+處理完之後拿掉標籤，票就回到佇列：
 
-**症狀：**
-```
-error: failed to push some refs
-```
-
-**原因：** 遠端有新的變更尚未同步
-
-**解決：**
 ```bash
-git pull --rebase
-git push
+gh issue edit 42 --remove-label needs-human-review
+awkit run
 ```
 
----
+### 審查一直退回
 
-### 合併衝突
+審查的結果寫在 pull request 的留言裡。兩種情況值得分開看：
 
-**症狀：**
-```
-CONFLICT (content): Merge conflict in <file>
-```
+- **審查指出真的問題，Worker 沒修好。** 把留言裡的重點補進票的驗收條件，或自己在 pull request 上留審查意見：你的意見會原文交給 Worker。
+- **審查的證據對不上**（它引用的測試沒有跑過、或找不到）。確認 `verify.test` 真的會執行票裡要求的測試，而且測試名稱出現在輸出裡。
 
-**原因：** 無法自動合併變更
+## run 停在奇怪的地方
 
-**解決：**
-1. 手動解決衝突
-2. `git add <resolved-files>`
-3. `git commit`
+- **Too many attempts failed in a row.** 連續 5 次失敗。通常是環境問題（登入過期、網路、建置指令壞了），不是某一張票的問題。`awkit events --level error` 看這幾次失敗的共同點；修好之後 `awkit reset`，再 `awkit run`。
+- **The run reached the limit of its loop.** 迴圈跑了太多次，表示有票在繞圈。`awkit events --level decision` 看是哪一張；處理之後 `awkit reset`。
+- **Claude Code 停下來問你要不要允許某個指令。** `awkit generate` 會把 run 需要的權限補進 `.claude/settings.local.json`；設定檔的建置或測試指令換了工具之後，再執行一次 `awkit generate`。
+- **想讓它停。** `awkit stop`：做完手上這一步就停，不會留下做到一半的東西。要立刻停，在啟動它的終端機按 Ctrl-C。
 
----
-
-### GitHub CLI 未授權
-
-**症狀：**
-```
-gh: authentication required
-```
-
-**原因：** GitHub CLI 尚未登入
-
-**解決：**
-```bash
-gh auth login
-```
-
----
-
-### Claude Code 需要手動批准命令 (Autopilot 卡住)
-
-**症狀：**
-```
-GitHub CLI operations require approval in the current execution context
-```
-
-**原因：** Claude Code 的安全機制需要批准 `gh` 等命令
-
-**解決：**
-
-方法一：重新生成權限設定（推薦）
-```bash
-awkit generate
-```
-這會生成 `.claude/settings.local.json`，自動批准 `gh`、`git`、`codex` 等命令。
-
-方法二：手動編輯 `.claude/settings.local.json`
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh:*)",
-      "Bash(git:*)",
-      "Bash(bash:*)",
-      "Bash(codex:*)"
-    ]
-  }
-}
-```
-
-方法三：使用 `--dangerously-skip-permissions` flag（不推薦）
-```bash
-claude --print --dangerously-skip-permissions -p "awkit run"
-```
-
----
-
-### kickoff.sh 長時間無輸出
-
-**症狀：** 執行 `kickoff.sh` 後很久沒有任何訊息
-
-**原因：** Principal 在執行前置檢查和分析，但沒有輸出進度
-
-**解決：**
-1. 使用 `awkit run` 取代 `kickoff.sh`（提供 PTY 即時輸出和 Spinner 動畫）
-2. 或升級到最新版本：`awkit upgrade && awkit generate`
-
----
-
-## 語言特定錯誤
-
-### Go
-
-#### 編譯錯誤
-
-**症狀：**
-```
-cannot find package "xxx"
-```
-
-**解決：**
-```bash
-go mod tidy
-```
-
-#### 測試失敗
-
-**症狀：**
-```
---- FAIL: TestXxx
-```
-
-**解決：** 檢查測試程式碼，修正失敗的測試案例
-
----
-
-### Node.js
-
-#### Module Not Found
-
-**症狀：**
-```
-Cannot find module 'xxx'
-```
-
-**解決：**
-```bash
-npm install
-# 或
-pnpm install
-```
-
-#### npm ERR!
-
-**症狀：**
-```
-npm ERR! code ERESOLVE
-```
-
-**解決：**
-```bash
-rm -rf node_modules package-lock.json
-npm install
-```
-
----
-
-### Python
-
-#### Import Error
-
-**症狀：**
-```
-ModuleNotFoundError: No module named 'xxx'
-```
-
-**解決：**
-```bash
-pip3 install xxx
-```
-
-#### pytest 失敗 (已棄用)
-
-> **注意：** AWK 主要測試已遷移至 Go。Python pytest 已棄用，僅保留向下相容。
-
-**症狀：**
-```
-FAILED tests/test_xxx.py::test_function
-```
-
-**解決：** 檢查測試程式碼和實作。建議使用 Go 測試：`go test ./...`
-
----
-
-## 平台特定問題
-
-### Windows
-
-#### 終端機顯示中文亂碼
-
-**症狀：** 執行 `awkit init` 或查看 config.yaml 時，中文註解顯示為亂碼
-
-**原因：** Windows PowerShell 預設使用系統編碼（Big5/GBK），而非 UTF-8
-
-**解決：**
-
-方法一：設定 PowerShell 使用 UTF-8
-```powershell
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-chcp 65001
-```
-
-方法二：使用 Windows Terminal（推薦）
-- Windows Terminal 預設支援 UTF-8
-- 從 Microsoft Store 安裝
-
-方法三：使用 Git Bash
-- Git Bash 預設支援 UTF-8
-
-**注意：** 這只是顯示問題，實際檔案內容是正確的 UTF-8 編碼。
-
----
-
-#### 路徑過長
-
-**症狀：**
-```
-fatal: cannot create directory at 'xxx': Filename too long
-```
-
-**解決：**
-```bash
-git config --system core.longpaths true
-```
-
-#### 行尾符號問題
-
-**症狀：** Shell 腳本無法執行
-
-**解決：**
-```bash
-git config --global core.autocrlf input
-```
-
-#### Bash 不可用
-
-**症狀：**
-```
-'bash' is not recognized as an internal or external command
-```
-
-**解決：**
-1. 安裝 Git for Windows (包含 Git Bash)
-2. 或使用 WSL
-
----
-
-### macOS
-
-#### Bash 版本過舊
-
-**症狀：** 腳本功能異常
-
-**解決：**
-```bash
-brew install bash
-```
-
-#### 權限問題
-
-**症狀：**
-```
-Permission denied
-```
-
-**解決：**
-```bash
-# Ensure awkit is executable
-chmod +x "$(which awkit)"
-```
-
----
-
-### Linux
-
-#### 缺少 Python
-
-**症狀：**
-```
-python3: command not found
-```
-
-**解決：**
-```bash
-# Ubuntu/Debian
-sudo apt install python3 python3-pip
-
-# CentOS/RHEL
-sudo yum install python3 python3-pip
-```
-
----
-
-## 網路相關錯誤
-
-### 連線逾時
-
-**症狀：**
-```
-ETIMEDOUT
-```
-
-**解決：**
-1. 檢查網路連線
-2. 如果使用 Proxy，設定環境變數：
-```bash
-export HTTP_PROXY=http://proxy:port
-export HTTPS_PROXY=http://proxy:port
-```
-
----
-
-### API 限流
-
-**症狀：**
-```
-API rate limit exceeded
-```
-
-**解決：**
-1. 等待限流解除
-2. 使用 Personal Access Token 提高限額
-
----
-
-## 診斷工具
-
-### 驗證配置
+## 設定檔
 
 ```bash
 awkit validate
 ```
 
-### 查看工作流狀態
+- **錯誤**（結束碼 1）：缺必填的鍵、`project.type` 或 repo 的 `type` 不是允許的值、標籤被改名、自訂 subagent 的名稱不合規則、值的型別不對（該是數字的地方寫了字）。
+- **沒有程式讀的鍵**（仍然有效）：舊版 awkit 寫下而現在不用的鍵，或拼錯的鍵。它們不會有任何作用。以前的 preset 寫過 `audit`、`escalation.triggers`、`escalation.max_single_pr_files` 之類的鍵，看起來像是有保護，其實從來沒有生效；刪掉即可。
+
+改過設定檔之後執行 `awkit generate`，產生的檔案才會跟上。
+
+## 升級之後
 
 ```bash
-awkit status        # 離線狀態摘要
-awkit next          # 顯示下一個動作
-awkit analyze-next --json   # 完整狀態機決策（JSON）
+awkit upgrade --dry-run   # 先看它會做什麼
+awkit upgrade
 ```
 
-### 查看學習迴圈教訓
+- 舊版把設定放在 `.ai/config/workflow.yaml`、規則與 skill 放在 `.ai/rules/`、`.ai/skills/`。任何指令遇到這種專案都會請你先 `awkit upgrade`，它會把檔案搬到新位置並 commit。
+- 你接手過的 CI workflow（刪掉了開頭那行註解的）不會被動。
 
-```bash
-awkit lessons list
-awkit lessons stats
-```
+## Windows
 
----
+- `awkit` 可以從 PowerShell 或 Git Bash 執行。建置與測試指令透過 Git Bash 執行，所以要裝 Git for Windows；Claude Code 本身也需要它。
+- 終端機的中文變成亂碼：PowerShell 先執行 `chcp 65001`，或改用 Windows Terminal。
+- `git` 提示行尾會被換成 CRLF：那是 git 的 `core.autocrlf` 設定，與 AWK 無關，不影響流程。
 
-## 取得幫助
+## 還是不行
 
-如果上述方案無法解決問題：
-
-1. 查看 [FAQ](faq.md)
-2. 檢查 [GitHub Issues](https://github.com/silver2dream/ai-workflow-kit/issues)
-3. 提交新的 Issue，附上：
-   - 錯誤訊息完整內容
-   - 作業系統與版本
-   - Python 版本 (`python3 --version`)
-   - 重現步驟
+`awkit events --json > events.jsonl` 會把整個 run 的事件倒出來。到 [GitHub Issues](https://github.com/silver2dream/ai-workflow-kit/issues) 回報時，附上 `awkit doctor` 的輸出、`awkit status` 的輸出，以及出事那張票的 `awkit events --issue <N>`。

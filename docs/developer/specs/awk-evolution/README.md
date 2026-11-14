@@ -1,5 +1,15 @@
 # AWK Evolution Spec
 
+> **Status (2026-11): superseded in part.** The redesign of November 2026
+> delivered two of these tracks another way. Single-ticket runs are
+> `awkit run --issue N`, with a ticket's metadata in the `awk-ticket` block of
+> its issue. The inception phase is `awkit plan`: a council of roles writes
+> the documents and proposes the tickets; there is no spec triple, since the
+> specs under `.ai/specs` are gone. The parallelism track has not been
+> started. The paths and commands below (`.ai/config/workflow.yaml`,
+> `awkit kickoff`, `awkit adopt`, `awkit inception`) are those of the time
+> this was written.
+
 Turns the engine from a serial, kickoff-only pipeline into a ticket-addressable,
 boundedly parallel system with a natural-language → document-suite inception
 phase. See `requirements.md` (what & why), `design.md` (how, with per-step
