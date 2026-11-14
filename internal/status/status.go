@@ -14,6 +14,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
 
 type Options struct {
@@ -188,7 +189,7 @@ func Collect(root string, opts Options) (Report, error) {
 			},
 		},
 		Control: ControlInfo{
-			StopFile: filepath.Join(root, ".ai", "state", "STOP"),
+			StopFile: stopmark.Path(root),
 		},
 		Artifacts: IssueDetails{
 			RunDir:  Artifact{},
@@ -342,7 +343,7 @@ func Collect(root string, opts Options) (Report, error) {
 	suggestions := make([]string, 0, 6)
 
 	if report.Control.StopPresent {
-		suggestions = append(suggestions, "STOP marker is present; delete `.ai/state/STOP` to resume, then run `awkit run`.")
+		suggestions = append(suggestions, "The last run left its STOP marker; `awkit run` clears it and goes on.")
 	}
 
 	if report.Run.State == "stale_lock" {

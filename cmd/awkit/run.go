@@ -20,8 +20,10 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
+	"github.com/silver2dream/ai-workflow-kit/internal/workflow"
 )
 
 func usageRun() {
@@ -40,13 +42,16 @@ Options:
                 not even one that N waits for
   --dry-run     Only perform pre-flight checks without starting the workflow
   --background  Run the workflow in background mode (output to log file)
-  --force       Auto-delete STOP marker without asking
 
 Examples:
   awkit run
   awkit run --issue 42
   awkit run --dry-run
   awkit run --background
+
+"awkit stop" asks a run that is going to stop; "awkit status" shows where it
+is. A run that stopped is gone on from with "awkit run": the STOP marker it
+left ends that run and does not stand in the way of this one.
 
 "awkit kickoff" is the former name of this command and still works.
 `)
@@ -60,7 +65,9 @@ func cmdRun(args []string) int {
 	issue := fs.Int("issue", 0, "")
 	dryRun := fs.Bool("dry-run", false, "")
 	background := fs.Bool("background", false, "")
-	force := fs.Bool("force", false, "")
+	// --force cleared the STOP marker of the last run. A run does that by
+	// itself now; the flag is still taken, for the scripts that pass it.
+	_ = fs.Bool("force", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
@@ -90,7 +97,6 @@ func cmdRun(args []string) int {
 
 	// Pre-flight checks
 	preflight := kickoff.NewPreflightChecker(configPath, lockFile)
-	preflight.SetForceDelete(*force)
 	results, err := preflight.RunAll()
 
 	for _, r := range results {
@@ -131,6 +137,12 @@ func cmdRun(args []string) int {
 
 	setRunScope(*issue)
 	setPrincipalShellTimeouts()
+
+	// The marker of the last run ended that run. This one starts without it.
+	if err := stopmark.Clear("."); err != nil {
+		output.Error(fmt.Sprintf("Failed to clear the STOP marker of the last run: %v", err))
+		return 1
+	}
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		output.Error(fmt.Sprintf("Failed to create log directory: %v", err))
@@ -265,7 +277,6 @@ func cmdRun(args []string) int {
 	fmt.Println("")
 
 	// Multi-session loop: restart Principal when pending work remains.
-	stopMarker := filepath.Join(".ai", "state", "STOP")
 	maxSessions := getEnvInt("AWKIT_MAX_SESSIONS", 50)
 
 	// G8 fix: exponential backoff for session restarts
@@ -291,11 +302,9 @@ func cmdRun(args []string) int {
 				"max_sessions": maxSessions,
 			}))
 
-		if fileExists(stopMarker) {
-			fmt.Println("")
-			output.Warning(stopMarkerMessage(stopMarker))
+		if code, ended := endedByMarker(output); ended {
 			endPrincipalSession("stopped")
-			return 0
+			return code
 		}
 
 		if sessionIndex == 1 {
@@ -325,11 +334,9 @@ func cmdRun(args []string) int {
 			return 1
 		}
 
-		if fileExists(stopMarker) {
-			fmt.Println("")
-			output.Warning(stopMarkerMessage(stopMarker))
+		if code, ended := endedByMarker(output); ended {
 			endPrincipalSession("stopped")
-			return 0
+			return code
 		}
 
 		next, err := runAnalyzeNext(context.Background(), analyzeNextArgs{
@@ -385,10 +392,9 @@ func cmdRun(args []string) int {
 			if reason == "" {
 				reason = "none"
 			}
-			fmt.Println("")
-			output.Warning(fmt.Sprintf("Workflow stopped (%s)%s", reason, formatAnalyzeNextContext(next)))
+			code := reportEnding(output, reason, formatAnalyzeNextContext(next))
 			endPrincipalSession("stopped")
-			return 1
+			return code
 		default:
 			output.Info(fmt.Sprintf("Pending: %s%s (restarting in %s)", next.NextAction, formatAnalyzeNextContext(next), restartDelay))
 			time.Sleep(restartDelay)
@@ -899,25 +905,33 @@ func runTicketProblem(info *worker.IssueInfo, taskLabel string) string {
 	return ""
 }
 
-// stopMarkerReason returns the reason `awkit stop-workflow` recorded in the
-// STOP marker, or "" when the marker has none (a marker created by hand).
-func stopMarkerReason(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
+// endedByMarker says how the run ended when the STOP marker is there: what
+// happened and what to do next, in words, and the code the command ends
+// with. The code is 0 when the work is done or a person asked for the stop,
+// and 1 when the run stopped short and something has to be looked at; it was
+// 0 for every stop, "a ticket needs you" included.
+func endedByMarker(output *kickoff.OutputFormatter) (code int, ended bool) {
+	reason, present := stopmark.Read(".")
+	if !present {
+		return 0, false
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if reason, ok := strings.CutPrefix(strings.TrimSpace(line), "Reason:"); ok {
-			return strings.TrimSpace(reason)
-		}
-	}
-	return ""
+	return reportEnding(output, reason, ""), true
 }
 
-// stopMarkerMessage is what kickoff prints when it halts on the STOP marker.
-func stopMarkerMessage(path string) string {
-	if reason := stopMarkerReason(path); reason != "" {
-		return fmt.Sprintf("Workflow stopped (STOP marker present, reason: %s). The latest .ai/state/workflow-report-*.md says what to do next.", reason)
+// reportEnding prints how a run ended for a reason and returns the command's
+// exit code. about names the ticket or pull request the reason is about, when
+// it is known.
+func reportEnding(output *kickoff.OutputFormatter, reason, about string) int {
+	ending := workflow.EndingFor(reason)
+	fmt.Println("")
+	if ending.Done {
+		output.Success(ending.Summary + about)
+	} else {
+		output.Warning(ending.Summary + about)
 	}
-	return "Workflow stopped (STOP marker present)"
+	output.Info(ending.Next)
+	if ending.Done {
+		return 0
+	}
+	return 1
 }
