@@ -10,16 +10,15 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
 // PreflightChecker performs pre-flight checks before starting the workflow
 type PreflightChecker struct {
-	config      *Config
-	configPath  string
-	lockFile    string
-	stopMarker  string
-	forceDelete bool // auto-delete STOP marker
+	config     *Config
+	configPath string
+	lockFile   string
 }
 
 // CheckResult represents the result of a single check
@@ -35,13 +34,7 @@ func NewPreflightChecker(configPath, lockFile string) *PreflightChecker {
 	return &PreflightChecker{
 		configPath: configPath,
 		lockFile:   lockFile,
-		stopMarker: filepath.Join(".ai", "state", "STOP"),
 	}
-}
-
-// SetForceDelete enables auto-deletion of STOP marker
-func (p *PreflightChecker) SetForceDelete(force bool) {
-	p.forceDelete = force
 }
 
 // RunAll executes all pre-flight checks
@@ -73,6 +66,14 @@ func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
 	codexResult := p.CheckCodexCLI()
 	results = append(results, codexResult)
 	// Non-fatal, just warning
+
+	// 4b. A repository with a remote: the workflow lives in GitHub issues and
+	// pull requests, and a Worker pushes its branch to origin.
+	remoteResult := p.CheckGitRemote()
+	results = append(results, remoteResult)
+	if !remoteResult.Passed {
+		return results, fmt.Errorf("git remote check failed: %s", remoteResult.Message)
+	}
 
 	// 5. Check working directory is clean
 	gitResult := p.CheckGitClean()
@@ -238,6 +239,27 @@ func (p *PreflightChecker) CheckCodexCLI() CheckResult {
 	}
 }
 
+// CheckGitRemote checks that the project is a git repository with a remote
+// named origin. Every ticket's branch is pushed there and its pull request is
+// opened there.
+func (p *PreflightChecker) CheckGitRemote() CheckResult {
+	const name = "Git Remote"
+	if err := exec.Command("git", "rev-parse", "--git-dir").Run(); err != nil {
+		return CheckResult{
+			Name:    name,
+			Message: "this is not a git repository. Make it one (git init), commit, and add the GitHub repository as its remote: git remote add origin <url>",
+		}
+	}
+	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return CheckResult{
+			Name:    name,
+			Message: "the repository has no remote named origin. Tickets are GitHub issues and a Worker pushes its branch there: git remote add origin <url of the GitHub repository>",
+		}
+	}
+	return CheckResult{Name: name, Passed: true, Message: "origin is " + strings.TrimSpace(string(out))}
+}
+
 // CheckGitClean checks if working directory is clean
 func (p *PreflightChecker) CheckGitClean() CheckResult {
 	cmd := exec.Command("git", "status", "--porcelain")
@@ -265,37 +287,20 @@ func (p *PreflightChecker) CheckGitClean() CheckResult {
 	}
 }
 
-// CheckStopMarker checks if STOP marker exists
+// CheckStopMarker says when the last run left its STOP marker behind. The
+// marker ends the run that is going. It does not stand in the way of the next
+// one: every run ends with it, a finished one too, and a run that refused to
+// start over it had to be forced each time. The run clears it when it starts;
+// the check changes nothing, so that a dry run leaves the project as it is.
 func (p *PreflightChecker) CheckStopMarker() CheckResult {
-	if _, err := os.Stat(p.stopMarker); err == nil {
-		// STOP marker exists
-		if p.forceDelete {
-			// Auto-delete in force mode
-			if err := os.Remove(p.stopMarker); err != nil {
-				return CheckResult{
-					Name:    "Stop Marker",
-					Passed:  false,
-					Message: fmt.Sprintf("Failed to delete STOP marker: %v", err),
-				}
-			}
-			return CheckResult{
-				Name:    "Stop Marker",
-				Passed:  true,
-				Message: "STOP marker auto-deleted (--force mode)",
-				Warning: true,
-			}
-		}
-		return CheckResult{
-			Name:    "Stop Marker",
-			Passed:  false,
-			Message: "Found stop marker .ai/state/STOP. Use --force to auto-delete, or manually delete and retry.",
-		}
-	}
-
-	return CheckResult{
-		Name:    "Stop Marker",
-		Passed:  true,
-		Message: "No stop marker",
+	reason, present := stopmark.Read(".")
+	switch {
+	case !present:
+		return CheckResult{Name: "Stop Marker", Passed: true, Message: "No stop marker"}
+	case reason == "":
+		return CheckResult{Name: "Stop Marker", Passed: true, Warning: true, Message: "a STOP marker is there; a run clears it when it starts"}
+	default:
+		return CheckResult{Name: "Stop Marker", Passed: true, Warning: true, Message: fmt.Sprintf("the last run stopped (%s); a run clears its STOP marker when it starts", reason)}
 	}
 }
 

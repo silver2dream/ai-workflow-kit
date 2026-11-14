@@ -75,16 +75,23 @@ func TestCheckStopMarker_NoMarker_ReturnsOK(t *testing.T) {
 	}
 }
 
-func TestCheckStopMarker_MarkerExists_ReturnsWarning(t *testing.T) {
+// The marker of the last run is no fault of the project: the next run clears
+// it. The doctor says it is there, and why the run stopped.
+func TestCheckStopMarker_MarkerExists_SaysWhyTheLastRunStopped(t *testing.T) {
 	dir := makeDir(t)
 	writeFile(t, filepath.Join(dir, ".ai", "state", "STOP"), "")
 	d := New(dir)
 	result := d.CheckStopMarker()
-	if result.Status != "warning" {
-		t.Errorf("status = %q, want %q", result.Status, "warning")
+	if result.Status != "ok" || !strings.Contains(result.Message, "the next run clears it") {
+		t.Errorf("a marker made by hand: %+v, want no fault and a word on the next run", result)
 	}
 	if !result.CanClean {
 		t.Error("expected CanClean=true")
+	}
+
+	writeFile(t, filepath.Join(dir, ".ai", "state", "STOP"), "STOP requested by stop-workflow\nReason: worker_failed\n")
+	if result := d.CheckStopMarker(); result.Status != "ok" || !strings.Contains(result.Message, "worker_failed") {
+		t.Errorf("the marker of a run that stopped: %+v, want the reason named", result)
 	}
 }
 

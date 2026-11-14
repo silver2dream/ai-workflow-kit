@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
 
 // TestPreflightChecker_RunAll tests all pre-flight checks
@@ -143,51 +144,41 @@ func TestPreflightChecker_CheckCodexCLI(t *testing.T) {
 	}
 }
 
-// TestPreflightChecker_CheckStopMarker tests STOP marker check
+// The STOP marker ends the run that is going. It does not stand in the way of
+// the next one: every run ends with it, a finished one too, and a run that
+// refused to start over it had to be forced each time. The check says the
+// marker is there and why, and changes nothing: a dry run leaves the project
+// as it is.
 func TestPreflightChecker_CheckStopMarker(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "preflight-stop-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Change to temp dir
+	tmpDir := t.TempDir()
 	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
 	defer os.Chdir(oldWd)
 
 	checker := NewPreflightChecker("", "")
 
-	// Test 1: No STOP marker
+	if result := checker.CheckStopMarker(); !result.Passed || result.Warning {
+		t.Errorf("no marker: %+v, want a plain pass", result)
+	}
+
+	if err := stopmark.Write(".", "stop-workflow", "needs_human_review"); err != nil {
+		t.Fatal(err)
+	}
 	result := checker.CheckStopMarker()
-	if !result.Passed {
-		t.Errorf("CheckStopMarker should pass when no marker exists: %s", result.Message)
+	if !result.Passed || !result.Warning || !strings.Contains(result.Message, "needs_human_review") || !strings.Contains(result.Message, "clears") {
+		t.Errorf("the marker of a run that stopped: %+v, want a warning that names the reason and says the run clears it", result)
+	}
+	if _, present := stopmark.Read("."); !present {
+		t.Error("the check removed the marker; a dry run must change nothing")
 	}
 
-	// Test 2: STOP marker exists
-	stopDir := filepath.Join(tmpDir, ".ai", "state")
-	os.MkdirAll(stopDir, 0755)
-	stopFile := filepath.Join(stopDir, "STOP")
-	os.WriteFile(stopFile, []byte("test"), 0644)
-
-	result = checker.CheckStopMarker()
-	if result.Passed {
-		t.Error("CheckStopMarker should fail when marker exists")
+	if err := os.WriteFile(stopmark.Path("."), nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
-
-	// Test 3: STOP marker with force delete
-	checker.SetForceDelete(true)
-	result = checker.CheckStopMarker()
-	if !result.Passed {
-		t.Errorf("CheckStopMarker should pass with force delete: %s", result.Message)
-	}
-	if !result.Warning {
-		t.Error("CheckStopMarker should set Warning flag when force deleting")
-	}
-
-	// Verify marker was deleted
-	if _, err := os.Stat(stopFile); !os.IsNotExist(err) {
-		t.Error("STOP marker should be deleted with force delete")
+	if result := checker.CheckStopMarker(); !result.Passed || !result.Warning {
+		t.Errorf("a marker made by hand: %+v, want a warning and no failure", result)
 	}
 }
 
@@ -370,21 +361,6 @@ func TestNewPreflightChecker(t *testing.T) {
 
 	if checker.lockFile != "/path/to/lock" {
 		t.Errorf("lockFile = %q, want %q", checker.lockFile, "/path/to/lock")
-	}
-}
-
-// TestPreflightChecker_SetForceDelete tests force delete setting
-func TestPreflightChecker_SetForceDelete(t *testing.T) {
-	checker := NewPreflightChecker("", "")
-
-	if checker.forceDelete {
-		t.Error("forceDelete should be false by default")
-	}
-
-	checker.SetForceDelete(true)
-
-	if !checker.forceDelete {
-		t.Error("forceDelete should be true after SetForceDelete(true)")
 	}
 }
 
@@ -1090,5 +1066,34 @@ func TestCheckIntegrationBranch_WhenTheRemoteCannotBeAsked(t *testing.T) {
 		if !got.Passed || !got.Warning || !strings.Contains(got.Message, "has to be on origin") {
 			t.Errorf("without a remote (%s): %+v, want a warning that says where the branch has to be", branch, got)
 		}
+	}
+}
+
+// A run lives in GitHub issues and pull requests. A project that is not a
+// repository, or has no remote named origin, is told so and how to change
+// it, where the checks of the remote said "offline or no remote configured"
+// and went on.
+func TestCheckGitRemote(t *testing.T) {
+	_, clone := originAndClone(t)
+	checker := NewPreflightChecker("", "")
+
+	if got := checker.CheckGitRemote(); !got.Passed || !strings.Contains(got.Message, "origin is ") {
+		t.Errorf("a clone: %+v, want a pass that names the remote", got)
+	}
+
+	if out, err := exec.Command("git", "-C", clone, "remote", "rename", "origin", "upstream").CombinedOutput(); err != nil {
+		t.Fatalf("git remote rename: %v\n%s", err, out)
+	}
+	if got := checker.CheckGitRemote(); got.Passed || !strings.Contains(got.Message, "git remote add origin") {
+		t.Errorf("a repository whose remote is not called origin: %+v, want a failure that says how to add it", got)
+	}
+
+	outside := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(outside))
+	if err := os.Chdir(outside); err != nil {
+		t.Fatal(err)
+	}
+	if got := checker.CheckGitRemote(); got.Passed || !strings.Contains(got.Message, "not a git repository") {
+		t.Errorf("a directory that is no repository: %+v, want a failure that says so", got)
 	}
 }

@@ -843,10 +843,18 @@ func TestUsageHooks_ContainsContent(t *testing.T) {
 
 func TestUsageRun_ContainsContent(t *testing.T) {
 	output := captureStderr(usageRun)
-	for _, want := range []string{"awkit run [options]", "--issue N", "--dry-run", "--background", "--force", "awkit kickoff"} {
+	for _, want := range []string{"awkit run [options]", "--issue N", "--dry-run", "--background", "awkit stop", "awkit status", "awkit kickoff"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("usageRun should mention %q", want)
 		}
+	}
+	// A run clears the marker of the last one by itself; the flag that did it
+	// is still taken and no longer offered.
+	if strings.Contains(output, "--force") {
+		t.Error("usageRun still offers --force")
+	}
+	if code := cmdRun([]string{"--force", "--help"}); code != 0 {
+		t.Errorf("awkit run --force --help = %d: the flag is no longer taken", code)
 	}
 }
 
@@ -856,7 +864,7 @@ func TestUsage_ListsEveryCommandOnce(t *testing.T) {
 	output := captureStderr(usage)
 	commands := []string{
 		"init", "upgrade", "uninstall", "generate", "validate", "list-presets",
-		"plan", "create-task", "run", "status", "next", "doctor", "reset",
+		"plan", "create-task", "run", "stop", "status", "next", "doctor", "reset",
 		"events", "feedback-stats", "lessons", "evaluate", "hooks",
 		"analyze-next", "dispatch-worker", "check-result", "run-issue", "prepare-review", "submit-review",
 		"jittest", "stop-workflow", "reconcile", "context-snapshot",

@@ -132,6 +132,8 @@ func run() int {
 		return cmdValidate(os.Args[2:])
 	case "status":
 		return cmdStatus(os.Args[2:])
+	case "stop":
+		return cmdStop(os.Args[2:])
 	case "next":
 		return cmdNext(os.Args[2:])
 	case "check-result":
@@ -209,6 +211,7 @@ Run the workflow:
   create-task   Create a ticket: a GitHub issue the workflow picks up
   run           Start the workflow: work through the open tickets
                 (--issue N for one ticket only)
+  stop          Ask the run that is going to stop
   status        Show offline workflow status
   next          Show suggested next actions (offline)
   doctor        Check project health and identify issues
@@ -303,6 +306,8 @@ func cmdHelp(command string) int {
 		usageValidate()
 	case "status":
 		usageStatus()
+	case "stop":
+		usageStop()
 	case "next":
 		usageNext()
 	case "check-result":
@@ -1280,7 +1285,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall plan run validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall plan run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1303,7 +1308,7 @@ _awkit() {
             return 0
             ;;
         run|kickoff)
-            local opts="--issue --dry-run --background --force --help"
+            local opts="--issue --dry-run --background --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
             return 0
             ;;
@@ -1342,6 +1347,7 @@ _awkit() {
         'run:Start the workflow: work through the open tickets'
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
+        'stop:Ask the run that is going to stop'
         'next:Show suggested next actions (offline)'
         'check-result:Check worker execution result for an issue'
         'dispatch-worker:Dispatch an issue to a worker'
@@ -1436,6 +1442,7 @@ complete -c awkit -n __fish_use_subcommand -a plan -d 'Plan work with the counci
 complete -c awkit -n __fish_use_subcommand -a run -d 'Start the workflow: work through the open tickets'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'
+complete -c awkit -n __fish_use_subcommand -a stop -d 'Ask the run that is going to stop'
 complete -c awkit -n __fish_use_subcommand -a next -d 'Show suggested next actions (offline)'
 complete -c awkit -n __fish_use_subcommand -a check-result -d 'Check worker execution result for an issue'
 complete -c awkit -n __fish_use_subcommand -a dispatch-worker -d 'Dispatch an issue to a worker'

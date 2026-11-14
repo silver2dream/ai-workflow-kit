@@ -13,6 +13,8 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
+	"github.com/silver2dream/ai-workflow-kit/internal/workflow"
 )
 
 // Constants for loop safety
@@ -69,6 +71,17 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	}
 
 	labels := a.Config.GitHub.Labels
+
+	// A stop was asked for: nothing more is handed out. This is how a stop
+	// reaches a Principal in the middle of its session; the run's own loop
+	// looks for the marker only between sessions. The reason is the marker's
+	// when `awkit stop-workflow` knows it, and the user's otherwise.
+	if reason, stopped := stopmark.Read(a.StateRoot); stopped {
+		if !workflow.IsValidExitReason(reason) {
+			reason = ReasonStopRequested
+		}
+		return &Decision{NextAction: ActionNone, ExitReason: reason}, nil
+	}
 
 	// Step 0: Loop safety check
 	loopCount, err := a.updateLoopCount()

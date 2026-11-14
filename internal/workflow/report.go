@@ -86,7 +86,7 @@ func formatExitReasonDetails(reason string) string {
 	case "all_tasks_complete":
 		return "✓ **All tasks completed successfully!**\n\nNo further action required.\n"
 	case "user_stopped":
-		return "⏸ **Workflow was stopped by user.**\n\nTo resume:\n1. Remove stop marker: `rm .ai/state/STOP`\n2. Run: `awkit run`\n"
+		return "⏸ **Workflow was stopped by user.**\n\nRun `awkit run` to go on from where it stopped.\n"
 	case "max_loop_reached":
 		return "⚠ **Workflow stopped: maximum loop count reached (1000).**\n\nThis may indicate an infinite loop or stuck state. Please investigate.\n"
 	case "max_consecutive_failures":

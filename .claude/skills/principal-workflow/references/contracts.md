@@ -30,6 +30,7 @@
 
 | 值 | 意思 |
 |---|---|
+| `user_stopped` | 有人要求停止（`awkit stop`）；派出去的工作不再增加 |
 | `needs_human_review` | 有 issue 帶 `needs-human-review` 標籤，或衝突處理超過次數上限 |
 | `worker_failed` | 有 issue 的 Worker 失敗到重試上限（`worker-failed` 標籤） |
 | `review_max_retries` | 同一個 PR 的審查被擋下太多次 |
@@ -68,7 +69,7 @@
 
 ## awkit stop-workflow \<reason\>
 
-寫下報告、建立 `.ai/state/STOP`（`awkit run` 看到它就不再開新的 session）、清掉迴圈計數。`reason` 除了上面的 `exit_reason`，還接受 `all_tasks_complete`、`error_exit`、`user_stopped`、`interrupted`、`max_failures`、`escalation_triggered`、`contract_violation`、`none`。
+寫下報告、建立 `.ai/state/STOP`（`awkit run` 看到它就不再開新的 session，並依原因告訴使用者接下來做什麼；下一次 `awkit run` 會自己清掉它）、清掉迴圈計數。`reason` 除了上面的 `exit_reason`，還接受 `all_tasks_complete`、`error_exit`、`interrupted`、`max_failures`、`escalation_triggered`、`contract_violation`、`none`。
 
 ## pr-reviewer subagent
 

@@ -24,6 +24,7 @@ func TestStopWorkflowAcceptsAnalyzerExitReasons(t *testing.T) {
 		analyzer.ReasonBlockedByDependencies,
 		analyzer.ReasonLoopCountError,
 		analyzer.ReasonGitHubAPIError,
+		analyzer.ReasonStopRequested,
 	}
 	for _, reason := range reasons {
 		if !workflow.IsValidExitReason(reason) {

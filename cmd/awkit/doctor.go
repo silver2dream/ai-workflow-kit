@@ -4,76 +4,81 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
+	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/reset"
 )
 
 func cmdDoctor(args []string) int {
-	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
 	fs.Usage = usageDoctor
+	showHelp := fs.Bool("help", false, "")
+	showHelpShort := fs.Bool("h", false, "")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if *showHelp || *showHelpShort {
+		usageDoctor()
+		return 0
+	}
 
 	cwd, _ := os.Getwd()
-	doc := doctor.New(cwd)
+	probe := kickoff.NewPreflightChecker(config.Path("."), filepath.Join(layout.StateDir, "kickoff.lock"))
+	return printDoctor(os.Stdout, setupChecks(probe), doctor.New(cwd).RunAll(context.Background()))
+}
 
-	fmt.Println("AWK Health Check")
-	fmt.Println("================")
-	fmt.Println()
+// printDoctor writes the doctor's two halves and its verdict, and returns the
+// command's exit code: 1 when something has to be fixed before a run.
+func printDoctor(w io.Writer, setup, state []doctor.CheckResult) int {
+	fmt.Fprintln(w, bold("What a run needs"))
+	printChecks(w, setup)
 
-	ctx := context.Background()
-	results := doc.RunAll(ctx)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, bold("What earlier runs left behind"))
+	printChecks(w, state)
 
-	var warnings, errors int
-	var resettable bool
+	errors, warnings := doctorTotals(append(append([]doctor.CheckResult{}, setup...), state...))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, doctorVerdict(errors, warnings))
 
-	for _, r := range results {
-		var status string
-		switch r.Status {
-		case "ok":
-			status = colorGreen + "OK" + colorReset
-		case "warning":
-			status = colorYellow + "WARNING" + colorReset
-			warnings++
-		case "error":
-			status = colorRed + "ERROR" + colorReset
-			errors++
-		}
-
-		fmt.Printf("[%s] %s: %s\n", status, r.Name, r.Message)
-
+	for _, r := range state {
 		if r.CanClean {
-			resettable = true
+			fmt.Fprintln(w, "What earlier runs left behind is cleared with: awkit reset (awkit reset --dry-run shows what it would clear)")
+			break
 		}
-	}
-
-	fmt.Println()
-
-	if errors > 0 {
-		fmt.Printf("%sFound %d error(s)%s\n", colorRed, errors, colorReset)
-	}
-	if warnings > 0 {
-		fmt.Printf("%sFound %d warning(s)%s\n", colorYellow, warnings, colorReset)
-	}
-	if errors == 0 && warnings == 0 {
-		fmt.Printf("%sAll checks passed!%s\n", colorGreen, colorReset)
-	}
-
-	if resettable {
-		fmt.Println()
-		fmt.Println("To reset state, run:")
-		fmt.Printf("  awkit reset\n")
 	}
 
 	if errors > 0 {
 		return 1
 	}
 	return 0
+}
+
+// printChecks writes a list of checks, one a line: a mark, what was looked
+// at, and what was found.
+func printChecks(w io.Writer, results []doctor.CheckResult) {
+	if len(results) == 0 {
+		fmt.Fprintln(w, "  nothing")
+		return
+	}
+	for _, r := range results {
+		mark := green("✓")
+		switch r.Status {
+		case "warning":
+			mark = yellow("!")
+		case "error":
+			mark = colorRed + "✗" + colorReset
+		}
+		fmt.Fprintf(w, "  %s %s: %s\n", mark, r.Name, r.Message)
+	}
 }
 
 func cmdReset(args []string) int {
@@ -191,18 +196,20 @@ func cmdReset(args []string) int {
 }
 
 func usageDoctor() {
-	fmt.Fprint(os.Stderr, `Check AWK project health and identify issues
+	fmt.Fprint(os.Stderr, `Check everything a run needs, and what earlier runs left behind
 
-This command performs health checks on your AWK project and reports:
-- Local state files that may need cleanup
-- GitHub labels that indicate stalled work
-- Deprecated files that should be removed
+What a run needs: the tools (gh and its login, claude, the Worker's backend),
+a configuration that is valid, the branch pull requests go to, the remote and
+write access to it. "awkit run" checks the same and stops at the first that
+fails; the doctor says all of them at once, each with what to do about it.
+
+What earlier runs left behind: a lock, a STOP marker, counters, issues whose
+labels say they are stuck.
 
 Usage:
   awkit doctor
 
-Examples:
-  awkit doctor
+It ends with 1 when something has to be fixed before a run.
 `)
 }
 

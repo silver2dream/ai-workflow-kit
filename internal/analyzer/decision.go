@@ -1,7 +1,11 @@
 // Package analyzer implements workflow decision logic
 package analyzer
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
+)
 
 // Decision represents the next action to take
 type Decision struct {
@@ -42,6 +46,9 @@ const (
 	// ReasonBlockedByDependencies: every pending ticket waits for an issue
 	// that is still open, or that was closed as not planned.
 	ReasonBlockedByDependencies = "blocked_by_dependencies"
+	// ReasonStopRequested: a person asked the run to stop (`awkit stop`, or
+	// the STOP marker made by hand).
+	ReasonStopRequested = stopmark.ByUser
 )
 
 // Merge issue constants

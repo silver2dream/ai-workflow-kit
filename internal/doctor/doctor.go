@@ -15,6 +15,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
@@ -176,12 +177,15 @@ func (d *Doctor) CheckAttempts() []CheckResult {
 
 // CheckStopMarker checks for STOP marker
 func (d *Doctor) CheckStopMarker() CheckResult {
-	stopMarker := filepath.Join(d.StateRoot, ".ai", "state", "STOP")
-	if _, err := os.Stat(stopMarker); err == nil {
+	if reason, present := stopmark.Read(d.StateRoot); present {
+		message := "a STOP marker is there; the next run clears it"
+		if reason != "" {
+			message = fmt.Sprintf("the last run stopped (%s); the next run clears its STOP marker", reason)
+		}
 		return CheckResult{
 			Name:     "Stop Marker",
-			Status:   "warning",
-			Message:  "STOP marker exists (workflow was stopped)",
+			Status:   "ok",
+			Message:  message,
 			CanClean: true,
 			CleanKey: "stop",
 		}
