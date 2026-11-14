@@ -88,10 +88,10 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 
 1. 讀 issue 的 `awk-ticket` 區塊（`internal/ticket`），找出 repo 與它的驗證指令。
 2. 在 `.worktrees/issue-N` 建 worktree，從 integration branch 切出 `feat/ai-issue-N`。
-3. 組 prompt：票的內文、審查意見（重做時）、相關的教訓、knowledge graph 的片段。
+3. 執行 `verify.setup`（安裝相依套件），再組 prompt：票的內文、審查意見（重做時）、相關的教訓、knowledge graph 的片段。
 4. 啟動 backend（`backend_codex.go`、`backend_claude.go`），失敗時依 `escalation.retry_count` 重試。
 5. 安全檢查（`security.go`）：受保護的路徑、敏感字串、submodule 邊界。票的區塊可以逐項放行。
-6. 執行驗證指令，commit（`[type] subject`，`commit.go`），push，開或更新 pull request。
+6. 執行建置與測試指令，commit（`[type] subject`，`commit.go`），push，開或更新 pull request。setup、建置、測試各有 `timeouts.verify_minutes` 的時間上限；超過就連同它啟動的行程一起停掉（`util.RunWithChildren`）。
 7. 寫結果檔；`check-result` 與 `analyzer` 依它改標籤。
 
 ## 套件
