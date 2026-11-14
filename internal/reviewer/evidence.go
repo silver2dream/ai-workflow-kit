@@ -1,6 +1,7 @@
 package reviewer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
 
 // CriteriaVerification represents a single criteria verification entry
@@ -696,16 +698,22 @@ func ValidateCompleteness(criteria []string, verifications []CriteriaVerificatio
 	return nil
 }
 
-// ExecuteTests runs the test command in the worktree
+// ExecuteTests runs the test command in the worktree and returns what it
+// printed. At the time limit the command is stopped together with what it
+// started: the test binaries of a suite outlive the shell that started them,
+// and held its output open until they were done.
 func ExecuteTests(ctx context.Context, worktreePath, testCommand string, timeout time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", testCommand)
 	cmd.Dir = worktreePath
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	cmd.WaitDelay = 5 * time.Second
 
-	output, err := cmd.CombinedOutput()
-	return string(output), err
+	err := util.RunWithChildren(cmd)
+	return output.String(), err
 }
 
 // ParseTestResults extracts passed and failed tests from output

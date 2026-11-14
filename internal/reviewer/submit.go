@@ -58,16 +58,15 @@ type SubmitReviewResult struct {
 	Reason string
 }
 
-// SubmitReview submits a PR review and handles the result
-func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *SubmitReviewResult, err error) {
-	if opts.StateRoot == "" {
-		return nil, fmt.Errorf("state root is required")
-	}
+// fillDefaults sets what the caller left open. The tests are run again with
+// the limit the configuration gives a build or a test command; the review had
+// five minutes whatever the project said.
+func (opts *SubmitReviewOptions) fillDefaults() {
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 60 * time.Second
 	}
 	if opts.TestTimeout == 0 {
-		opts.TestTimeout = 5 * time.Minute
+		opts.TestTimeout = GetReviewSettings(opts.StateRoot).TestTimeout
 	}
 	if opts.ScoreThreshold <= 0 {
 		opts.ScoreThreshold = 7
@@ -75,6 +74,14 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	if opts.MergeStrategy == "" {
 		opts.MergeStrategy = "squash"
 	}
+}
+
+// SubmitReview submits a PR review and handles the result
+func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *SubmitReviewResult, err error) {
+	if opts.StateRoot == "" {
+		return nil, fmt.Errorf("state root is required")
+	}
+	opts.fillDefaults()
 
 	// Write review_start event
 	trace.WriteEvent(trace.ComponentReviewer, trace.TypeReviewStart, trace.LevelInfo,

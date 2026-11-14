@@ -45,7 +45,7 @@ func TestLoad_Defaults(t *testing.T) {
 		Agents:     Agents{Builtin: []string{"pr-reviewer", "conflict-resolver"}},
 		Review:     Review{ScoreThreshold: 7, MergeStrategy: "squash", JiTTest: JiTTest{MaxTests: 5, TimeoutSeconds: 120, FailurePolicy: "warn", Model: "sonnet"}},
 		Escalation: Escalation{MaxReviewAttempts: 3, RetryCount: 2, RetryDelaySeconds: 5},
-		Timeouts:   Timeouts{GitSeconds: 120, GHSeconds: 60, CodexMinutes: 30, GHRetryCount: 3, GHRetryBaseDelay: 2},
+		Timeouts:   Timeouts{GitSeconds: 120, GHSeconds: 60, CodexMinutes: 30, VerifyMinutes: 10, GHRetryCount: 3, GHRetryBaseDelay: 2},
 		Worker:     Worker{Backend: "codex", ClaudeCode: ClaudeCode{Model: "sonnet", MaxTurns: 50}},
 		Lessons:    Lessons{MaxActive: 30, InjectTopK: 3, InjectMaxChars: 800, Distiller: LessonsDistiller{Model: "sonnet", TimeoutSeconds: 60}},
 	}
@@ -104,7 +104,7 @@ review:
   severity_consistency: false
   human_feedback: false
 escalation: {max_review_attempts: 5, retry_count: 4, retry_delay_seconds: 9}
-timeouts: {git_seconds: 11, gh_seconds: 12, codex_minutes: 13, gh_retry_count: 14, gh_retry_base_delay: 15}
+timeouts: {git_seconds: 11, gh_seconds: 12, codex_minutes: 13, verify_minutes: 16, gh_retry_count: 14, gh_retry_base_delay: 15}
 feedback: {enabled: false}
 hooks:
   pre_dispatch: [{command: echo pre, timeout: 5s, on_failure: abort, env: {A: b}}]
@@ -152,7 +152,7 @@ func TestLoad_WhatTheFileSays(t *testing.T) {
 			JiTTest:             JiTTest{Enabled: &yes, MaxTests: 2, TimeoutSeconds: 30, FailurePolicy: "block", Model: "haiku"},
 			SeverityConsistency: &no, HumanFeedback: &no},
 		Escalation: Escalation{MaxReviewAttempts: 5, RetryCount: 4, RetryDelaySeconds: 9},
-		Timeouts:   Timeouts{GitSeconds: 11, GHSeconds: 12, CodexMinutes: 13, GHRetryCount: 14, GHRetryBaseDelay: 15},
+		Timeouts:   Timeouts{GitSeconds: 11, GHSeconds: 12, CodexMinutes: 13, VerifyMinutes: 16, GHRetryCount: 14, GHRetryBaseDelay: 15},
 		Feedback:   Feedback{Enabled: &no},
 		Hooks: Hooks{
 			PreDispatch:  []Hook{{Command: "echo pre", Timeout: "5s", OnFailure: "abort", Env: map[string]string{"A": "b"}}},
@@ -193,7 +193,7 @@ func TestLoad_NumbersOutOfRange(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 review: {score_threshold: -1, jittest: {max_tests: 0, timeout_seconds: -5}}
 escalation: {max_review_attempts: -2, retry_count: -1, retry_delay_seconds: -3}
-timeouts: {git_seconds: -1, gh_seconds: 0, codex_minutes: -9, gh_retry_count: -1, gh_retry_base_delay: 0}
+timeouts: {git_seconds: -1, gh_seconds: 0, codex_minutes: -9, verify_minutes: -2, gh_retry_count: -1, gh_retry_base_delay: 0}
 worker: {claude_code: {max_turns: -4}}
 lessons: {max_active: -1, inject_top_k: -1, inject_max_chars: -1, distiller: {timeout_seconds: -1}}
 `))
