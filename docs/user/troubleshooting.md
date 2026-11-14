@@ -63,6 +63,7 @@ awkit events --issue 42 --level error    # 這張票出過的錯
 Worker 的 log 在 `.ai/state/logs/issue-42.worker.log`，它拿到的 prompt 與留下的摘要在 `.ai/state/runs/issue-42/`。常見的原因：
 
 - **建置或測試指令在乾淨的 checkout 裡跑不起來。** Worker 在 `.worktrees/` 下的新 worktree 裡工作；需要先安裝相依套件的 repo 要設 `verify.setup`。
+- **建置或測試超過時間上限。** 錯誤訊息是 `timeout after 10m0s, the limit of one build or test command (timeouts.verify_minutes in .ai/config.yaml)`。測試本來就要跑這麼久的話，調高 `timeouts.verify_minutes`；否則找出是哪個測試卡住。
 - **票太大或太模糊。** 把它拆開，或把驗收條件寫成可以測的句子。
 - **Worker 改了受保護的檔案**（`.claude/`、`.ai/config.yaml`、`.ai/roster.yaml`、`CLAUDE.md`、`AGENTS.md`、`.mcp.json`）。票真的需要改它們時，在 `awk-ticket` 區塊加 `allow_script_changes: true`。
 - **diff 裡有看起來像密碼或金鑰的字串。** 確實需要時（例如測試用的假金鑰），在區塊加 `allow_secrets: true`。
@@ -91,6 +92,7 @@ awkit run
 
 - **審查指出真的問題，Worker 沒修好。** 把留言裡的重點補進票的驗收條件，或自己在 pull request 上留審查意見：你的意見會原文交給 Worker。
 - **審查的證據對不上**（它引用的測試沒有跑過、或找不到）。確認 `verify.test` 真的會執行票裡要求的測試，而且測試名稱出現在輸出裡。
+- **審查重跑測試時超過時間上限**（留言裡是 `the tests ran out of time after …`）。被截斷的測試不算證據，即使前面的測試已經通過；調高 `timeouts.verify_minutes`。
 
 ## run 停在奇怪的地方
 
