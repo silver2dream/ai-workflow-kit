@@ -180,6 +180,10 @@ func run() int {
 		return cmdContextSnapshot(os.Args[2:])
 	case "help":
 		if len(os.Args) >= 3 {
+			if os.Args[2] == "--all" || os.Args[2] == "-a" || os.Args[2] == "all" {
+				usageAll()
+				return 0
+			}
 			return cmdHelp(os.Args[2])
 		}
 		usage()
@@ -192,68 +196,99 @@ func run() int {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `awkit - AI Workflow Kit CLI
+	fmt.Fprint(os.Stderr, `awkit - AI Workflow Kit
+
+A ticket is a GitHub issue. awkit hands each one to a Worker, has the pull
+request reviewed, and merges what passes.
+
+Usage:
+  awkit <command> [options]
+
+Set up:
+  init         Set a project up for AWK (--preset godot-go for a Go backend
+               and a Godot C# frontend)
+  doctor       Check everything a run needs, and say how to fix what is missing
+
+Work:
+  plan         Plan with the council: a brief becomes documents, decisions
+               and a list of tickets for you to approve
+  create-task  Add one ticket by hand
+  run          Work through the open tickets (--issue N for one ticket only)
+  status       Where the work is: the run, every ticket, what to do next
+  stop         Ask the run that is going to stop
+
+Look into what happened:
+  events       What a run did, step by step
+  lessons      What the reviews taught the Workers
+
+Keep up:
+  upgrade      Bring a project's kit files up to this version of awkit
+  reset        Clear what earlier runs left behind
+  uninstall    Take AWK out of a project
+
+The first time:
+  awkit init
+  git add -A && git commit -m "[chore] set up awkit"
+  awkit doctor
+  awkit plan "a daily login reward that grows over seven days"
+  awkit run
+
+'awkit help <command>' says more about one command.
+'awkit help --all' lists every command, the ones the workflow runs included.
+`)
+}
+
+// usageAll lists every command there is: the ones a person runs, the ones
+// the Principal and its agents run, and the ones about the CLI itself.
+func usageAll() {
+	fmt.Fprint(os.Stderr, `awkit - AI Workflow Kit: every command
 
 Usage:
   awkit <command> [options]
 
 Set up a project:
-  init          Initialize AWK in a project (or current directory)
-  upgrade       Upgrade AWK kit files (keeps the project's configuration)
-  uninstall     Remove AWK from a project
-  generate      Generate helper docs and scaffolding
-  validate      Validate workflow configuration
-  list-presets  Show available project presets
+  init          Set a project up for AWK
+  doctor        Check everything a run needs, and what earlier runs left behind
+  upgrade       Bring a project's kit files up to this version of awkit
+  uninstall     Take AWK out of a project
+  generate      Write the files derived from the configuration again
+  validate      Check the configuration
+  list-presets  Show the presets init knows
 
 Run the workflow:
-  plan          Plan work with the council: a brief becomes documents,
-                decisions and a list of tickets for you to approve
-  create-task   Create a ticket: a GitHub issue the workflow picks up
-  run           Start the workflow: work through the open tickets
-                (--issue N for one ticket only)
+  plan          Plan with the council: a brief becomes documents, decisions
+                and a list of tickets for you to approve
+  create-task   Add one ticket by hand
+  run           Work through the open tickets (--issue N for one ticket only)
+  status        Where the work is: the run, every ticket, what to do next
   stop          Ask the run that is going to stop
-  status        Show offline workflow status
-  next          Show suggested next actions (offline)
-  doctor        Check project health and identify issues
-  reset         Reset project state for fresh start
+  next          Suggest what to do next from local files only
+  reset         Clear what earlier runs left behind
 
 Look into what happened:
-  events          Query unified event stream for debugging
-  feedback-stats  Show review feedback statistics
-  lessons         Manage the learning loop (list/stats/add/distill/promote)
-  evaluate        Run evaluation gates (--offline, --strict)
-  hooks           Manage lifecycle hooks
+  events          What a run did, step by step
+  feedback-stats  How often reviews turned work back, and for what
+  lessons         What the reviews taught the Workers (list/stats/add/distill/promote)
+  evaluate        Run the evaluation gates (--offline, --strict)
+  hooks           The commands the workflow runs at its lifecycle points
 
 What the workflow itself runs (the Principal and its agents call these):
-  analyze-next     Analyze and determine next workflow action
-  dispatch-worker  Dispatch an issue to a worker
-  check-result     Check worker execution result for an issue
-  run-issue        Run a worker for a single issue
-  prepare-review   Prepare PR review context
-  submit-review    Submit PR review and handle result
-  jittest          Run JiT (Just-in-Time) tests for a PR
-  stop-workflow    Stop the workflow and generate a report
-  reconcile        Self-heal structural drift (e.g. integration-branch scaffold)
-  context-snapshot Generate compact context snapshot
+  analyze-next     Decide the next step of the loop
+  dispatch-worker  Hand a ticket to a Worker and wait for it
+  check-result     Read what a Worker left for a ticket
+  run-issue        Be the Worker of one ticket
+  prepare-review   Collect what a review needs
+  submit-review    Hand in a review; merge when it passes
+  jittest          Run the tests generated for a pull request
+  stop-workflow    End the run with a reason and write its report
+  reconcile        Put back what a failed step left out of place
+  context-snapshot Print a summary of the run's state
 
 The CLI itself:
-  check-update  Check for CLI updates
-  completion    Generate shell completion script
-  version       Show version
-  help          Show help for a command
-
-Examples:
-  awkit init
-  awkit init --preset godot-go
-  awkit plan "a daily login reward that grows over seven days"
-  awkit create-task --title "[feat] add login" --body-file ticket.md
-  awkit run
-  awkit run --issue 42
-  awkit run --dry-run
-  awkit status
-  awkit upgrade
-
-Run 'awkit help <command>' for more information.
+  check-update  See whether a newer awkit is out
+  completion    Print a shell completion script
+  version       Show the version
+  help          Show help ('awkit help <command>')
 `)
 }
 

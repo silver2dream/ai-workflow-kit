@@ -38,9 +38,13 @@ Output (bash eval compatible):
   WORKER_STATUS=<status>
 
 Status values:
-  success      - Worker completed successfully, PR created
-  failed       - Worker failed (may be retried)
-  in_progress  - Issue is already being processed
+  success                    - the Worker finished and its pull request is open
+  success_no_changes         - the Worker found nothing to change; the issue is closed
+  failed                     - the Worker failed; the next iteration tries again,
+                               or the issue is marked worker-failed
+  in_progress                - a Worker is already on the issue
+  needs_conflict_resolution  - the rebase stopped on a conflict; WORKTREE_PATH,
+                               ISSUE_NUMBER and PR_NUMBER follow
 
 Examples:
   awkit dispatch-worker --issue 25

@@ -858,13 +858,39 @@ func TestUsageRun_ContainsContent(t *testing.T) {
 	}
 }
 
-// The usage names every command a person runs and every command the workflow
-// runs, each once, and `run` is how the workflow is started.
-func TestUsage_ListsEveryCommandOnce(t *testing.T) {
+// `awkit help` lists what a person runs. The commands of the Principal and
+// its agents are not among them: thirty-three commands in one list hid the
+// six a person needs.
+func TestUsage_ListsWhatAPersonRuns(t *testing.T) {
 	output := captureStderr(usage)
+	for _, command := range []string{"init", "doctor", "plan", "create-task", "run", "status", "stop", "events", "lessons", "upgrade", "reset", "uninstall"} {
+		if got := strings.Count(output, "\n  "+command+" "); got != 1 {
+			t.Errorf("the usage lists %q %d times, want once", command, got)
+		}
+	}
+	for _, command := range []string{"analyze-next", "dispatch-worker", "check-result", "run-issue", "prepare-review", "submit-review", "stop-workflow", "reconcile", "context-snapshot", "jittest", "kickoff"} {
+		if strings.Contains(output, command) {
+			t.Errorf("the usage shows %q, which a person does not run", command)
+		}
+	}
+	// The way from nothing to a run, the commit included.
+	for _, step := range []string{"awkit init\n", "git add -A && git commit", "awkit doctor\n", "awkit plan ", "awkit run\n", "awkit help --all"} {
+		if !strings.Contains(output, step) {
+			t.Errorf("the usage lacks %q", step)
+		}
+	}
+	if lines := strings.Count(output, "\n"); lines > 42 {
+		t.Errorf("the usage is %d lines", lines)
+	}
+}
+
+// `awkit help --all` names every command there is, each once, and every one
+// of them has its own help.
+func TestUsageAll_ListsEveryCommandOnce(t *testing.T) {
+	output := captureStderr(usageAll)
 	commands := []string{
-		"init", "upgrade", "uninstall", "generate", "validate", "list-presets",
-		"plan", "create-task", "run", "stop", "status", "next", "doctor", "reset",
+		"init", "doctor", "upgrade", "uninstall", "generate", "validate", "list-presets",
+		"plan", "create-task", "run", "status", "stop", "next", "reset",
 		"events", "feedback-stats", "lessons", "evaluate", "hooks",
 		"analyze-next", "dispatch-worker", "check-result", "run-issue", "prepare-review", "submit-review",
 		"jittest", "stop-workflow", "reconcile", "context-snapshot",
@@ -872,19 +898,25 @@ func TestUsage_ListsEveryCommandOnce(t *testing.T) {
 	}
 	for _, command := range commands {
 		if got := strings.Count(output, "\n  "+command+" "); got != 1 {
-			t.Errorf("the usage lists %q %d times, want once", command, got)
+			t.Errorf("the full usage lists %q %d times, want once", command, got)
 		}
 	}
 	if strings.Contains(output, "kickoff") {
 		t.Error("the usage still shows the former name of run")
 	}
-	// Every command the usage lists has its own help.
 	for _, command := range commands {
 		if command == "help" {
 			continue
 		}
 		if exitCode := cmdHelp(command); exitCode != 0 {
 			t.Errorf("awkit help %s = %d, want 0", command, exitCode)
+		}
+	}
+	// Every command the short list names is in the full one.
+	short := captureStderr(usage)
+	for _, command := range []string{"init", "doctor", "plan", "create-task", "run", "status", "stop", "events", "lessons", "upgrade", "reset", "uninstall"} {
+		if !strings.Contains(short, "\n  "+command+" ") || !strings.Contains(output, "\n  "+command+" ") {
+			t.Errorf("%q is not in both lists", command)
 		}
 	}
 }

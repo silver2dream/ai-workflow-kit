@@ -114,6 +114,7 @@ func cmdRun(args []string) int {
 	if err != nil {
 		fmt.Println("")
 		output.Error(fmt.Sprintf("Pre-flight check failed: %v", err))
+		output.Info("A run stops at the first check that fails. awkit doctor runs them all and says everything that is missing.")
 		return 1
 	}
 

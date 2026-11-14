@@ -233,17 +233,20 @@ func Generate(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("failed to create .claude dir: %w", err)
 	}
 
-	// Generate settings.local.json
-	if err := generateClaudeSettings(settingsPath, config.Agents); err != nil {
-		return nil, fmt.Errorf("failed to generate claude settings: %w", err)
-	}
-	say.say("wrote %s", say.path(settingsPath))
-
 	// What is found and gone on from: the caller is told, and so is the
 	// reader of the progress lines.
 	warn := func(warning string) {
 		result.Warnings = append(result.Warnings, warning)
 		say.say("WARNING: %s", warning)
+	}
+
+	// The local settings of Claude Code are the person's own: what a run
+	// needs is added to them, and nothing in them is replaced.
+	switch changed, err := generateClaudeSettings(settingsPath, config); {
+	case err != nil:
+		warn(err.Error())
+	case changed:
+		say.say("wrote %s", say.path(settingsPath))
 	}
 	for _, warning := range validateCustomRules(opts.StateRoot, config.Rules) {
 		warn(warning)
@@ -585,37 +588,6 @@ func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("- When a rule disagrees with the code or the git log, the code and the log are right, and the rule file is corrected.\n")
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
-}
-
-func generateClaudeSettings(path string, agents AgentsConfig) error {
-	allowEntries := []string{
-		`      "Skill(principal-workflow)"`,
-		`      "Task(pr-reviewer)"`,
-		`      "Task(conflict-resolver)"`,
-	}
-
-	// Add custom agent permissions
-	for _, agent := range agents.Custom {
-		allowEntries = append(allowEntries, fmt.Sprintf(`      "Task(%s)"`, agent.Name))
-	}
-
-	allowEntries = append(allowEntries,
-		`      "Bash(gh:*)"`,
-		`      "Bash(git:*)"`,
-		`      "Bash(awkit:*)"`,
-		`      "Bash(bash:*)"`,
-		`      "Bash(codex:*)"`,
-		`      "Bash(go:*)"`,
-		`      "Bash(npm:*)"`,
-		`      "Bash(python:*)"`,
-		`      "Bash(python3:*)"`,
-	)
-
-	content := "{\n  \"permissions\": {\n    \"allow\": [\n" +
-		strings.Join(allowEntries, ",\n") +
-		"\n    ]\n  }\n}\n"
-
-	return os.WriteFile(path, []byte(content), 0644)
 }
 
 // builtinAgentFiles lists the agent definitions installed from the kit.

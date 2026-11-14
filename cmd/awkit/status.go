@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
@@ -14,13 +15,20 @@ import (
 )
 
 func usageStatus() {
-	fmt.Fprint(os.Stderr, `Show offline workflow status (no GitHub calls)
+	fmt.Fprint(os.Stderr, `Show where the work is: the run, every ticket, and what to do next
+
+  Run       whether a run is going, and how the last one ended
+  Tickets   every open ticket by the stage it is in: needs you, in review,
+            in progress, back to a Worker, ready, waiting
+  Next      the one thing to do next
 
 Usage:
   awkit status [options]
 
 Options:
-  --issue <id>  Show status for a specific issue
+  --issue <id>  Show the files a run left for one issue: its result, its
+                trace and its logs
+  --offline     Do not ask GitHub: the run only, no tickets
   --json        Output JSON
 
 Examples:
@@ -36,6 +44,7 @@ func cmdStatus(args []string) int {
 	fs.Usage = usageStatus
 
 	issueID := fs.Int("issue", 0, "")
+	offline := fs.Bool("offline", false, "")
 	jsonOut := fs.Bool("json", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
@@ -57,10 +66,22 @@ func cmdStatus(args []string) int {
 		return 1
 	}
 
+	// The configuration says which project this is and by which labels its
+	// tickets are read. A directory without one is not set up; a project
+	// whose files are where an earlier awkit kept them is told so below.
+	cfg, cfgErr := config.LoadFile(config.Path("."))
+	if cfgErr != nil {
+		cfg = nil
+	}
+	view := collectStatusView(context.Background(), report, cfg, *offline || *issueID > 0)
+
 	if *jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(report); err != nil {
+		if err := enc.Encode(struct {
+			status.Report
+			Tickets *status.Tickets `json:"tickets,omitempty"`
+		}{report, view.Tickets}); err != nil {
 			output.Error(fmt.Sprintf("Failed to write JSON: %v", err))
 			return 1
 		}
@@ -73,49 +94,14 @@ func cmdStatus(args []string) int {
 	// project that has not been upgraded it would read as "nothing has run".
 	if migrate.UsesOldLayout(".") {
 		output.Warning("This project keeps files where an earlier awkit put them: what is shown below does not see them. Run 'awkit upgrade'.")
+	} else if cfgErr != nil && !os.IsNotExist(cfgErr) {
+		output.Warning(fmt.Sprintf("The configuration cannot be used: %v", cfgErr))
 	}
 
-	// Run
-	runLine := fmt.Sprintf("Run: %s", report.Run.State)
-	if report.Run.PID != 0 {
-		runLine += fmt.Sprintf("  pid=%d", report.Run.PID)
+	if *issueID == 0 {
+		printStatus(os.Stdout, view)
+		return 0
 	}
-	if report.Run.Session.SessionID != "" {
-		runLine += fmt.Sprintf("  session=%s", report.Run.Session.SessionID)
-	}
-	if report.Run.Session.EndedAt != "" {
-		runLine += fmt.Sprintf("  ended=%s", report.Run.Session.EndedAt)
-	}
-	fmt.Println(runLine)
-
-	// Config (rules/agents)
-	if len(report.Config.RulesKit) > 0 || len(report.Config.RulesCustom) > 0 ||
-		len(report.Config.AgentsBuiltin) > 0 || len(report.Config.AgentsCustom) > 0 {
-		configLine := "Config:"
-		if len(report.Config.RulesKit) > 0 {
-			configLine += fmt.Sprintf("  rules.kit=[%s]", strings.Join(report.Config.RulesKit, ","))
-		}
-		if len(report.Config.RulesCustom) > 0 {
-			configLine += fmt.Sprintf("  rules.custom=[%s]", strings.Join(report.Config.RulesCustom, ","))
-		}
-		if len(report.Config.AgentsBuiltin) > 0 {
-			configLine += fmt.Sprintf("  agents.builtin=[%s]", strings.Join(report.Config.AgentsBuiltin, ","))
-		}
-		if len(report.Config.AgentsCustom) > 0 {
-			configLine += fmt.Sprintf("  agents.custom=[%s]", strings.Join(report.Config.AgentsCustom, ","))
-		}
-		fmt.Println(configLine)
-	}
-
-	// Control
-	controlLine := fmt.Sprintf("Control: STOP=%s", ternary(report.Control.StopPresent, "present", "absent"))
-	if report.Control.LoopCount != nil {
-		controlLine += fmt.Sprintf("  loop_count=%d", *report.Control.LoopCount)
-	}
-	if report.Control.ConsecutiveFailures != nil {
-		controlLine += fmt.Sprintf("  consecutive_failures=%d", *report.Control.ConsecutiveFailures)
-	}
-	fmt.Println(controlLine)
 
 	// Target
 	if report.Target.IssueID > 0 {
