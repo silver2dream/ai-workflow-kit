@@ -31,16 +31,12 @@ Usage:
 Options:
   --dry-run     Only perform pre-flight checks without starting the workflow
   --background  Run the workflow in background mode (output to log file)
-  --resume      Resume from the last saved state
-  --fresh       Ignore saved state and start fresh
   --force       Auto-delete STOP marker without asking
 
 Examples:
   awkit kickoff
   awkit kickoff --dry-run
   awkit kickoff --background
-  awkit kickoff --resume
-  awkit kickoff --fresh
   awkit kickoff --force
 `)
 }
@@ -52,8 +48,6 @@ func cmdKickoff(args []string) int {
 
 	dryRun := fs.Bool("dry-run", false, "")
 	background := fs.Bool("background", false, "")
-	resume := fs.Bool("resume", false, "")
-	fresh := fs.Bool("fresh", false, "")
 	force := fs.Bool("force", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
@@ -70,7 +64,6 @@ func cmdKickoff(args []string) int {
 	// Paths
 	configPath := filepath.Join(".ai", "config", "workflow.yaml")
 	lockFile := filepath.Join(".ai", "state", "kickoff.lock")
-	stateFile := filepath.Join(".ai", "state", "last_run.json")
 	logDir := filepath.Join(".ai", "exe-logs")
 
 	output := kickoff.NewOutputFormatter(os.Stdout)
@@ -176,42 +169,6 @@ func cmdKickoff(args []string) int {
 	}
 	defer lock.Release()
 
-	// State manager
-	state := kickoff.NewStateManager(stateFile)
-
-	// Check for existing state
-	if !*fresh && !*resume && state.HasState() {
-		if state.IsStale() {
-			output.Warning("Found saved state older than 24 hours. Consider starting fresh.")
-		}
-
-		reader := bufio.NewReader(os.Stdin)
-		shouldResume, err := kickoff.PromptResumeOrFresh(reader)
-		if err != nil {
-			output.Error(fmt.Sprintf("Failed to read input: %v", err))
-			return 1
-		}
-		*resume = shouldResume
-	}
-
-	if *resume {
-		savedState, err := state.LoadState()
-		if err != nil {
-			output.Error(fmt.Sprintf("Failed to load state: %v", err))
-			return 1
-		}
-		// G14 fix: validate state integrity
-		if savedState.Phase == "" {
-			output.Warning("Saved state has empty phase, starting fresh")
-			*resume = false
-		} else if savedState.SavedAt.IsZero() {
-			output.Warning("Saved state has invalid timestamp, starting fresh")
-			*resume = false
-		} else {
-			output.Info(fmt.Sprintf("Resuming from phase: %s", savedState.Phase))
-		}
-	}
-
 	// Logger
 	var logger *kickoff.RotatingLogger
 	if *background {
@@ -284,7 +241,7 @@ func cmdKickoff(args []string) int {
 	)
 	restartDelay := minRestartDelay
 
-	signalHandler := kickoff.NewSignalHandler(nil, state, lock)
+	signalHandler := kickoff.NewSignalHandler(nil, lock)
 	signalHandler.SetCleanupCallback(func() {
 		endPrincipalSession("interrupted")
 	})
@@ -796,7 +753,7 @@ func runClaudeSession(args runClaudeSessionArgs) (int, error) {
 			}
 			if currentSpinner != nil {
 				duration := currentSpinner.Duration()
-				currentSpinner.Stop(fmt.Sprintf("??[#%d] Worker completed (%s)",
+				currentSpinner.Stop(fmt.Sprintf("✓ [#%d] Worker completed (%s)",
 					currentMonitor.IssueID(),
 					formatDuration(duration)))
 			}

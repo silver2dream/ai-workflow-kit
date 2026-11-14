@@ -1,7 +1,6 @@
 package kickoff
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"os"
@@ -230,50 +229,6 @@ func TestValidationError_WithoutExpected(t *testing.T) {
 	}
 	if !strings.Contains(got, "project.name") {
 		t.Errorf("Error() should contain the field name, got %q", got)
-	}
-}
-
-// =============================================================================
-// StateManager – atomic write behaviour
-// =============================================================================
-
-// TestStateManager_SaveState_NoTmpLeftover verifies the .tmp file is removed
-// after a successful atomic write.
-func TestStateManager_SaveState_NoTmpLeftover(t *testing.T) {
-	tmpDir := t.TempDir()
-	stateFile := filepath.Join(tmpDir, "state.json")
-	mgr := NewStateManager(stateFile)
-
-	if err := mgr.SaveState(&RunState{Phase: "test"}); err != nil {
-		t.Fatalf("SaveState: %v", err)
-	}
-
-	tmpFile := stateFile + ".tmp"
-	if _, err := os.Stat(tmpFile); !os.IsNotExist(err) {
-		t.Error(".tmp file should not exist after successful SaveState")
-	}
-}
-
-// TestStateManager_SaveState_UpdatesTimestamp verifies SavedAt is set to a
-// recent time on every save.
-func TestStateManager_SaveState_UpdatesTimestamp(t *testing.T) {
-	tmpDir := t.TempDir()
-	stateFile := filepath.Join(tmpDir, "state.json")
-	mgr := NewStateManager(stateFile)
-
-	before := time.Now()
-	if err := mgr.SaveState(&RunState{Phase: "x"}); err != nil {
-		t.Fatalf("SaveState: %v", err)
-	}
-	after := time.Now()
-
-	loaded, err := mgr.LoadState()
-	if err != nil {
-		t.Fatalf("LoadState: %v", err)
-	}
-
-	if loaded.SavedAt.Before(before) || loaded.SavedAt.After(after) {
-		t.Errorf("SavedAt %v is outside expected range [%v, %v]", loaded.SavedAt, before, after)
 	}
 }
 
@@ -558,7 +513,7 @@ func TestOutputParser_NilTailerCallbacks_NoPanic(t *testing.T) {
 
 // TestSignalHandler_SetExecutor verifies SetExecutor updates the executor field.
 func TestSignalHandler_SetExecutor(t *testing.T) {
-	h := NewSignalHandler(nil, nil, nil)
+	h := NewSignalHandler(nil, nil)
 
 	exec1, _ := NewPTYExecutor("echo", []string{"hi"})
 	h.SetExecutor(exec1)
@@ -574,7 +529,7 @@ func TestSignalHandler_SetExecutor(t *testing.T) {
 
 // TestSignalHandler_SetFanInManager verifies SetFanInManager stores the instance.
 func TestSignalHandler_SetFanInManager(t *testing.T) {
-	h := NewSignalHandler(nil, nil, nil)
+	h := NewSignalHandler(nil, nil)
 	fanIn := NewFanInManager(10)
 
 	h.SetFanInManager(fanIn)
@@ -591,7 +546,7 @@ func TestSignalHandler_SetFanInManager(t *testing.T) {
 // TestSignalHandler_Cleanup_NilComponents verifies the cleanup helper does not
 // panic when executor, fanIn, lock, and state are all nil.
 func TestSignalHandler_Cleanup_NilComponents(t *testing.T) {
-	h := NewSignalHandler(nil, nil, nil)
+	h := NewSignalHandler(nil, nil)
 
 	// cleanup is an internal method; exercise it via the exported no-op path.
 	// We call cleanup with an empty monitor list to verify nil guards work.
@@ -728,192 +683,6 @@ func TestPreflightChecker_CheckRepoPaths_EmptyRepos(t *testing.T) {
 	result := checker.CheckRepoPaths()
 	if !result.Passed {
 		t.Errorf("empty repos should pass CheckRepoPaths: %s", result.Message)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// StateManager additional tests (state.go)
-// ---------------------------------------------------------------------------
-
-func TestStateManager_HasState_NoFile(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "nonexistent.json"))
-
-	if sm.HasState() {
-		t.Error("HasState should return false when file doesn't exist")
-	}
-}
-
-func TestStateManager_HasState_ValidFile(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "run.json"))
-
-	state := &RunState{Phase: "running"}
-	if err := sm.SaveState(state); err != nil {
-		t.Fatalf("SaveState: %v", err)
-	}
-
-	if !sm.HasState() {
-		t.Error("HasState should return true after saving state")
-	}
-}
-
-func TestStateManager_IsStale_FreshState(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "run.json"))
-
-	state := &RunState{Phase: "running"}
-	if err := sm.SaveState(state); err != nil {
-		t.Fatalf("SaveState: %v", err)
-	}
-
-	// Just saved = should not be stale
-	if sm.IsStale() {
-		t.Error("IsStale should return false for freshly saved state")
-	}
-}
-
-func TestStateManager_IsStale_OldState(t *testing.T) {
-	dir := t.TempDir()
-	statePath := filepath.Join(dir, "run.json")
-	sm := NewStateManager(statePath)
-
-	// Write a state with old timestamp directly
-	oldTime := time.Now().Add(-48 * time.Hour)
-	content := `{"phase":"running","completed_tasks":null,"pending_tasks":null,"issues_in_progress":null,"saved_at":"` +
-		oldTime.Format(time.RFC3339) + `"}`
-	os.WriteFile(statePath, []byte(content), 0644)
-
-	if !sm.IsStale() {
-		t.Error("IsStale should return true for state saved 48 hours ago")
-	}
-}
-
-func TestStateManager_ClearState_Exists(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "run.json"))
-
-	state := &RunState{Phase: "running"}
-	if err := sm.SaveState(state); err != nil {
-		t.Fatalf("SaveState: %v", err)
-	}
-
-	if err := sm.ClearState(); err != nil {
-		t.Fatalf("ClearState: %v", err)
-	}
-
-	if sm.HasState() {
-		t.Error("HasState should return false after ClearState")
-	}
-}
-
-func TestStateManager_ClearState_NotExists(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "nonexistent.json"))
-
-	// Should not error on missing file
-	if err := sm.ClearState(); err != nil {
-		t.Errorf("ClearState on non-existent file should not error: %v", err)
-	}
-}
-
-func TestStateManager_LoadState_NotFound(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "nonexistent.json"))
-
-	_, err := sm.LoadState()
-	if err == nil {
-		t.Error("LoadState for missing file should return error")
-	}
-}
-
-func TestStateManager_RoundTrip_CompleteTasks(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "run.json"))
-
-	state := &RunState{
-		Phase:            "executing",
-		CompletedTasks:   []string{"task-1", "task-2"},
-		PendingTasks:     []string{"task-3"},
-		IssuesInProgress: []int{10, 20},
-	}
-
-	if err := sm.SaveState(state); err != nil {
-		t.Fatalf("SaveState: %v", err)
-	}
-
-	loaded, err := sm.LoadState()
-	if err != nil {
-		t.Fatalf("LoadState: %v", err)
-	}
-
-	if loaded.Phase != "executing" {
-		t.Errorf("Phase = %q, want 'executing'", loaded.Phase)
-	}
-	if len(loaded.CompletedTasks) != 2 {
-		t.Errorf("CompletedTasks = %v, want 2 items", loaded.CompletedTasks)
-	}
-	if len(loaded.IssuesInProgress) != 2 {
-		t.Errorf("IssuesInProgress = %v, want 2 items", loaded.IssuesInProgress)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// PromptResumeOrFresh (state.go)
-// ---------------------------------------------------------------------------
-
-func TestPromptResumeOrFresh_EmptyDefaultsToResume(t *testing.T) {
-	reader := bufio.NewReader(strings.NewReader("\n"))
-	resume, err := PromptResumeOrFresh(reader)
-	if err != nil {
-		t.Fatalf("PromptResumeOrFresh: %v", err)
-	}
-	if !resume {
-		t.Error("PromptResumeOrFresh with empty input should default to resume=true")
-	}
-}
-
-func TestPromptResumeOrFresh_ExplicitY(t *testing.T) {
-	reader := bufio.NewReader(strings.NewReader("y\n"))
-	resume, err := PromptResumeOrFresh(reader)
-	if err != nil {
-		t.Fatalf("PromptResumeOrFresh: %v", err)
-	}
-	if !resume {
-		t.Error("PromptResumeOrFresh('y') should return resume=true")
-	}
-}
-
-func TestPromptResumeOrFresh_ExplicitN(t *testing.T) {
-	reader := bufio.NewReader(strings.NewReader("n\n"))
-	resume, err := PromptResumeOrFresh(reader)
-	if err != nil {
-		t.Fatalf("PromptResumeOrFresh: %v", err)
-	}
-	if resume {
-		t.Error("PromptResumeOrFresh('n') should return resume=false")
-	}
-}
-
-func TestPromptResumeOrFresh_YesLong(t *testing.T) {
-	reader := bufio.NewReader(strings.NewReader("yes\n"))
-	resume, err := PromptResumeOrFresh(reader)
-	if err != nil {
-		t.Fatalf("PromptResumeOrFresh: %v", err)
-	}
-	if !resume {
-		t.Error("PromptResumeOrFresh('yes') should return resume=true")
-	}
-}
-
-func TestPromptResumeOrFresh_OtherInput(t *testing.T) {
-	reader := bufio.NewReader(strings.NewReader("no\n"))
-	resume, err := PromptResumeOrFresh(reader)
-	if err != nil {
-		t.Fatalf("PromptResumeOrFresh: %v", err)
-	}
-	if resume {
-		t.Error("PromptResumeOrFresh('no') should return resume=false")
 	}
 }
 

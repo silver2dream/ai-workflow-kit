@@ -11,10 +11,6 @@ func TestKitFSContainsRequiredFiles(t *testing.T) {
 	requiredFiles := []string{
 		// Config files
 		".ai/config/workflow.schema.json",
-		".ai/config/audit.schema.json",
-		".ai/config/repo_scan.schema.json",
-		".ai/config/execution_trace.schema.json",
-		".ai/config/failure_patterns.json",
 
 		// Rules
 		".ai/rules/_kit/git-workflow.md",

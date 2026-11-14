@@ -35,7 +35,7 @@ func TestCmdHelp_KnownCommands(t *testing.T) {
 		"init", "install", "upgrade", "uninstall", "kickoff",
 		"validate", "status", "next",
 		"check-result", "dispatch-worker", "run-issue",
-		"session", "analyze-next", "stop-workflow",
+		"analyze-next", "stop-workflow",
 		"prepare-review", "submit-review",
 		"create-task", "create-epic", "audit-epic",
 		"doctor", "reset", "generate", "list-presets",
@@ -480,17 +480,6 @@ func TestCmdKickoff_Help(t *testing.T) {
 }
 
 // ===========================================================================
-// cmdSession subcommand routing (session.go)
-// ===========================================================================
-
-func TestCmdSession_NoArgs(t *testing.T) {
-	exitCode := cmdSession([]string{})
-	if exitCode != 2 {
-		t.Errorf("cmdSession() = %d, want 2", exitCode)
-	}
-}
-
-// ===========================================================================
 // cmdInit flag validation (main.go)
 // ===========================================================================
 
@@ -805,13 +794,6 @@ func TestUsageSubmitReview_ContainsContent(t *testing.T) {
 	}
 	if !strings.Contains(output, "--ci-status") {
 		t.Error("usageSubmitReview should mention --ci-status")
-	}
-}
-
-func TestUsageSession_ContainsContent(t *testing.T) {
-	output := captureStderr(usageSession)
-	if !strings.Contains(output, "session") {
-		t.Error("usageSession should mention 'session'")
 	}
 }
 

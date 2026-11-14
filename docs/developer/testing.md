@@ -71,10 +71,10 @@ cd /path/to/ai-workflow-kit
 go test ./...
 
 # 執行特定套件測試
-go test ./internal/errors/... -v
+go test ./internal/lessons/... -v
 
 # 執行特定測試函數
-go test ./internal/errors -run TestConfigError -v
+go test ./internal/lessons -run TestStore_SaveLoadRoundTrip -v
 
 # 執行符合模式的測試
 go test ./... -run "Test.*Config" -v

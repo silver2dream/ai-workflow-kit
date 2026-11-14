@@ -239,7 +239,6 @@ gh auth login
 # 使用 awkit CLI（建議）
 awkit kickoff --dry-run    # 預覽會執行什麼
 awkit kickoff              # 啟動工作流
-awkit kickoff --resume     # 從上次狀態恢復
 awkit validate             # 只驗證設定
 
 # Legacy bash 腳本已移除；請使用上方的 awkit 命令

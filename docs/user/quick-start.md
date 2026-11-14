@@ -190,7 +190,7 @@ To resume later:
 
 ```bash
 rm .ai/state/STOP
-awkit kickoff --resume
+awkit kickoff
 ```
 
 ---

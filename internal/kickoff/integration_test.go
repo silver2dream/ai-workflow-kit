@@ -130,54 +130,6 @@ specs:
 	}
 }
 
-// TestIntegration_StateResumeFlow tests save/load state flow
-func TestIntegration_StateResumeFlow(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "integration-state-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	stateFile := filepath.Join(tmpDir, "last_run.json")
-	stateMgr := NewStateManager(stateFile)
-
-	// 1. Save state
-	state := &RunState{
-		Phase:            "STEP-3",
-		CompletedTasks:   []string{"1.1", "1.2"},
-		PendingTasks:     []string{"2.1", "2.2"},
-		IssuesInProgress: []int{42},
-	}
-
-	if err := stateMgr.SaveState(state); err != nil {
-		t.Fatalf("SaveState failed: %v", err)
-	}
-
-	// 2. Load state (simulating resume)
-	loaded, err := stateMgr.LoadState()
-	if err != nil {
-		t.Fatalf("LoadState failed: %v", err)
-	}
-
-	// Verify state matches
-	if loaded.Phase != state.Phase {
-		t.Errorf("Phase = %q, want %q", loaded.Phase, state.Phase)
-	}
-
-	if len(loaded.CompletedTasks) != len(state.CompletedTasks) {
-		t.Errorf("CompletedTasks count = %d, want %d", len(loaded.CompletedTasks), len(state.CompletedTasks))
-	}
-
-	if len(loaded.IssuesInProgress) != 1 || loaded.IssuesInProgress[0] != 42 {
-		t.Errorf("IssuesInProgress = %v, want [42]", loaded.IssuesInProgress)
-	}
-
-	// 3. Verify not stale (just saved)
-	if stateMgr.IsStale() {
-		t.Error("Just-saved state should not be stale")
-	}
-}
-
 // TestIntegration_LoggerWithOutput tests logger captures all output
 func TestIntegration_LoggerWithOutput(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "integration-logger-*")
@@ -288,7 +240,7 @@ func TestProperty13_LockReleaseOnSignal(t *testing.T) {
 	}
 
 	// Simulate signal handler releasing lock
-	handler := NewSignalHandler(nil, nil, lock)
+	handler := NewSignalHandler(nil, lock)
 
 	// Manually trigger cleanup (without os.Exit)
 	handler.mu.Lock()

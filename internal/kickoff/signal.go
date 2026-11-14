@@ -24,7 +24,6 @@ const (
 // SignalHandler handles graceful shutdown on signals
 type SignalHandler struct {
 	executor     *PTYExecutor
-	state        *StateManager
 	lock         *LockManager
 	fanIn        *FanInManager
 	monitors     []*IssueMonitor
@@ -39,10 +38,9 @@ type SignalHandler struct {
 }
 
 // NewSignalHandler creates a new SignalHandler
-func NewSignalHandler(executor *PTYExecutor, state *StateManager, lock *LockManager) *SignalHandler {
+func NewSignalHandler(executor *PTYExecutor, lock *LockManager) *SignalHandler {
 	return &SignalHandler{
 		executor:    executor,
-		state:       state,
 		lock:        lock,
 		gracefulTO:  GracefulTimeout,
 		forceKillTO: ForceKillTimeout,
