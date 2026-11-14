@@ -136,35 +136,8 @@ func cmdRun(args []string) int {
 		return 0
 	}
 
-	setRunScope(*issue)
-	setPrincipalShellTimeouts()
-
-	// The marker of the last run ended that run. This one starts without it.
-	if err := stopmark.Clear("."); err != nil {
-		output.Error(fmt.Sprintf("Failed to clear the STOP marker of the last run: %v", err))
-		return 1
-	}
-
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		output.Error(fmt.Sprintf("Failed to create log directory: %v", err))
-		return 1
-	}
-
-	// Initialize loop_count for Loop Safety mechanism
-	loopCountFile := filepath.Join(".ai", "state", "loop_count")
-	if err := os.MkdirAll(filepath.Dir(loopCountFile), 0755); err != nil {
-		output.Error(fmt.Sprintf("Failed to create state directory: %v", err))
-		return 1
-	}
-	if err := os.WriteFile(loopCountFile, []byte("0"), 0644); err != nil {
-		output.Error(fmt.Sprintf("Failed to initialize loop_count: %v", err))
-		return 1
-	}
-
-	// Initialize consecutive_failures
-	consecutiveFailuresFile := filepath.Join(".ai", "state", "consecutive_failures")
-	if err := os.WriteFile(consecutiveFailuresFile, []byte("0"), 0644); err != nil {
-		output.Error(fmt.Sprintf("Failed to initialize consecutive_failures: %v", err))
+	if err := startRun(".", *issue); err != nil {
+		output.Error(fmt.Sprintf("The run could not start: %v", err))
 		return 1
 	}
 
@@ -845,6 +818,40 @@ func setRunScope(issue int) {
 		return
 	}
 	_ = os.Unsetenv(analyzer.ScopeEnv)
+}
+
+// startRun brings the project at root to where a run starts from, once its
+// checks have passed: what the commands of the run are told through the
+// environment (the ticket the run is limited to, how long the Principal's
+// shell lets a command run), no STOP marker of the last run, and the counters
+// of the loop's limits at zero.
+//
+// It is one function so that it has a test. Each part was found missing the
+// hard way: without the shell timeouts a Worker is killed twelve minutes in,
+// with the marker of the last run the first analyze-next ends this one, and
+// with the counters of the last run the loop stops at a limit it reached
+// long ago.
+func startRun(root string, issue int) error {
+	setRunScope(issue)
+	setPrincipalShellTimeouts()
+
+	// The marker of the last run ended that run. This one starts without it.
+	if err := stopmark.Clear(root); err != nil {
+		return fmt.Errorf("the STOP marker of the last run cannot be cleared: %w", err)
+	}
+	if err := os.MkdirAll(layout.Logs(root), 0755); err != nil {
+		return fmt.Errorf("the log directory cannot be created: %w", err)
+	}
+	for _, counter := range []string{"loop_count", "consecutive_failures"} {
+		file := layout.State(root, counter)
+		if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
+			return fmt.Errorf("the state directory cannot be created: %w", err)
+		}
+		if err := os.WriteFile(file, []byte("0"), 0644); err != nil {
+			return fmt.Errorf("%s cannot be set to zero: %w", counter, err)
+		}
+	}
+	return nil
 }
 
 // principalShellTimeout is how long the Principal's shell tool lets one
