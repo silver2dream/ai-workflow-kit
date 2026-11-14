@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -44,16 +45,23 @@ func TestIntegration_PreflightToLockRelease(t *testing.T) {
 		t.Skip("Skipping: working directory not clean")
 	}
 
+	// The integration branch has to be on the remote, so the fixture names a
+	// branch the origin of the repository this test runs in has: its default
+	// branch.
+	head, err := exec.Command("git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD").Output()
+	branch := strings.TrimPrefix(strings.TrimSpace(string(head)), "origin/")
+	if err != nil || branch == "" {
+		t.Skip("Skipping: the default branch of origin is not known here")
+	}
+
 	tmpDir, err := os.MkdirTemp("", "integration-e2e-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Setup config in the production layout (<root>/.ai/config/workflow.yaml):
-	// baseDir() resolves the state root by walking three levels up from the
-	// config path, so the fixture must mirror the real structure or the
-	// spec-file checks resolve outside tmpDir.
+	// The config is where a project keeps it (<root>/.ai/config.yaml): the
+	// checks find the project's root from the config's path.
 	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("Failed to create config dir: %v", err)
@@ -68,7 +76,7 @@ repos:
     type: root
     path: ./
 git:
-  integration_branch: feat/test
+  integration_branch: "` + branch + `"
 `
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
