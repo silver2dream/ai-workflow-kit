@@ -37,115 +37,64 @@ func NewPreflightChecker(configPath, lockFile string) *PreflightChecker {
 	}
 }
 
-// RunAll executes all pre-flight checks
+// preflightStep is one check of a run: what is checked, and whether the run
+// stops when the check fails. What stops it is named in the error.
+type preflightStep struct {
+	name  string
+	check func() CheckResult
+	fatal bool
+}
+
+// steps lists the checks of a run in the order they are made. A check after
+// one that stops the run is not made: without `gh` there is no asking it who
+// is logged in.
+func (p *PreflightChecker) steps() []preflightStep {
+	return []preflightStep{
+		{"gh CLI", p.CheckGhCLI, true},
+		{"gh auth", p.CheckGhAuth, true},
+		{"claude CLI", p.CheckClaudeCLI, true},
+		// The Worker's backend: a warning here. `awkit doctor` calls it what
+		// it is, a problem.
+		{"worker backend", p.CheckCodexCLI, false},
+		// A repository with a remote: the workflow lives in GitHub issues and
+		// pull requests, and a Worker pushes its branch to origin.
+		{"git remote", p.CheckGitRemote, true},
+		{"git", p.CheckGitClean, true},
+		// The marker of the last run: said, and cleared when the run starts.
+		{"stop marker", p.CheckStopMarker, false},
+		{"lock", p.CheckLockFile, true},
+		{"config", p.CheckConfig, true},
+		{"repo paths", p.CheckRepoPaths, true},
+		// Every ticket is branched from the integration branch and its pull
+		// request is opened against it.
+		{"integration branch", p.CheckIntegrationBranch, true},
+		{"GitHub repo", p.CheckGitHubRepo, false},
+		// A read-only token passes `gh auth status` but 403s on every
+		// state-changing call — create issue, approve/merge PR, move labels —
+		// which silently spins the workflow loop for dozens of sessions.
+		{"repo write access", p.CheckRepoWritePermission, true},
+		// Without a PTY the run falls back to standard execution.
+		{"PTY", p.CheckPTY, false},
+		{"permissions", p.CheckPermissions, false},
+		{"agents", p.CheckAgents, false},
+	}
+}
+
+// RunAll makes the checks of a run and returns what each one said. It stops
+// at the first check that fails and stops the run, and says which.
 func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
+	return runSteps(p.steps())
+}
+
+func runSteps(steps []preflightStep) ([]CheckResult, error) {
 	var results []CheckResult
-
-	// 1. Check gh CLI installed
-	ghResult := p.CheckGhCLI()
-	results = append(results, ghResult)
-	if !ghResult.Passed {
-		return results, fmt.Errorf("gh CLI check failed: %s", ghResult.Message)
+	for _, step := range steps {
+		result := step.check()
+		results = append(results, result)
+		if step.fatal && !result.Passed {
+			return results, fmt.Errorf("%s check failed: %s", step.name, result.Message)
+		}
 	}
-
-	// 2. Check gh auth
-	ghAuthResult := p.CheckGhAuth()
-	results = append(results, ghAuthResult)
-	if !ghAuthResult.Passed {
-		return results, fmt.Errorf("gh auth check failed: %s", ghAuthResult.Message)
-	}
-
-	// 3. Check claude CLI installed
-	claudeResult := p.CheckClaudeCLI()
-	results = append(results, claudeResult)
-	if !claudeResult.Passed {
-		return results, fmt.Errorf("claude CLI check failed: %s", claudeResult.Message)
-	}
-
-	// 4. Check codex CLI (warning only)
-	codexResult := p.CheckCodexCLI()
-	results = append(results, codexResult)
-	// Non-fatal, just warning
-
-	// 4b. A repository with a remote: the workflow lives in GitHub issues and
-	// pull requests, and a Worker pushes its branch to origin.
-	remoteResult := p.CheckGitRemote()
-	results = append(results, remoteResult)
-	if !remoteResult.Passed {
-		return results, fmt.Errorf("git remote check failed: %s", remoteResult.Message)
-	}
-
-	// 5. Check working directory is clean
-	gitResult := p.CheckGitClean()
-	results = append(results, gitResult)
-	if !gitResult.Passed {
-		return results, fmt.Errorf("git check failed: %s", gitResult.Message)
-	}
-
-	// 6. Check STOP marker
-	stopResult := p.CheckStopMarker()
-	results = append(results, stopResult)
-	if !stopResult.Passed {
-		return results, fmt.Errorf("stop marker check failed: %s", stopResult.Message)
-	}
-
-	// 7. Check lock file
-	lockResult := p.CheckLockFile()
-	results = append(results, lockResult)
-	if !lockResult.Passed {
-		return results, fmt.Errorf("lock check failed: %s", lockResult.Message)
-	}
-
-	// 8. Check config
-	configResult := p.CheckConfig()
-	results = append(results, configResult)
-	if !configResult.Passed {
-		return results, fmt.Errorf("config check failed: %s", configResult.Message)
-	}
-
-	// 9. Check repo paths (fatal)
-	repoPathsResult := p.CheckRepoPaths()
-	results = append(results, repoPathsResult)
-	if !repoPathsResult.Passed {
-		return results, fmt.Errorf("repo paths check failed: %s", repoPathsResult.Message)
-	}
-
-	// 10. Check the integration branch: every ticket needs it on the remote
-	branchResult := p.CheckIntegrationBranch()
-	results = append(results, branchResult)
-	if !branchResult.Passed {
-		return results, fmt.Errorf("integration branch check failed: %s", branchResult.Message)
-	}
-
-	// 11. Check GitHub repo (warning only)
-	ghRepoResult := p.CheckGitHubRepo()
-	results = append(results, ghRepoResult)
-
-	// 11b. Check repo write access (fatal). A read-only token passes `gh auth
-	// status` but 403s on every state-changing call — create issue, approve/merge
-	// PR, move labels — which silently spins the workflow loop for dozens of
-	// sessions. Catch it here instead of letting the run burn.
-	writeResult := p.CheckRepoWritePermission()
-	results = append(results, writeResult)
-	if !writeResult.Passed {
-		return results, fmt.Errorf("repo write access check failed: %s", writeResult.Message)
-	}
-
-	// 12. Check PTY
-	ptyResult := p.CheckPTY()
-	results = append(results, ptyResult)
-	// PTY check is non-fatal (will fallback to standard execution)
-
-	// 13. Check permissions (warning only, non-fatal)
-	permResult := p.CheckPermissions()
-	results = append(results, permResult)
-	// Permissions check is non-fatal but important warning
-
-	// 16. Check agents (warning only, non-fatal)
-	agentsResult := p.CheckAgents()
-	results = append(results, agentsResult)
-	// Agents check is non-fatal but critical for Task tool subagents
-
 	return results, nil
 }
 

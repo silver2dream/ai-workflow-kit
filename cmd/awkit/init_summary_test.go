@@ -317,3 +317,66 @@ func TestCmdUpgrade_ShowsWhatTheGeneratorWarnedAbout(t *testing.T) {
 		t.Errorf("the upgrade prints the generator's progress:\n%s", out)
 	}
 }
+
+// `awkit upgrade --force-config --preset …` writes the preset's
+// configuration over the project's, and the branches the project had chosen
+// come along there too.
+func TestCmdUpgrade_ForceConfigKeepsTheBranches(t *testing.T) {
+	dir := inNewDir(t)
+	captureStdout(t, func() { cmdInit(nil) })
+	path := filepath.Join(dir, ".ai", "config.yaml")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(content), `integration_branch: "main"`, `integration_branch: "next"`, 1)
+	if err := os.WriteFile(path, []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	captureStderr(func() {
+		captureStdout(t, func() {
+			if code := cmdUpgrade([]string{"--force-config", "--preset", "godot-go", "--no-commit"}); code != 0 {
+				t.Errorf("cmdUpgrade = %d, want 0", code)
+			}
+		})
+	})
+	content, _ = os.ReadFile(path)
+	if !strings.Contains(string(content), `integration_branch: "next"`) || !strings.Contains(string(content), "language: csharp") {
+		t.Errorf("the configuration an upgrade wrote over the project's does not keep its branches, or is not the preset's:\n%s", content)
+	}
+}
+
+// What the summary reads and the install above does not show: a repo with
+// one of the two commands has commands (the Worker runs whichever is set),
+// and what the generator warned about is passed on.
+func TestCollectInitSummary_CommandsAndWarnings(t *testing.T) {
+	dir := t.TempDir()
+	writePlanConfig(t, dir, "repos:\n"+
+		"  - {name: builds, path: a/, verify: {build: make}}\n"+
+		"  - {name: tests, path: b/, verify: {test: make test}}\n"+
+		"  - {name: neither, path: c/, verify: {build: \" \", test: \"\"}}\n")
+	got := collectInitSummary(dir, install.PresetGeneric, &install.InstallResult{
+		GenerateWarnings: []string{"the rule backend is listed and has no file"},
+	})
+	if !reflect.DeepEqual(got.NoCommands, []string{"neither"}) {
+		t.Errorf("repos without commands = %v, want only the one that has neither", got.NoCommands)
+	}
+	if !reflect.DeepEqual(got.Warnings, []string{"the rule backend is listed and has no file"}) {
+		t.Errorf("warnings = %v, want the generator's", got.Warnings)
+	}
+}
+
+// With --scaffold the summary names the skeleton by its directories. Init is
+// run on ".", and the installer names the files it wrote by their full paths.
+func TestCmdInit_NamesTheSkeleton(t *testing.T) {
+	inNewDir(t)
+	out := oneSpace(captureStdout(t, func() {
+		if code := cmdInit([]string{"--preset", "godot-go", "--scaffold"}); code != 0 {
+			t.Errorf("cmdInit = %d, want 0", code)
+		}
+	}))
+	if !strings.Contains(out, "backend/, frontend/ the project skeleton, 15 files\n") {
+		t.Errorf("init --scaffold does not name the skeleton:\n%s", out)
+	}
+}

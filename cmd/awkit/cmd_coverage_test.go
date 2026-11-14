@@ -884,6 +884,30 @@ func TestUsage_ListsWhatAPersonRuns(t *testing.T) {
 	}
 }
 
+// The command line reaches what it names: `awkit help --all` the long list,
+// and `awkit stop` the command that asks a run to stop.
+func TestRun_ReachesHelpAllAndStop(t *testing.T) {
+	previous := os.Args
+	t.Cleanup(func() { os.Args = previous })
+
+	var code int
+	os.Args = []string{"awkit", "help", "--all"}
+	output := captureStderr(func() { code = run() })
+	if code != 0 || !strings.Contains(output, "dispatch-worker") {
+		t.Errorf("awkit help --all = %d, without the workflow's own commands:\n%s", code, output)
+	}
+	os.Args = []string{"awkit", "help"}
+	if output := captureStderr(func() { code = run() }); code != 0 || strings.Contains(output, "dispatch-worker") {
+		t.Errorf("awkit help = %d, with the workflow's own commands:\n%s", code, output)
+	}
+
+	os.Args = []string{"awkit", "stop", "--help"}
+	output = captureStderr(func() { code = run() })
+	if code != 0 || strings.Contains(output, "Unknown command") || !strings.Contains(output, "awkit stop\n") {
+		t.Errorf("awkit stop --help = %d:\n%s", code, output)
+	}
+}
+
 // `awkit help --all` names every command there is, each once, and every one
 // of them has its own help.
 func TestUsageAll_ListsEveryCommandOnce(t *testing.T) {
