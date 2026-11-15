@@ -49,11 +49,11 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 # 在當前目錄初始化 AWK
 awkit init
 
-# 或使用 preset
-awkit init --preset react-go
+# 或使用 preset（Go 後端 + Godot C# 前端）
+awkit init --preset godot-go
 
 # 或指定路徑
-awkit init /path/to/your-project --preset react-go
+awkit init /path/to/your-project --preset godot-go
 ```
 
 升級現有專案：
@@ -115,10 +115,10 @@ repos:
   - name: frontend
     path: frontend/
     type: directory
-    language: node
+    language: csharp
     verify:
-      build: "npm run build"
-      test: "npm test"
+      build: "dotnet build"
+      test: "dotnet test"
 ```
 
 ### 步驟 2：生成設定檔
@@ -269,8 +269,8 @@ brew install bash
 awkit init [path] [options]
 
 Options:
-  --preset <name>     使用指定 preset (generic, react-go, go, python 等)
-  --scaffold          建立專案基本結構
+  --preset <name>     使用指定 preset (generic 或 godot-go)
+  --scaffold          建立專案骨架（僅 godot-go）
   --force             覆蓋所有現有檔案
   --force-config      只覆蓋 workflow.yaml
   --dry-run           預覽操作，不實際執行

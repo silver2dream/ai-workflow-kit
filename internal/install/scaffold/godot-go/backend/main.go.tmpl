@@ -1,0 +1,16 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"{{BACKEND_MODULE}}/health"
+)
+
+func main() {
+	if err := json.NewEncoder(os.Stdout).Encode(health.Get()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}

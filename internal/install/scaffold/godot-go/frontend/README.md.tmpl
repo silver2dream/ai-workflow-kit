@@ -1,0 +1,14 @@
+# Frontend
+
+Godot .NET client for {{PROJECT_NAME}}, written in C#.
+
+- `src/Game.Core/` holds game state and rules as plain C#. It does not reference the engine, so it is tested without it.
+- `tests/Game.Core.Tests/` holds the xUnit tests for `Game.Core`.
+- `game/` is the Godot project. Scenes and nodes live here and call into `Game.Core`.
+
+```bash
+dotnet build      # builds every project in Frontend.sln, warnings are errors
+dotnet test       # runs the xUnit tests
+```
+
+Open `game/project.godot` with the .NET build of Godot to run the game.

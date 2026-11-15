@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -30,9 +31,20 @@ func RunTests(ctx context.Context, workDir string, tests []GeneratedTest, testCo
 		cleanupJiTFiles(workDir, writtenFiles)
 	}()
 
-	// Write test files to worktree
-	for _, test := range tests {
-		fullPath := filepath.Join(workDir, test.Filename)
+	// Write test files to worktree. The file names come from a model that
+	// read the diff, so each is checked before anything is written.
+	writtenAs := make(map[int]string, len(tests))
+	for i, test := range tests {
+		fullPath, pathErr := jitTestPath(workDir, test.Filename)
+		if pathErr != nil {
+			result.Skipped++
+			result.Tests = append(result.Tests, TestOutcome{
+				Test:   test,
+				Passed: false,
+				Error:  fmt.Sprintf("refused to write %q: %v", test.Filename, pathErr),
+			})
+			continue
+		}
 
 		// Create parent directory if needed
 		dir := filepath.Dir(fullPath)
@@ -56,6 +68,7 @@ func RunTests(ctx context.Context, workDir string, tests []GeneratedTest, testCo
 			continue
 		}
 		writtenFiles = append(writtenFiles, fullPath)
+		writtenAs[i] = fullPath
 	}
 
 	if len(writtenFiles) == 0 {
@@ -75,15 +88,8 @@ func RunTests(ctx context.Context, workDir string, tests []GeneratedTest, testCo
 		result.Tests = nil // clear any partial results
 	} else {
 		// Parse individual test results from output
-		for _, test := range tests {
-			wasWritten := false
-			for _, wf := range writtenFiles {
-				if filepath.Join(workDir, test.Filename) == wf {
-					wasWritten = true
-					break
-				}
-			}
-			if !wasWritten {
+		for i, test := range tests {
+			if _, wasWritten := writtenAs[i]; !wasWritten {
 				continue // already counted as skipped
 			}
 
@@ -108,6 +114,73 @@ func RunTests(ctx context.Context, workDir string, tests []GeneratedTest, testCo
 
 	result.Duration = time.Since(start)
 	return result
+}
+
+// jitTestPath returns where a generated test is written, or why it is not.
+//
+// The name must stay inside the worktree (also once symlinks are followed),
+// keep out of dot-directories such as .git and .github, hold "jittest" so
+// the cleanup finds the file, and name a file that does not exist yet: the
+// cleanup deletes whatever was written.
+func jitTestPath(workDir, filename string) (string, error) {
+	name := filepath.FromSlash(strings.TrimSpace(filename))
+	if name == "" || filepath.IsAbs(name) || filepath.VolumeName(name) != "" || strings.HasPrefix(name, string(filepath.Separator)) {
+		return "", fmt.Errorf("not a path inside the worktree")
+	}
+	full := filepath.Join(workDir, name)
+	rel, err := filepath.Rel(workDir, full)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("the path leaves the worktree")
+	}
+	segments := strings.Split(rel, string(filepath.Separator))
+	for _, segment := range segments[:len(segments)-1] {
+		if strings.HasPrefix(segment, ".") {
+			return "", fmt.Errorf("tests do not go into %s", segment)
+		}
+	}
+	if !strings.Contains(filepath.Base(full), "jittest") {
+		return "", fmt.Errorf(`the file name must contain "jittest"`)
+	}
+	if _, err := os.Lstat(full); err == nil {
+		return "", fmt.Errorf("the file already exists")
+	}
+
+	// A directory of the worktree may be a link to somewhere else.
+	realRoot, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		return "", fmt.Errorf("the worktree cannot be resolved: %w", err)
+	}
+	ancestor := filepath.Dir(full)
+	for {
+		if _, err := os.Lstat(ancestor); err == nil {
+			break
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			break
+		}
+		ancestor = parent
+	}
+	realAncestor, err := filepath.EvalSymlinks(ancestor)
+	if err != nil {
+		return "", fmt.Errorf("the directory cannot be resolved: %w", err)
+	}
+	if inside, err := filepath.Rel(realRoot, realAncestor); err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("the directory is a link out of the worktree")
+	}
+	return full, nil
+}
+
+// inAnyDir reports whether a file name lies inside one of the directories.
+// Both use forward slashes and are relative to the worktree.
+func inAnyDir(filename string, dirs []string) bool {
+	name := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(filename))))
+	for _, dir := range dirs {
+		if dir == "." || strings.HasPrefix(name, strings.TrimSuffix(dir, "/")+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // testExecOutcome holds raw execution results.
@@ -188,8 +261,14 @@ func cleanupJiTFiles(workDir string, writtenFiles []string) {
 	})
 }
 
+// csharpCompileError is a C# compiler diagnostic, as in "error CS0103: ...".
+var csharpCompileError = regexp.MustCompile(`\berror CS\d{4}\b`)
+
 // isCompileError checks if the output indicates a compilation failure.
 func isCompileError(output string) bool {
+	if csharpCompileError.MatchString(output) {
+		return true
+	}
 	indicators := []string{
 		"build failed",
 		"compilation failed",
@@ -197,7 +276,7 @@ func isCompileError(output string) bool {
 		"could not import",
 		"syntax error",
 		"does not compile",
-		"TS2",  // TypeScript error codes
+		"TS2", // TypeScript error codes
 		"SyntaxError:",
 		"ModuleNotFoundError:",
 	}

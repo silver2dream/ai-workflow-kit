@@ -52,17 +52,17 @@ awkit version
 ```bash
 cd /path/to/your-project
 
-# Basic init
-awkit init --preset go --scaffold
+# Any stack: a single repo, you name the build and test commands
+awkit init
 
-# Or for a monorepo
-awkit init --preset react-go --scaffold
+# Go backend + Godot C# frontend, with a project skeleton
+awkit init --preset godot-go --scaffold
 
 # Preview without writing files
-awkit init --preset go --scaffold --dry-run
+awkit init --preset godot-go --scaffold --dry-run
 ```
 
-Run `awkit list-presets` to see all available presets (generic, go, python, rust, dotnet, node, react-go, unity-go, etc.).
+There are two presets, `generic` (the default) and `godot-go`; `awkit list-presets` describes them. With `generic`, set `verify.build` and `verify.test` in `.ai/config/workflow.yaml` before the first run.
 
 ---
 

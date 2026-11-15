@@ -86,7 +86,10 @@ jobs:
       - name: Go test (awkit, windows)
         run: go test ./...
 
-  backend:
+  # The project `awkit init --preset godot-go --scaffold` writes is built and
+  # tested with the commands of the CI workflows generated for it: the Go
+  # backend, and the Godot C# frontend with the .NET SDK and NuGet.
+  skeleton:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -97,30 +100,14 @@ jobs:
         with:
           go-version: "1.25.x"
 
-      - name: Go test
-        working-directory: backend
-        run: go test -race ./...
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
 
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Frontend sanity
-        working-directory: frontend
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -d Assets
-          test -f Packages/manifest.json
-          python3 - <<'PY'
-          import json, pathlib, sys
-          p = pathlib.Path("Packages/manifest.json")
-          try:
-            json.loads(p.read_text(encoding="utf-8"))
-          except Exception as e:
-            print(f"invalid manifest.json: {e}")
-            sys.exit(2)
-          print("ok: Packages/manifest.json valid json")
-          PY
+      - name: Build and test the godot-go skeleton
+        env:
+          AWKIT_SKELETON_E2E: "1"
+          DOTNET_NOLOGO: "1"
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+        run: go test ./internal/install/ -run TestSkeleton -count=1 -v

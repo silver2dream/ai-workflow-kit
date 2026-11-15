@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 )
 
 // Repo is the minimal repo shape selfheal needs: where the repo lives and what
@@ -38,43 +39,30 @@ type ScaffoldReconcile struct {
 // existing project (whose config never recorded the preset) can still be
 // reconciled. Returns "" when the repo mix matches no known preset.
 func inferPreset(repos []Repo) string {
-	var backend, frontend string
+	var goBackend, csharpFrontend bool
 	for _, r := range repos {
-		switch strings.ToLower(r.Language) {
-		case "go":
-			backend = "go"
-		case "python":
-			backend = "python"
-		case "node", "react", "typescript", "javascript":
-			frontend = "react"
+		switch repo.ToolchainOf(r.Language) {
+		case repo.ToolchainGo:
+			goBackend = true
+		case repo.ToolchainDotnet:
+			csharpFrontend = true
 		}
 	}
-	switch {
-	case frontend == "react" && backend == "go":
-		return "react-go"
-	case frontend == "react" && backend == "python":
-		return "react-python"
-	case backend == "go" && frontend == "":
-		return "go"
-	case backend == "python" && frontend == "":
-		return "python"
-	case frontend == "react" && backend == "":
-		return "node"
-	default:
-		return ""
+	if goBackend && csharpFrontend {
+		return install.PresetGodotGo
 	}
+	return ""
 }
 
-// repoBaseFile is the file whose presence proves a repo's scaffold exists.
+// repoBaseFile is the file whose presence proves a repo's scaffold exists, or
+// "" when no single file can prove it. A C# repo has none: its solution and
+// project files are named by the project, so their absence under the
+// skeleton's names says nothing.
 func repoBaseFile(r Repo) string {
 	path := strings.TrimSuffix(r.Path, "/")
-	switch strings.ToLower(r.Language) {
-	case "go":
+	switch repo.ToolchainOf(r.Language) {
+	case repo.ToolchainGo:
 		return join(path, "go.mod")
-	case "node", "react", "typescript", "javascript":
-		return join(path, "package.json")
-	case "python":
-		return join(path, "pyproject.toml")
 	default:
 		return ""
 	}
@@ -176,19 +164,16 @@ func applyScaffoldToBranch(stateRoot, branch, preset string) error {
 		return fmt.Errorf("worktree add: %w", err)
 	}
 
-	// SkipDeps: commit the source scaffold only. No npm install runs, so no
-	// node_modules can exist to be committed — which is also why we deliberately
-	// do NOT write our own .gitignore here. A .gitignore that differs even
-	// slightly from the one `awkit init` commits becomes an add/add conflict
-	// against any in-flight scaffold PR (this is exactly what stalled
-	// tennis-arena's PR #8). The .gitignore is init's concern; reconcile restores
-	// only what's needed to unblock workers branching from the integration branch.
+	// Only the skeleton's own files are written. The root .gitignore is left to
+	// `awkit init`: one that differs even slightly from the one init commits
+	// becomes an add/add conflict against any in-flight scaffold PR (this is
+	// exactly what stalled tennis-arena's PR #8). Reconcile restores only what
+	// is needed to unblock workers branching from the integration branch.
 	if _, err := install.Scaffold(wt, install.ScaffoldOptions{
 		Preset:      preset,
 		TargetDir:   wt,
 		ProjectName: filepath.Base(strings.TrimSuffix(stateRoot, "/")),
 		Force:       false, // never clobber existing files — only fill the gaps
-		SkipDeps:    true,  // commit source only — never install/commit node_modules
 	}); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}

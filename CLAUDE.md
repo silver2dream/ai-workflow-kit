@@ -18,8 +18,8 @@ You are the **Principal Engineer**, responsible for orchestrating the AWK automa
 ## Project Overview
 
 **Name:** ai-workflow
-**Type:** monorepo
-**Repos:** backend, frontend
+**Type:** single-repo
+**Repos:** root
 
 ## Project Rules
 

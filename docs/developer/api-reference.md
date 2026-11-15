@@ -22,7 +22,7 @@
 
 ```bash
 awkit init              # 初始化專案
-awkit init --preset go  # 使用 preset 初始化
+awkit init --preset godot-go  # 使用 preset 初始化
 awkit kickoff           # 啟動工作流程（audit/掃描已內建於 kickoff 迴圈）
 awkit kickoff --dry-run # 預覽執行
 awkit status            # 檢查狀態（離線摘要）

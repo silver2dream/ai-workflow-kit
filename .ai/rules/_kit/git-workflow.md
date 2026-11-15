@@ -2,20 +2,16 @@
 
 ## 0. Branch Model
 
-This project uses directories (monorepo without submodules):
-- `backend/` - backend (go)
-- `frontend/` - frontend (unity)
 
 Branches:
-- **Integration branch**: `feat/example` (daily development, **target for all PRs**)
-- **Release branch**: `main` (release-only; merge from `feat/example` when releasing)
+- **Integration branch**: `develop` (daily development, **target for all PRs**)
+- **Release branch**: `main` (release-only; merge from `develop` when releasing)
 
 PR base rules:
-- backend repo PR base: `feat/example` (default)
-- frontend repo PR base: `feat/example` (default)
+- root repo PR base: `develop` (default)
 
 Release rule (root only):
-- Only create PR from `feat/example` -> `main` for release tickets.
+- Only create PR from `develop` -> `main` for release tickets.
 - Do NOT target `main` unless the ticket explicitly says `Release: true`.
 
 ## 1. Branching Strategy

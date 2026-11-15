@@ -13,6 +13,7 @@ import (
 
 	awkit "github.com/silver2dream/ai-workflow-kit"
 	"github.com/silver2dream/ai-workflow-kit/internal/buildinfo"
+	"github.com/silver2dream/ai-workflow-kit/internal/generate"
 	"github.com/silver2dream/ai-workflow-kit/internal/install"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/updatecheck"
@@ -42,25 +43,22 @@ func init() {
 }
 
 var presets = []PresetInfo{
-	// Single-repo presets
-	{Name: "generic", Description: "Generic project (alias for node)", Category: "single-repo"},
-	{Name: "go", Description: "Go single-repo project", Category: "single-repo"},
-	{Name: "python", Description: "Python single-repo project", Category: "single-repo"},
-	{Name: "rust", Description: "Rust single-repo project", Category: "single-repo"},
-	{Name: "dotnet", Description: ".NET single-repo project", Category: "single-repo"},
-	{Name: "node", Description: "Node.js/TypeScript single-repo project", Category: "single-repo"},
-	// Monorepo presets
-	{Name: "react-go", Description: "React frontend + Go backend", Category: "monorepo"},
-	{Name: "react-python", Description: "React frontend + Python backend", Category: "monorepo"},
-	{Name: "unity-go", Description: "Unity frontend + Go backend", Category: "monorepo"},
-	{Name: "godot-go", Description: "Godot frontend + Go backend", Category: "monorepo"},
-	{Name: "unreal-go", Description: "Unreal frontend + Go backend", Category: "monorepo"},
+	{Name: install.PresetGeneric, Description: "Any single repository; you set the build and test commands", Category: "single-repo"},
+	{Name: install.PresetGodotGo, Description: "Go backend + Godot C# frontend, with a project skeleton (--scaffold)", Category: "monorepo"},
 }
 
 type PresetInfo struct {
 	Name        string
 	Description string
 	Category    string // "single-repo" | "monorepo"
+}
+
+// noScaffoldForPreset reports that --scaffold was asked of a preset that has
+// no project skeleton, and returns the exit code for a usage error.
+func noScaffoldForPreset(preset string) int {
+	errorf("The %s preset has no project skeleton, so --scaffold has nothing to write.\n", preset)
+	fmt.Fprintf(os.Stderr, "Presets with a skeleton: %s\n", strings.Join(install.ScaffoldPresets(), ", "))
+	return 2
 }
 
 func availablePresetNames() string {
@@ -219,7 +217,7 @@ Commands:
 
 Examples:
   awkit init
-  awkit init --preset react-go
+  awkit init --preset godot-go
   awkit kickoff
   awkit kickoff --dry-run
   awkit validate
@@ -343,18 +341,19 @@ Arguments:
 Options:
   --preset        Project preset (%s) [default: generic]
   --scaffold      Create minimal project structure for the preset
-  --force         Overwrite all existing kit files (and scaffold files if --scaffold)
+  --force         Overwrite all existing kit files, the CI workflows the project took
+                  over, and scaffold files if --scaffold
   --force-config  Overwrite only workflow.yaml (apply preset to existing project)
   --dry-run       Show what would be done without making changes
-  --no-generate   Skip running awkit generate after init
+  --no-generate   Skip the generated files (CLAUDE.md, AGENTS.md, CI workflows)
   --project-name  Override project name in config
 
 Examples:
   awkit init
-  awkit init --preset react-go
-  awkit init --preset go --scaffold
+  awkit init --preset godot-go
+  awkit init --preset godot-go --scaffold
   awkit init /path/to/project --force
-  awkit init --preset react-go --force-config  # Apply preset to existing project
+  awkit init --preset godot-go --force-config  # Apply preset to existing project
   awkit init --dry-run
 
 Run 'awkit list-presets' to see available presets.
@@ -367,7 +366,9 @@ func usageUpgrade() {
 This command updates scripts, templates, commands, rules, and docs
 while preserving your workflow.yaml configuration by default.
 
-CI workflow is automatically migrated (removes deprecated awk job).
+The CI workflows awkit generated follow the new kit. A workflow the project
+wrote or took over is left alone, apart from an old ci.yml losing the
+deprecated awk job; no workflow is added.
 
 Usage:
   awkit upgrade [project_path] [options]
@@ -388,8 +389,8 @@ Examples:
   awkit upgrade
   awkit upgrade /path/to/project
   awkit upgrade --dry-run
-  awkit upgrade --scaffold --preset go
-  awkit upgrade --scaffold --preset react-go --force
+  awkit upgrade --scaffold --preset godot-go
+  awkit upgrade --scaffold --preset godot-go --force
   awkit upgrade --no-commit  # Manual commit control
 `)
 }
@@ -521,6 +522,9 @@ func cmdInit(args []string) int {
 		fmt.Fprintf(os.Stderr, "\nRun 'awkit list-presets' for details.\n")
 		return 2
 	}
+	if *scaffold && !install.HasScaffold(*preset) {
+		return noScaffoldForPreset(*preset)
+	}
 
 	// Resolve target for display
 	displayTarget := targetDir
@@ -538,9 +542,6 @@ func cmdInit(args []string) int {
 	}
 	fmt.Printf("  Target:  %s\n", cyan(displayTarget))
 	fmt.Printf("  Preset:  %s\n", cyan(*preset))
-	if *scaffold && *preset == "generic" {
-		fmt.Printf("  Using default preset: %s\n", cyan("generic (node)"))
-	}
 	if *force {
 		fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
 	} else if *forceConfig {
@@ -564,7 +565,7 @@ func cmdInit(args []string) int {
 		fmt.Println("  .ai/exe-logs/ (runtime, gitignored)")
 		fmt.Println("  .worktrees/ (gitignored)")
 		fmt.Println("  .claude/agents/")
-		fmt.Println("  .github/workflows/ci.yml (if missing)")
+		fmt.Println("  .github/workflows/ (a CI workflow per repo that has build or test commands)")
 		fmt.Println("  .gitignore (append AWK entries)")
 		fmt.Println("  .gitattributes (if missing)")
 
@@ -610,14 +611,19 @@ func cmdInit(args []string) int {
 		return 0
 	}
 
+	// A CI workflow for every repo that has commands to run. One the project
+	// took over is left alone unless --force.
+	ciPolicy := generate.CISync
+	if *force {
+		ciPolicy = generate.CIRewrite
+	}
 	result, err := install.Install(awkit.KitFS, targetDir, install.Options{
 		Preset:      *preset,
 		ProjectName: *projectName,
 		Force:       *force,
 		ForceConfig: *forceConfig,
-		ForceCI:     *force, // --force also overwrites CI
 		NoGenerate:  *noGenerate,
-		WithCI:      true, // CI is always created by default
+		CI:          ciPolicy,
 		Scaffold:    *scaffold,
 	})
 	if err != nil {
@@ -677,6 +683,12 @@ func cmdInit(args []string) int {
 	if result != nil && result.ScaffoldError != nil {
 		fmt.Println("")
 		warn("Scaffold completed with errors: %v\n", result.ScaffoldError)
+	}
+
+	if result != nil && result.GenerateError != nil {
+		fmt.Println("")
+		warn("CLAUDE.md, AGENTS.md and the CI workflows were not written: %v\n", result.GenerateError)
+		fmt.Println("  Fix .ai/config/workflow.yaml, then run awkit init again.")
 	}
 
 	fmt.Println("")
@@ -769,6 +781,9 @@ func cmdUpgrade(args []string) int {
 			fmt.Fprintf(os.Stderr, "\nRun 'awkit list-presets' for details.\n")
 			return 2
 		}
+		if *scaffold && !install.HasScaffold(*preset) {
+			return noScaffoldForPreset(*preset)
+		}
 	}
 
 	// Default to current directory
@@ -812,7 +827,7 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("  .ai/rules/_examples/")
 		fmt.Println("  .ai/skills/")
 		fmt.Println("  .claude/agents/")
-		fmt.Println("  .github/workflows/ci.yml (migrate deprecated awk job)")
+		fmt.Println("  .github/workflows/ (the workflows awkit generated; an old ci.yml loses the awk job)")
 		fmt.Println("")
 		if *forceConfig {
 			fmt.Println("Would overwrite:")
@@ -867,14 +882,6 @@ func cmdUpgrade(args []string) int {
 			fmt.Printf("  %s\n", agentsResult.Message)
 		}
 
-		// Check scaffold alignment (dry-run)
-		scaffoldResult := upgrade.UpgradeScaffold(targetDir, true)
-		if !scaffoldResult.Skipped {
-			fmt.Println("")
-			fmt.Println(bold("Scaffold:"))
-			fmt.Printf("  %s\n", scaffoldResult.Message)
-		}
-
 		// Check config migrations (dry-run)
 		if !*skipMigrate && !*forceConfig {
 			configPath := filepath.Join(targetDir, ".ai", "config", "workflow.yaml")
@@ -902,8 +909,9 @@ func cmdUpgrade(args []string) int {
 		ForceConfig: *forceConfig,
 		SkipConfig:  !*forceConfig, // Preserve workflow.yaml by default
 		NoGenerate:  *noGenerate,
-		WithCI:      true,  // Always migrate CI
-		ForceCI:     false, // Never force-replace CI on upgrade (only migrate)
+		// The workflows awkit owns follow the new kit; none is added, and one
+		// the project took over is left alone.
+		CI: generate.CIRefresh,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "")
@@ -920,6 +928,12 @@ func cmdUpgrade(args []string) int {
 	} else if *forceConfig {
 		fmt.Println("")
 		info("  Config overwritten: .ai/config/workflow.yaml\n")
+	}
+
+	if result != nil && result.GenerateError != nil {
+		fmt.Println("")
+		warn("CLAUDE.md, AGENTS.md and the CI workflows were not regenerated: %v\n", result.GenerateError)
+		fmt.Println("  Fix .ai/config/workflow.yaml, then run awkit generate.")
 	}
 
 	// Upgrade permissions in settings.local.json
@@ -941,17 +955,6 @@ func cmdUpgrade(args []string) int {
 			success("Agents installed: %s\n", agentsResult.Message)
 		} else {
 			warn("Agents install: %s\n", agentsResult.Message)
-		}
-	}
-
-	// Align scaffold with current templates (patch known defects, keep user code)
-	scaffoldResult := upgrade.UpgradeScaffold(targetDir, *dryRun)
-	if !scaffoldResult.Skipped {
-		fmt.Println("")
-		if scaffoldResult.Success {
-			success("Scaffold aligned: %s\n", scaffoldResult.Message)
-		} else {
-			warn("Scaffold align: %s\n", scaffoldResult.Message)
 		}
 	}
 
@@ -979,6 +982,9 @@ func cmdUpgrade(args []string) int {
 
 	// Handle scaffold for upgrade (BEFORE auto-commit so scaffold files are included)
 	var extraCommitPaths []string
+	if result != nil {
+		extraCommitPaths = append(extraCommitPaths, projectWorkflowPaths(targetDir, result.CIWritten, result.CIRemoved)...)
+	}
 	if *scaffold {
 		projectName := filepath.Base(displayTarget)
 		scaffoldResult, scaffoldErr := install.Scaffold(displayTarget, install.ScaffoldOptions{
@@ -1048,6 +1054,23 @@ func cmdUpgrade(args []string) int {
 
 	warnUpdateAvailable()
 	return 0
+}
+
+// projectWorkflowPaths are the workflow files in the project's own
+// .github/workflows, relative to the project. A submodule's workflow belongs
+// to another repository and cannot go into the project's commit.
+func projectWorkflowPaths(targetDir string, fileLists ...[]string) []string {
+	workflowDir := filepath.Join(targetDir, ".github", "workflows")
+	var paths []string
+	for _, files := range fileLists {
+		for _, file := range files {
+			if filepath.Dir(file) != workflowDir {
+				continue
+			}
+			paths = append(paths, filepath.ToSlash(filepath.Join(".github", "workflows", filepath.Base(file))))
+		}
+	}
+	return paths
 }
 
 // autoCommitUpgrade attempts to automatically commit upgrade changes.
@@ -1266,7 +1289,7 @@ _awkit() {
             return 0
             ;;
         --preset)
-            COMPREPLY=( $(compgen -W "generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "generic godot-go" -- ${cur}) )
             return 0
             ;;
         completion)
@@ -1324,7 +1347,7 @@ _awkit() {
     )
 
     local -a presets
-    presets=(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)
+    presets=(generic godot-go)
 
     _arguments -C \
         '1: :->command' \
@@ -1338,7 +1361,7 @@ _awkit() {
             case $words[2] in
                 init|install)
                     _arguments \
-                        '--preset[Project preset]:preset:(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)' \
+                        '--preset[Project preset]:preset:(generic godot-go)' \
                         '--scaffold[Create project structure]' \
                         '--force[Overwrite all existing files]' \
                         '--force-config[Overwrite only workflow.yaml]' \
@@ -1350,7 +1373,7 @@ _awkit() {
                 upgrade)
                     _arguments \
                         '--scaffold[Supplement scaffold files]' \
-                        '--preset[Preset for scaffold]:preset:(generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go)' \
+                        '--preset[Preset for scaffold]:preset:(generic godot-go)' \
                         '--force-config[Overwrite only workflow.yaml]' \
                         '--force[Overwrite scaffold files]' \
                         '--dry-run[Show what would be done]' \
@@ -1418,7 +1441,7 @@ complete -c awkit -n __fish_use_subcommand -a version -d 'Show version'
 complete -c awkit -n __fish_use_subcommand -a help -d 'Show help'
 
 # init/install options
-complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go'
+complete -c awkit -n '__fish_seen_subcommand_from init install' -l preset -d 'Project preset' -xa 'generic godot-go'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l scaffold -d 'Create project structure'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force -d 'Overwrite all existing files'
 complete -c awkit -n '__fish_seen_subcommand_from init install' -l force-config -d 'Overwrite only workflow.yaml'
@@ -1428,7 +1451,7 @@ complete -c awkit -n '__fish_seen_subcommand_from init install' -l project-name 
 
 # upgrade options
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l scaffold -d 'Supplement scaffold files'
-complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset for scaffold' -xa 'generic go python rust dotnet node react-go react-python unity-go godot-go unreal-go'
+complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l preset -d 'Preset for scaffold' -xa 'generic godot-go'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force-config -d 'Overwrite only workflow.yaml'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l force -d 'Overwrite scaffold files'
 complete -c awkit -n '__fish_seen_subcommand_from upgrade' -l dry-run -d 'Show what would be done'

@@ -64,11 +64,12 @@ func TestReconcileIntegrationScaffold_RealPush(t *testing.T) {
 
 	repos := []Repo{
 		{Path: "backend/", Language: "go"},
-		{Path: "frontend/", Language: "node"},
+		{Path: "frontend/", Language: "csharp"},
 	}
+	skeleton := []string{"backend/go.mod", "backend/main.go", "frontend/Frontend.sln", "frontend/game/project.godot"}
 
 	// Sanity: the corruption is present on origin/main.
-	for _, base := range []string{"backend/go.mod", "frontend/package.json"} {
+	for _, base := range skeleton {
 		if hasOnBranch(t, work, "origin/main", base) {
 			t.Fatalf("precondition failed: %s already on origin/main", base)
 		}
@@ -86,18 +87,19 @@ func TestReconcileIntegrationScaffold_RealPush(t *testing.T) {
 	// The scaffold base files must now exist on origin/main. The push happened
 	// from a linked worktree, which shares this repo's remote-tracking refs, so
 	// origin/main here reflects the pushed state.
-	for _, base := range []string{"backend/go.mod", "frontend/package.json"} {
+	for _, base := range skeleton {
 		if !hasOnBranch(t, work, "origin/main", base) {
 			t.Errorf("after reconcile, origin/main still missing %s", base)
 		}
 	}
 
-	// It must NOT have committed dependency trees. SkipDeps means npm install
-	// never runs, so no node_modules can exist to be staged; regressing that
-	// would dump thousands of files onto the integration branch.
+	// Only source files of the skeleton are committed: no template leftovers,
+	// no build output.
 	tree := gitT(t, work, "ls-tree", "-r", "--name-only", "origin/main")
-	if strings.Contains(tree, "node_modules/") {
-		t.Errorf("reconcile committed node_modules to origin/main:\n%s", tree)
+	for _, unwanted := range []string{".tmpl", "/bin/", "/obj/", "{{"} {
+		if strings.Contains(tree, unwanted) {
+			t.Errorf("reconcile committed something it should not (%q) to origin/main:\n%s", unwanted, tree)
+		}
 	}
 	// It must NOT write its own .gitignore: a .gitignore that differs from the one
 	// `awkit init` commits becomes an add/add conflict against an in-flight

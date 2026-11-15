@@ -55,36 +55,21 @@
           "path": { "type": "string" },
           "type": { "enum": ["submodule", "directory", "root"] },
           "language": {
-            "enum": [
-              "go", "golang",
-              "node", "nodejs", "typescript", "javascript",
-              "react", "vue", "angular", "nextjs", "nuxt", "svelte",
-              "express", "nestjs",
-              "python", "django", "flask", "fastapi",
-              "rust",
-              "dotnet", "csharp", "aspnet", "blazor",
-              "unity", "unreal", "ue4", "ue5", "godot",
-              "generic"
-            ]
+            "type": "string",
+            "minLength": 1,
+            "description": "The repo's language. Any name is accepted; for go, csharp (godot), typescript/javascript and python the kit knows the toolchain. For anything else, or generic, it runs the verify commands and assumes nothing.",
+            "examples": ["go", "csharp", "godot", "typescript", "python", "generic"]
           },
           "verify": {
             "type": "object",
             "required": ["build", "test"],
             "properties": {
-              "setup": { "type": "string", "description": "Command to install dependencies before build/test (e.g. npm install)" },
+              "setup": { "type": "string", "description": "Command to run before the build, in the Worker's check and in CI (e.g. dotnet tool restore)" },
               "build": { "type": "string" },
               "test": { "type": "string" }
             }
           },
-          "go_version": { "type": "string" },
-          "node_version": { "type": "string" },
-          "python_version": { "type": "string" },
-          "rust_version": { "type": "string" },
-          "dotnet_version": { "type": "string" },
-          "package_manager": { "enum": ["npm", "yarn", "pnpm"] },
-          "godot_version": { "type": "string" },
-          "ue_version": { "type": "string" },
-          "project_name": { "type": "string" }
+          "package_manager": { "enum": ["npm", "yarn", "pnpm"] }
         }
       }
     },

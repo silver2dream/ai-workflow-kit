@@ -122,7 +122,7 @@ More details: `docs/ai-workflow-architecture.md`.
 - `go` 1.25+
 
 ### Offline (optional)
-- `python3` (used only for the frontend CI JSON-validation example; core generation is built into `awkit`)
+- `dotnet` 8 SDK — builds and tests a C# / Godot frontend (the `godot-go` preset)
 
 ### Online / E2E (optional)
 - `gh` (GitHub CLI) + `gh auth login`
@@ -140,9 +140,7 @@ More details: `docs/ai-workflow-architecture.md`.
 │   ├── templates/               # generators (CLAUDE/AGENTS/CI)
 │   ├── rules/                   # architecture + git workflow rules
 │   └── specs/                   # Kiro-style specs
-├── .github/workflows/ci.yml     # root CI example
-├── backend/                     # directory example (Go)
-└── frontend/                    # directory example (Unity skeleton)
+└── .github/workflows/           # CI, one workflow per repo, generated from the config
 ```
 
 ---
@@ -166,27 +164,26 @@ irm https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/ins
 Install AWK into a project:
 
 ```bash
-# Initialize AWK in current directory
+# Initialize AWK in the current directory: any stack, you name the build and test commands
 awkit init
 
-# With a preset and scaffold
-awkit init --preset go --scaffold
-
-# Monorepo with React + Go
-awkit init --preset react-go --scaffold
+# Go backend + Godot C# frontend, with a project skeleton that builds and passes its tests
+awkit init --preset godot-go --scaffold
 
 # Preview what would be created
-awkit init --preset python --scaffold --dry-run
+awkit init --preset godot-go --scaffold --dry-run
 ```
 
 ### Available Presets
 
-| Category | Presets |
-|----------|---------|
-| Single-Repo | `generic`, `go`, `python`, `rust`, `dotnet`, `node` |
-| Monorepo | `react-go`, `react-python`, `unity-go`, `godot-go`, `unreal-go` |
+| Preset | What you get |
+|--------|--------------|
+| `generic` (default) | A single repo of any stack. You set `verify.build` and `verify.test` in `.ai/config/workflow.yaml`; nothing else is assumed. |
+| `godot-go` | A monorepo: `backend/` in Go, `frontend/` in Godot C#. With `--scaffold`, a skeleton that builds and passes its tests (.NET 8 SDK to build, Godot 4 .NET to open the game). |
 
-Run `awkit list-presets` for details. See [Getting Started](docs/getting-started.md) for scaffold file structures.
+Run `awkit list-presets` for details. See [Getting Started](docs/getting-started.md) for the skeleton's files.
+
+`awkit init` also writes a CI workflow for every repo that has build or test commands, from the same commands the Worker verifies with: `.github/workflows/ci.yml` for a single repo, `ci-<repo>.yml` for each directory repo. A workflow keeps following the config until you delete the comment at its top; from then on it is yours and awkit leaves it alone.
 
 Note: `awkit install` is an alias for `awkit init` (backward compatible).
 
@@ -218,13 +215,13 @@ Other update options:
 
 ```bash
 # Apply a different preset to workflow.yaml only
-awkit init --preset react-go --force-config
+awkit init --preset godot-go --force-config
 
 # Upgrade kit files and overwrite workflow.yaml (requires --preset)
-awkit upgrade --force-config --preset react-go
+awkit upgrade --force-config --preset godot-go
 
 # Full reset: update kit files AND apply preset to workflow.yaml
-awkit init --preset react-go --force
+awkit init --preset godot-go --force
 ```
 
 ### 1) Generate outputs
@@ -339,12 +336,19 @@ lessons:
 
 ---
 
-## 📦 Directory Monorepo Example
+## 📦 Project Skeleton (`godot-go`)
 
-This repo ships with a minimal directory-type example:
+`awkit init --preset godot-go --scaffold` writes a project that builds and passes its tests as it is:
 
-- `backend/`: a tiny Go module + unit test (`go test ./...`)
-- `frontend/`: Unity skeleton (CI runs structure + JSON sanity only)
+- `backend/`: a Go module with a health handler and its test (`go build ./...`, `go test ./...`)
+- `frontend/`: a Godot C# solution (`dotnet build`, `dotnet test`)
+  - `game/`: the Godot project
+  - `src/Game.Core/`: game logic that does not depend on the engine
+  - `tests/Game.Core.Tests/`: xUnit tests of that logic
+- `.github/workflows/ci-backend.yml`, `ci-frontend.yml`: CI that runs those same commands
+
+This repository's own CI initializes such a project on every push and runs its generated workflows' commands, so the skeleton, the preset and the CI generator cannot drift apart.
+
 - Spec example: `.ai/specs/example/`
 - Guide: `docs/getting-started.md`
 

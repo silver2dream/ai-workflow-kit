@@ -426,58 +426,6 @@ project:
 	}
 }
 
-func TestGenerateCIContent(t *testing.T) {
-	repo := RepoConfig{
-		Name:     "backend",
-		Path:     "backend/",
-		Type:     "directory",
-		Language: "go",
-		Verify: VerifyConfig{
-			Build: "go build ./...",
-			Test:  "go test ./...",
-		},
-	}
-	git := GitConfig{
-		IntegrationBranch: "develop",
-		ReleaseBranch:     "main",
-	}
-
-	content := generateCIContent(repo, git, "go")
-
-	if !strings.Contains(content, "backend CI") {
-		t.Error("CI content should contain repo name")
-	}
-	if !strings.Contains(content, "setup-go") {
-		t.Error("Go CI should use setup-go action")
-	}
-	if !strings.Contains(content, "go build") {
-		t.Error("CI content should contain build command")
-	}
-}
-
-func TestGenerateUnityCIContent(t *testing.T) {
-	repo := RepoConfig{
-		Name:     "frontend",
-		Language: "unity",
-	}
-	git := GitConfig{
-		IntegrationBranch: "develop",
-		ReleaseBranch:     "main",
-	}
-
-	content := generateUnityCIContent(repo, git)
-
-	if !strings.Contains(content, "frontend CI") {
-		t.Error("Unity CI should contain repo name")
-	}
-	if !strings.Contains(content, "manifest.json") {
-		t.Error("Unity CI should check manifest.json")
-	}
-	if !strings.Contains(content, ".meta") {
-		t.Error("Unity CI should check .meta files")
-	}
-}
-
 // TestConfigValidation_YAMLSyntaxError tests that malformed YAML fails to parse
 func TestConfigValidation_YAMLSyntaxError(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -724,8 +672,8 @@ project:
 			wantErr: true,
 		},
 		{
-			name: "completely malformed",
-			yaml: `:::invalid:::yaml`,
+			name:    "completely malformed",
+			yaml:    `:::invalid:::yaml`,
 			wantErr: true,
 		},
 	}

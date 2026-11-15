@@ -6,20 +6,6 @@ This directory contains **optional example rule packs** that you can adopt for y
 
 Available examples:
 
-### Tech-Stack Rules (Backend)
-- `backend-go.md` — Go/Nakama backend architecture & patterns
-- `backend-python.md` — Python/FastAPI async API patterns & testing
-- `backend-rust.md` — Rust/Axum error handling & safety patterns
-- `backend-node.md` — Node.js/Express ESM & middleware patterns
-
-### Tech-Stack Rules (Frontend / Mobile)
-- `frontend-react.md` — React + TypeScript frontend architecture
-- `frontend-vue.md` — Vue 3 Composition API + Pinia patterns
-- `frontend-svelte.md` — SvelteKit stores & load functions
-- `frontend-unity.md` — Unity (R3 + UniTask + UI Toolkit) architecture
-- `ui-toolkit-react-to-uxml.md` — React/Tailwind to UXML/USS conversion
-- `mobile-flutter.md` — Flutter/Dart BLoC architecture & testing
-
 ### Methodology Rules
 - `testing-strategy.md` — Test pyramid, coverage, mocking strategy
 - `api-design.md` — REST conventions, versioning, error responses, pagination
@@ -33,7 +19,7 @@ Available examples:
 
 1) Copy the example file into `.ai/rules/`:
 
-- Example: copy `.ai/rules/_examples/backend-go.md` → `.ai/rules/backend-go.md`
+- Example: copy `.ai/rules/_examples/testing-strategy.md` → `.ai/rules/testing-strategy.md`
 
 2) Add the rule name (filename without `.md`) to `.ai/config/workflow.yaml`:
 
@@ -42,7 +28,7 @@ rules:
   kit:
     - git-workflow
   custom:
-    - backend-go
+    - testing-strategy
 ```
 
 3) Regenerate helper docs (recommended):

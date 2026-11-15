@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildPrompt_ContainsRules(t *testing.T) {
-	prompt := buildPrompt("diff here", nil, "go", 5)
+	prompt := buildPrompt(GenerateInput{Diff: "diff here", Language: "go", MaxTests: 5})
 
 	checks := []string{
 		"edge cases",
@@ -26,7 +26,7 @@ func TestBuildPrompt_ContainsSourceFiles(t *testing.T) {
 	sources := map[string]string{
 		"pkg/handler.go": "package pkg\nfunc Handle() {}",
 	}
-	prompt := buildPrompt("diff", sources, "go", 3)
+	prompt := buildPrompt(GenerateInput{Diff: "diff", SourceFiles: sources, Language: "go", MaxTests: 3})
 
 	if !strings.Contains(prompt, "pkg/handler.go") {
 		t.Error("prompt should contain source file path")
@@ -37,54 +37,23 @@ func TestBuildPrompt_ContainsSourceFiles(t *testing.T) {
 }
 
 func TestBuildPrompt_ContainsDiff(t *testing.T) {
-	prompt := buildPrompt("+func NewFeature() {}", nil, "go", 3)
+	prompt := buildPrompt(GenerateInput{Diff: "+func NewFeature() {}", Language: "go", MaxTests: 3})
 	if !strings.Contains(prompt, "+func NewFeature()") {
 		t.Error("prompt should contain the diff")
 	}
 }
 
 func TestBuildPrompt_TypeScriptInstructions(t *testing.T) {
-	prompt := buildPrompt("diff", nil, "typescript", 3)
+	prompt := buildPrompt(GenerateInput{Diff: "diff", Language: "typescript", MaxTests: 3})
 	if !strings.Contains(prompt, "vitest") {
 		t.Error("TypeScript prompt should mention vitest")
 	}
 }
 
 func TestBuildPrompt_PythonInstructions(t *testing.T) {
-	prompt := buildPrompt("diff", nil, "python", 3)
+	prompt := buildPrompt(GenerateInput{Diff: "diff", Language: "python", MaxTests: 3})
 	if !strings.Contains(prompt, "pytest") {
 		t.Error("Python prompt should mention pytest")
-	}
-}
-
-func TestBuildPrompt_UnknownLanguageFallsBackToGo(t *testing.T) {
-	prompt := buildPrompt("diff", nil, "cobol", 3)
-	if !strings.Contains(prompt, "testing") {
-		t.Error("unknown language should fall back to Go testing framework")
-	}
-}
-
-func TestJitTestFilename_Go(t *testing.T) {
-	got := jitTestFilename("internal/config/config.go", "go")
-	want := "internal/config/config_jittest_test.go"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestJitTestFilename_TypeScript(t *testing.T) {
-	got := jitTestFilename("src/utils/parser.ts", "typescript")
-	want := "src/utils/parser.jittest.test.ts"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestJitTestFilename_Python(t *testing.T) {
-	got := jitTestFilename("app/handlers/auth.py", "python")
-	want := "app/handlers/test_auth_jittest.py"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -122,29 +91,6 @@ func TestParseDiffFiles_Dedup(t *testing.T) {
 	files := parseDiffFiles(diff)
 	if len(files) != 1 {
 		t.Errorf("expected 1 deduplicated file, got %d", len(files))
-	}
-}
-
-func TestIsTestFile(t *testing.T) {
-	tests := []struct {
-		path string
-		want bool
-	}{
-		{"foo_test.go", true},
-		{"foo.test.ts", true},
-		{"foo.spec.js", true},
-		{"test_handler.py", true},
-		{"foo.go", false},
-		{"handler.ts", false},
-		{"main.py", false},
-		{"testing/helper.go", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			if got := isTestFile(tt.path); got != tt.want {
-				t.Errorf("isTestFile(%q) = %v, want %v", tt.path, got, tt.want)
-			}
-		})
 	}
 }
 

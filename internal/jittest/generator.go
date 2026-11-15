@@ -20,6 +20,9 @@ type GenerateInput struct {
 	MaxTests    int               // max number of tests to generate
 	Model       string            // LLM model ID
 	WorkDir     string            // worktree root
+	// TestProjects are the directories a generated file may go into, for a
+	// toolchain whose tests compile only inside a test project (.NET).
+	TestProjects []string
 }
 
 // getDiffFunc is a function variable for getting PR diffs. Replaceable in tests.
@@ -36,8 +39,11 @@ func GenerateTests(ctx context.Context, input GenerateInput) ([]GeneratedTest, e
 	if input.Diff == "" {
 		return nil, fmt.Errorf("empty diff, nothing to generate tests for")
 	}
+	if !Supported(input.Language) {
+		return nil, fmt.Errorf("JiT tests are not available for language %q", input.Language)
+	}
 
-	prompt := buildPrompt(input.Diff, input.SourceFiles, input.Language, input.MaxTests)
+	prompt := buildPrompt(input)
 
 	output, err := claudeRunner(ctx, prompt, input.Model, input.WorkDir)
 	if err != nil {

@@ -2,70 +2,72 @@ package jittest
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 )
 
-// languageTestInfo maps language to test framework and file naming conventions.
-type languageTestInfo struct {
-	Framework    string // e.g. "testing", "vitest", "pytest"
-	FileSuffix   string // e.g. "_jittest_test.go"
-	FilePrefix   string // e.g. "test_" (python only)
-	FileExt      string // e.g. ".go", ".ts", ".py"
-	Instructions string // language-specific prompt instructions
+// testConventions is what the model is told about writing tests for a
+// toolchain.
+type testConventions struct {
+	Framework string
+	// FileExample shows where a generated file goes and how it is named. The
+	// name holds "jittest": that is how the files are found and removed
+	// after the run.
+	FileExample  string
+	Instructions string
 }
 
-var languageMap = map[string]languageTestInfo{
-	"go": {
-		Framework:  "testing",
-		FileSuffix: "_jittest_test.go",
-		FileExt:    ".go",
+// conventions holds the toolchains JiT tests can be generated for.
+var conventions = map[string]testConventions{
+	repo.ToolchainGo: {
+		Framework:   "testing",
+		FileExample: "path/to/file_jittest_test.go",
 		Instructions: `- Use Go's "testing" package. Do NOT use testify or other external packages.
 - Each test file must have the correct package declaration matching the directory.
 - Use table-driven tests where appropriate.
 - Test function names must start with "Test" and use descriptive names.`,
 	},
-	"typescript": {
-		Framework:  "vitest",
-		FileSuffix: ".jittest.test.ts",
-		FileExt:    ".ts",
+	repo.ToolchainNode: {
+		Framework:   "vitest or jest (whichever the project uses)",
+		FileExample: "path/to/file.jittest.test.ts",
 		Instructions: `- Use vitest or jest (whichever the project uses).
 - Use describe/it blocks with clear descriptions.
-- Import from relative paths matching the project structure.`,
+- Import from relative paths matching the project structure.
+- Give the file the extension the project's own tests have (.ts or .js).`,
 	},
-	"javascript": {
-		Framework:  "vitest",
-		FileSuffix: ".jittest.test.js",
-		FileExt:    ".js",
-		Instructions: `- Use vitest or jest (whichever the project uses).
-- Use describe/it blocks with clear descriptions.`,
-	},
-	"python": {
-		Framework:  "pytest",
-		FilePrefix: "test_",
-		FileSuffix: "_jittest.py",
-		FileExt:    ".py",
+	repo.ToolchainPython: {
+		Framework:   "pytest",
+		FileExample: "path/to/test_file_jittest.py",
 		Instructions: `- Use pytest conventions. Function names must start with "test_".
 - Use assert statements, not unittest.TestCase.`,
 	},
-	"node": {
-		Framework:  "vitest",
-		FileSuffix: ".jittest.test.ts",
-		FileExt:    ".ts",
-		Instructions: `- Use vitest or jest.
-- Use describe/it blocks with clear descriptions.`,
+	repo.ToolchainDotnet: {
+		Framework:   "xUnit (or the framework the test project already references)",
+		FileExample: "path/to/Project.Tests/CounterJitTests.jittest.cs",
+		Instructions: `- Use the test framework the test project already references. For xUnit that is [Fact], and [Theory] with [InlineData].
+- A test file compiles only inside a test project. Put every file in one of the test projects listed below, and nowhere else.
+- Use a file-scoped namespace and add the using directives the file needs.
+- Name each class <Subject>JitTests, so that it cannot clash with a test class that already exists.`,
 	},
 }
 
-// buildPrompt constructs the LLM prompt for JiT test generation.
-func buildPrompt(diff string, sourceFiles map[string]string, language string, maxTests int) string {
+// Supported reports whether JiT tests can be generated for a repo language.
+func Supported(language string) bool {
+	_, ok := conventions[repo.ToolchainOf(language)]
+	return ok
+}
+
+// buildPrompt constructs the LLM prompt for JiT test generation. The language
+// must be a supported one.
+func buildPrompt(input GenerateInput) string {
 	var b strings.Builder
 
-	langInfo, ok := languageMap[language]
-	if !ok {
-		langInfo = languageMap["go"] // fallback
-	}
+	conv := conventions[repo.ToolchainOf(input.Language)]
 
 	b.WriteString("You are a test engineer. Generate independent tests for the following code changes.\n\n")
 
@@ -73,69 +75,88 @@ func buildPrompt(diff string, sourceFiles map[string]string, language string, ma
 	b.WriteString("1. Only test PUBLIC functions/methods that appear in the diff.\n")
 	b.WriteString("2. Focus on: edge cases, error paths, boundary values, nil/empty inputs.\n")
 	b.WriteString("3. Each test must be SELF-CONTAINED — no external services, no network calls.\n")
-	b.WriteString(fmt.Sprintf("4. Generate at most %d test functions.\n", maxTests))
-	b.WriteString(fmt.Sprintf("5. Use the %s test framework.\n", langInfo.Framework))
+	b.WriteString(fmt.Sprintf("4. Generate at most %d test functions.\n", input.MaxTests))
+	b.WriteString(fmt.Sprintf("5. Use the %s test framework.\n", conv.Framework))
 	b.WriteString("6. Do NOT copy or reference any existing tests — these are independent verification tests.\n")
 	b.WriteString("7. Output each test file as a fenced code block with the filename on the opening line.\n")
-	b.WriteString("8. Tests must compile and run without modification.\n\n")
+	b.WriteString("8. Tests must compile and run without modification.\n")
+	b.WriteString("9. Put \"jittest\" in every file name, as in the example below: the files are removed by that name after the run.\n\n")
 
-	if langInfo.Instructions != "" {
+	if conv.Instructions != "" {
 		b.WriteString("## Language-specific instructions\n")
-		b.WriteString(langInfo.Instructions)
+		b.WriteString(conv.Instructions)
 		b.WriteString("\n\n")
 	}
 
+	if len(input.TestProjects) > 0 {
+		b.WriteString("## Test projects (the only directories a test file may go into)\n")
+		for _, dir := range input.TestProjects {
+			b.WriteString(fmt.Sprintf("- %s\n", dir))
+		}
+		b.WriteString("\n")
+	}
+
 	// Source files for context
-	if len(sourceFiles) > 0 {
+	if len(input.SourceFiles) > 0 {
 		b.WriteString("## Source files (for import paths, type definitions, function signatures)\n\n")
 		// Sort keys for deterministic output
-		keys := make([]string, 0, len(sourceFiles))
-		for k := range sourceFiles {
+		keys := make([]string, 0, len(input.SourceFiles))
+		for k := range input.SourceFiles {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, path := range keys {
-			b.WriteString(fmt.Sprintf("### %s\n```\n%s\n```\n\n", path, sourceFiles[path]))
+			b.WriteString(fmt.Sprintf("### %s\n```\n%s\n```\n\n", path, input.SourceFiles[path]))
 		}
 	}
 
 	b.WriteString("## PR Diff\n")
 	b.WriteString("```diff\n")
-	b.WriteString(diff)
+	b.WriteString(input.Diff)
 	b.WriteString("\n```\n\n")
 
 	b.WriteString("## Output format\n")
 	b.WriteString("For each test file, output a fenced code block like:\n\n")
-	b.WriteString("```filename: path/to/file_jittest_test.go\n")
-	b.WriteString("package ...\n\n")
-	b.WriteString("// test code here\n")
+	b.WriteString(fmt.Sprintf("```filename: %s\n", conv.FileExample))
+	b.WriteString("(the complete test file)\n")
 	b.WriteString("```\n")
 
 	return b.String()
 }
 
-// jitTestFilename generates a JiT test filename from a source file path.
-func jitTestFilename(sourcePath, language string) string {
-	langInfo, ok := languageMap[language]
-	if !ok {
-		langInfo = languageMap["go"]
-	}
+// dotnetTestProject recognizes a test project by what it references.
+var dotnetTestProject = regexp.MustCompile(`(?i)Microsoft\.NET\.Test\.Sdk|Include="(xunit|nunit|MSTest)`)
 
-	dir := filepath.Dir(sourcePath)
-	base := filepath.Base(sourcePath)
-	ext := filepath.Ext(base)
-	name := strings.TrimSuffix(base, ext)
-
-	var filename string
-	if langInfo.FilePrefix != "" {
-		filename = langInfo.FilePrefix + name + langInfo.FileSuffix
-	} else {
-		filename = name + langInfo.FileSuffix
-	}
-
-	// Source paths come from git diffs and stay repo-relative with forward
-	// slashes; keep the output that way on Windows too.
-	return filepath.ToSlash(filepath.Join(dir, filename))
+// findDotnetTestProjects returns the directories of the worktree's .NET test
+// projects, relative to it and with forward slashes. A generated test only
+// compiles inside one of them.
+func findDotnetTestProjects(workDir string) []string {
+	var dirs []string
+	_ = filepath.Walk(workDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			switch info.Name() {
+			case ".git", ".ai", ".worktrees", ".godot", "bin", "obj", "node_modules":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".csproj") {
+			return nil
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil || !dotnetTestProject.Match(content) {
+			return nil
+		}
+		if rel, relErr := filepath.Rel(workDir, filepath.Dir(path)); relErr == nil {
+			dirs = append(dirs, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	sort.Strings(dirs)
+	return dirs
 }
 
 // parseDiffFiles extracts file paths from a unified diff, excluding test files.
@@ -147,12 +168,12 @@ func parseDiffFiles(diff string) []string {
 		if !strings.HasPrefix(line, "+++ b/") {
 			continue
 		}
-		path := strings.TrimPrefix(line, "+++ b/")
+		path := strings.TrimRight(strings.TrimPrefix(line, "+++ b/"), "\r")
 		if path == "/dev/null" {
 			continue
 		}
 		// Skip test files — we want source only
-		if isTestFile(path) {
+		if repo.IsTestFile(path) {
 			continue
 		}
 		if !seen[path] {
@@ -162,24 +183,6 @@ func parseDiffFiles(diff string) []string {
 	}
 
 	return files
-}
-
-// isTestFile returns true if the file path looks like a test file.
-func isTestFile(path string) bool {
-	base := filepath.Base(path)
-	if strings.HasSuffix(base, "_test.go") {
-		return true
-	}
-	if strings.HasSuffix(base, ".test.ts") || strings.HasSuffix(base, ".test.js") {
-		return true
-	}
-	if strings.HasSuffix(base, ".spec.ts") || strings.HasSuffix(base, ".spec.js") {
-		return true
-	}
-	if strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py") {
-		return true
-	}
-	return false
 }
 
 // parseGeneratedTests extracts test files from LLM output.
