@@ -134,7 +134,7 @@ func TestInstall_NoStarterRulesWithoutThePresetsConfiguration(t *testing.T) {
 func TestStarterRules_AreAboutTheReposOfTheirPreset(t *testing.T) {
 	for _, preset := range Presets {
 		var cfg presetConfig
-		if err := yaml.Unmarshal(presetConfigs[preset]("demo"), &cfg); err != nil {
+		if err := yaml.Unmarshal(presetConfigs[preset]("demo", DefaultBranches()), &cfg); err != nil {
 			t.Fatalf("preset %q: %v", preset, err)
 		}
 		for _, name := range StarterRules(preset) {

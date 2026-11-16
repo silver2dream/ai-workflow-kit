@@ -10,16 +10,15 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
 // PreflightChecker performs pre-flight checks before starting the workflow
 type PreflightChecker struct {
-	config      *Config
-	configPath  string
-	lockFile    string
-	stopMarker  string
-	forceDelete bool // auto-delete STOP marker
+	config     *Config
+	configPath string
+	lockFile   string
 }
 
 // CheckResult represents the result of a single check
@@ -35,113 +34,67 @@ func NewPreflightChecker(configPath, lockFile string) *PreflightChecker {
 	return &PreflightChecker{
 		configPath: configPath,
 		lockFile:   lockFile,
-		stopMarker: filepath.Join(".ai", "state", "STOP"),
 	}
 }
 
-// SetForceDelete enables auto-deletion of STOP marker
-func (p *PreflightChecker) SetForceDelete(force bool) {
-	p.forceDelete = force
+// preflightStep is one check of a run: what is checked, and whether the run
+// stops when the check fails. What stops it is named in the error.
+type preflightStep struct {
+	name  string
+	check func() CheckResult
+	fatal bool
 }
 
-// RunAll executes all pre-flight checks
+// steps lists the checks of a run in the order they are made. A check after
+// one that stops the run is not made: without `gh` there is no asking it who
+// is logged in.
+func (p *PreflightChecker) steps() []preflightStep {
+	return []preflightStep{
+		{"gh CLI", p.CheckGhCLI, true},
+		{"gh auth", p.CheckGhAuth, true},
+		{"claude CLI", p.CheckClaudeCLI, true},
+		// The Worker's backend: a warning here. `awkit doctor` calls it what
+		// it is, a problem.
+		{"worker backend", p.CheckCodexCLI, false},
+		// A repository with a remote: the workflow lives in GitHub issues and
+		// pull requests, and a Worker pushes its branch to origin.
+		{"git remote", p.CheckGitRemote, true},
+		{"git", p.CheckGitClean, true},
+		// The marker of the last run: said, and cleared when the run starts.
+		{"stop marker", p.CheckStopMarker, false},
+		{"lock", p.CheckLockFile, true},
+		{"config", p.CheckConfig, true},
+		{"repo paths", p.CheckRepoPaths, true},
+		// Every ticket is branched from the integration branch and its pull
+		// request is opened against it.
+		{"integration branch", p.CheckIntegrationBranch, true},
+		{"GitHub repo", p.CheckGitHubRepo, false},
+		// A read-only token passes `gh auth status` but 403s on every
+		// state-changing call — create issue, approve/merge PR, move labels —
+		// which silently spins the workflow loop for dozens of sessions.
+		{"repo write access", p.CheckRepoWritePermission, true},
+		// Without a PTY the run falls back to standard execution.
+		{"PTY", p.CheckPTY, false},
+		{"permissions", p.CheckPermissions, false},
+		{"agents", p.CheckAgents, false},
+	}
+}
+
+// RunAll makes the checks of a run and returns what each one said. It stops
+// at the first check that fails and stops the run, and says which.
 func (p *PreflightChecker) RunAll() ([]CheckResult, error) {
+	return runSteps(p.steps())
+}
+
+func runSteps(steps []preflightStep) ([]CheckResult, error) {
 	var results []CheckResult
-
-	// 1. Check gh CLI installed
-	ghResult := p.CheckGhCLI()
-	results = append(results, ghResult)
-	if !ghResult.Passed {
-		return results, fmt.Errorf("gh CLI check failed: %s", ghResult.Message)
+	for _, step := range steps {
+		result := step.check()
+		results = append(results, result)
+		if step.fatal && !result.Passed {
+			return results, fmt.Errorf("%s check failed: %s", step.name, result.Message)
+		}
 	}
-
-	// 2. Check gh auth
-	ghAuthResult := p.CheckGhAuth()
-	results = append(results, ghAuthResult)
-	if !ghAuthResult.Passed {
-		return results, fmt.Errorf("gh auth check failed: %s", ghAuthResult.Message)
-	}
-
-	// 3. Check claude CLI installed
-	claudeResult := p.CheckClaudeCLI()
-	results = append(results, claudeResult)
-	if !claudeResult.Passed {
-		return results, fmt.Errorf("claude CLI check failed: %s", claudeResult.Message)
-	}
-
-	// 4. Check codex CLI (warning only)
-	codexResult := p.CheckCodexCLI()
-	results = append(results, codexResult)
-	// Non-fatal, just warning
-
-	// 5. Check working directory is clean
-	gitResult := p.CheckGitClean()
-	results = append(results, gitResult)
-	if !gitResult.Passed {
-		return results, fmt.Errorf("git check failed: %s", gitResult.Message)
-	}
-
-	// 6. Check STOP marker
-	stopResult := p.CheckStopMarker()
-	results = append(results, stopResult)
-	if !stopResult.Passed {
-		return results, fmt.Errorf("stop marker check failed: %s", stopResult.Message)
-	}
-
-	// 7. Check lock file
-	lockResult := p.CheckLockFile()
-	results = append(results, lockResult)
-	if !lockResult.Passed {
-		return results, fmt.Errorf("lock check failed: %s", lockResult.Message)
-	}
-
-	// 8. Check config
-	configResult := p.CheckConfig()
-	results = append(results, configResult)
-	if !configResult.Passed {
-		return results, fmt.Errorf("config check failed: %s", configResult.Message)
-	}
-
-	// 9. Check repo paths (fatal)
-	repoPathsResult := p.CheckRepoPaths()
-	results = append(results, repoPathsResult)
-	if !repoPathsResult.Passed {
-		return results, fmt.Errorf("repo paths check failed: %s", repoPathsResult.Message)
-	}
-
-	// 10. Check integration branch (warning only)
-	branchResult := p.CheckIntegrationBranch()
-	results = append(results, branchResult)
-
-	// 11. Check GitHub repo (warning only)
-	ghRepoResult := p.CheckGitHubRepo()
-	results = append(results, ghRepoResult)
-
-	// 11b. Check repo write access (fatal). A read-only token passes `gh auth
-	// status` but 403s on every state-changing call — create issue, approve/merge
-	// PR, move labels — which silently spins the workflow loop for dozens of
-	// sessions. Catch it here instead of letting the run burn.
-	writeResult := p.CheckRepoWritePermission()
-	results = append(results, writeResult)
-	if !writeResult.Passed {
-		return results, fmt.Errorf("repo write access check failed: %s", writeResult.Message)
-	}
-
-	// 12. Check PTY
-	ptyResult := p.CheckPTY()
-	results = append(results, ptyResult)
-	// PTY check is non-fatal (will fallback to standard execution)
-
-	// 13. Check permissions (warning only, non-fatal)
-	permResult := p.CheckPermissions()
-	results = append(results, permResult)
-	// Permissions check is non-fatal but important warning
-
-	// 16. Check agents (warning only, non-fatal)
-	agentsResult := p.CheckAgents()
-	results = append(results, agentsResult)
-	// Agents check is non-fatal but critical for Task tool subagents
-
 	return results, nil
 }
 
@@ -235,6 +188,27 @@ func (p *PreflightChecker) CheckCodexCLI() CheckResult {
 	}
 }
 
+// CheckGitRemote checks that the project is a git repository with a remote
+// named origin. Every ticket's branch is pushed there and its pull request is
+// opened there.
+func (p *PreflightChecker) CheckGitRemote() CheckResult {
+	const name = "Git Remote"
+	if err := exec.Command("git", "rev-parse", "--git-dir").Run(); err != nil {
+		return CheckResult{
+			Name:    name,
+			Message: "this is not a git repository. Make it one (git init), commit, and add the GitHub repository as its remote: git remote add origin <url>",
+		}
+	}
+	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return CheckResult{
+			Name:    name,
+			Message: "the repository has no remote named origin. Tickets are GitHub issues and a Worker pushes its branch there: git remote add origin <url of the GitHub repository>",
+		}
+	}
+	return CheckResult{Name: name, Passed: true, Message: "origin is " + strings.TrimSpace(string(out))}
+}
+
 // CheckGitClean checks if working directory is clean
 func (p *PreflightChecker) CheckGitClean() CheckResult {
 	cmd := exec.Command("git", "status", "--porcelain")
@@ -262,37 +236,20 @@ func (p *PreflightChecker) CheckGitClean() CheckResult {
 	}
 }
 
-// CheckStopMarker checks if STOP marker exists
+// CheckStopMarker says when the last run left its STOP marker behind. The
+// marker ends the run that is going. It does not stand in the way of the next
+// one: every run ends with it, a finished one too, and a run that refused to
+// start over it had to be forced each time. The run clears it when it starts;
+// the check changes nothing, so that a dry run leaves the project as it is.
 func (p *PreflightChecker) CheckStopMarker() CheckResult {
-	if _, err := os.Stat(p.stopMarker); err == nil {
-		// STOP marker exists
-		if p.forceDelete {
-			// Auto-delete in force mode
-			if err := os.Remove(p.stopMarker); err != nil {
-				return CheckResult{
-					Name:    "Stop Marker",
-					Passed:  false,
-					Message: fmt.Sprintf("Failed to delete STOP marker: %v", err),
-				}
-			}
-			return CheckResult{
-				Name:    "Stop Marker",
-				Passed:  true,
-				Message: "STOP marker auto-deleted (--force mode)",
-				Warning: true,
-			}
-		}
-		return CheckResult{
-			Name:    "Stop Marker",
-			Passed:  false,
-			Message: "Found stop marker .ai/state/STOP. Use --force to auto-delete, or manually delete and retry.",
-		}
-	}
-
-	return CheckResult{
-		Name:    "Stop Marker",
-		Passed:  true,
-		Message: "No stop marker",
+	reason, present := stopmark.Read(".")
+	switch {
+	case !present:
+		return CheckResult{Name: "Stop Marker", Passed: true, Message: "No stop marker"}
+	case reason == "":
+		return CheckResult{Name: "Stop Marker", Passed: true, Warning: true, Message: "a STOP marker is there; a run clears it when it starts"}
+	default:
+		return CheckResult{Name: "Stop Marker", Passed: true, Warning: true, Message: fmt.Sprintf("the last run stopped (%s); a run clears its STOP marker when it starts", reason)}
 	}
 }
 
@@ -496,11 +453,29 @@ func (p *PreflightChecker) CheckRepoPaths() CheckResult {
 	}
 }
 
-// CheckIntegrationBranch checks if the configured integration branch exists in git
+// remoteHasBranch asks origin whether it has a branch. known is false when it
+// could not be asked: no remote of that name, or no way to reach it.
+var remoteHasBranch = func(branch string) (found, known bool) {
+	err := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+branch).Run()
+	if err == nil {
+		return true, true
+	}
+	// git ls-remote --exit-code ends with 2 when the remote answered and has
+	// no such ref.
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 2 {
+		return false, true
+	}
+	return false, false
+}
+
+// CheckIntegrationBranch checks that the branch pull requests go to is on the
+// remote. A Worker's worktree is branched from it and the Worker's pull
+// request is opened against it, so every ticket fails while it is not there.
 func (p *PreflightChecker) CheckIntegrationBranch() CheckResult {
+	const name = "Integration Branch"
 	if p.config == nil {
 		return CheckResult{
-			Name:    "Integration Branch",
+			Name:    name,
 			Passed:  true,
 			Warning: true,
 			Message: "config not loaded, skipping branch check",
@@ -510,32 +485,43 @@ func (p *PreflightChecker) CheckIntegrationBranch() CheckResult {
 	branch := p.config.Git.IntegrationBranch
 	if branch == "" {
 		return CheckResult{
-			Name:    "Integration Branch",
+			Name:    name,
 			Passed:  true,
 			Warning: true,
 			Message: "no integration branch configured",
 		}
 	}
 
-	// Check if branch exists locally or in remote
-	cmd := exec.Command("git", "rev-parse", "--verify", branch)
-	if err := cmd.Run(); err != nil {
-		// Try remote
-		cmd2 := exec.Command("git", "rev-parse", "--verify", "origin/"+branch)
-		if err2 := cmd2.Run(); err2 != nil {
-			return CheckResult{
-				Name:    "Integration Branch",
-				Passed:  true,
-				Warning: true,
-				Message: fmt.Sprintf("branch %q not found locally or in origin (will be created on first push)", branch),
-			}
+	here := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
+	found, known := remoteHasBranch(branch)
+	switch {
+	case found:
+		return CheckResult{Name: name, Passed: true, Message: fmt.Sprintf("pull requests go to %q", branch)}
+	case known && here:
+		return CheckResult{
+			Name:    name,
+			Message: fmt.Sprintf("branch %q is not on origin, and a ticket's pull request is opened against it. Push it: git push -u origin %s", branch, branch),
 		}
-	}
-
-	return CheckResult{
-		Name:    "Integration Branch",
-		Passed:  true,
-		Message: fmt.Sprintf("integration branch %q exists", branch),
+	case known:
+		return CheckResult{
+			Name: name,
+			Message: fmt.Sprintf("branch %q does not exist, and every ticket is branched from it. Create it (git branch %s <the branch to start from> && git push -u origin %s), or set git.integration_branch in %s to the branch pull requests go to",
+				branch, branch, branch, layout.ConfigFile),
+		}
+	case here:
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("origin could not be asked for branch %q; it is here, and has to be on origin before a ticket is worked on", branch),
+		}
+	default:
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("branch %q is not here, and origin could not be asked for it; it has to be on origin before a ticket is worked on", branch),
+		}
 	}
 }
 

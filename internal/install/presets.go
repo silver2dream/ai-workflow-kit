@@ -2,6 +2,7 @@ package install
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -30,7 +31,7 @@ func presetName(preset string) string {
 }
 
 // presetConfigs builds the workflow config of each preset.
-var presetConfigs = map[string]func(projectName string) []byte{
+var presetConfigs = map[string]func(projectName string, branches Branches) []byte{
 	PresetGeneric: genericConfig,
 	PresetGodotGo: godotGoConfig,
 }
@@ -46,7 +47,10 @@ func applyPreset(targetDir string, opts Options) (skipped bool, err error) {
 	if !ok {
 		return false, unknownPreset(opts.Preset)
 	}
-	return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, build)
+	branches := opts.Branches.orDefault()
+	return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, func(projectName string) []byte {
+		return build(projectName, branches)
+	})
 }
 
 func unknownPreset(preset string) error {
@@ -56,7 +60,7 @@ func unknownPreset(preset string) error {
 // sharedSections are the sections every preset shares. The rules a project's
 // agents are told to read are the kit's and the ones the preset starts the
 // project with: the list is taken from the files, so the two cannot differ.
-func sharedSections(preset string) string {
+func sharedSections(preset string, branches Branches) string {
 	custom := "  custom: []\n"
 	if rules := StarterRules(preset); len(rules) > 0 {
 		custom = "  custom:\n"
@@ -64,14 +68,24 @@ func sharedSections(preset string) string {
 			custom += "    - " + rule + "\n"
 		}
 	}
-	return configBeforeRules + "\nrules:\n  kit:\n    - git-workflow\n" + custom + configAfterRules
+	return gitSection(branches) + configBeforeRules + "\nrules:\n  kit:\n    - git-workflow\n" + custom + configAfterRules
+}
+
+// gitSection says where pull requests go. The names are the caller's: init
+// takes them from the repository, so that they are branches that exist.
+func gitSection(branches Branches) string {
+	branches = branches.orDefault()
+	return fmt.Sprintf(`
+git:
+  # Pull requests are merged into the integration branch. The release branch
+  # is where releases are cut from; with a single trunk the two are the same.
+  integration_branch: %s
+  release_branch: %s
+  commit_format: "[type] subject"
+`, strconv.Quote(branches.Integration), strconv.Quote(branches.Release))
 }
 
 const configBeforeRules = `
-git:
-  integration_branch: "feat/example"
-  release_branch: "main"
-  commit_format: "[type] subject"
 
 audit:
   checks:
@@ -130,7 +144,7 @@ worker:
   backend: codex
 `
 
-func genericConfig(projectName string) []byte {
+func genericConfig(projectName string, branches Branches) []byte {
 	head := fmt.Sprintf(`# AWK Configuration
 version: "1.2"
 
@@ -151,10 +165,10 @@ repos:
       build: ""
       test: ""
 `, projectName)
-	return []byte(head + sharedSections(PresetGeneric))
+	return []byte(head + sharedSections(PresetGeneric, branches))
 }
 
-func godotGoConfig(projectName string) []byte {
+func godotGoConfig(projectName string, branches Branches) []byte {
 	head := fmt.Sprintf(`# AWK Configuration (Go backend + Godot C# frontend)
 version: "1.2"
 
@@ -180,5 +194,5 @@ repos:
       build: "dotnet build"
       test: "dotnet test"
 `, projectName)
-	return []byte(head + sharedSections(PresetGodotGo))
+	return []byte(head + sharedSections(PresetGodotGo, branches))
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
 	"github.com/silver2dream/ai-workflow-kit/internal/updatecheck"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
+	"golang.org/x/term"
 )
 
 // ANSI color codes
@@ -33,8 +34,10 @@ var (
 )
 
 func init() {
-	// Disable colors on Windows or when not a terminal
-	if runtime.GOOS == "windows" || os.Getenv("NO_COLOR") != "" {
+	// Colours are for a person at a terminal: none on Windows, none when
+	// NO_COLOR is set, and none when the output goes to a file or a pipe,
+	// where the escape codes would be read as text.
+	if runtime.GOOS == "windows" || os.Getenv("NO_COLOR") != "" || !term.IsTerminal(int(os.Stdout.Fd())) {
 		colorReset = ""
 		colorRed = ""
 		colorGreen = ""
@@ -61,6 +64,17 @@ func noScaffoldForPreset(preset string) int {
 	errorf("The %s preset has no project skeleton, so --scaffold has nothing to write.\n", preset)
 	fmt.Fprintf(os.Stderr, "Presets with a skeleton: %s\n", strings.Join(install.ScaffoldPresets(), ", "))
 	return 2
+}
+
+// branchesFor names the branches a configuration written for the project in
+// dir starts with. A configuration that is there and is being written over
+// keeps its branches: they are the project's choice, not the preset's. A new
+// one gets the branches found in the repository.
+func branchesFor(dir string) install.Branches {
+	if cfg, err := config.LoadFile(config.Path(dir)); err == nil && cfg.Git.IntegrationBranch != "" {
+		return install.Branches{Integration: cfg.Git.IntegrationBranch, Release: cfg.Git.ReleaseBranch}
+	}
+	return install.DetectBranches(dir)
 }
 
 func availablePresetNames() string {
@@ -118,6 +132,8 @@ func run() int {
 		return cmdValidate(os.Args[2:])
 	case "status":
 		return cmdStatus(os.Args[2:])
+	case "stop":
+		return cmdStop(os.Args[2:])
 	case "next":
 		return cmdNext(os.Args[2:])
 	case "check-result":
@@ -164,6 +180,10 @@ func run() int {
 		return cmdContextSnapshot(os.Args[2:])
 	case "help":
 		if len(os.Args) >= 3 {
+			if os.Args[2] == "--all" || os.Args[2] == "-a" || os.Args[2] == "all" {
+				usageAll()
+				return 0
+			}
 			return cmdHelp(os.Args[2])
 		}
 		usage()
@@ -176,67 +196,99 @@ func run() int {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `awkit - AI Workflow Kit CLI
+	fmt.Fprint(os.Stderr, `awkit - AI Workflow Kit
+
+A ticket is a GitHub issue. awkit hands each one to a Worker, has the pull
+request reviewed, and merges what passes.
+
+Usage:
+  awkit <command> [options]
+
+Set up:
+  init         Set a project up for AWK (--preset godot-go for a Go backend
+               and a Godot C# frontend)
+  doctor       Check everything a run needs, and say how to fix what is missing
+
+Work:
+  plan         Plan with the council: a brief becomes documents, decisions
+               and a list of tickets for you to approve
+  create-task  Add one ticket by hand
+  run          Work through the open tickets (--issue N for one ticket only)
+  status       Where the work is: the run, every ticket, what to do next
+  stop         Ask the run that is going to stop
+
+Look into what happened:
+  events       What a run did, step by step
+  lessons      What the reviews taught the Workers
+
+Keep up:
+  upgrade      Bring a project's kit files up to this version of awkit
+  reset        Clear what earlier runs left behind
+  uninstall    Take AWK out of a project
+
+The first time:
+  awkit init
+  git add -A && git commit -m "[chore] set up awkit"
+  awkit doctor
+  awkit plan "a daily login reward that grows over seven days"
+  awkit run
+
+'awkit help <command>' says more about one command.
+'awkit help --all' lists every command, the ones the workflow runs included.
+`)
+}
+
+// usageAll lists every command there is: the ones a person runs, the ones
+// the Principal and its agents run, and the ones about the CLI itself.
+func usageAll() {
+	fmt.Fprint(os.Stderr, `awkit - AI Workflow Kit: every command
 
 Usage:
   awkit <command> [options]
 
 Set up a project:
-  init          Initialize AWK in a project (or current directory)
-  upgrade       Upgrade AWK kit files (keeps the project's configuration)
-  uninstall     Remove AWK from a project
-  generate      Generate helper docs and scaffolding
-  validate      Validate workflow configuration
-  list-presets  Show available project presets
+  init          Set a project up for AWK
+  doctor        Check everything a run needs, and what earlier runs left behind
+  upgrade       Bring a project's kit files up to this version of awkit
+  uninstall     Take AWK out of a project
+  generate      Write the files derived from the configuration again
+  validate      Check the configuration
+  list-presets  Show the presets init knows
 
 Run the workflow:
-  plan          Plan work with the council: a brief becomes documents,
-                decisions and a list of tickets for you to approve
-  create-task   Create a ticket: a GitHub issue the workflow picks up
-  run           Start the workflow: work through the open tickets
-                (--issue N for one ticket only)
-  status        Show offline workflow status
-  next          Show suggested next actions (offline)
-  doctor        Check project health and identify issues
-  reset         Reset project state for fresh start
+  plan          Plan with the council: a brief becomes documents, decisions
+                and a list of tickets for you to approve
+  create-task   Add one ticket by hand
+  run           Work through the open tickets (--issue N for one ticket only)
+  status        Where the work is: the run, every ticket, what to do next
+  stop          Ask the run that is going to stop
+  next          Suggest what to do next from local files only
+  reset         Clear what earlier runs left behind
 
 Look into what happened:
-  events          Query unified event stream for debugging
-  feedback-stats  Show review feedback statistics
-  lessons         Manage the learning loop (list/stats/add/distill/promote)
-  evaluate        Run evaluation gates (--offline, --strict)
-  hooks           Manage lifecycle hooks
+  events          What a run did, step by step
+  feedback-stats  How often reviews turned work back, and for what
+  lessons         What the reviews taught the Workers (list/stats/add/distill/promote)
+  evaluate        Run the evaluation gates (--offline, --strict)
+  hooks           The commands the workflow runs at its lifecycle points
 
 What the workflow itself runs (the Principal and its agents call these):
-  analyze-next     Analyze and determine next workflow action
-  dispatch-worker  Dispatch an issue to a worker
-  check-result     Check worker execution result for an issue
-  run-issue        Run a worker for a single issue
-  prepare-review   Prepare PR review context
-  submit-review    Submit PR review and handle result
-  jittest          Run JiT (Just-in-Time) tests for a PR
-  stop-workflow    Stop the workflow and generate a report
-  reconcile        Self-heal structural drift (e.g. integration-branch scaffold)
-  context-snapshot Generate compact context snapshot
+  analyze-next     Decide the next step of the loop
+  dispatch-worker  Hand a ticket to a Worker and wait for it
+  check-result     Read what a Worker left for a ticket
+  run-issue        Be the Worker of one ticket
+  prepare-review   Collect what a review needs
+  submit-review    Hand in a review; merge when it passes
+  jittest          Run the tests generated for a pull request
+  stop-workflow    End the run with a reason and write its report
+  reconcile        Put back what a failed step left out of place
+  context-snapshot Print a summary of the run's state
 
 The CLI itself:
-  check-update  Check for CLI updates
-  completion    Generate shell completion script
-  version       Show version
-  help          Show help for a command
-
-Examples:
-  awkit init
-  awkit init --preset godot-go
-  awkit plan "a daily login reward that grows over seven days"
-  awkit create-task --title "[feat] add login" --body-file ticket.md
-  awkit run
-  awkit run --issue 42
-  awkit run --dry-run
-  awkit status
-  awkit upgrade
-
-Run 'awkit help <command>' for more information.
+  check-update  See whether a newer awkit is out
+  completion    Print a shell completion script
+  version       Show the version
+  help          Show help ('awkit help <command>')
 `)
 }
 
@@ -265,6 +317,14 @@ func cyan(s string) string {
 	return colorCyan + s + colorReset
 }
 
+func green(s string) string {
+	return colorGreen + s + colorReset
+}
+
+func yellow(s string) string {
+	return colorYellow + s + colorReset
+}
+
 func cmdHelp(command string) int {
 	switch command {
 	case "init", "install":
@@ -281,6 +341,8 @@ func cmdHelp(command string) int {
 		usageValidate()
 	case "status":
 		usageStatus()
+	case "stop":
+		usageStop()
 	case "next":
 		usageNext()
 	case "check-result":
@@ -556,29 +618,28 @@ func cmdInit(args []string) int {
 		return 1
 	}
 
-	fmt.Println("")
 	if *dryRun {
+		fmt.Println("")
 		fmt.Printf("%s[DRY RUN]%s Would initialize AWK:\n", colorYellow, colorReset)
-	} else {
-		fmt.Println("Initializing AWK...")
-	}
-	fmt.Printf("  Target:  %s\n", cyan(displayTarget))
-	fmt.Printf("  Preset:  %s\n", cyan(*preset))
-	if *force {
-		fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
-	} else if *forceConfig {
-		fmt.Printf("  Mode:    %s\n", cyan("force-config (overwrite config only)"))
-	}
-	if *scaffold {
-		fmt.Printf("  Scaffold: %s\n", cyan("yes"))
-	}
-	fmt.Println("")
+		fmt.Printf("  Target:  %s\n", cyan(displayTarget))
+		fmt.Printf("  Preset:  %s\n", cyan(*preset))
+		if *force {
+			fmt.Printf("  Mode:    %s\n", cyan("force (overwrite all)"))
+		} else if *forceConfig {
+			fmt.Printf("  Mode:    %s\n", cyan("force-config (overwrite config only)"))
+		}
+		if *scaffold {
+			fmt.Printf("  Scaffold: %s\n", cyan("yes"))
+		}
+		fmt.Println("")
 
-	if *dryRun {
 		fmt.Println(bold("AWK Kit files:"))
 		fmt.Println("  " + layout.ConfigFile)
 		fmt.Println("  " + layout.RosterFile)
 		fmt.Println("  " + layout.KitRulesDir + "/")
+		for _, rule := range install.StarterRules(*preset) {
+			fmt.Println("  " + layout.RulesDir + "/" + rule + ".md (a starter rule of the preset; the project's own from then on)")
+		}
 		fmt.Println("  " + layout.SkillsDir + "/")
 		fmt.Println("  " + layout.AgentsDir + "/")
 		fmt.Println("  " + layout.StateDir + "/ (what a run leaves behind, gitignored)")
@@ -640,6 +701,7 @@ func cmdInit(args []string) int {
 		ProjectName: *projectName,
 		Force:       *force,
 		ForceConfig: *forceConfig,
+		Branches:    branchesFor(targetDir),
 		NoGenerate:  *noGenerate,
 		CI:          ciPolicy,
 		Scaffold:    *scaffold,
@@ -655,72 +717,18 @@ func cmdInit(args []string) int {
 		return 1
 	}
 
-	fmt.Println("")
-	success("AWK initialized successfully!\n")
-
-	// Warn if config was skipped
-	if result != nil && result.ConfigSkipped {
-		fmt.Println("")
-		warn("Skipped: " + layout.ConfigFile + " (already exists)\n")
-		fmt.Printf("  Preset '%s' was NOT applied to config.\n", *preset)
-		fmt.Println("")
-		fmt.Println("  To apply preset config, use one of:")
-		fmt.Printf("    awkit init --preset %s --force        # Overwrite all files\n", *preset)
-		fmt.Printf("    awkit init --preset %s --force-config # Overwrite config only\n", *preset)
-	}
-
-	// Show scaffold results
-	if *scaffold && result != nil && result.ScaffoldResult != nil {
-		sr := result.ScaffoldResult
-		if len(sr.Created) > 0 {
-			fmt.Println("")
-			fmt.Println(bold("Scaffold files created:"))
-			for _, f := range sr.Created {
-				fmt.Printf("  %s\n", f)
-			}
+	summary := collectInitSummary(targetDir, *preset, result)
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "preset" {
+			summary.PresetNamed = true
 		}
-		if len(sr.Skipped) > 0 {
-			fmt.Println("")
-			warn("Scaffold files skipped (already exist):\n")
-			for _, f := range sr.Skipped {
-				fmt.Printf("  %s\n", f)
-			}
-		}
-		if len(sr.Failed) > 0 {
-			fmt.Println("")
-			errorf("Scaffold files failed:\n")
-			for i, f := range sr.Failed {
-				fmt.Printf("  %s: %v\n", f, sr.Errors[i])
-			}
-			fmt.Println("")
-			warn("Some files failed to create. Run 'awkit init --scaffold' again to retry.\n")
-		}
-	}
-
-	// Handle scaffold error
-	if result != nil && result.ScaffoldError != nil {
-		fmt.Println("")
-		warn("Scaffold completed with errors: %v\n", result.ScaffoldError)
-	}
-
-	if result != nil && result.GenerateError != nil {
-		fmt.Println("")
-		warn("CLAUDE.md, AGENTS.md and the CI workflows were not written: %v\n", result.GenerateError)
-		fmt.Println("  Fix " + layout.ConfigFile + ", then run awkit init again.")
-	}
-
-	fmt.Println("")
-	fmt.Println(bold("Next steps:"))
-	fmt.Printf("  1. %s\n", cyan("cd "+displayTarget))
-	fmt.Printf("  2. %s\n", cyan("Edit "+layout.ConfigFile))
-	fmt.Printf("  3. %s\n", cyan("awkit generate"))
-	fmt.Printf("  4. %s   the council ("+layout.RosterFile+") writes the documents and proposes the tickets\n", cyan(`awkit plan "<what you want built>"`))
-	fmt.Printf("  5. %s   work through the tickets\n", cyan("awkit run"))
-	fmt.Println("")
+	})
+	printInitSummary(os.Stdout, summary)
 
 	warnUpdateAvailable()
 	return 0
 }
+
 func cmdUpgrade(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -958,6 +966,7 @@ func cmdUpgrade(args []string) int {
 		Force:       true, // Overwrite kit files
 		ForceConfig: *forceConfig,
 		SkipConfig:  !*forceConfig, // the configuration is kept by default
+		Branches:    branchesFor(targetDir),
 		NoGenerate:  *noGenerate,
 		// The workflows awkit owns follow the new kit; none is added, and one
 		// the project took over is left alone.
@@ -984,6 +993,11 @@ func cmdUpgrade(args []string) int {
 		fmt.Println("")
 		warn("CLAUDE.md, AGENTS.md and the CI workflows were not regenerated: %v\n", result.GenerateError)
 		fmt.Println("  Fix " + layout.ConfigFile + ", then run awkit generate.")
+	}
+	if result != nil {
+		for _, warning := range result.GenerateWarnings {
+			warn("%s\n", warning)
+		}
 	}
 
 	// Upgrade permissions in settings.local.json
@@ -1306,7 +1320,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall plan run validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall plan run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1329,7 +1343,7 @@ _awkit() {
             return 0
             ;;
         run|kickoff)
-            local opts="--issue --dry-run --background --force --help"
+            local opts="--issue --dry-run --background --help"
             COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
             return 0
             ;;
@@ -1368,6 +1382,7 @@ _awkit() {
         'run:Start the workflow: work through the open tickets'
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
+        'stop:Ask the run that is going to stop'
         'next:Show suggested next actions (offline)'
         'check-result:Check worker execution result for an issue'
         'dispatch-worker:Dispatch an issue to a worker'
@@ -1462,6 +1477,7 @@ complete -c awkit -n __fish_use_subcommand -a plan -d 'Plan work with the counci
 complete -c awkit -n __fish_use_subcommand -a run -d 'Start the workflow: work through the open tickets'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'
+complete -c awkit -n __fish_use_subcommand -a stop -d 'Ask the run that is going to stop'
 complete -c awkit -n __fish_use_subcommand -a next -d 'Show suggested next actions (offline)'
 complete -c awkit -n __fish_use_subcommand -a check-result -d 'Check worker execution result for an issue'
 complete -c awkit -n __fish_use_subcommand -a dispatch-worker -d 'Dispatch an issue to a worker'

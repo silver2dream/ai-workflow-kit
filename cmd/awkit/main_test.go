@@ -719,7 +719,7 @@ func TestUsageContainsNewCommands(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 
-	usage()
+	usageAll()
 
 	w.Close()
 	os.Stderr = oldStderr

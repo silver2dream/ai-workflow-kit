@@ -4,10 +4,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
 
 // TestPreflightChecker_RunAll tests all pre-flight checks
@@ -143,51 +145,41 @@ func TestPreflightChecker_CheckCodexCLI(t *testing.T) {
 	}
 }
 
-// TestPreflightChecker_CheckStopMarker tests STOP marker check
+// The STOP marker ends the run that is going. It does not stand in the way of
+// the next one: every run ends with it, a finished one too, and a run that
+// refused to start over it had to be forced each time. The check says the
+// marker is there and why, and changes nothing: a dry run leaves the project
+// as it is.
 func TestPreflightChecker_CheckStopMarker(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "preflight-stop-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Change to temp dir
+	tmpDir := t.TempDir()
 	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
 	defer os.Chdir(oldWd)
 
 	checker := NewPreflightChecker("", "")
 
-	// Test 1: No STOP marker
+	if result := checker.CheckStopMarker(); !result.Passed || result.Warning {
+		t.Errorf("no marker: %+v, want a plain pass", result)
+	}
+
+	if err := stopmark.Write(".", "stop-workflow", "needs_human_review"); err != nil {
+		t.Fatal(err)
+	}
 	result := checker.CheckStopMarker()
-	if !result.Passed {
-		t.Errorf("CheckStopMarker should pass when no marker exists: %s", result.Message)
+	if !result.Passed || !result.Warning || !strings.Contains(result.Message, "needs_human_review") || !strings.Contains(result.Message, "clears") {
+		t.Errorf("the marker of a run that stopped: %+v, want a warning that names the reason and says the run clears it", result)
+	}
+	if _, present := stopmark.Read("."); !present {
+		t.Error("the check removed the marker; a dry run must change nothing")
 	}
 
-	// Test 2: STOP marker exists
-	stopDir := filepath.Join(tmpDir, ".ai", "state")
-	os.MkdirAll(stopDir, 0755)
-	stopFile := filepath.Join(stopDir, "STOP")
-	os.WriteFile(stopFile, []byte("test"), 0644)
-
-	result = checker.CheckStopMarker()
-	if result.Passed {
-		t.Error("CheckStopMarker should fail when marker exists")
+	if err := os.WriteFile(stopmark.Path("."), nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
-
-	// Test 3: STOP marker with force delete
-	checker.SetForceDelete(true)
-	result = checker.CheckStopMarker()
-	if !result.Passed {
-		t.Errorf("CheckStopMarker should pass with force delete: %s", result.Message)
-	}
-	if !result.Warning {
-		t.Error("CheckStopMarker should set Warning flag when force deleting")
-	}
-
-	// Verify marker was deleted
-	if _, err := os.Stat(stopFile); !os.IsNotExist(err) {
-		t.Error("STOP marker should be deleted with force delete")
+	if result := checker.CheckStopMarker(); !result.Passed || !result.Warning {
+		t.Errorf("a marker made by hand: %+v, want a warning and no failure", result)
 	}
 }
 
@@ -370,21 +362,6 @@ func TestNewPreflightChecker(t *testing.T) {
 
 	if checker.lockFile != "/path/to/lock" {
 		t.Errorf("lockFile = %q, want %q", checker.lockFile, "/path/to/lock")
-	}
-}
-
-// TestPreflightChecker_SetForceDelete tests force delete setting
-func TestPreflightChecker_SetForceDelete(t *testing.T) {
-	checker := NewPreflightChecker("", "")
-
-	if checker.forceDelete {
-		t.Error("forceDelete should be false by default")
-	}
-
-	checker.SetForceDelete(true)
-
-	if !checker.forceDelete {
-		t.Error("forceDelete should be true after SetForceDelete(true)")
 	}
 }
 
@@ -1006,5 +983,188 @@ func TestCheckCodexCLI_ChecksTheConfiguredBackend(t *testing.T) {
 		if !result.Passed || !result.Warning || result.Message != program+" not installed (worker execution may fail)" {
 			t.Errorf("%s without its program: %+v, want a warning that names %s", backend, result, program)
 		}
+	}
+}
+
+// originAndClone makes a repository with a commit on main, and a clone of it
+// to work in. The test's working directory is the clone.
+func originAndClone(t *testing.T) (origin, clone string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin, clone = t.TempDir(), filepath.Join(t.TempDir(), "clone")
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.invalid",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git(origin, "init", "-q", "-b", "main")
+	git(origin, "commit", "-q", "--allow-empty", "-m", "first")
+	git(origin, "branch", "develop")
+	git(filepath.Dir(clone), "clone", "-q", origin, clone)
+	git(clone, "branch", "only-here")
+	if err := os.Chdir(clone); err != nil {
+		t.Fatal(err)
+	}
+	return origin, clone
+}
+
+// A Worker's worktree is branched from the integration branch and its pull
+// request is opened against it. The check asks the remote, and stops the run
+// with what to do when the branch is not there. It said "will be created on
+// first push" and let the run start; the first ticket then failed.
+func TestCheckIntegrationBranch_AsksTheRemote(t *testing.T) {
+	originAndClone(t)
+	check := func(branch string) CheckResult {
+		checker := NewPreflightChecker("", "")
+		checker.config = &Config{Git: GitConfig{IntegrationBranch: branch}}
+		return checker.CheckIntegrationBranch()
+	}
+
+	for _, branch := range []string{"main", "develop"} {
+		if got := check(branch); !got.Passed || got.Warning || !strings.Contains(got.Message, `"`+branch+`"`) {
+			t.Errorf("a branch that is on origin (%s): %+v, want a pass that names it", branch, got)
+		}
+	}
+
+	onlyHere := check("only-here")
+	if onlyHere.Passed || !strings.Contains(onlyHere.Message, "git push -u origin only-here") {
+		t.Errorf("a branch that is only here: %+v, want a failure that says to push it", onlyHere)
+	}
+
+	nowhere := check("feat/example")
+	if nowhere.Passed || !strings.Contains(nowhere.Message, "git branch feat/example") || !strings.Contains(nowhere.Message, "git.integration_branch") {
+		t.Errorf("a branch that is nowhere: %+v, want a failure that says how to create it, or to name another", nowhere)
+	}
+	if strings.Contains(nowhere.Message, "will be created") {
+		t.Errorf("the check still promises that the branch will appear: %s", nowhere.Message)
+	}
+}
+
+// When origin cannot be asked, the check does not stop the run on a guess:
+// the checks of the remote itself say what is wrong with it.
+func TestCheckIntegrationBranch_WhenTheRemoteCannotBeAsked(t *testing.T) {
+	_, clone := originAndClone(t)
+	if out, err := exec.Command("git", "-C", clone, "remote", "remove", "origin").CombinedOutput(); err != nil {
+		t.Fatalf("git remote remove: %v\n%s", err, out)
+	}
+	for _, branch := range []string{"only-here", "feat/example"} {
+		checker := NewPreflightChecker("", "")
+		checker.config = &Config{Git: GitConfig{IntegrationBranch: branch}}
+		got := checker.CheckIntegrationBranch()
+		if !got.Passed || !got.Warning || !strings.Contains(got.Message, "has to be on origin") {
+			t.Errorf("without a remote (%s): %+v, want a warning that says where the branch has to be", branch, got)
+		}
+	}
+}
+
+// A run lives in GitHub issues and pull requests. A project that is not a
+// repository, or has no remote named origin, is told so and how to change
+// it, where the checks of the remote said "offline or no remote configured"
+// and went on.
+func TestCheckGitRemote(t *testing.T) {
+	_, clone := originAndClone(t)
+	checker := NewPreflightChecker("", "")
+
+	if got := checker.CheckGitRemote(); !got.Passed || !strings.Contains(got.Message, "origin is ") {
+		t.Errorf("a clone: %+v, want a pass that names the remote", got)
+	}
+
+	if out, err := exec.Command("git", "-C", clone, "remote", "rename", "origin", "upstream").CombinedOutput(); err != nil {
+		t.Fatalf("git remote rename: %v\n%s", err, out)
+	}
+	if got := checker.CheckGitRemote(); got.Passed || !strings.Contains(got.Message, "git remote add origin") {
+		t.Errorf("a repository whose remote is not called origin: %+v, want a failure that says how to add it", got)
+	}
+
+	outside := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(outside))
+	if err := os.Chdir(outside); err != nil {
+		t.Fatal(err)
+	}
+	if got := checker.CheckGitRemote(); got.Passed || !strings.Contains(got.Message, "not a git repository") {
+		t.Errorf("a directory that is no repository: %+v, want a failure that says so", got)
+	}
+}
+
+// Which checks stop a run. A missing remote and a missing integration branch
+// do: every ticket fails without them, and a run that started all the same
+// spent its retries on each ticket before it said so.
+func TestPreflightSteps_WhichStopARun(t *testing.T) {
+	stops := map[string]bool{}
+	var order []string
+	for _, step := range NewPreflightChecker("", "").steps() {
+		stops[step.name] = step.fatal
+		order = append(order, step.name)
+	}
+	want := map[string]bool{
+		"gh CLI": true, "gh auth": true, "claude CLI": true, "worker backend": false,
+		"git remote": true, "git": true, "stop marker": false, "lock": true,
+		"config": true, "repo paths": true, "integration branch": true,
+		"GitHub repo": false, "repo write access": true,
+		"PTY": false, "permissions": false, "agents": false,
+	}
+	if !reflect.DeepEqual(stops, want) {
+		t.Errorf("the checks that stop a run:\n%v\nwant\n%v", stops, want)
+	}
+	// The tools before what is asked of them, the configuration before what
+	// it names.
+	before := func(a, b string) {
+		t.Helper()
+		ia, ib := -1, -1
+		for i, name := range order {
+			if name == a {
+				ia = i
+			}
+			if name == b {
+				ib = i
+			}
+		}
+		if ia < 0 || ib < 0 || ia > ib {
+			t.Errorf("%q is not checked before %q: %v", a, b, order)
+		}
+	}
+	before("gh CLI", "gh auth")
+	before("gh auth", "repo write access")
+	before("git remote", "integration branch")
+	before("config", "repo paths")
+	before("config", "integration branch")
+}
+
+// A run stops at the first check that fails and stops it, names the check,
+// and makes none after it. A check that only warns does not stop it.
+func TestRunSteps(t *testing.T) {
+	var made []string
+	step := func(name string, passed, fatal bool) preflightStep {
+		return preflightStep{name: name, fatal: fatal, check: func() CheckResult {
+			made = append(made, name)
+			return CheckResult{Name: name, Passed: passed, Message: name + " said so"}
+		}}
+	}
+
+	results, err := runSteps([]preflightStep{step("first", true, true), step("second", false, false), step("third", false, true), step("fourth", true, true)})
+	if err == nil || err.Error() != "third check failed: third said so" {
+		t.Errorf("err = %v, want the third check named", err)
+	}
+	if !reflect.DeepEqual(made, []string{"first", "second", "third"}) || len(results) != 3 {
+		t.Errorf("checks made: %v (%d results), want the first three", made, len(results))
+	}
+
+	made = nil
+	results, err = runSteps([]preflightStep{step("first", true, true), step("second", false, false), step("third", true, true)})
+	if err != nil || len(results) != 3 || results[1].Passed {
+		t.Errorf("a check that only warns: err = %v, results = %+v", err, results)
 	}
 }

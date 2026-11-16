@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
 
 // Result represents the result of a reset operation
@@ -160,7 +161,7 @@ func (c *Resetter) ResetAttempts() []Result {
 
 // ResetStop removes the STOP marker
 func (c *Resetter) ResetStop() Result {
-	stopMarker := filepath.Join(c.StateRoot, ".ai", "state", "STOP")
+	stopMarker := stopmark.Path(c.StateRoot)
 
 	if _, err := os.Stat(stopMarker); os.IsNotExist(err) {
 		return Result{
