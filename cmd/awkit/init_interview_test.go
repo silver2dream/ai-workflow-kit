@@ -574,3 +574,31 @@ func TestCmdInit_TheWorkerThatIsInstalled(t *testing.T) {
 		t.Errorf("only claude is installed, and the Worker is %+v (%v)", cfg.Worker.Backend, err)
 	}
 }
+
+// --contract and --decided answer their questions at a terminal too: the
+// contract is not asked for, nor the repo a --decided spoke for, and the repo
+// nobody spoke for still is.
+func TestCmdInit_AtATerminalTheContractAndTheDecisionsOfAFlag(t *testing.T) {
+	dir := inNewDir(t)
+	atTerminal(t, "n\n\n\nplain C#\n")
+	out := captureStdout(t, func() {
+		args := []string{"--preset", "godot-go", "--contract", "backend/api/proto/", "--decided", "backend=PostgreSQL"}
+		if code := cmdInit(args); code != 0 {
+			t.Errorf("cmdInit = %d, want 0", code)
+		}
+	})
+	for _, unasked := range []string{"The contract between", "Where is it", "  backend [] > "} {
+		if strings.Contains(out, unasked) {
+			t.Errorf("what a flag said was asked for again (%q):\n%s", unasked, out)
+		}
+	}
+	if !strings.Contains(out, "What is already decided") || !strings.Contains(out, "  frontend [] > ") {
+		t.Errorf("the repo no flag spoke for was not asked about:\n%s", out)
+	}
+	if backend := rule(t, dir, "backend"); !strings.Contains(backend, "：「PostgreSQL」") || !strings.Contains(backend, "`backend/api/proto/`") {
+		t.Errorf("backend.md does not carry what the flags said:\n%s", backend)
+	}
+	if frontend := rule(t, dir, "frontend"); !strings.Contains(frontend, "：「plain C#」") {
+		t.Errorf("frontend.md does not carry what was typed:\n%s", frontend)
+	}
+}
