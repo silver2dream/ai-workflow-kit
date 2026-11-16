@@ -49,16 +49,16 @@ Run the full pre-release verification:
 This skill is typically the last step before a release PR:
 
 ```
-awkit kickoff → issues processed → PRs merged to integration branch
+awkit run → issues processed → PRs merged to integration branch
         ↓
 /release-checklist → GO decision
         ↓
-Create PR: integration branch → main (Release: true)
+Create PR: integration branch → main (a ticket with release: true)
 ```
 
 Per `.ai/rules/_kit/git-workflow.md`:
 - Release PRs target `main`
-- Only create release PRs when the ticket says `Release: true`
+- Only create release PRs when the ticket's `yaml awk-ticket` block sets `release: true`
 
 ## Self-Check
 

@@ -31,15 +31,19 @@ type MockGitHubClient struct {
 	AddLabelError       error
 	RemoveLabelError    error
 	CloseIssueError     error
-	IssueBodies         map[int]string // issue number -> body
-	GetIssueBodyError   error
-	UpdateIssueBodyError error
-	UpdatedBodies       map[int]string // tracks UpdateIssueBody calls
-	ReopenedIssues      []int          // tracks ReopenIssue calls
-	MergedBranches      map[string]bool // head branch -> has a merged PR
-	IssueStates         map[int]string  // issue number -> OPEN/CLOSED
+	ReopenedIssues      []int               // tracks ReopenIssue calls
+	Comments            map[int][]string    // tracks CommentIssue calls
+	MergedBranches      map[string]bool     // head branch -> has a merged PR
+	IssueStatuses       map[int]IssueStatus // every issue GitHub knows; TaskStatuses lists the ones with the task label
+	TaskStatuses        map[int]IssueStatus
 	MergedBranchesError error
-	IssueStatesError    error
+	HasMergedPRError    error
+	IssueStatusesError  error
+	IssueStatusError    error
+	CommentError        error
+	ReopenError         error
+	MergedUnlisted      map[string]bool // merged, yet too old for the list of merged branches
+	Calls               []string        // the status and merge lookups, in order
 }
 
 func NewMockGitHubClient() *MockGitHubClient {
@@ -53,10 +57,10 @@ func NewMockGitHubClient() *MockGitHubClient {
 		PRByBranch:         make(map[string]int),
 		AddedLabels:        make(map[int][]string),
 		RemovedLabels:      make(map[int][]string),
-		IssueBodies:        make(map[int]string),
-		UpdatedBodies:      make(map[int]string),
+		Comments:           make(map[int][]string),
 		MergedBranches:     make(map[string]bool),
-		IssueStates:        make(map[int]string),
+		IssueStatuses:      make(map[int]IssueStatus),
+		TaskStatuses:       make(map[int]IssueStatus),
 	}
 }
 
@@ -136,43 +140,56 @@ func (m *MockGitHubClient) FindPRByBranch(ctx context.Context, branchName string
 	return 0, nil
 }
 
-func (m *MockGitHubClient) GetIssueBody(ctx context.Context, issueNumber int) (string, error) {
-	if m.GetIssueBodyError != nil {
-		return "", m.GetIssueBodyError
-	}
-	body, ok := m.IssueBodies[issueNumber]
-	if !ok {
-		return "", fmt.Errorf("issue #%d not found", issueNumber)
-	}
-	return body, nil
-}
-
-func (m *MockGitHubClient) UpdateIssueBody(ctx context.Context, issueNumber int, body string) error {
-	if m.UpdateIssueBodyError != nil {
-		return m.UpdateIssueBodyError
-	}
-	m.IssueBodies[issueNumber] = body
-	m.UpdatedBodies[issueNumber] = body
-	return nil
-}
-
 func (m *MockGitHubClient) ReopenIssue(ctx context.Context, issueNumber int) error {
+	if m.ReopenError != nil {
+		return m.ReopenError
+	}
 	m.ReopenedIssues = append(m.ReopenedIssues, issueNumber)
 	return nil
 }
 
+func (m *MockGitHubClient) CommentIssue(ctx context.Context, issueNumber int, body string) error {
+	if m.CommentError != nil {
+		return m.CommentError
+	}
+	m.Comments[issueNumber] = append(m.Comments[issueNumber], body)
+	return nil
+}
+
 func (m *MockGitHubClient) MergedIssueBranches(ctx context.Context) (map[string]bool, error) {
+	m.Calls = append(m.Calls, "MergedIssueBranches")
 	if m.MergedBranchesError != nil {
 		return nil, m.MergedBranchesError
 	}
 	return m.MergedBranches, nil
 }
 
-func (m *MockGitHubClient) TaskIssueStates(ctx context.Context, taskLabel string) (map[int]string, error) {
-	if m.IssueStatesError != nil {
-		return nil, m.IssueStatesError
+func (m *MockGitHubClient) HasMergedPR(ctx context.Context, branchName string) (bool, error) {
+	m.Calls = append(m.Calls, "HasMergedPR "+branchName)
+	if m.HasMergedPRError != nil {
+		return false, m.HasMergedPRError
 	}
-	return m.IssueStates, nil
+	return m.MergedBranches[branchName] || m.MergedUnlisted[branchName], nil
+}
+
+func (m *MockGitHubClient) TaskIssueStatuses(ctx context.Context, taskLabel string) (map[int]IssueStatus, error) {
+	m.Calls = append(m.Calls, "TaskIssueStatuses")
+	if m.IssueStatusesError != nil {
+		return nil, m.IssueStatusesError
+	}
+	return m.TaskStatuses, nil
+}
+
+func (m *MockGitHubClient) IssueStatus(ctx context.Context, issueNumber int) (IssueStatus, error) {
+	m.Calls = append(m.Calls, fmt.Sprintf("IssueStatus %d", issueNumber))
+	if m.IssueStatusError != nil {
+		return IssueStatus{}, m.IssueStatusError
+	}
+	status, ok := m.IssueStatuses[issueNumber]
+	if !ok {
+		return IssueStatus{}, ErrIssueNotFound
+	}
+	return status, nil
 }
 
 // Helper function to create test analyzer with mock client
@@ -678,77 +695,6 @@ func TestDecide_NoActionableTasks(t *testing.T) {
 	}
 	if decision.ExitReason != ReasonNoActionableTasks {
 		t.Errorf("ExitReason = %q, want %q", decision.ExitReason, ReasonNoActionableTasks)
-	}
-}
-
-func TestDecide_GenerateTasks(t *testing.T) {
-	tmpDir := t.TempDir()
-	mockClient := NewMockGitHubClient()
-	config := &Config{
-		GitHub: GitHubConfig{
-			Labels: DefaultLabels(),
-		},
-		Specs: SpecsConfig{
-			BasePath: ".ai/specs",
-			Active:   []string{"my-feature"},
-		},
-	}
-
-	// Create design.md but no tasks.md
-	specDir := filepath.Join(tmpDir, ".ai", "specs", "my-feature")
-	os.MkdirAll(specDir, 0755)
-	os.WriteFile(filepath.Join(specDir, "design.md"), []byte("# Design"), 0644)
-
-	a := newTestAnalyzer(tmpDir, config, mockClient)
-	decision, err := a.Decide(context.Background())
-	if err != nil {
-		t.Fatalf("Decide() error = %v", err)
-	}
-
-	if decision.NextAction != ActionGenerateTasks {
-		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionGenerateTasks)
-	}
-	if decision.SpecName != "my-feature" {
-		t.Errorf("SpecName = %q, want %q", decision.SpecName, "my-feature")
-	}
-}
-
-func TestDecide_CreateTask(t *testing.T) {
-	tmpDir := t.TempDir()
-	mockClient := NewMockGitHubClient()
-	config := &Config{
-		GitHub: GitHubConfig{
-			Labels: DefaultLabels(),
-		},
-		Specs: SpecsConfig{
-			BasePath: ".ai/specs",
-			Active:   []string{"my-feature"},
-		},
-	}
-
-	// Create tasks.md with uncompleted task
-	specDir := filepath.Join(tmpDir, ".ai", "specs", "my-feature")
-	os.MkdirAll(specDir, 0755)
-	tasksContent := `# Tasks
-- [ ] First task
-- [x] Completed task <!-- Issue #1 -->
-`
-	os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte(tasksContent), 0644)
-
-	a := newTestAnalyzer(tmpDir, config, mockClient)
-	decision, err := a.Decide(context.Background())
-	if err != nil {
-		t.Fatalf("Decide() error = %v", err)
-	}
-
-	if decision.NextAction != ActionCreateTask {
-		t.Errorf("NextAction = %q, want %q", decision.NextAction, ActionCreateTask)
-	}
-	if decision.SpecName != "my-feature" {
-		t.Errorf("SpecName = %q, want %q", decision.SpecName, "my-feature")
-	}
-	if decision.TaskLine != 2 { // Line 2 is the uncompleted task
-		t.Errorf("TaskLine = %d, want 2", decision.TaskLine)
 	}
 }
 

@@ -141,26 +141,3 @@ func TestFeedbackConfig_IsEnabled_ExplicitFalse(t *testing.T) {
 // ---------------------------------------------------------------------------
 // EpicAuditConfig.IsAuditEnabled (config.go)
 // ---------------------------------------------------------------------------
-
-func TestIsAuditEnabled_NilDefault(t *testing.T) {
-	c := &EpicAuditConfig{Enabled: nil}
-	if !c.IsAuditEnabled() {
-		t.Error("IsAuditEnabled with nil = false, want true (default)")
-	}
-}
-
-func TestIsAuditEnabled_ExplicitTrue(t *testing.T) {
-	b := true
-	c := &EpicAuditConfig{Enabled: &b}
-	if !c.IsAuditEnabled() {
-		t.Error("IsAuditEnabled with true = false, want true")
-	}
-}
-
-func TestIsAuditEnabled_ExplicitFalse(t *testing.T) {
-	b := false
-	c := &EpicAuditConfig{Enabled: &b}
-	if c.IsAuditEnabled() {
-		t.Error("IsAuditEnabled with false = true, want false")
-	}
-}

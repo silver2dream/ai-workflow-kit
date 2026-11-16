@@ -34,6 +34,7 @@ func IsRetryable(output string, exitCode int) bool {
 	nonRetryable := []string{
 		"authentication", "auth", "login",
 		"not found", "404",
+		"could not resolve to", // GraphQL's "not found": no such issue, PR or repository
 		"422", "validation failed",
 		"already exists",
 	}

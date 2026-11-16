@@ -18,7 +18,7 @@ Use this skill when:
 - A Worker dispatch fails or times out
 - A PR is rejected due to unexpected errors
 - CI/CD pipeline breaks
-- `awkit kickoff` encounters unrecoverable errors
+- `awkit run` encounters unrecoverable errors
 - Any workflow step produces unexpected results
 - User invokes `/post-mortem`
 
@@ -48,7 +48,7 @@ Walk through the structured failure analysis:
 
 This skill is used after a failure has occurred. It does not interfere with active workflows.
 
-- Safe to run while `awkit kickoff` is active (read-only)
+- Safe to run while `awkit run` is active (read-only)
 - Results can inform new issues created via `/create-issues`
 - Prevention measures may lead to config or rule updates
 

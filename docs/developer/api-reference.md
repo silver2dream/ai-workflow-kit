@@ -7,9 +7,9 @@
 >
 > | 舊腳本 | 新命令 |
 > |--------|--------|
-> | `python3 .ai/scripts/scan_repo.py` | (integrated into `awkit kickoff`) |
-> | `python3 .ai/scripts/audit_project.py` | (integrated into `awkit kickoff`) |
-> | `bash .ai/scripts/kickoff.sh` | `awkit kickoff` |
+> | `python3 .ai/scripts/scan_repo.py` | (integrated into `awkit run`) |
+> | `python3 .ai/scripts/audit_project.py` | (integrated into `awkit run`) |
+> | `bash .ai/scripts/kickoff.sh` | `awkit run` |
 > | `python3 .ai/scripts/validate_config.py` | `awkit validate` |
 
 ---
@@ -23,8 +23,8 @@
 ```bash
 awkit init              # 初始化專案
 awkit init --preset godot-go  # 使用 preset 初始化
-awkit kickoff           # 啟動工作流程（audit/掃描已內建於 kickoff 迴圈）
-awkit kickoff --dry-run # 預覽執行
+awkit run           # 啟動工作流程（audit/掃描已內建於 kickoff 迴圈）
+awkit run --dry-run # 預覽執行
 awkit status            # 檢查狀態（離線摘要）
 awkit next              # 顯示下一個動作
 awkit validate          # 驗證配置
@@ -73,18 +73,18 @@ Skills 是 AWK 的技能系統，用於定義 Agent 的行為。
 
 ## CLI Commands
 
-### awkit kickoff
+### awkit run
 
 啟動工作流程入口。提供 PTY 即時輸出、Issue Monitor 顯示 Worker 進度、Spinner 動畫。
 
 ```bash
-awkit kickoff [--dry-run] [--background] [--force]
+awkit run [--dry-run] [--background] [--force]
 awkit validate  # 只驗證配置
 ```
 
 ### awkit run-issue
 
-執行單一 Issue（內部命令，由 `awkit kickoff` 調度）。
+執行單一 Issue（內部命令，由 `awkit run` 調度）。
 
 ```bash
 awkit run-issue <issue_id> <ticket_file> <repo>

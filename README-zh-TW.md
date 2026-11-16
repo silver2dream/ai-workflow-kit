@@ -7,7 +7,7 @@
 [![Bash](https://img.shields.io/badge/Bash-required-4EAA25?logo=gnubash&logoColor=white)]()
 [![GitHub CLI](https://img.shields.io/badge/gh-required-181717?logo=github&logoColor=white)](https://cli.github.com/)
 
-> 「睡前啟動，早上收割」的 AI 開發工作流 Kit：以 **Spec → 實作 → PR → 合併** 為主線，搭配會**自我改進**的審查閉環。由 **Principal**（Claude Code）協調 **Worker**（Codex 或 Claude Code），品質由確定性的 Go 閘門把關 —— 而非盲信 LLM 輸出。Spec 格式與 **Kiro** 相容。
+> 「睡前啟動，早上收割」的 AI 開發工作流 Kit：以 **票券 → 實作 → 審查 → 合併** 為主線，搭配會**自我改進**的審查閉環。工作就是一串 GitHub Issue；由 **Principal**（Claude Code）協調 **Worker**（Codex 或 Claude Code），品質由確定性的 Go 閘門把關 —— 而非盲信 LLM 輸出。
 
 [![下載](https://img.shields.io/badge/下載-最新版本-brightgreen?style=for-the-badge&logo=github)](https://github.com/silver2dream/ai-workflow-kit/releases/latest)
 
@@ -62,9 +62,10 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 ## ✨ 特色
 
 ### 核心工作流
-- **Spec 驅動**：讀取 `.ai/specs/<name>/tasks.md`（Kiro 相容）決定下一步
+- **Issue 就是工作**：票券是帶有 task 標籤的 GitHub Issue，內文用一個小小的 `yaml awk-ticket` 區塊寫明它屬於哪個 repo、要等哪些票先完成。沒有 spec 檔，也沒有要同步的任務清單
+- **依編號、依依賴**：票券依編號由小到大處理，依賴的票落地後才開始；`awkit run --issue N` 只做一張票就停
 - **GitHub 作為狀態機**：Issues/PR + labels 追蹤進度
-- **派工 + 審查閉環**：派工給 Worker 產 PR，再由 Principal 審查、合併或退回產生修正 issue
+- **派工 + 審查閉環**：派工給 Worker 產 PR，審查後合併，或帶著審查意見退回給 Worker 修正
 - **Worker backend 可選**：`codex`（預設）或 `claude-code`（`worker.backend`）
 
 ### 審查品質
@@ -79,7 +80,6 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 - **可升級為硬閘門**：`awkit lessons promote` 開一個人審 issue,把已驗證的教訓固化成 rule/audit 檢查
 
 ### 上下文接地
-- **Design-doc 注入**：相關 `design.md` 內容加入 Worker prompt
 - **Knowledge-graph 注入**：當 `.understand-anything/knowledge-graph.json` 存在時,注入與票券相關的程式碼地圖切片（檔案 + 相依者）（`worker.knowledge_graph`）
 
 ### Kit 品質與維運
@@ -96,10 +96,9 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│  You ──► awkit kickoff ──► Claude Code (Principal)            │
+│  You ──► awkit run ──► Claude Code (Principal)                │
 │                              │                               │
-│                              ├─► read specs/tasks.md          │
-│                              ├─► create GitHub Issue          │
+│                              ├─► pick the next ticket         │
 │                              ├─► dispatch to Codex (Worker)   │
 │                              ├─► review PR                    │
 │                              ├─► merge or reject              │
@@ -135,11 +134,13 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 
 ```
 .
-├── .ai/                         # kit (config/templates/rules/specs)
-│   ├── config/workflow.yaml     # main config
-│   ├── templates/               # generators (CLAUDE/AGENTS/CI)
-│   ├── rules/                   # architecture + git workflow rules
-│   └── specs/                   # Kiro-style specs
+├── .ai/                         # kit 本體
+│   ├── config/workflow.yaml     # 主設定檔
+│   ├── rules/                   # git 工作流規則 + 可選的規則包
+│   ├── skills/                  # Principal 依循的流程：主迴圈、票券格式
+│   └── state/、results/         # 執行期狀態（gitignored）
+├── .claude/                     # 給 Claude Code 的 agents、rules、skills（產生的）
+├── CLAUDE.md、AGENTS.md         # 給 Principal 與 Worker 的指引（產生的）
 └── .github/workflows/           # CI：每個 repo 一份 workflow，由設定檔產生
 ```
 
@@ -228,18 +229,40 @@ awkit init --preset godot-go --force
 awkit generate
 ```
 
-### 2)（選配）跑完整工作流
+### 2) 建立票券並執行工作流
+
+工作就是一串票券：帶有 task 標籤的 GitHub Issue，內文各有一個 `yaml awk-ticket` 區塊。
+
+````markdown
+## Summary
+Add a health endpoint.
+
+## Scope
+- GET /healthz in the backend
+
+## Acceptance Criteria
+- [ ] GET /healthz answers 200 with the build version
+
+## Testing Requirements
+- A unit test covers the handler
+
+```yaml awk-ticket
+schema: 1
+repo: backend          # a repo of .ai/config/workflow.yaml, or root
+depends_on: [12]       # optional: issues that must be done first
+```
+````
 
 ```bash
 gh auth login
 
-# 使用 awkit CLI（建議）
-awkit kickoff --dry-run    # 預覽會執行什麼
-awkit kickoff              # 啟動工作流
-awkit validate             # 只驗證設定
-
-# Legacy bash 腳本已移除；請使用上方的 awkit 命令
+awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
+awkit run --dry-run    # 只做啟動前檢查
+awkit run              # 處理所有未完成的票券
+awkit run --issue 42   # 或只做一張票
 ```
+
+沒有票券可做，或有事情需要人處理時（票的區塊無法使用、Worker 重試後放棄、票在等一個不會完成的 Issue），執行就會停下。`awkit status` 會告訴你目前的狀況。
 
 停止：
 
@@ -280,18 +303,20 @@ repos:
       test: "go test ./..."
 ```
 
-### Specs
+### 票券
 
-Spec 資料夾結構（Kiro 相容）：
+票券的 `yaml awk-ticket` 區塊會被嚴格讀取。未知的欄位、設定檔裡沒有的 repo 都會被拒絕：`awkit create-task` 在建立 Issue 前就擋下；直接寫在 GitHub 上的，工作流程會在 Issue 留言說明原因。
 
-```
-.ai/specs/<feature-name>/
-├── requirements.md   # optional
-├── design.md         # optional
-└── tasks.md          # required
-```
+| 欄位 | 意義 |
+|------|------|
+| `schema` | 固定為 `1` |
+| `repo` | `workflow.yaml` 裡的 repo，或 `root` |
+| `depends_on` | 必須先完成的 Issue |
+| `severity` | `P0` 到 `P3`（可省略） |
+| `release` | `true` 表示 PR 送往 release 分支（僅限 root repo） |
+| `allow_script_changes`、`allow_parent_changes`、`allow_secrets` | 安全旗標；票沒有明確設定就是關閉 |
 
-要啟用 spec，將 spec 資料夾名稱加入 `.ai/config/workflow.yaml` 的 `specs.active`。
+完整說明：`.ai/skills/principal-workflow/tasks/create-task.md`。
 
 ### Config 區段
 
@@ -301,7 +326,7 @@ Spec 資料夾結構（Kiro 相容）：
 |------|------|
 | `project` / `repos` | Repo 佈局、類型、各 repo 的 `verify` 命令 |
 | `git` | 整合/發布分支、commit 格式、PR 模板 |
-| `specs` / `tasks` / `audit` | Spec 來源、任務格式、audit 檢查 |
+| `audit` | audit 檢查 |
 | `github` | Issue/PR labels、repo 覆寫 |
 | `rules` / `agents` | 啟用的 kit/自訂規則與 subagents |
 | `timeouts` / `escalation` | 操作逾時、重試/失敗上限、PR 大小上限 |
@@ -347,27 +372,21 @@ lessons:
 
 這個 repo 自己的 CI 每次 push 都會初始化一份這樣的專案，並執行它產生的 workflow 裡的指令，所以骨架、preset 與 CI 產生器不會各走各的。
 
-- Spec 範例：`.ai/specs/example/`
 - 入門指南：`docs/getting-started.md`
 
 ---
 
 ## 🔁 CI
 
-Root CI workflow：`.github/workflows/ci.yml`
-
 **使用者專案：**
-- `awkit init` 會自動為你的專案建立 CI workflow
-- `awkit upgrade` 會自動遷移舊版 CI 設定（移除過時的 `awk` job）
+- `awkit init` 會為每個有建置或測試指令的 repo 寫出一份 CI workflow，指令取自 `workflow.yaml`
+- `awkit upgrade` 與 `awkit generate` 會讓這些 workflow 跟著設定檔走。把 workflow 第一行的註解刪掉，它就歸你管，awkit 不再動它
 
 **此 repo（awkit 本身）：**
-此 repo 內建的是手寫 CI 範例。`awkit generate` 預設不會改動 workflows；需要從模板生成時才使用 `--generate-ci`。
-
-包含四個 job：
+`.github/workflows/ci.yml` 是手寫的，所以 `awkit generate` 不會動它。包含三個 job：
 - `awkit_cli`（ubuntu）：`go vet`、`go test -race`（60% 覆蓋率門檻閘門）、AWK evaluation（`awkit evaluate --offline` 與 `--offline --strict`）
-- `awkit_cli_windows`（**windows-latest**）：在 Windows 跑完整 `go test ./...` 套件,守護原生 path/ConPTY/process 行為
-- `backend`（ubuntu）：在 `backend/` 跑 `go test -race ./...`
-- `frontend`（ubuntu）：`frontend/Packages/manifest.json` JSON 檢查 + 資料夾存在性
+- `awkit_cli_windows`（**windows-latest**）：在 Windows 跑完整 `go test ./...` 套件，守護原生 path/ConPTY/process 行為
+- `skeleton`（ubuntu）：以 `--scaffold` 初始化一份 `godot-go` 專案，再用 awkit 為它產生的 workflow 裡的指令建置並測試
 
 ---
 
@@ -416,7 +435,7 @@ Root CI workflow：`.github/workflows/ci.yml`
 
 快速參考：
 - 分支策略與 commit 格式：`.ai/rules/_kit/git-workflow.md`
-- PR base 預設 target `feat/example`
+- PR 的 base 是 `develop`；`main` 只用於發版
 
 ---
 

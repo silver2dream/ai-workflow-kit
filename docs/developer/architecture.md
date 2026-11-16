@@ -72,9 +72,6 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 │       ├── SKILL.md
 │       └── phases/                # 分析、分解、建立階段
 │
-├── templates/                     # 模板檔案
-│   └── design.md.example          # 設計文件範例
-│
 ├── rules/
 │   ├── _kit/                      # Kit 核心規則
 │   │   └── git-workflow.md        # Git 工作流程規則
@@ -127,7 +124,7 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 | 指令 | 說明 |
 |------|------|
 | `awkit init` | 初始化專案 |
-| `awkit kickoff` | 啟動工作流程（audit/掃描已內建於迴圈） |
+| `awkit run` | 啟動工作流程（audit/掃描已內建於迴圈） |
 | `awkit status` / `next` | 檢查工作流程狀態 / 下一動作 |
 | `awkit dispatch-worker` | 調度 Worker 執行任務 |
 | `awkit submit-review` | 提交審查（`--body-file` 結構化 JSON） |
@@ -174,15 +171,13 @@ AWK 採用 **Sequential Chain** 模式，由 Claude Code (Principal) 協調 Work
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│  [awkit kickoff]                                             │
+│  [awkit run]                                                 │
 │       │                                                      │
 │       ├─► preflight + audit（內建）                          │
 │       │                                                      │
 │       └─► Claude Code session                                │
 │                 │                                            │
-│                 ├─► 讀取 specs/tasks.md                      │
-│                 │                                            │
-│                 ├─► gh issue create ──► GitHub Issue         │
+│                 ├─► awkit analyze-next ──► 下一張票券        │
 │                 │                                            │
 │                 ├─► awkit dispatch-worker                    │
 │                 │         │                                  │
@@ -274,7 +269,7 @@ escalation:
                                │
                                ▼
                     ┌─────────────────────┐
-                    │   awkit kickoff     │
+                    │   awkit run         │
                     │ (工作流程入口;內建   │
                     │  preflight + audit) │
                     └──────────┬──────────┘

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -820,52 +819,6 @@ func TestCov_LoadAttemptInfo(t *testing.T) {
 // resolveSpecName / resolveTaskLine
 // ---------------------------------------------------------------------------
 
-func TestCov_ResolveSpecName(t *testing.T) {
-	t.Run("from metadata", func(t *testing.T) {
-		os.Unsetenv("AI_SPEC_NAME")
-		meta := &TicketMetadata{SpecName: "my-spec"}
-		if got := resolveSpecName(meta); got != "my-spec" {
-			t.Errorf("expected 'my-spec', got %q", got)
-		}
-	})
-
-	t.Run("env overrides metadata", func(t *testing.T) {
-		os.Setenv("AI_SPEC_NAME", "env-spec")
-		defer os.Unsetenv("AI_SPEC_NAME")
-		meta := &TicketMetadata{SpecName: "meta-spec"}
-		if got := resolveSpecName(meta); got != "env-spec" {
-			t.Errorf("expected 'env-spec', got %q", got)
-		}
-	})
-}
-
-func TestCov_ResolveTaskLine(t *testing.T) {
-	t.Run("from metadata", func(t *testing.T) {
-		os.Unsetenv("AI_TASK_LINE")
-		meta := &TicketMetadata{TaskLine: 42}
-		if got := resolveTaskLine(meta); got != "42" {
-			t.Errorf("expected '42', got %q", got)
-		}
-	})
-
-	t.Run("env overrides metadata", func(t *testing.T) {
-		os.Setenv("AI_TASK_LINE", "99")
-		defer os.Unsetenv("AI_TASK_LINE")
-		meta := &TicketMetadata{TaskLine: 42}
-		if got := resolveTaskLine(meta); got != "99" {
-			t.Errorf("expected '99', got %q", got)
-		}
-	})
-
-	t.Run("zero line returns empty", func(t *testing.T) {
-		os.Unsetenv("AI_TASK_LINE")
-		meta := &TicketMetadata{TaskLine: 0}
-		if got := resolveTaskLine(meta); got != "" {
-			t.Errorf("expected empty, got %q", got)
-		}
-	})
-}
-
 // ---------------------------------------------------------------------------
 // generateSessionID
 // ---------------------------------------------------------------------------
@@ -1328,21 +1281,3 @@ repos:
 // ---------------------------------------------------------------------------
 // resolveSpecName and resolveTaskLine — ensure env var stripped
 // ---------------------------------------------------------------------------
-
-func TestCov_ResolveSpecName_WhitespaceEnv(t *testing.T) {
-	os.Setenv("AI_SPEC_NAME", "  ")
-	defer os.Unsetenv("AI_SPEC_NAME")
-	meta := &TicketMetadata{SpecName: "from-meta"}
-	if got := resolveSpecName(meta); got != "from-meta" {
-		t.Errorf("expected 'from-meta' for whitespace env, got %q", got)
-	}
-}
-
-func TestCov_ResolveTaskLine_WhitespaceEnv(t *testing.T) {
-	os.Setenv("AI_TASK_LINE", "  ")
-	defer os.Unsetenv("AI_TASK_LINE")
-	meta := &TicketMetadata{TaskLine: 10}
-	if got := resolveTaskLine(meta); got != strconv.Itoa(10) {
-		t.Errorf("expected '10' for whitespace env, got %q", got)
-	}
-}
