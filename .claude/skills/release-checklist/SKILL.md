@@ -1,74 +1,26 @@
 ---
 name: release-checklist
-description: Pre-release verification to ensure quality before merging to main. Checks tests, uncommitted changes, changelog, dependencies, CI status, and branch state. Triggers: /release-checklist, pre-release check, release verification, go/no-go.
+description: 發版前的檢查：確認整合分支可以合併到 release 分支（建置與測試 → 工作目錄 → 版本與變更紀錄 → 相依套件 → CI → 與 release 分支的差距），給出 GO 或 NO-GO 與每一項的證據。準備開 release PR 或打 tag 之前使用；只檢查，不修、不推、不合併。
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
-# Release Checklist Skill
+# Release Checklist
 
-Pre-release verification workflow that systematically validates all quality gates before a release merge to main.
+分支名稱與驗證指令的定義處是 `.ai/config.yaml`（`git.integration_branch`、`git.release_branch`、每個 repo 的 `verify`）；發版的分支規則在 `.claude/rules/_kit/git-workflow.md`。這個 skill 把檢查串起來。
 
-## Overview
+## Read this reference
 
-This skill runs a comprehensive checklist of verifications to determine whether the current state of the codebase is ready for release. It produces a clear go/no-go decision with supporting evidence for each check.
-
-## When to Use
-
-Use this skill when:
-- Preparing to merge an integration branch into `main`
-- Before creating a release tag
-- User invokes `/release-checklist`
-- User asks "are we ready to release?"
-- Before creating a release PR (`feat/<branch>` -> `main`)
+`references/verify-release.md`：每一項怎麼查、怎麼判定，以及報告範本。
 
 ## Workflow
 
-### Phase 1: Verify Release
+1. 讀 `.ai/config.yaml`，確認目前在整合分支上（`git branch --show-current`）。在別的分支上就先問要檢查哪一個，不自己切換。
+2. 照 reference 逐項檢查，每一項記下 PASS、WARN 或 FAIL 與實際輸出：建置與測試、工作目錄、版本與變更紀錄、相依套件、CI、與 release 分支的差距。
+3. 判定：有任何一項 FAIL 就是 NO-GO；只有 WARN 是 GO，並列出要注意的事。
+4. 用 reference 的範本回報。NO-GO 時每個阻擋項附上怎麼修；GO 時列出接下來的步驟。
 
-**Read** `phases/verify-release.md`
+## Guardrails
 
-Run the full pre-release verification:
-1. Verify all tests pass
-2. Check for uncommitted changes
-3. Verify changelog/version
-4. Check dependency vulnerabilities
-5. Validate CI status
-6. Verify branch state (up to date with main)
-7. Output go/no-go decision
-
-## Critical Rules
-
-1. **ALL checks must pass for a GO decision** -- no exceptions
-2. **Do not auto-fix issues** -- report them and let the user decide
-3. **Be explicit about what failed** -- include exact error output
-4. **Check the correct branch** -- verify you are on the integration branch, not main
-5. **Never push or merge** -- this skill is verification only
-
-## Integration with AWK Workflow
-
-This skill is typically the last step before a release PR:
-
-```
-awkit run → issues processed → PRs merged to integration branch
-        ↓
-/release-checklist → GO decision
-        ↓
-Create PR: integration branch → main (a ticket with release: true)
-```
-
-Per `.claude/rules/_kit/git-workflow.md`:
-- Release PRs target `main`
-- Only create release PRs when the ticket's `yaml awk-ticket` block sets `release: true`
-
-## Self-Check
-
-On each phase entry, output:
-```
-[RELEASE-CHECKLIST] <timestamp> | <phase> | loaded: <filename>
-```
-
-## Quick Reference
-
-| Phase | Action | File |
-|-------|--------|------|
-| 1. Verify Release | Full pre-release verification | `phases/verify-release.md` |
+- 只檢查：不修問題、不 commit、不 push、不合併、不打 tag。發現問題就回報，由 owner 決定。
+- 判定依據是這一次實際跑出來的輸出。沒跑的檢查寫「沒跑」與原因，不算 PASS。
+- 一項失敗不停下，全部查完再回報，owner 才能一次看到所有阻擋項。

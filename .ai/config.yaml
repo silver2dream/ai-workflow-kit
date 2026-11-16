@@ -149,12 +149,8 @@ rules:
   kit:
     - git-workflow  # 由 awkit generate 產生,含分支配置
   
-  # 使用者自訂規則（放在 .claude/rules/，不會被覆蓋）
-  # 預設保持為空，避免 AWK kit 綁死特定技術/架構。
-  #
-  # 可選範例規則包在 AWK repo 的 `docs/examples/rules/`，要用的複製到 `.claude/rules/`：
-  # - 先 copy 到 `.claude/rules/`
-  # - 再把規則名稱加入 custom 清單
+  # 專案自己的規則：檔案放在 .claude/rules/<名稱>.md，名稱列在這裡，
+  # Worker 才會被要求讀它。升級不會動這些檔案。
   custom: []
 
 # ============================================================

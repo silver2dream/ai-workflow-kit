@@ -50,3 +50,18 @@
 # v0.15.x - multi-model review runs inside `awkit submit-review`
 # (review.secondary_reviewers); the standalone subagent had no caller
 .claude/agents/architecture-reviewer.md
+
+# v0.16.x - a skill keeps its reference texts in references/, and its loop in
+# SKILL.md (files first, then the emptied directory)
+.claude/skills/principal-workflow/phases/main-loop.md
+.claude/skills/principal-workflow/phases/dispatch.md
+.claude/skills/principal-workflow/phases/review.md
+.claude/skills/principal-workflow/phases/conflict-resolution.md
+.claude/skills/principal-workflow/phases
+.claude/skills/principal-workflow/tasks/create-task.md
+.claude/skills/principal-workflow/tasks
+.claude/skills/principal-workflow/references/compaction-strategy.md
+.claude/skills/post-mortem/phases/analyze-failure.md
+.claude/skills/post-mortem/phases
+.claude/skills/release-checklist/phases/verify-release.md
+.claude/skills/release-checklist/phases

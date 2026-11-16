@@ -1,8 +1,8 @@
-# 票券格式與建立
+# Ticket
 
-票券就是一個帶有 task 標籤（預設 `ai-task`）的 GitHub Issue。主迴圈只處理已存在的票券，不會自己產生票券；需要新增工作時，照這份文件寫出票券內文，再用 `awkit create-task` 建立。
+票券是一個帶 task 標籤（預設 `ai-task`）的 GitHub issue。主迴圈只處理已存在的票券，不自己開票。一批新工作由 `awkit plan` 規劃，核可之後由它建票；單獨補一張票時，照這份文件寫內文，再用 `awkit create-task` 建立。
 
-## 1) 撰寫 ticket body
+## 1. 寫內文
 
 把內文寫入一個檔案，例如 `.ai/state/tmp/ticket.md`。不要直接 `gh issue create`：`awkit create-task` 會先檢查內文，不合格就拒絕建立。
 
@@ -73,7 +73,7 @@ depends_on: [12, 15]
 allow_script_changes: true
 ```
 
-## 2) 建立 Issue
+## 2. 建立
 
 ```bash
 awkit create-task \
@@ -86,7 +86,7 @@ awkit create-task \
 - 成功時輸出 `Created Issue #<N>`。Issue 會帶 task 標籤，下一輪 `awkit analyze-next` 就會看到它。
 - 一次建立多張有依賴關係的票時，先建立被依賴的那張，拿到編號後再寫依賴它的票的 `depends_on`。
 
-## 3) 驗證
+## 3. 被拒絕時
 
 - 內文缺 section、沒有 checkbox、沒有區塊或區塊有誤：指令以非零結束並說明原因，修正後重跑。
 - 建立後不需要再做任何登記；Issue 本身就是唯一的工作來源。

@@ -96,7 +96,7 @@ depends_on: [12, 15]
 ```
 ````
 
-`repo` 是 `config.yaml` 裡的 repo 名稱或 `root`；`depends_on` 是必須先完成的 Issue，可省略。用 `awkit create-task --title ... --body-file ...` 建立，內文不合格時不會建立。完整說明見 `.claude/skills/principal-workflow/tasks/create-task.md`。
+`repo` 是 `config.yaml` 裡的 repo 名稱或 `root`；`depends_on` 是必須先完成的 Issue，可省略。用 `awkit create-task --title ... --body-file ...` 建立，內文不合格時不會建立。完整說明見 `.claude/skills/principal-workflow/references/ticket.md`。
 
 ---
 

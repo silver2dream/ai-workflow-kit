@@ -118,6 +118,14 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		}
 	}
 
+	// The rules for the preset's stack go with its configuration, which lists
+	// them. A project that kept the configuration it had keeps its rules too.
+	if !configSkipped {
+		if err := ensureStarterRules(targetDir, opts.Preset); err != nil {
+			return nil, err
+		}
+	}
+
 	// The kit: rules, skills and subagents, at the paths they have in a
 	// project. Only the kit's own files are written: what else the project
 	// keeps under .claude is its own and is not touched.

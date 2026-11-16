@@ -66,7 +66,7 @@ func cmdDispatchWorker(args []string) int {
 	sessionID := fs.String("session", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	ghTimeout := fs.Duration("gh-timeout", 30*time.Second, "")
-	workerTimeout := fs.Duration("worker-timeout", 60*time.Minute, "")
+	workerTimeout := fs.Duration("worker-timeout", worker.DefaultWorkerTimeout, "")
 	maxRetries := fs.Int("max-retries", 3, "")
 	mergeIssue := fs.String("merge-issue", "", "")
 	jsonOutput := fs.Bool("json", false, "")
