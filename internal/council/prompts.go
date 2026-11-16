@@ -389,7 +389,8 @@ func decisionsText(plan *Plan) string {
 
 // documentsPrompt asks a role to write the documents it owns. asked are the
 // ones the council can write: what the role owns, without what is too long.
-func (p *planner) documentsPrompt(role *Role, plan *Plan, asked []string) string {
+// book holds the project's rules for those files.
+func (p *planner) documentsPrompt(role *Role, plan *Plan, asked []string, book rulebook) string {
 	var b strings.Builder
 	b.WriteString(p.frame(role))
 	b.WriteString(p.standing(role))
@@ -413,26 +414,19 @@ func (p *planner) documentsPrompt(role *Role, plan *Plan, asked []string) string
 	b.WriteString(`
 A document is the current truth about its subject, not the minutes of a meeting: no "we discussed", no "it was proposed", no list of the decisions and no account of who objected; docs/decisions.md holds those. Where a decision settles something, the document follows it, also where you held otherwise, and names the decision (D4) where a reader will ask why. What rests on an assumption says so and names it (A2).
 `)
+	b.WriteString(p.byTheRules(role, plan, book))
 	if written {
 		b.WriteString(`
 A document that is written already: change what this meeting changes and keep the rest as it is, word for word. When the meeting changes nothing in it, do not write it again; answer for it with this single line:
-<<<UNCHANGED docs/the/path.md>>>
+<<<UNCHANGED path/of/the/document.md>>>
 `)
 	}
 	fmt.Fprintf(&b, `
-Start every document you write with this header, then a title:
----
-status: draft
-owner: %s
-updated: %s
-plan: %s
----
-
-Keep each document under 300 lines. Answer with the documents and nothing else, each one between these two lines:
-<<<DOCUMENT docs/the/path.md>>>
+One document is at most %d bytes: the council writes a document whole. Answer with the documents and nothing else, each one between these two lines:
+<<<DOCUMENT path/of/the/document.md>>>
 (the whole document)
 <<<END>>>
-`, role.ID, p.today(), plan.ID)
+`, maxDocument)
 	return b.String()
 }
 
@@ -512,7 +506,7 @@ const ticketShape = `{
       "scope": ["what is built or changed"],
       "acceptance": ["behaviour a test can check"],
       "testing": ["what must be tested"],
-      "reads": ["docs/... the developer has to read"],
+      "reads": ["the path of a document the developer has to read"],
       "depends_on": ["key of a ticket that must be done first"]
     }
   ],

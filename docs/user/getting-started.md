@@ -68,14 +68,15 @@ awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 議會（`.ai/roster.yaml` 裡的角色）會辯論這份需求，寫下文件與決策，最後提出一份票券清單：
 
 - `docs/plans/<plan>/tickets.yaml`：票券提案。**這是你要看的東西**，可以直接改。
-- `docs/plans/<plan>/minutes.md`、`docs/decisions.md`、`docs/<area>/*.md`：會議紀錄、決策、各角色的文件。
+- `docs/plans/<plan>/minutes.md`、`docs/decisions.md`：會議紀錄、決策。
+- 各角色的文件：產品與設計在 `docs/<area>/`，各 repo 的工程文件在那個 repo 的 `docs/`（位置寫在 `.ai/roster.yaml`）。它們照 `.claude/rules/` 的規則寫；寫完會對照規則檢查一次，仍然不一致的地方會在結束時列出來。
 
 想在規劃途中被問問題，用 `awkit plan --ask "…"`。
 
-Worker 是從 integration branch 讀專案的，所以議會寫在 `docs/` 下的東西要先 commit 並推上去；然後核可清單：
+Worker 是從 integration branch 讀專案的，所以議會寫的文件要先 commit 並推上去（漏了的話，核可時會列出還沒 commit 的檔案）；然後核可清單：
 
 ```bash
-git add docs && git commit -m "[docs] plan the daily login reward" && git push
+git add docs backend/docs frontend/docs && git commit -m "[docs] plan the daily login reward" && git push
 awkit plan approve <plan> --dry-run   # 先看會建哪些 issue
 awkit plan approve <plan>             # 建立 issue
 ```

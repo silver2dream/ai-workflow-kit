@@ -55,6 +55,10 @@ func mustRoster(t *testing.T, text string) *Roster {
 var (
 	promptRole = regexp.MustCompile(`^You are the .+? \(([a-z0-9-]+)\) at a planning meeting`)
 	promptStep = []struct{ marker, step string }{
+		// The two that carry the project's rules come first: what a rule
+		// says must not be taken for the task of another step.
+		{"You check documents against the rules of a software project", "rulecheck"},
+		{"Your task now: put right what the check found", "redocuments"},
 		{"state your position on the brief", "position"},
 		{"Put them to the owner as one list", "questions"},
 		{"Your task now: object. Read the others' positions", "objections"},
@@ -129,7 +133,7 @@ func block(json string) string { return "Here it is.\n```json\n" + json + "\n```
 func docs(role string, paths ...string) string {
 	var b strings.Builder
 	for _, path := range paths {
-		fmt.Fprintf(&b, "<<<DOCUMENT %s>>>\n---\nstatus: draft\nowner: %s\n---\n# %s\n\nWritten by %s.\n<<<END>>>\n", path, role, path, role)
+		fmt.Fprintf(&b, "<<<DOCUMENT %s>>>\n# %s\n\nOwner: %s.\n\nWritten by %s.\n<<<END>>>\n", path, path, role, role)
 	}
 	return b.String()
 }
@@ -285,10 +289,27 @@ func TestRun_AMeetingWithoutObjections(t *testing.T) {
 		}
 	}
 	index := readFile(t, root, "docs/README.md")
-	for _, want := range []string{"| [docs/qa/risks.md](qa/risks.md) | skeptic | draft |", "| [" + plan.ID + "](plans/" + plan.ID + "/minutes.md) | 2 tickets, 0 on GitHub |"} {
+	for _, want := range []string{"| Document | Owner |\n|---|---|\n", "| [docs/qa/risks.md](qa/risks.md) | skeptic |\n",
+		"| [docs/decisions.md](decisions.md) | the deciding role, through `awkit plan`; it only grows |\n",
+		"| [" + plan.ID + "](plans/" + plan.ID + "/minutes.md) | [tickets.yaml](plans/" + plan.ID + "/tickets.yaml) |\n"} {
 		if !strings.Contains(index, want) {
 			t.Errorf("the index should say %q:\n%s", want, index)
 		}
+	}
+	// The index points to a document and copies nothing from it: how far a
+	// document is, the document says itself.
+	for _, copied := range []string{"Status", "status", "draft", "2 tickets", "on GitHub"} {
+		if strings.Contains(index, copied) {
+			t.Errorf("the index says %q, which is the document's own to say:\n%s", copied, index)
+		}
+	}
+	// A project without rules: the documents are written without, nothing is
+	// read against any, and the minutes say nothing about rules.
+	if plan.Rules != nil || plan.RuleChecks != nil || strings.Contains(minutes, "rules") {
+		t.Errorf("a project without rules: rules %v, checks %v, minutes:\n%s", plan.Rules, plan.RuleChecks, minutes)
+	}
+	if got := model.count("moderator", "rulecheck"); got != 0 {
+		t.Errorf("a project without rules had its documents checked %d times", got)
 	}
 
 	// The work list: in an order that can be worked, nothing on GitHub.

@@ -20,8 +20,6 @@ type ApproveOptions struct {
 	ID string
 	// Repos are the repos a ticket can be for.
 	Repos []Repo
-	// Roster, when given, lets the document index show what was created.
-	Roster *Roster
 	// DryRun reports what would be created and creates nothing.
 	DryRun bool
 	// Create makes one issue from a title and a body file, and returns its
@@ -158,11 +156,6 @@ func Approve(ctx context.Context, opts ApproveOptions) (*Approval, error) {
 		progress(fmt.Sprintf("created #%d for %s: %s", issue, item.Key, item.Title))
 	}
 
-	if opts.Roster != nil && !opts.DryRun {
-		if err := writeIndex(opts.Root, opts.Roster); err != nil {
-			return approval, err
-		}
-	}
 	return approval, nil
 }
 

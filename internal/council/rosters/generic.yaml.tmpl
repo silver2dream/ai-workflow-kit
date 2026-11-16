@@ -2,6 +2,12 @@
 # decisions and a list of tickets. Change it to fit the project: the roles,
 # what each stands for, the documents each owns.
 #
+# A role owns documents: Markdown files that only it writes. Where a document
+# is kept is the project's to say, in its rules (.claude/rules/): product and
+# design under docs/, the engineering documents of a repo with that repo. The
+# council is given the rules that hold for the files it writes, and what it
+# wrote is checked against them.
+#
 # The stances are written to disagree. A table where everyone nods produces a
 # plan nobody tested.
 
@@ -53,7 +59,9 @@ roles:
       requirements that cannot be tested, on designs that need everything
       finished before anything works, and on dependencies nobody justified.
     owns:
-      - docs/tech/architecture.md
+{{- range .Docs}}
+      - {{file . "architecture.md"}}
+{{- end}}
 
   - id: skeptic
     title: Skeptic

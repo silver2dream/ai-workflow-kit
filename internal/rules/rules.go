@@ -100,14 +100,15 @@ func cutFrontmatter(rest string) (head, body string, closed bool) {
 }
 
 // pathList reads `paths:` written as a list or as one string of patterns
-// separated by commas.
+// separated by commas. A comma inside braces separates nothing: it belongs to
+// the pattern, src/**/*.{ts,tsx}.
 type pathList []string
 
 func (p *pathList) UnmarshalYAML(node *yaml.Node) error {
 	var list []string
 	switch node.Kind {
 	case yaml.ScalarNode:
-		list = strings.Split(node.Value, ",")
+		list = []string{node.Value}
 	case yaml.SequenceNode:
 		if err := node.Decode(&list); err != nil {
 			return err
@@ -116,12 +117,39 @@ func (p *pathList) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("line %d: paths is a list of patterns", node.Line)
 	}
 	*p = nil
-	for _, pattern := range list {
-		if pattern = strings.TrimSpace(pattern); pattern != "" {
-			*p = append(*p, pattern)
+	for _, item := range list {
+		for _, pattern := range splitPatterns(item) {
+			if pattern = strings.TrimSpace(pattern); pattern != "" {
+				*p = append(*p, pattern)
+			}
 		}
 	}
 	return nil
+}
+
+// splitPatterns splits a string of patterns at its commas, leaving alone the
+// commas inside braces and the ones a backslash is in front of.
+func splitPatterns(value string) []string {
+	var patterns []string
+	depth, start := 0, 0
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '\\':
+			i++
+		case '{':
+			depth++
+		case '}':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				patterns = append(patterns, value[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(patterns, value[start:])
 }
 
 // Everywhere reports whether the rule is about every file.

@@ -84,6 +84,25 @@ func ProjectOf(configFile string) string {
 // Roster returns the roster file of the project at root.
 func Roster(root string) string { return In(root, RosterFile) }
 
+// EngineeringDocs holds the engineering documents of a repo that is the whole
+// repository: apart from the product and design documents, which docs/ holds.
+const EngineeringDocs = "docs/engineering/"
+
+// RepoDocs returns the directory of a repo's engineering documents, from the
+// root of the project, with forward slashes and a slash at its end. dir is
+// the repo's directory the way a configuration names it ("backend",
+// "backend/", "./"). A repo in a directory of its own keeps its documents
+// there, in docs/; one that is the whole repository keeps them in
+// EngineeringDocs.
+func RepoDocs(dir string) string {
+	dir = strings.Trim(strings.ReplaceAll(strings.TrimSpace(dir), "\\", "/"), "/")
+	dir = strings.TrimPrefix(dir, "./")
+	if dir == "" || dir == "." {
+		return EngineeringDocs
+	}
+	return dir + "/docs/"
+}
+
 // Rules returns the directory of the project's rule files.
 func Rules(root string) string { return In(root, RulesDir) }
 

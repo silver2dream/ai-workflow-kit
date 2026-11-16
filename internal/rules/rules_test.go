@@ -30,6 +30,24 @@ func TestParse(t *testing.T) {
 			title: "Web", paths: []string{"src/**/*.ts", "src/**/*.tsx"}, text: "# Web\n",
 		},
 		{
+			name:  "one string: a comma inside braces belongs to the pattern",
+			file:  ".claude/rules/web.md",
+			data:  "---\npaths: src/**/*.{ts,tsx}, lib/{a,{b,c}}/*.go ,docs/**\n---\n# Web\n",
+			title: "Web", paths: []string{"src/**/*.{ts,tsx}", "lib/{a,{b,c}}/*.go", "docs/**"}, text: "# Web\n",
+		},
+		{
+			name:  "a list: an item is read like one string",
+			file:  ".claude/rules/web.md",
+			data:  "---\npaths:\n  - \"src/**/*.{ts,tsx}\"\n  - \"lib/**, docs/**\"\n---\n# Web\n",
+			title: "Web", paths: []string{"src/**/*.{ts,tsx}", "lib/**", "docs/**"}, text: "# Web\n",
+		},
+		{
+			name:  "a brace that is never closed, one that is never opened, and a comma with a backslash",
+			file:  ".claude/rules/odd.md",
+			data:  "---\npaths: 'a/{b,c, d}/x, e}/f, g\\,h, {i,j'\n---\n# Odd\n",
+			title: "Odd", paths: []string{"a/{b,c, d}/x", "e}/f", "g\\,h", "{i,j"}, text: "# Odd\n",
+		},
+		{
 			name:  "no frontmatter: about everything",
 			file:  ".claude/rules/agents.md",
 			data:  "# Agent Orchestration\n\nText with --- in it.\n",

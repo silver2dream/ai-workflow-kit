@@ -23,7 +23,8 @@
 ```
 awkit plan "…"
   └─ council.Run：立場 → 提問 → 異議 → 對辯 → 主持人整理 → 裁定 → 文件 → 票券清單
-       寫出 docs/…、docs/decisions.md、docs/plans/<plan>/{minutes.md,tickets.yaml}
+       文件：每個角色照對它的檔案生效的規則寫（internal/rules）→ 對照規則檢查 → 擁有者修一次 → 再檢查一次
+       寫出各角色的文件、docs/decisions.md、docs/plans/<plan>/{minutes.md,tickets.yaml}
 awkit plan approve <plan>
   └─ council.Approve → task.CreateTask：每張票一個 GitHub issue（ai-task 標籤 + awk-ticket 區塊）
 
@@ -103,7 +104,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `config` | `.ai/config.yaml` 唯一的讀取處：結構、預設值（`applyDefaults`）、驗證、沒有程式讀的鍵（`UnreadKeys`） |
 | `layout` | 專案裡每個檔案的位置。路徑只在這裡寫一次 |
 | `install` | `init`、`upgrade`、`uninstall`：preset（`presets.go`）、起始規則（`starter-rules/`，範本，用設定檔與 owner 的回答寫出來）、專案骨架、kit 檔案的安裝與汰換 |
-| `rules` | 讀專案的規則檔（`.claude/rules/`）：標題、它適用的檔案（`paths:`）、內文 |
+| `rules` | 讀專案的規則檔（`.claude/rules/`）：標題、它適用的檔案（`paths:`）、內文；以及哪些規則對某個檔案生效（`For`、`Match`，語法照 Claude Code） |
 | `generate` | 從設定產生的檔案：`CLAUDE.md`、`AGENTS.md`、kit 的 git 規則、自訂 subagent、CI workflow、Claude Code 的本機權限 |
 | `migrate` | 設定檔格式的版本轉換，以及舊目錄結構的搬遷 |
 | `council` | `awkit plan`：名冊、會議的每一步、文件、票券清單、核可 |
@@ -128,7 +129,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 
 這個 repository 本身就是一個 AWK 專案，所以 kit 就是它自己的 `.claude/`。`kit_embed.go` 用 `go:embed` 把列名的檔案（`rules/_kit`、三個 skill、兩個 subagent）嵌進 binary，`install` 再把它們寫進使用者的專案。
 
-- repository 自己的 `.ai/config.yaml` 與 `.ai/roster.yaml` 不出貨；專案的這兩份來自 preset（`internal/install/presets.go`、`internal/council/rosters/`）。
+- repository 自己的 `.ai/config.yaml` 與 `.ai/roster.yaml` 不出貨；專案的這兩份來自 preset（`internal/install/presets.go`、`internal/council/rosters/`；名冊是範本，工程文件的位置依專案的 repo 填入）。
 - 起始規則是範本：每個專案都有的在 `internal/install/starter-rules/common/`，一個技術棧才有的在 `starter-rules/<preset>/`。建立專案時用設定檔（repo 與資料夾）與 owner 的回答（契約的位置、已定的技術選擇）寫一次，之後歸專案所有。
 - kit 拿掉的檔案列在 `internal/install/deprecated.txt`，升級時會從專案裡移除。
 - `CLAUDE.md`、`AGENTS.md`、`.claude/rules/_kit/git-workflow.md` 是 `generate` 產生的：要改內容，改 `internal/generate/generator.go`，不是改這個 repository 裡的那幾份。

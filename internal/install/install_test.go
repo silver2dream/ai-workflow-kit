@@ -523,20 +523,76 @@ func TestInstall_Roster(t *testing.T) {
 		return string(data)
 	}
 
-	for preset, want := range map[string]string{"generic": "generic", "godot-go": "godot-go"} {
+	// The roster is the one of the preset, written for the project's repos:
+	// the engineering documents it names are kept with them. The rules the
+	// project starts with name the same files as the authority on each repo,
+	// so the council writes where the rules say the truth is.
+	for preset, want := range map[string]struct {
+		engineer string
+		owns     []string
+	}{
+		"generic":  {"architect", []string{"docs/engineering/architecture.md"}},
+		"godot-go": {"tech-lead", []string{"backend/docs/architecture.md", "frontend/docs/architecture.md", "backend/docs/protocol.md"}},
+	} {
 		dir := t.TempDir()
 		if _, err := Install(createMinimalMockFS(), dir, Options{Preset: preset, NoGenerate: true}); err != nil {
 			t.Fatalf("%s: Install: %v", preset, err)
 		}
-		if got := rosterOf(dir); got == "" || got != string(council.DefaultRoster(want)) {
-			t.Errorf("%s: the project did not get the %s roster (%d bytes)", preset, want, len(got))
+		roster, err := council.LoadRoster(layout.Roster(dir))
+		if err != nil {
+			t.Fatalf("%s: the roster that was written cannot hold a meeting: %v", preset, err)
 		}
-		if _, err := council.LoadRoster(layout.Roster(dir)); err != nil {
-			t.Errorf("%s: the roster that was written cannot hold a meeting: %v", preset, err)
+		engineer := roster.Role(want.engineer)
+		if engineer == nil || !reflect.DeepEqual(engineer.Owns, want.owns) {
+			t.Errorf("%s: the project did not get the roster of its preset for its repos: %s owns %v, want %v (roles: %v)", preset, want.engineer, engineer, want.owns, roster.IDs())
+			continue
+		}
+		governance, err := os.ReadFile(filepath.Join(layout.Rules(dir), "docs-source-of-truth.md"))
+		if err != nil {
+			t.Fatalf("%s: %v", preset, err)
+		}
+		for _, doc := range want.owns {
+			if strings.HasSuffix(doc, "/architecture.md") && !strings.Contains(string(governance), "| `"+doc+"` |") {
+				t.Errorf("%s: the roster names %s, and the rule about where documents are kept does not", preset, doc)
+			}
+		}
+		if got := rosterOf(dir); strings.Contains(got, "{{") {
+			t.Errorf("%s: the roster holds a piece of its template:\n%s", preset, got)
 		}
 	}
-	if string(council.DefaultRoster("generic")) == string(council.DefaultRoster("godot-go")) {
-		t.Fatal("the two rosters of the test are the same one")
+
+	// A project that kept its configuration gets a roster for the repos that
+	// configuration names, not for the ones of the preset.
+	kept := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(kept, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const config = "project:\n  name: kept\n  type: monorepo\nrepos:\n  - {name: server, path: apps/server/, type: directory, language: go}\n  - {name: client, path: client/, type: directory, language: godot}\ngit:\n  integration_branch: develop\n  release_branch: main\n"
+	if err := os.WriteFile(layout.Config(kept), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Install(createMinimalMockFS(), kept, Options{Preset: "godot-go", NoGenerate: true})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !result.ConfigSkipped {
+		t.Fatal("the configuration of the test was not kept")
+	}
+	roster, err := council.LoadRoster(layout.Roster(kept))
+	if err != nil {
+		t.Fatalf("the roster of the project that kept its configuration: %v", err)
+	}
+	if want := []string{"apps/server/docs/architecture.md", "client/docs/architecture.md", "apps/server/docs/protocol.md"}; !reflect.DeepEqual(roster.Role("tech-lead").Owns, want) {
+		t.Errorf("the tech lead owns %v, want %v", roster.Role("tech-lead").Owns, want)
+	}
+
+	// A configuration that was kept and cannot be read says nothing about the
+	// repos: the roster is the one for the repos of the preset.
+	if got, want := rosterRepos(t.TempDir(), "godot-go"), []council.Repo{{Name: "backend", Path: "backend/"}, {Name: "frontend", Path: "frontend/"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the repos of a project without a configuration = %+v, want those of its preset %+v", got, want)
+	}
+	if got, want := rosterRepos(kept, "godot-go"), []council.Repo{{Name: "server", Language: "go", Path: "apps/server/"}, {Name: "client", Language: "godot", Path: "client/"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the repos of the project that kept its configuration = %+v, want %+v", got, want)
 	}
 
 	// The project's own roster is kept, also when the config is forced.

@@ -17,6 +17,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
+	"github.com/silver2dream/ai-workflow-kit/internal/rules"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
@@ -35,8 +36,13 @@ What a plan does:
   object to each other, and the objections that matter most are argued out
   between the two roles concerned. A moderator who takes no side says where
   the meeting stands, the deciding role rules on what is still disputed, every
-  role writes the documents it owns under docs/, and the planning role draws
-  up the tickets, which the table gets to object to once.
+  role writes the documents it owns, and the planning role draws up the
+  tickets, which the table gets to object to once.
+
+  The documents are written by the project's rules (`+layout.RulesDir+`/): a role
+  is given the rules that hold for the files it writes, what it wrote is read
+  against them, and it puts right what was found. What still stands after
+  that is in the minutes, and is told to you.
 
   What only you can answer, the council assumes, and says so: a plan never
   waits for a person. With --ask it puts its questions to you first, a minute
@@ -166,6 +172,16 @@ func cmdPlan(args []string) int {
 		errorf("%v\n", err)
 		return 1
 	}
+	projectRules, err := rules.LoadAll(root)
+	if err != nil {
+		errorf("the project's rules cannot be read (%s): %v\n", layout.RulesDir, err)
+		return 1
+	}
+	for _, rule := range projectRules {
+		if rule.Problem != "" && !council.OfTheKit(rule) {
+			warn("%s: %s, so it holds for every file the council writes\n", rule.File, rule.Problem)
+		}
+	}
 
 	fmt.Println("")
 	fmt.Printf("AWK Plan: %d roles at the table (%s decides, %s plans), at most %d model calls\n", len(roster.Roles),
@@ -176,7 +192,7 @@ func cmdPlan(args []string) int {
 		ask = ownerAtTerminal(planInput, os.Stdout)
 	}
 	plan, err := council.Run(context.Background(), council.Options{
-		Root: root, Brief: brief, Roster: roster, Model: planModel, Repos: repos, ID: *resume, Ask: ask,
+		Root: root, Brief: brief, Roster: roster, Model: planModel, Repos: repos, Rules: projectRules, ID: *resume, Ask: ask,
 		Progress: func(line string) { fmt.Println(line) },
 	})
 	fmt.Println("")
@@ -201,6 +217,14 @@ func cmdPlan(args []string) int {
 			warn("%s was not written: %s\n", doc.Path, doc.Refused)
 		}
 	}
+	if open := plan.OpenFindings(); len(open) > 0 {
+		warn("%d point(s) where a document is still at odds with a rule of the project (%s/minutes.md):\n", len(open), plan.Dir())
+		for _, finding := range open {
+			fmt.Printf("  %s against %s\n       %s\n", finding.Document, finding.Rule, oneLine(finding.Point))
+		}
+		fmt.Println("Put the document right, or the rule, before you approve the work list.")
+		fmt.Println("")
+	}
 	if len(plan.Assumptions) > 0 {
 		fmt.Printf("The plan assumes %d thing(s) only you can answer (%s):\n", len(plan.Assumptions), council.DecisionsPath)
 		for _, assumption := range plan.Assumptions {
@@ -221,7 +245,7 @@ func cmdPlan(args []string) int {
 	fmt.Println("Nothing is on GitHub yet. Read the work list, change what you want changed, then:")
 	fmt.Printf("  %s\n", cyan("awkit plan approve "+plan.ID))
 	fmt.Println("")
-	fmt.Printf("A Worker reads the project from %s: commit and push docs/ there before %s.\n", integrationBranch(root), cyan("awkit run"))
+	fmt.Printf("A Worker reads the project from %s: commit and push the documents there before %s.\n", integrationBranch(root), cyan("awkit run"))
 	return 0
 }
 
@@ -284,20 +308,20 @@ func cmdPlanApprove(args []string) int {
 		errorf("%v\n", err)
 		return 1
 	}
-	// The roster only serves the document index here: an approval does not
-	// fail for want of one.
+	// The roster only says where the project's documents are, for the warning
+	// below: an approval does not fail for want of one.
 	var roster *council.Roster
 	if file := rosterPath(root, *rosterFile); fileExists(file) {
 		roster, _ = council.LoadRoster(file)
 	}
 
 	if !*dryRun {
-		if dirty := uncommittedDocs(root); dirty != "" {
-			warn("docs/ has changes that are not committed. A Worker reads the project from %s and will not see them:\n%s\n", integrationBranch(root), dirty)
+		if dirty := uncommittedDocs(root, roster); dirty != "" {
+			warn("The project's documents have changes that are not committed. A Worker reads the project from %s and will not see them:\n%s\n", integrationBranch(root), dirty)
 		}
 	}
 	approval, err := council.Approve(context.Background(), council.ApproveOptions{
-		Root: root, ID: id, Repos: repos, Roster: roster, DryRun: *dryRun,
+		Root: root, ID: id, Repos: repos, DryRun: *dryRun,
 		Create: func(ctx context.Context, title, bodyFile string) (int, error) {
 			return planCreate(ctx, root, title, bodyFile)
 		},
@@ -385,8 +409,29 @@ func rosterPath(root, flagValue string) string {
 	return layout.Roster(root)
 }
 
+// configuredRepos lists the repos of the project's configuration, each with
+// its directory: what the roster a project starts with is written for. The
+// root of the repository, which a ticket can always be for, is among them
+// only when the configuration names it.
+func configuredRepos(root string) []council.Repo {
+	cfg, err := analyzer.LoadConfig(config.Path(root))
+	if err != nil {
+		return nil
+	}
+	repos := make([]council.Repo, 0, len(cfg.Repos))
+	for _, configured := range cfg.Repos {
+		dir := configured.Path
+		if configured.Type == "root" {
+			dir = "./"
+		}
+		repos = append(repos, council.Repo{Name: configured.Name, Language: configured.Language, Path: dir})
+	}
+	return repos
+}
+
 // planRoster reads the project's roster. A project that has none gets the one
-// that fits its repos, written to .ai/roster.yaml so that it can be changed.
+// that fits its repos, written to .ai/roster.yaml so that it can be changed:
+// the engineering documents it names are kept with those repos.
 func planRoster(root, flagValue string, repos []council.Repo) (*council.Roster, error) {
 	file := rosterPath(root, flagValue)
 	if _, err := os.Stat(file); os.IsNotExist(err) {
@@ -394,10 +439,14 @@ func planRoster(root, flagValue string, repos []council.Repo) (*council.Roster, 
 			return nil, fmt.Errorf("the roster %s does not exist", file)
 		}
 		preset := rosterPresetFor(repos)
+		written, err := council.DefaultRoster(preset, configuredRepos(root))
+		if err != nil {
+			return nil, err
+		}
 		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(file, council.DefaultRoster(preset), 0o644); err != nil {
+		if err := os.WriteFile(file, written, 0o644); err != nil {
 			return nil, err
 		}
 		info("This project had no roster: wrote %s (the %s one). Change it to fit the project; this plan uses it as it is.\n", council.RosterPath, preset)
@@ -436,9 +485,21 @@ func integrationBranch(root string) string {
 	return "the integration branch"
 }
 
-// uncommittedDocs lists what git says is not committed under docs/.
-func uncommittedDocs(root string) string {
-	out, err := exec.Command("git", "-C", root, "status", "--porcelain", "--", "docs").Output()
+// uncommittedDocs lists what git says is not committed among the project's
+// documents: under docs/, and the documents the roster names elsewhere. The
+// roster may be nil.
+func uncommittedDocs(root string, roster *council.Roster) string {
+	args := []string{"-C", root, "status", "--porcelain", "--", "docs"}
+	if roster != nil {
+		for _, role := range roster.Roles {
+			for _, doc := range role.Owns {
+				if !strings.HasPrefix(doc, "docs/") {
+					args = append(args, doc)
+				}
+			}
+		}
+	}
+	out, err := exec.Command("git", args...).Output()
 	if err != nil {
 		return ""
 	}

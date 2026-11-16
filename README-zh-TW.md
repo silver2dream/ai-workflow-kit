@@ -85,11 +85,13 @@ awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 
 發言順序寫在程式裡，不在 prompt 裡：awkit 依序問每個角色、數回合與模型呼叫次數，而且只有它寫檔，所以一個角色寫不到別人擁有的文件。
 
+文件照你專案的規則寫，不是照 awkit 內建的格式。每個角色會拿到 `.claude/rules/` 裡對它要寫的檔案生效的規則；寫完之後由一個不選邊的讀者拿同一批規則對照；有不一致的地方，擁有者修一次。修過之後仍然不一致的，記在會議紀錄裡，規劃結束時也會告訴你。
+
 | 一次規劃留下的東西 | |
 |---|---|
 | `docs/plans/<plan>/minutes.md` | 誰說了什麼：立場、異議、每個爭點與結果 |
 | `docs/decisions.md` | 決策，各有一個不變的編號（`D7`）與不同意見；以及這次規劃的假設（`A3`）。只增不改 |
-| `docs/<area>/*.md` | 文件，每份只由擁有它的角色寫 |
+| `docs/<area>/*.md`、`<repo>/docs/*.md` | 文件，每份只由擁有它的角色寫：產品與設計在 `docs/`，各 repo 的工程文件跟著那個 repo |
 | `docs/plans/<plan>/tickets.yaml` | 票券提案，依施工順序 |
 
 這時 GitHub 上還什麼都沒有。看過工作清單、改掉你想改的，再執行 `awkit plan approve <plan>`。
@@ -153,6 +155,7 @@ awkit run --issue 42   # 只做這一張票
   agents/            它把審查與衝突交出去的 subagent
 CLAUDE.md, AGENTS.md   告訴 agent 的事，由設定檔產生
 docs/                  議會寫的東西：文件、decisions.md、plans/
+<repo>/docs/           各 repo 的工程文件，也由議會寫
 .github/workflows/     CI，每個 repo 一個 workflow，由設定檔產生
 ```
 

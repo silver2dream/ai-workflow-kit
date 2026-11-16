@@ -8,9 +8,24 @@ import (
 
 // The rosters the kit ships can hold a meeting, and their roles disagree by
 // design: one decides, one plans, every role owns something.
+// The repos of the two presets, as a project's configuration names them.
+var (
+	oneRepo  = []Repo{{Name: "root", Language: "generic", Path: "./"}}
+	gameRepo = []Repo{{Name: "backend", Language: "go", Path: "backend/"}, {Name: "frontend", Language: "csharp", Path: "frontend/"}}
+)
+
+func defaultRoster(t *testing.T, preset string, repos []Repo) string {
+	t.Helper()
+	data, err := DefaultRoster(preset, repos)
+	if err != nil {
+		t.Fatalf("DefaultRoster(%s): %v", preset, err)
+	}
+	return string(data)
+}
+
 func TestDefaultRosters(t *testing.T) {
-	for _, preset := range []string{"generic", "godot-go"} {
-		roster, err := ParseRoster(DefaultRoster(preset))
+	for preset, repos := range map[string][]Repo{"generic": oneRepo, "godot-go": gameRepo} {
+		roster, err := ParseRoster([]byte(defaultRoster(t, preset, repos)))
 		if err != nil {
 			t.Errorf("%s: %v", preset, err)
 			continue
@@ -37,11 +52,76 @@ func TestDefaultRosters(t *testing.T) {
 		}
 	}
 	// A preset without a roster of its own gets the generic one.
-	if string(DefaultRoster("unknown-preset")) != string(DefaultRoster("generic")) {
+	if defaultRoster(t, "unknown-preset", oneRepo) != defaultRoster(t, "generic", oneRepo) {
 		t.Error("an unknown preset did not get the generic roster")
 	}
-	if string(DefaultRoster("godot-go")) == string(DefaultRoster("generic")) {
+	if defaultRoster(t, "godot-go", gameRepo) == defaultRoster(t, "generic", gameRepo) {
 		t.Error("godot-go has no roster of its own")
+	}
+}
+
+// The engineering documents a first roster names are kept with the project's
+// repos, where the rules a project starts with say they are
+// (layout.RepoDocs): in the repo's own docs/, or in docs/engineering/ when the
+// repo is the whole repository. Product and design documents stay under docs/.
+func TestDefaultRosters_EngineeringDocumentsAreKeptWithTheRepos(t *testing.T) {
+	owns := func(preset string, repos []Repo, role string) []string {
+		t.Helper()
+		roster, err := ParseRoster([]byte(defaultRoster(t, preset, repos)))
+		if err != nil {
+			t.Fatalf("%s: %v", preset, err)
+		}
+		if roster.Role(role) == nil {
+			t.Fatalf("%s has no role %s: %v", preset, role, roster.IDs())
+		}
+		return roster.Role(role).Owns
+	}
+	tests := []struct {
+		name, preset, role string
+		repos              []Repo
+		want               []string
+	}{
+		{"the game studio", "godot-go", "tech-lead", gameRepo,
+			[]string{"backend/docs/architecture.md", "frontend/docs/architecture.md", "backend/docs/protocol.md"}},
+		{"the game studio, with the client first and other directories", "godot-go", "tech-lead",
+			[]Repo{{Name: "client", Language: "godot", Path: "client"}, {Name: "server", Language: "golang", Path: "./apps/server/"}},
+			[]string{"client/docs/architecture.md", "apps/server/docs/architecture.md", "apps/server/docs/protocol.md"}},
+		{"the game studio without a Go repo: the protocol goes with the first repo", "godot-go", "tech-lead",
+			[]Repo{{Name: "client", Language: "godot", Path: "client/"}, {Name: "tools", Language: "python", Path: "tools/"}},
+			[]string{"client/docs/architecture.md", "tools/docs/architecture.md", "client/docs/protocol.md"}},
+		{"one repo that is the whole repository", "generic", "architect", oneRepo, []string{"docs/engineering/architecture.md"}},
+		{"several repos", "generic", "architect",
+			[]Repo{{Name: "api", Language: "python", Path: "api/"}, {Name: "web", Language: "react", Path: "web/"}},
+			[]string{"api/docs/architecture.md", "web/docs/architecture.md"}},
+		{"no repo named: the whole repository", "generic", "architect", nil, []string{"docs/engineering/architecture.md"}},
+		{"two repos in one directory have one document", "generic", "architect",
+			[]Repo{{Name: "a", Path: "./"}, {Name: "b", Path: "."}}, []string{"docs/engineering/architecture.md"}},
+		{"a directory YAML would not read as it is written", "generic", "architect",
+			[]Repo{{Name: "api", Path: "my api/"}, {Name: "n", Path: "#1/"}}, []string{"my api/docs/architecture.md", "#1/docs/architecture.md"}},
+	}
+	for _, tt := range tests {
+		if got := owns(tt.preset, tt.repos, tt.role); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s: %s owns %v, want %v", tt.name, tt.role, got, tt.want)
+		}
+	}
+	// The others own what they owned: nothing of theirs moves with the repos.
+	if got := owns("godot-go", gameRepo, "game-designer"); !reflect.DeepEqual(got, []string{"docs/design/game-design.md"}) {
+		t.Errorf("the game designer owns %v", got)
+	}
+	if got := owns("generic", gameRepo, "skeptic"); !reflect.DeepEqual(got, []string{"docs/qa/risks.md", "docs/qa/test-strategy.md"}) {
+		t.Errorf("the skeptic owns %v", got)
+	}
+
+	// A roster is not written for repos it could not hold a meeting with: a
+	// repo outside the project has no place for its documents in it.
+	if data, err := DefaultRoster("generic", []Repo{{Name: "elsewhere", Path: "../elsewhere"}}); err == nil || !strings.Contains(err.Error(), "write the path plainly") {
+		t.Errorf("a repo outside the project: %q, %v", data, err)
+	}
+	// What is written is the template filled in: nothing of it is left.
+	for _, preset := range []string{"generic", "godot-go"} {
+		if roster := defaultRoster(t, preset, gameRepo); strings.Contains(roster, "{{") || strings.Contains(roster, "}}") {
+			t.Errorf("%s: the roster still holds a piece of its template:\n%s", preset, roster)
+		}
 	}
 }
 
@@ -77,6 +157,10 @@ roles:
 
 func TestParseRoster_RefusesWhatCannotHoldAMeeting(t *testing.T) {
 	const two = "roles:\n  - {id: a, decides: true, stance: s}\n  - {id: b, plans: true, stance: s}\n"
+	// owning is the roster of two whose first role owns the documents.
+	owning := func(docs string) string {
+		return strings.Replace(two, "stance: s}", "stance: s, owns: ["+docs+"]}", 1)
+	}
 	tests := []struct {
 		name, roster, wantInError string
 	}{
@@ -88,14 +172,39 @@ func TestParseRoster_RefusesWhatCannotHoldAMeeting(t *testing.T) {
 		{"an id with a space", "roles:\n  - {id: Tech Lead, decides: true, stance: s}\n  - {id: b, plans: true, stance: s}\n", `role id "Tech Lead"`},
 		{"no stance", "roles:\n  - {id: a, decides: true}\n  - {id: b, plans: true, stance: s}\n", `role "a" has no stance`},
 		{"a misspelt field", strings.Replace(two, "decides", "decide", 1), "cannot be read"},
-		{"a document outside docs", strings.Replace(two, "stance: s}", "stance: s, owns: [src/main.go]}", 1), "is outside docs/"},
-		{"a document that leaves docs", strings.Replace(two, "stance: s}", "stance: s, owns: [docs/../README.md]}", 1), "write the path plainly"},
-		{"a document that is not markdown", strings.Replace(two, "stance: s}", "stance: s, owns: [docs/plan.txt]}", 1), "is not a markdown file"},
-		{"the decision log", strings.Replace(two, "stance: s}", "stance: s, owns: [docs/decisions.md]}", 1), "kept by the council itself"},
-		{"the index", strings.Replace(two, "stance: s}", "stance: s, owns: [docs/README.md]}", 1), "kept by the council itself"},
-		{"a plan's folder", strings.Replace(two, "stance: s}", "stance: s, owns: [docs/plans/x/minutes.md]}", 1), "where the council keeps its plans"},
-		{"a path with backslashes", strings.Replace(two, "stance: s}", `stance: s, owns: ['docs\a.md']}`, 1), "write the path plainly"},
+		{"a document that is not markdown", owning("src/main.go"), "is not a markdown file"},
+		{"a text file under docs", owning("docs/plan.txt"), "is not a markdown file"},
+		{"a document that leaves docs", owning("docs/../README.md"), "write the path plainly"},
+		{"a document outside the project", owning("../other/docs/a.md"), "write the path plainly"},
+		{"the directory above", owning(".."), "write the path plainly"},
+		{"a path from the root of the disk", owning("/etc/a.md"), "write the path plainly"},
+		{"a path with a drive", owning("'C:/docs/a.md'"), "write the path plainly"},
+		{"a path with a colon", owning("'docs/a.md:stream.md'"), "write the path plainly"},
+		{"a path with backslashes", owning(`'docs\a.md'`), "write the path plainly"},
+		{"a path with a dot in front", owning("./docs/a.md"), "write the path plainly"},
+		{"a path with a slash at its end", owning("docs/a.md/"), "write the path plainly"},
+		{"no path", owning("''"), "write the path plainly"},
+		{"the decision log", owning("docs/decisions.md"), "kept by the council itself"},
+		{"the decision log, in other letters", owning("Docs/Decisions.MD"), "kept by the council itself"},
+		{"the index", owning("docs/README.md"), "kept by the council itself"},
+		{"the index, in other letters", owning("docs/readme.md"), "kept by the council itself"},
+		{"a plan's folder", owning("docs/plans/x/minutes.md"), "where the council keeps its plans"},
+		{"a plan's folder, in other letters", owning("docs/Plans/x/minutes.md"), "where the council keeps its plans"},
+		{"a rule", owning(".claude/rules/backend.md"), "is in .claude, which a tool keeps for itself"},
+		{"a skill", owning(".claude/skills/x/SKILL.md"), "is in .claude, which a tool keeps for itself"},
+		{"what awkit keeps", owning(".ai/notes.md"), "is in .ai, which a tool keeps for itself"},
+		{"what GitHub reads", owning(".github/pull_request_template.md"), "is in .github, which a tool keeps for itself"},
+		{"a hidden directory inside a repo", owning("backend/.notes/a.md"), "is in .notes, which a tool keeps for itself"},
+		{"a hidden file", owning("docs/.draft.md"), "is in .draft.md, which a tool keeps for itself"},
+		{"what Claude Code is instructed by", owning("CLAUDE.md"), "what an agent is instructed by"},
+		{"what Claude Code is instructed by, in a repo", owning("backend/CLAUDE.md"), "what an agent is instructed by"},
+		{"what Claude Code is instructed by, in other letters", owning("backend/Claude.MD"), "what an agent is instructed by"},
+		{"the local instructions", owning("CLAUDE.local.md"), "what an agent is instructed by"},
+		{"what a Worker is instructed by", owning("AGENTS.md"), "what an agent is instructed by"},
+		{"what a Worker is instructed by, in a repo", owning("frontend/src/AGENTS.md"), "what an agent is instructed by"},
 		{"a document with two owners", strings.ReplaceAll(two, "stance: s}", "stance: s, owns: [docs/a.md]}"), `docs/a.md has two owners, "a" and "b"`},
+		{"a document with two owners who write it in other letters", strings.Replace(owning("docs/a.md"), "plans: true, stance: s}", "plans: true, stance: s, owns: [Docs/A.md]}", 1), `Docs/A.md has two owners, "a" and "b"`},
+		{"a document one role owns twice", owning("docs/a.md, docs/a.md"), `role "a" owns docs/a.md twice`},
 	}
 	for _, tt := range tests {
 		roster, err := ParseRoster([]byte(tt.roster))
@@ -109,6 +218,16 @@ func TestParseRoster_RefusesWhatCannotHoldAMeeting(t *testing.T) {
 	}
 	if _, err := ParseRoster([]byte(two)); err != nil {
 		t.Errorf("the roster the cases are made from was refused: %v", err)
+	}
+
+	// A document is a Markdown file of the project, wherever the project keeps
+	// it: with the product documents, with a repo, or in the root.
+	for _, doc := range []string{"docs/design/game-design.md", "docs/engineering/architecture.md", "backend/docs/architecture.md",
+		"apps/server/docs/research/storage.md", "backend/internal/match/README.md", "README.md", "docs/Design/UPPER.MD",
+		"docs/claude.md.notes.md", "docs/my agents.md", "'docs/設計/遊戲.md'", "'my api/docs/a b.md'"} {
+		if _, err := ParseRoster([]byte(owning(doc))); err != nil {
+			t.Errorf("a role cannot own %s: %v", doc, err)
+		}
 	}
 }
 

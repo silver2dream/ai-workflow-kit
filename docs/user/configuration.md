@@ -240,7 +240,7 @@ hooks:
 
 ## 名冊：`.ai/roster.yaml`
 
-`awkit plan` 開會時坐在桌邊的角色。`awkit init` 依 preset 寫下第一份；這個檔案是你的，升級不會動它。名冊裡未知的鍵是錯誤，`awkit validate` 會檢查。
+`awkit plan` 開會時坐在桌邊的角色。`awkit init` 依 preset 與專案的 repo 寫下第一份：工程文件跟著各 repo 放（`<repo>/docs/`；整個 repository 就是一個 repo 時放 `docs/engineering/`），和專案起始的規則說的位置一致。這個檔案是你的，升級不會動它。名冊裡未知的鍵是錯誤，`awkit validate` 會檢查。
 
 ```yaml
 language: ""           # 議會用什麼語言寫；空的時候跟需求的語言走
@@ -267,7 +267,8 @@ roles:
       你為「做得出來、維護得動」負責。反對沒有驗收條件的需求，
       也反對還沒量過就說做不到。
     owns:
-      - docs/tech/architecture.md
+      - backend/docs/architecture.md
+      - frontend/docs/architecture.md
 ```
 
 | 角色的鍵 | 說明 |
@@ -275,8 +276,21 @@ roles:
 | `id` | 必填。小寫字母、數字與連字號。出現在會議紀錄與其他角色的發言裡 |
 | `title` | 介紹這個角色時用的稱呼；沒寫就用 `id` |
 | `stance` | 必填。這個角色主張什麼、反對什麼。立場要寫得會互相衝突：一桌人都點頭的規劃沒有被檢驗過 |
-| `owns` | 這個角色擁有的文件，路徑在 `docs/` 下。一份文件只能有一個擁有者，而且只有擁有者會寫它 |
+| `owns` | 這個角色擁有的文件：Markdown 檔，路徑從專案根目錄寫起（`docs/design/game-design.md`、`backend/docs/architecture.md`）。一份文件只能有一個擁有者，而且只有擁有者會寫它。不能是議會自己維護的檔案（`docs/decisions.md`、`docs/README.md`、`docs/plans/`）、給 agent 的指示（`CLAUDE.md`、`AGENTS.md`），或以 `.` 開頭的目錄裡的檔案（`.claude/`、`.ai/`、`.github/`） |
 | `model` | 扮演這個角色的模型；沒寫就用名冊的 `model` |
 | `decides`、`plans` | 各恰好一個角色為 `true`，可以是同一個角色 |
 
 至少要有兩個角色。
+
+### 文件照專案的規則寫
+
+議會寫文件時遵守 `.claude/rules/` 裡的規則，不是 awkit 內建的格式：
+
+1. 每個角色拿到「對它要寫的檔案生效」的規則全文：`paths` 符合那些檔案的規則，加上沒有 `paths` 的規則。判斷方式與 Claude Code 載入規則的方式相同。AWK 自己出貨的規則（`.claude/rules/_kit/`）講的是 git 的做法，不在其內。
+2. 寫完之後，由一個不選邊的讀者（用名冊的 `model`）拿同一批規則逐份對照，列出文件與規則不一致的地方。
+3. 有不一致時，擁有者修一次；改過的文件再對照一次。
+4. 修過之後仍然不一致的地方不再來回：記在會議紀錄的 `By the project's rules` 一節，`awkit plan` 結束時也會列出來，由你決定改文件還是改規則。
+
+文件放哪裡、檔頭寫什麼、可以宣稱什麼狀態、超過多長要拆，都由規則決定（起始的那一份是 `docs-source-of-truth.md`）。專案沒有對這些檔案生效的規則時，文件只以標題與一行擁有者、日期開頭，也不做對照。
+
+規則全文合計超過 60000 位元組時，先放有指名這些檔案的規則，再放通用的；放不下的規則只列出檔名，會議紀錄會寫明哪些沒有傳給角色。只對照這次會議寫出的文件；擁有者維持原樣的文件不在其內。

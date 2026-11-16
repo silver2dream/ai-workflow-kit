@@ -3,6 +3,7 @@ package council
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -153,6 +154,7 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 				fmt.Fprintf(&b, "- `%s` (%s)\n", doc.Path, doc.Owner)
 			}
 		}
+		writeRuleChecks(&b, plan)
 	}
 
 	if len(plan.Tickets) > 0 {
@@ -185,6 +187,59 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 		}
 	}
 	return p.writeFile(plan.Dir()+"/minutes.md", b.String())
+}
+
+// writeRuleChecks puts on record which rules of the project the documents were
+// written by, and what reading them against those rules came to: what was
+// found, and what still stands for the person who approves the plan.
+func writeRuleChecks(b *strings.Builder, plan *Plan) {
+	if len(plan.Rules)+len(plan.RulesLeft) == 0 {
+		return
+	}
+	quoted := func(files []string) string {
+		out := make([]string, len(files))
+		for i, file := range files {
+			out[i] = "`" + file + "`"
+		}
+		return strings.Join(out, ", ")
+	}
+	b.WriteString("\n### By the project's rules\n")
+	if len(plan.Rules) > 0 {
+		fmt.Fprintf(b, "\nEach role was given the rules that hold for the files it writes: %s. What it wrote in this meeting was read against them by a reader who takes no side, and the owner put right what was found, once.\n", quoted(plan.Rules))
+	}
+	if len(plan.RulesLeft) > 0 {
+		fmt.Fprintf(b, "\nNot passed on, because the rules together are longer than one question carries: %s. Nothing was read against them.\n", quoted(plan.RulesLeft))
+	}
+	if len(plan.RuleChecks) == 0 {
+		return
+	}
+	b.WriteString("\n")
+	finding := func(label string, found RuleFinding) {
+		fmt.Fprintf(b, "  - %s: `%s` against `%s`: %s\n", label, found.Document, found.Rule, oneLine(found.Point))
+		if strings.TrimSpace(found.Fix) != "" {
+			fmt.Fprintf(b, "    - To put right: %s\n", oneLine(found.Fix))
+		}
+	}
+	for _, check := range plan.RuleChecks {
+		switch {
+		case len(check.Found) == 0 && check.Settled:
+			fmt.Fprintf(b, "- %s: nothing at odds with the rules\n", check.Owner)
+		case len(check.Found) == 0:
+			fmt.Fprintf(b, "- %s: **not read**; the meeting stopped first\n", check.Owner)
+		case !check.Settled:
+			fmt.Fprintf(b, "- %s: %d point(s) found; **the meeting stopped before they were put right and read again**\n", check.Owner, len(check.Found))
+		case len(check.Open) == 0:
+			fmt.Fprintf(b, "- %s: %d point(s) found and put right\n", check.Owner, len(check.Found))
+		default:
+			fmt.Fprintf(b, "- %s: %d point(s) found; **%d still stand(s)** after the owner's turn\n", check.Owner, len(check.Found), len(check.Open))
+		}
+		for _, found := range check.Found {
+			finding("Found", found)
+		}
+		for _, open := range check.Open {
+			finding("**Still stands**", open)
+		}
+	}
 }
 
 // writeDecisions writes decisions and assumptions the way the log holds them:
@@ -284,10 +339,27 @@ func (p *planner) recordDecisions(plan *Plan) error {
 const (
 	indexOpen  = "<!-- awk:documents: kept by awkit plan; edit outside these two lines -->"
 	indexClose = "<!-- /awk:documents -->"
-	indexPath  = "docs/README.md"
 )
 
-var statusLine = regexp.MustCompile(`(?m)^status:[ \t]*(\S+)`)
+// fromIndex returns the way from the index to a file of the project, the way
+// a link in the index writes it.
+func fromIndex(file string) string {
+	rel, err := filepath.Rel(filepath.FromSlash(path.Dir(indexPath)), filepath.FromSlash(file))
+	if err != nil {
+		return file
+	}
+	return filepath.ToSlash(rel)
+}
+
+// indexLink writes a link of the index to a file of the project, for a cell
+// of a table.
+func indexLink(label, file string) string {
+	target := fromIndex(file)
+	if strings.ContainsAny(target, " ()") {
+		target = "<" + target + ">"
+	}
+	return strings.ReplaceAll("["+label+"]("+target+")", "|", "\\|")
+}
 
 // planIDs lists the plans of a project, the newest first.
 func planIDs(root string) []string {
@@ -303,39 +375,31 @@ func planIDs(root string) []string {
 }
 
 // writeIndex keeps the index of the project's documents in docs/README.md:
-// which document there is, who owns it, how far it is, and the plans. Only the
-// part between its two marker lines is touched.
+// which document there is, where, who owns it, and the plans. It points to the
+// documents and copies nothing from them: how far a document is, the document
+// says itself. Only the part between its two marker lines is touched.
 func writeIndex(root string, roster *Roster) error {
 	p := &planner{root: root, roster: roster}
 	var b strings.Builder
-	b.WriteString(indexOpen + "\n\n## Documents\n\nEach document has one owner: the role that writes it when the council plans (`" + layout.RosterFile + "`).\n\n| Document | Owner | Status |\n|---|---|---|\n")
+	b.WriteString(indexOpen + "\n\n## Documents\n\nEach document has one owner: the role that writes it when the council plans (`" + layout.RosterFile + "`). How far a document is, and when it was last checked, it says itself: this index only points to it.\n\n| Document | Owner |\n|---|---|\n")
 	for _, role := range p.roster.Roles {
 		for _, doc := range role.Owns {
-			status := "not written"
-			if content := p.read(doc); strings.TrimSpace(content) != "" {
-				status = "written"
-				if match := statusLine.FindStringSubmatch(content); match != nil {
-					status = match[1]
-				}
+			if strings.TrimSpace(p.read(doc)) == "" {
+				fmt.Fprintf(&b, "| %s (not written yet) | %s |\n", strings.ReplaceAll(doc, "|", "\\|"), role.ID)
+				continue
 			}
-			fmt.Fprintf(&b, "| [%s](%s) | %s | %s |\n", doc, strings.TrimPrefix(doc, "docs/"), role.ID, status)
+			fmt.Fprintf(&b, "| %s | %s |\n", indexLink(doc, doc), role.ID)
 		}
 	}
-	fmt.Fprintf(&b, "| [%s](%s) | the deciding role, through `awkit plan` | append-only |\n", DecisionsPath, strings.TrimPrefix(DecisionsPath, "docs/"))
+	fmt.Fprintf(&b, "| %s | the deciding role, through `awkit plan`; it only grows |\n", indexLink(DecisionsPath, DecisionsPath))
 
 	b.WriteString("\n## Plans\n\n| Plan | Work list |\n|---|---|\n")
 	for _, id := range planIDs(p.root) {
-		state := "no work list yet"
-		if list, err := LoadWorkList(p.root, id); err == nil {
-			created := 0
-			for _, ticket := range list.Tickets {
-				if ticket.Issue != 0 {
-					created++
-				}
-			}
-			state = fmt.Sprintf("%d tickets, %d on GitHub", len(list.Tickets), created)
+		list := "none yet"
+		if _, err := os.Stat(workListPath(p.root, id)); err == nil {
+			list = indexLink(WorkListFile, PlansDir+"/"+id+"/"+WorkListFile)
 		}
-		fmt.Fprintf(&b, "| [%s](plans/%s/minutes.md) | %s |\n", id, id, state)
+		fmt.Fprintf(&b, "| %s | %s |\n", indexLink(id, PlansDir+"/"+id+"/minutes.md"), list)
 	}
 	b.WriteString("\n" + indexClose + "\n")
 	section := b.String()
