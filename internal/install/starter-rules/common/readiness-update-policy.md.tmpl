@@ -1,0 +1,35 @@
+{{.CodeFrontmatter}}# Readiness Update Policy
+
+## 目的
+
+讓「能不能部署、能不能上線」的判斷材料跟著變更走，不留在腦中、不落後於程式碼。
+
+## 核心規則
+
+變更若影響部署路徑、環境契約、容量假設或運維依賴，**同一個 PR 內**同步更新對應的文件與設定。
+
+## 觸發 → 必改對照
+
+| 變更 | 必須同步 |
+|---|---|
+| 新增或修改環境變數 | 該 repo 的 architecture.md 環境變數表，加上部署設定（compose、manifest） |
+| 新的外部依賴（資料庫、快取、外部服務、模型） | 部署設定裡的服務定義，加上啟動時 fail-fast 或降級行為的說明 |
+| metrics 或監控變更 | 監控設定（抓取、儀表板、告警） |
+| schema 變更 | migration 的 up 與 down 成對；down 不可行時明說 |
+| 部署步驟變更 | 該 repo 的 README，或 architecture.md 的部署段 |
+| 容量或規模假設變更 | `docs/` 對應的規劃文件，並更新它的狀態 |
+| 建置或測試指令變更 | `.ai/config.yaml` 的 `verify`，再執行 `awkit generate`（CI 跟著更新） |
+
+## No-go 條件（不得聲稱可部署）
+
+- 建置或測試是紅的（以 `.ai/config.yaml` 的 `verify` 為準），或部署設定本身通不過它的檢查
+- 執行期讀取的環境變數，與部署設定或環境變數表不一致
+- 必要的環境變數未定義，或未驗證
+- migration 只有 up 沒有 down，且沒有說明
+- 新的關鍵路徑沒有 metrics
+
+## 證據優先
+
+readiness 的敘述必附可驗證的證據：測試輸出、部署設定的檢查結果、程式碼或 manifest 的參照（file:line）。
+
+禁止：拿設計目標當現況；在文字裡關掉 blocker 而沒有實作的證據；關鍵契約還沒驗證就聲稱 production-ready。

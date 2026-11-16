@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -77,8 +78,8 @@ func TestPreset_GenericAssumesNoStack(t *testing.T) {
 		if repo.Verify.Build != "" || repo.Verify.Test != "" {
 			t.Errorf("preset %q: verify = %+v; the generic preset must not guess the project's commands", preset, repo.Verify)
 		}
-		if len(cfg.Rules.Custom) != 0 {
-			t.Errorf("preset %q: rules.custom = %v, want none", preset, cfg.Rules.Custom)
+		if want := StarterRules(PresetGeneric); !reflect.DeepEqual(cfg.Rules.Custom, want) {
+			t.Errorf("preset %q: rules.custom = %v, want the rules every project starts with %v", preset, cfg.Rules.Custom, want)
 		}
 	}
 }
@@ -159,8 +160,11 @@ func TestPreset_GodotGoIsGoBackendAndCSharpFrontend(t *testing.T) {
 	}
 	// A listed rule that does not exist makes the Worker stop: the ones listed
 	// are the ones the preset writes (starter_rules_test.go).
-	if want := []string{"backend", "frontend", "testing"}; !reflect.DeepEqual(cfg.Rules.Custom, want) {
+	if want := StarterRules(PresetGodotGo); !reflect.DeepEqual(cfg.Rules.Custom, want) {
 		t.Errorf("rules.custom = %v, want %v", cfg.Rules.Custom, want)
+	}
+	if !slices.Contains(cfg.Rules.Custom, "backend") || !slices.Contains(cfg.Rules.Custom, "frontend") {
+		t.Errorf("rules.custom = %v lacks the rules of the two repos", cfg.Rules.Custom)
 	}
 	if cfg.Worker.Backend != "codex" {
 		t.Errorf("worker.backend = %q, want the shared default", cfg.Worker.Backend)
@@ -555,5 +559,21 @@ func TestInstall_GenerateErrorIsNilWhenGenerateIsSkipped(t *testing.T) {
 	}
 	if result.GenerateError != nil {
 		t.Errorf("GenerateError = %v for an install that did not generate", result.GenerateError)
+	}
+}
+
+// The repos a preset starts a project with are known before the project is
+// set up: init asks about each of them.
+func TestPresetRepos(t *testing.T) {
+	if got, want := PresetRepos(PresetGodotGo), []PresetRepo{{Name: "backend", Path: "backend/"}, {Name: "frontend", Path: "frontend/"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("PresetRepos(godot-go) = %v, want %v", got, want)
+	}
+	for _, preset := range []string{PresetGeneric, ""} {
+		if got, want := PresetRepos(preset), []PresetRepo{{Name: "root", Path: "./"}}; !reflect.DeepEqual(got, want) {
+			t.Errorf("PresetRepos(%q) = %v, want %v", preset, got, want)
+		}
+	}
+	if got := PresetRepos("no-such-preset"); got != nil {
+		t.Errorf("PresetRepos of a preset that is not known = %v, want none", got)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
@@ -29,7 +30,15 @@ type Options struct {
 	SkipConfig  bool // the configuration is left alone (an upgrade)
 	// Branches are the branches a new configuration names (DetectBranches).
 	// Without them it names a single trunk, main.
-	Branches   Branches
+	Branches Branches
+	// Worker is who writes the code in a new configuration (WorkerCodex or
+	// WorkerClaudeCode). Without it: WorkerCodex.
+	Worker string
+	// Answers are what the owner said about the project. They go into the
+	// rules a new project starts with.
+	Answers Answers
+	// Today is the day the owner answered, as 2006-01-02 (today when empty).
+	Today      string
 	NoGenerate bool // Skip the files derived from the config, CI workflows included
 	// CI is what to do about the CI workflows: init writes the missing ones
 	// (generate.CISync), upgrade only refreshes the ones awkit owns
@@ -124,10 +133,19 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 		}
 	}
 
-	// The rules for the preset's stack go with its configuration, which lists
-	// them. A project that kept the configuration it had keeps its rules too.
+	// The rules a project starts with go with its configuration, which lists
+	// them: they are written from its repos and from what the owner answered.
+	// A project that kept the configuration it had keeps its rules too.
 	if !configSkipped {
-		if err := ensureStarterRules(targetDir, opts.Preset); err != nil {
+		cfg, err := config.LoadFile(result.ConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("the configuration that was just written cannot be read: %w", err)
+		}
+		today := opts.Today
+		if today == "" {
+			today = time.Now().Format("2006-01-02")
+		}
+		if err := ensureStarterRules(targetDir, opts.Preset, NewRuleContext(cfg, opts.Answers, today)); err != nil {
 			return nil, err
 		}
 	}

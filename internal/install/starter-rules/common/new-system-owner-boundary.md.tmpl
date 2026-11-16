@@ -1,0 +1,28 @@
+{{.CodeFrontmatter}}# New System Owner Boundary
+
+## 目的
+
+新系統動工前，先決定每一類真相的 owner；owner 不明就是設計未完成，不得開始實作。
+
+## 決策步驟（開工前必答）
+
+1. **是否跨越契約？** {{if .Contract}}動到 `{{.Contract}}` 即是。{{else}}動到 repo 之間或對外的 API、協定、共用的資料格式即是。{{end}}契約先定，用到它的每一端在同一個 PR 或緊鄰的 PR 完成實作，以契約測試驗收。
+2. **資料 owner 是哪個模組？** 一份資料只有一個模組持有寫入的路徑；共用的表由各模組各自持有存取層，不搶寫。模組之間不互相 import。
+{{- if .Has "dotnet"}}
+3. **客戶端 owner 在哪一層？** 不引用引擎的純邏輯（狀態、規則、ViewModel，可以單元測試），或引擎層（場景、節點、平台的橋接），見該 repo 的 architecture.md。企劃數值放資料檔，視覺參數放主題資源，都不寫死在程式裡。
+{{- end}}
+{{if .Has "dotnet"}}4{{else}}3{{end}}. **部署與運維是否受影響？** 新的環境變數、新的外部依賴、新的 migration，要同步該 repo 的 architecture.md 環境變數表與部署設定（`readiness-update-policy.md`）。
+{{if .Has "dotnet"}}5{{else}}4{{end}}. **文件放哪？** 產品與設計放 `docs/`；工程設計與現況放 owner repo 的工程文件目錄（`docs-source-of-truth.md`）。
+
+## 禁止
+
+1. 契約未定就開寫兩端的實作。
+2. 資料 ownership 未定就寫 migration。
+3. 新的環境變數或外部依賴，沒有同步環境變數表與部署設定。
+4. 系統沒有 primary 文件，或一份文件同時當規劃、現況與 runbook。
+
+## Definition of done
+
+1. 每類真相的 owner 已具名（契約、伺服器端的模組{{if .Has "dotnet"}}、客戶端的層{{end}}、部署）。
+2. 每個 owner 有一份 primary 文件，或明確的程式碼位置。
+3. 團隊能回答「系統變更時，誰更新什麼」。

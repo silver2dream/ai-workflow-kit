@@ -596,6 +596,11 @@ func TestInstall_WritesTheLayout(t *testing.T) {
 		".gitattributes",
 		".gitignore",
 	}
+	// The rules every project starts with: its own from here on.
+	for _, rule := range StarterRules(PresetGeneric) {
+		want = append(want, ".claude/rules/"+rule+".md")
+	}
+	sort.Strings(want)
 	sort.Strings(files)
 	if !reflect.DeepEqual(files, want) {
 		t.Errorf("an install wrote\n%v\nwant\n%v", files, want)

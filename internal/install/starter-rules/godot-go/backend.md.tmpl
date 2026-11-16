@@ -1,0 +1,94 @@
+---
+paths:
+  - "backend/**"
+---
+
+# Backend Architecture Rules
+
+Scope：`backend/`（Go）。
+**權威文件：`backend/docs/architecture.md`**（分層、鐵律、環境變數、新增模組的做法）——本檔是它的強制檢查清單；兩者衝突時以權威文件與程式碼為準，並回修本檔。權威文件寫出來之前，以下是起點；架構定案之後回來把這份清單收緊。
+
+---
+
+## 0) 已定的技術選擇
+{{$repo := .Repo "backend"}}
+{{- if $repo.Decided}}
+- owner 定（{{.Date}}）：「{{$repo.Decided}}」
+- 沒有列在上面的選擇，由 `backend/docs/architecture.md` 決定；定了之後補在這一節，附日期。
+{{- else}}
+- 還沒有 owner 定的技術選擇。傳輸層、資料庫的存取、相依注入怎麼做，由 `backend/docs/architecture.md` 決定；定了之後寫在這一節，附日期。
+{{- end}}
+- 以下各節不論選了什麼都成立。
+
+## 1) 分層（每個請求的路徑）
+
+契約的來源 → 產生的程式碼（**禁手改**）→ adapter（傳輸層）→ service（業務）→ repository（介面）→ 儲存的實作。
+
+## 2) 模組
+
+- 依功能分模組，不依型別分：不開 `models/`、`utils/`、`helpers/` 這類什麼都放的 package。對外不需要的放 `internal/`。
+- 模組之間**不互相 import**；需要彼此時由組合根（進入點或專門的 composition package）黏合。出現循環，是邊界切錯了。
+- 依賴由建構子傳入（`NewService(repo Repository)`），不在函式裡自己建，也不放在 package 層的可變變數。
+- 註冊在進入點**顯式**做：沒有自動 registry，`init()` 不做註冊、不做 I/O。
+- 一個模組恰一個 service 型別；方法可以依關注點拆檔（receiver 相同）。
+- 一個模組的 repository 介面集中在一個檔；領域模型、領域錯誤與常數集中在一個檔。介面只列用得到的方法。
+
+## 3) Adapter 規則
+
+- 每個 adapter 對它實作的介面有 compile-time check（`var _ Interface = (*Adapter)(nil)`）。
+- adapter 只做協定與領域之間的轉換、身分的解析、錯誤的對應；**沒有業務邏輯**。
+- 錯誤的對應是一個函式：**每個**領域錯誤都要有對應的 case；掉進 default 就是 bug。default 回 generic 的內部錯誤，**不洩漏 `err.Error()`**。
+- service 回**領域錯誤**，絕不回傳輸層的錯誤型別。業務上「失敗但合法」的情況不是 error，是回應裡的結果欄位。
+- service 只依賴介面；不在 service 裡建構它的依賴；沒有 service 包 service。
+
+## 4) 契約（來源只有一個）
+
+- {{if .Contract}}契約的唯一來源是 `{{.Contract}}`。{{else}}契約的來源只有一處，位置寫在 `backend/docs/architecture.md`。{{end}}改了契約就重新產生；伺服器與客戶端都用產生的程式碼，不手寫 schema。
+- 同時提供 JSON 時，數值欄位避開 64 位元整數（JSON 會把它變成字串或失去精度），除非那個欄位的每個使用者都處理了。
+- 可缺席的欄位明確標成 optional；時間戳只用一種表示法，寫在權威文件裡。
+
+## 5) 資料與交易
+
+- **一個資料庫是唯一的真相來源**；快取不當真相來源。要用快取時：cache-aside、TTL 明確、miss 或 error 不得影響正確性，並且有不用快取也能跑的退路。
+- 跨表的原子性用交易；**對外的呼叫（HTTP、模型、訊息佇列）絕不放進交易**。
+- commit 之後才該發生的副作用（事件、快取失效）掛在 commit 之後，不在交易中間做。
+- 狀態機用**條件更新**保護：已完成的結果不得被重試覆寫；並發的 worker 必須安全。
+- repository 的錯誤要能用 `errors.Is`、`errors.As` 判斷，不比對錯誤字串；可重試與不可重試的要分得出來。
+- migration 只能往後加（append-only），up 與 down 成對。
+
+## 6) 命名一致性
+
+- 持久化的介面以 `Repository` 結尾；快取的介面以 `Cache` 結尾（不用 Store、DAO、Provider 這些字）。
+- 檔名與匯出的型別一致：`_repository` 檔裡匯出的持久化型別必含 `Repository`；`_cache` 檔必含 `Cache`。不一致先修。
+- repository 的介面以用途命名（`CreatePending`、`MarkCompleted`），不是裸 CRUD。
+
+## 7) 非同步
+
+- 慢的工作（生成、外部服務）**絕不讓請求等**：請求快速回傳狀態與工作編號，工作在背景 worker 跑（有 timeout 與重試），完成時用條件更新落庫。
+
+## 8) Go 的寫法
+
+- 每個錯誤不是處理就是回傳，不吞掉。往上傳時用 `fmt.Errorf("...: %w", err)` 補上這一層在做什麼；預期內的失敗回傳 error，`panic` 只留給程式本身的錯。
+- 會做 I/O 或可能等待的函式，第一個參數是 `ctx context.Context`，一路往下傳，不存進 struct。
+- 每個 goroutine 都要說得出誰等它、它怎麼結束；會擋住的操作要聽 `ctx.Done()`。共享的狀態用 mutex 或 channel 保護，並寫明由誰保護；`go test -race` 要過。
+- log 用跟著請求走的 logger（從 `ctx` 取，帶 request id），不在 struct 裡自帶一個。
+- 資料的修改與檔案大小見 `coding-style.md`；輸入驗證、機密與錯誤訊息見 `security.md`；測試見 `testing.md`。
+
+## 9) 規則與數值只有一份
+
+- 伺服器要跑的規則（判定、結算、數值公式）寫成純函式：不碰資料庫、不呼叫外部、不讀時鐘。設計與驗算用的模擬**呼叫同一批函式**，不另寫規則。
+- **不為驗算、報表或原型另寫一份規則或模型**（任何語言）。原型只當移植的對照，移植完成的同一個 PR 刪除。
+- 驗算讀伺服器載入的同一份資料，不在別處複製一份常數。
+
+## 10) Refactor 安全與 Definition of Done
+
+重構必須保持行為：不改對外操作的名稱、不改契約、不改既有 usecase 的簽名（除非票明確要求）；只搬方法、換 receiver、調整組裝、拆介面與實作、改檔名。
+
+檢查清單：
+
+- [ ] adapter 有 compile-time interface check；身分一律取自驗證過的憑證並檢查有沒有取到
+- [ ] 錯誤的對應涵蓋全部領域錯誤；default 不洩漏內部訊息
+- [ ] service 只依賴介面
+- [ ] 產生的程式碼是產生器產生的，而且編譯得過
+- [ ] 建置與測試全綠（`.ai/config.yaml` 裡 backend 的 `verify`）；`gofmt -l .` 不列出任何檔案；改了契約有重新產生，兩端同步
+- [ ] 規則與數值只有一份實作（§9）

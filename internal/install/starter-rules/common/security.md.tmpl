@@ -1,0 +1,43 @@
+{{.CodeFrontmatter}}# Security Guidelines
+
+## 認證與授權
+
+- 使用者的身分一律取自伺服器驗證過的憑證（從 token 或 session 解出來的），而且**必須檢查有沒有取到**；絕不採信 client payload 裡的 userId。
+- 公開的路由用明確的白名單列出；其餘一律先過認證。
+- token 的格式、效期、輪替與撤銷的做法，寫在伺服器端的 architecture.md；實作與它一致。
+
+## SQL Injection
+
+- 查詢一律參數化；用字串拼接 SQL **禁止**。
+- 動態的欄位名或表名（不得已時）必須用白名單驗證，絕不插值使用者的輸入。
+
+## 錯誤訊息洩漏
+
+- 沒有對應到的錯誤，回給客戶端的是 generic 的內部錯誤，絕不回 `err.Error()` 或例外的原文。
+- 完整的錯誤只進伺服器端的 log；stack trace、SQL 錯誤、內部路徑不得出現在回應裡。
+
+## 診斷端點
+
+- 診斷與除錯端點（profiling、debug 之類）不得公開：只綁 loopback 或內網，不和對外的流量共用 listener，也不在部署設定裡發布到主機；metrics 的抓取走內網。
+
+## Secrets
+
+- 不硬編碼任何 secret；來源是環境變數或金鑰檔的路徑，啟動時 fail-fast 驗證。
+- `.env` 必在 `.gitignore`；`.env.example` 只放占位值。
+- 快取不得存 secrets、tokens、credentials。
+
+## 輸入驗證
+
+- server-authoritative 的驗證是硬規則：進入點（adapter 層）驗結構是否正確，service 層驗業務規則；不信任任何外部資料。
+
+## 資料保護
+
+- log 把個資降到最少（INFO 級不落完整的使用者資料）。
+- 敏感操作（帳號綁定、權限變更、金流）的稽核紀錄 append-only、不可變。
+{{- if .Has "dotnet"}}
+
+## 客戶端
+
+- 客戶端的程式碼與打包的資料會全數公開：**不得含任何 secret 或 API key**；只該伺服器知道的資料（機率、掉落權重之類）不進客戶端的資料包。
+- token 的生命週期（登入、輪替）由一個 API client 統一管理，不在別處另存副本。
+{{- end}}

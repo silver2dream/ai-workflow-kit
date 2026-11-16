@@ -1,0 +1,70 @@
+---
+paths:
+  - "docs/**"
+  - "**/docs/**"
+  - "**/*.md"
+---
+
+# Docs Source of Truth
+
+## 目的
+
+避免真相分散在產品文件、工程文件、README 與程式碼之間而沒有明確 owner。
+
+## 文件擁有權
+
+| 位置 | 角色 | 用途 | 不得用於 |
+|---|---|---|---|
+| `docs/` | **產品與設計文件** | 產品、企劃與設計。`docs/README.md` 是索引與**跨文件主題的權威地圖**：每個主題指到它唯一的定義處。由程式產生的文件不手改，改產生它的程式或資料再重跑。`docs/research/` 是調研（Working Note），只留依據，**結論要寫回對應的定義處才算定案** | {{if .RootRepo}}工程現況（工程文件放 `{{.RootRepo.Docs}}`）{{else}}工程文件、工程現況{{end}} |
+| `docs/decisions.md` | 決策紀錄 | 只增不改：每個決定有一個不變的編號（`D7`）、理由與不同意見；由 `awkit plan` 的議會寫入 | 改寫或刪除過去的決定 |
+| `docs/plans/` | 規劃紀錄 | 每次規劃留下的需求、會議紀錄與票券提案 | 當成設計的定義處 |
+{{- range .Repos}}
+| `{{.Docs}}architecture.md` | `{{.Name}}` 的工程**唯一權威** | 分層、鐵律、環境變數、新增模組的做法 | 產品規劃 |
+| `{{.Docs}}`（其他） | `{{.Name}}` 的工程設計與調研 | 各專題的工程設計；`research/`（調研筆記，Working Note）。**調研的結論要寫回 architecture.md 才算定案**，調研筆記只保留依據 | 另立一份定案 |
+{{- end}}
+| 模組級 README | 模組現況補充 | 單一模組的行為細節，連回它的 architecture.md | 重複宣告 architecture.md 已定義的事實 |
+| `CLAUDE.md`、`AGENTS.md` | 導航 | 慣例、指向各權威文件；由 `awkit generate` 從 `.ai/config.yaml` 產生，不手改 | 承載本體內容 |
+| `.ai/config.yaml` | 專案設定 | repo、分支、建置與測試指令的唯一定義處 | 敘述性文件 |
+
+## 契約的特殊地位
+
+{{if .Contract -}}
+repo 之間的契約，SoT 是**程式碼本身**：`{{.Contract}}`。兩端都用它產生的程式碼，不另寫 schema；文件只描述契約，不另立真相。
+{{- else -}}
+repo 之間或對外有契約時（API、協定、共用的資料格式），SoT 是定義契約的**程式碼本身**，位置寫在契約擁有者的 architecture.md。用得到它的每一端都用它產生的程式碼，不另寫 schema；文件只描述契約，不另立真相。
+{{- end}}
+
+## 文件狀態與檔頭
+
+governed 文件只允許這六種狀態：`Current State`／`Partial`／`Plan`／`Historical`／`Superseded`／`Working Note`。還沒實作的設計是 `Plan`；只實作了一部分是 `Partial`；實作並驗證過才是 `Current State`。
+
+每份文件在標題之後標三行：
+
+- **Status**：上面六種之一
+- **Last Verified**：日期，以及驗了什麼
+- **Owner**：擁有這份文件的角色（`.ai/roster.yaml` 裡的 id）；只有擁有者改它
+
+文件寫的是它的主題現在的結論，不是開會的經過：不寫「我們討論了」「有人提議」，不列決定的清單，不記誰反對過；那些在 `docs/decisions.md` 與 `docs/plans/`。結論的依據是某個決定時，在讀者會問為什麼的地方點名它（`D4`）；建立在假設上的地方說明並點名（`A2`）。
+
+## 路由規則
+
+1. 產品與設計（商業、系統、玩法、世界觀、數值的設計）→ `docs/`；工程文件不放這裡{{if .RootRepo}}，放 `{{.RootRepo.Docs}}`{{end}}。
+2. 一個 repo 的工程設計與實作現況 → 它的工程文件目錄（或模組 README，連回 architecture.md）。
+3. 兩處需要同一資訊：一處定義、另一處連結，**不複製**。
+4. 調研報告與筆記（Working Note）放在 owner 目錄的 `research/`（產品層 → `docs/research/`{{range .Repos}}、`{{.Name}}` → `{{.Docs}}research/`{{end}}），每份標 `Status: Working Note` 與 `Last Verified`，並在檔頭連到它的上位權威文件。
+5. 決定記在 `docs/decisions.md`；別的文件引用它的編號，不重抄內容。
+
+## 禁止
+
+1. 把 `docs/`（產品層）的內容直接當工程現況引用，或抄進工程文件。
+2. 同一現況在兩份文件各自維護。
+3. 把已刪除的文件從 git 歷史復活回工作樹（要查舊內容用 `git show <commit>:<path>`）。
+4. 同 owner 同 scope 存在多份 current-state 文件而不指定 primary。
+5. 把調研產出放在 owner 目錄之外（如 repo 根目錄的 `reports/`、`research_notes/`），或讓調研報告取代權威文件的結論。
+6. 決策或路線變了，卻只改一份文件，留下其他文件的舊說法。變更要在同一次作業內走完：定義處 → 連結它的文件 → 索引 `docs/README.md`。
+7. 在索引（`docs/README.md`）與 `CLAUDE.md` 複寫別份文件的狀態、決定或數字：它們只指向定義處；狀態與 owner 的決定寫在文件自己的檔頭與條目上。
+8. 只在已取代的內容上加「已取代」標註、舊內文照留。已取代的內容要移除，每節留一行墓碑（同一節號，入鏈的 § 引用才不斷）與 `git show <commit>:<path>` 指令；沒有持續用途的 Historical 文件直接刪，不留 `-old`／`-v1` 副本。
+
+## 800 行拆分規則
+
+單一設計文件超過 **800 行**就拆成資料夾：`00_README.md`（primary index：檔頭、總覽、往支援檔的連結）加上依**關注點**拆的支援檔（協定、資料模型、儲存、流程……）。支援檔連回 index、不重複檔頭、不重複定義另一支援檔已寫的事實。遷移時更新所有入鏈，確認沒有內容遺失。

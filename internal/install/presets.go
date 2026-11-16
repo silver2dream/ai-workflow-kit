@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 // A preset decides what a new project starts with: its workflow config, the
@@ -30,8 +33,34 @@ func presetName(preset string) string {
 	return preset
 }
 
+// presetSettings is what a new configuration takes from the project and its
+// owner, where a preset has no answer of its own.
+type presetSettings struct {
+	// Branches are the branches the configuration names.
+	Branches Branches
+	// Worker is who writes the code: WorkerCodex or WorkerClaudeCode.
+	Worker string
+}
+
+// The backends a Worker can be, as the configuration names them.
+const (
+	WorkerCodex      = "codex"
+	WorkerClaudeCode = "claude-code"
+)
+
+// WorkerBackends lists the backends in the order they are shown.
+var WorkerBackends = []string{WorkerCodex, WorkerClaudeCode}
+
+// workerOrDefault resolves the backend a project gets when none is named.
+func workerOrDefault(worker string) string {
+	if worker == "" {
+		return WorkerCodex
+	}
+	return worker
+}
+
 // presetConfigs builds the workflow config of each preset.
-var presetConfigs = map[string]func(projectName string, branches Branches) []byte{
+var presetConfigs = map[string]func(projectName string, settings presetSettings) []byte{
 	PresetGeneric: genericConfig,
 	PresetGodotGo: godotGoConfig,
 }
@@ -47,9 +76,9 @@ func applyPreset(targetDir string, opts Options) (skipped bool, err error) {
 	if !ok {
 		return false, unknownPreset(opts.Preset)
 	}
-	branches := opts.Branches.orDefault()
+	settings := presetSettings{Branches: opts.Branches.orDefault(), Worker: workerOrDefault(opts.Worker)}
 	return ensureWorkflowConfig(targetDir, opts.ProjectName, opts.Force || opts.ForceConfig, func(projectName string) []byte {
-		return build(projectName, branches)
+		return build(projectName, settings)
 	})
 }
 
@@ -72,7 +101,7 @@ version: "1.2"
 // sharedSections are the sections every preset shares. The rules a project's
 // agents are told to read are the ones the preset starts the project with:
 // the list is taken from the files, so the two cannot differ.
-func sharedSections(preset string, branches Branches) string {
+func sharedSections(preset string, settings presetSettings) string {
 	custom := "  custom: []\n"
 	if rules := StarterRules(preset); len(rules) > 0 {
 		custom = "  custom:\n"
@@ -80,7 +109,7 @@ func sharedSections(preset string, branches Branches) string {
 			custom += "    - " + rule + "\n"
 		}
 	}
-	return gitSection(branches) + rulesComment + custom + configAfterRules
+	return gitSection(settings.Branches) + rulesComment + custom + fmt.Sprintf(configAfterRules, workerOrDefault(settings.Worker))
 }
 
 // gitSection says where pull requests go. The names are the caller's: init
@@ -98,14 +127,14 @@ git:
 
 const rulesComment = `
 rules:
-  # The project's own rules: a name here is the file .claude/rules/<name>.md,
-  # and a Worker is told to read the rules that are listed.
+  # The project's own rules: a name here is the file .claude/rules/<name>.md.
+  # A Worker is told which of the listed rules apply to the files it changes.
 `
 
 const configAfterRules = `
 worker:
   # Who writes the code: codex or claude-code.
-  backend: codex
+  backend: %s
 
 review:
   # The score out of 10 a review has to give before a pull request is merged,
@@ -114,7 +143,7 @@ review:
   merge_strategy: squash
 `
 
-func genericConfig(projectName string, branches Branches) []byte {
+func genericConfig(projectName string, settings presetSettings) []byte {
 	head := fmt.Sprintf(configHeader+`
 project:
   name: %q
@@ -132,10 +161,10 @@ repos:
       build: ""
       test: ""
 `, projectName)
-	return []byte(head + sharedSections(PresetGeneric, branches))
+	return []byte(head + sharedSections(PresetGeneric, settings))
 }
 
-func godotGoConfig(projectName string, branches Branches) []byte {
+func godotGoConfig(projectName string, settings presetSettings) []byte {
 	head := fmt.Sprintf(configHeader+`
 project:
   name: %q
@@ -158,5 +187,31 @@ repos:
       build: "dotnet build"
       test: "dotnet test"
 `, projectName)
-	return []byte(head + sharedSections(PresetGodotGo, branches))
+	return []byte(head + sharedSections(PresetGodotGo, settings))
+}
+
+// PresetRepo is a repo the configuration of a preset starts with.
+type PresetRepo struct {
+	Name string
+	// Path is the repo's directory as the rules name it: "backend/", or "./"
+	// for a repo that is the whole repository.
+	Path string
+}
+
+// PresetRepos names the repos the configuration of a preset starts with, in
+// the order it lists them. A preset that is not known has none.
+func PresetRepos(preset string) []PresetRepo {
+	build, ok := presetConfigs[presetName(preset)]
+	if !ok {
+		return nil
+	}
+	var cfg config.Config
+	if err := yaml.Unmarshal(build("project", presetSettings{}), &cfg); err != nil {
+		return nil
+	}
+	repos := make([]PresetRepo, len(cfg.Repos))
+	for i, r := range cfg.Repos {
+		repos[i] = PresetRepo{Name: r.Name, Path: rulePath(r.Type, r.Path)}
+	}
+	return repos
 }

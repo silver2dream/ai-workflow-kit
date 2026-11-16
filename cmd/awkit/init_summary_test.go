@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,7 @@ func TestPrintInitSummary(t *testing.T) {
 	out := summaryText(initSummary{
 		Target: "this directory", Preset: "godot-go",
 		Integration: "develop", Release: "main", Repos: []string{"backend", "frontend"},
-		Skills: 3, Subagents: 2, Rules: 4,
+		Skills: 3, Subagents: 2, Rules: 4, OwnRules: 3,
 		Workflows:    []string{"ci-backend.yml", "ci-frontend.yml"},
 		SkeletonDirs: []string{"backend/", "frontend/"}, SkeletonFiles: 15,
 		InRepo: true,
@@ -45,6 +46,7 @@ func TestPrintInitSummary(t *testing.T) {
 		".ai/config.yaml the configuration: pull requests go to develop, releases are cut from main\n",
 		".ai/roster.yaml who sits on the planning council (awkit plan)\n",
 		".claude/ what agents read: 3 skills, 2 subagents, 4 rule files\n",
+		".claude/rules/ the project's own rules, 3 to start with: tighten them as the design settles\n",
 		".github/workflows/ ci-backend.yml, ci-frontend.yml\n",
 		"backend/, frontend/ the project skeleton, 15 files\n",
 		"  1. Look over .ai/config.yaml\n",
@@ -99,6 +101,15 @@ func TestPrintInitSummary_Variations(t *testing.T) {
 		t.Errorf("a configuration that was kept though a preset was named:\n%s", out)
 	}
 
+	for name, without := range map[string]initSummary{
+		"a configuration that was kept": {Target: "demo", Preset: "godot-go", ConfigKept: true, OwnRules: 3, InRepo: true},
+		"a project that lists no rule":  {Target: "demo", Preset: "godot-go", InRepo: true},
+	} {
+		if out := summaryText(without); strings.Contains(out, "the project's own rules") {
+			t.Errorf("%s: the summary speaks of rules that were not written:\n%s", name, out)
+		}
+	}
+
 	skeleton := summaryText(initSummary{Target: "demo", Preset: "godot-go", SkeletonDirs: []string{"backend/"}, SkeletonFiles: 1, SkeletonKept: 14, InRepo: true})
 	if !strings.Contains(skeleton, "backend/ the project skeleton, 1 file (14 that were there are kept; --force writes over them)\n") {
 		t.Errorf("a skeleton that was mostly there:\n%s", skeleton)
@@ -124,7 +135,9 @@ func TestCollectInitSummary(t *testing.T) {
 	want := initSummary{
 		Target: dir, Preset: install.PresetGodotGo,
 		Integration: "develop", Release: "main", Repos: []string{"backend", "frontend"},
-		Skills: 3, Subagents: 2, Rules: 4,
+		// The kit's git rule, and the rules the project starts with.
+		Skills: 3, Subagents: 2, Rules: 1 + len(install.StarterRules(install.PresetGodotGo)),
+		OwnRules:     len(install.StarterRules(install.PresetGodotGo)),
 		Workflows:    []string{"ci-backend.yml", "ci-frontend.yml"},
 		SkeletonDirs: []string{"backend/", "frontend/"}, SkeletonFiles: 15,
 	}
@@ -151,8 +164,8 @@ func TestCollectInitSummary(t *testing.T) {
 		t.Fatalf("Install: %v", err)
 	}
 	got = collectInitSummary(generic, install.PresetGeneric, result)
-	if !reflect.DeepEqual(got.NoCommands, []string{"root"}) || got.Rules != 1 || len(got.Workflows) != 0 || got.SkeletonFiles != 0 || !got.InRepo || got.Integration != "main" {
-		t.Errorf("the generic preset: %+v, want a repo without commands, the kit's one rule, no workflow, no skeleton, a repository, one trunk", got)
+	if !reflect.DeepEqual(got.NoCommands, []string{"root"}) || got.Rules != 1+len(install.StarterRules(install.PresetGeneric)) || len(got.Workflows) != 0 || got.SkeletonFiles != 0 || !got.InRepo || got.Integration != "main" {
+		t.Errorf("the generic preset: %+v, want a repo without commands, the kit's rule and the rules every project starts with, no workflow, no skeleton, a repository, one trunk", got)
 	}
 
 	if got := collectInitSummary(".", "generic", nil); got.Target != "this directory" {
@@ -178,7 +191,8 @@ func TestCmdInit_SaysWhatItDidOnce(t *testing.T) {
 			t.Errorf("cmdInit = %d, want 0", code)
 		}
 	})
-	for _, want := range []string{"AWK is set up in this directory (preset godot-go)", "what agents read: 3 skills, 2 subagents, 4 rule files", "ci-backend.yml, ci-frontend.yml", "awkit doctor"} {
+	rules := fmt.Sprintf("what agents read: 3 skills, 2 subagents, %d rule files", 1+len(install.StarterRules(install.PresetGodotGo)))
+	for _, want := range []string{"AWK is set up in this directory (preset godot-go)", rules, "ci-backend.yml, ci-frontend.yml", "awkit doctor"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("init does not say %q:\n%s", want, out)
 		}
@@ -298,9 +312,9 @@ func TestCmdUpgrade_ShowsWhatTheGeneratorWarnedAbout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed := strings.Replace(string(content), "  custom: []\n", "  custom: [house-rules]\n", 1)
+	listed := strings.Replace(string(content), "  custom:\n", "  custom:\n    - house-rules\n", 1)
 	if listed == string(content) {
-		t.Fatalf("the configuration has no empty list of rules to add one to:\n%s", content)
+		t.Fatalf("the configuration has no list of rules to add one to:\n%s", content)
 	}
 	if err := os.WriteFile(path, []byte(listed), 0o644); err != nil {
 		t.Fatal(err)
