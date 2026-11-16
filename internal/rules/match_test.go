@@ -22,6 +22,10 @@ func TestMatch(t *testing.T) {
 		{"*.md", []string{"README.md", "docs/a.md", "backend/docs/x/a.md"}, []string{"a.mdx", "md", "docs/a.txt"}},
 		{"/*.md", []string{"README.md", "CLAUDE.md"}, []string{"docs/a.md", "a/b/c.md"}},
 		{"src/components/*.tsx", []string{"src/components/Button.tsx"}, []string{"src/components/ui/Button.tsx", "components/Button.tsx", "src/Button.tsx"}},
+		// A pattern is used up when the path is: a path that ends before the
+		// pattern does is not matched, and neither is one that goes on after it.
+		{"a/b/c", []string{"a/b/c"}, []string{"a/b", "a", "a/b/c/d", "b/c"}},
+		{"src/components/*.tsx", nil, []string{"src/components", "src"}},
 		// Braces.
 		{"src/**/*.{ts,tsx}", []string{"src/a.ts", "src/x/y/a.tsx"}, []string{"src/a.js", "lib/a.ts"}},
 		{"{a,b}/{c,d}/*.{ts,tsx}", []string{"a/c/x.ts", "b/d/x.tsx", "a/d/x.ts"}, []string{"a/e/x.ts", "c/a/x.ts", "a/c/x.js"}},

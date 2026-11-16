@@ -7,6 +7,10 @@
 // ever answers one question with one text, and only this package writes to
 // disk, so a role cannot write a document another role owns.
 //
+// How a document is written is the project's to say: a role is given the
+// project's rules for the files it writes, and what it wrote is read against
+// them (byrules.go).
+//
 // A plan ends with a proposal. Nothing is created on GitHub until a person
 // approves the work list.
 package council

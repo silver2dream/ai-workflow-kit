@@ -431,6 +431,10 @@ func TestRun_TheRevisionIsHandedInLikeTheDocuments(t *testing.T) {
 		if !strings.Contains(readings[1], "===== backend/docs/architecture.md\n") || !strings.Contains(readings[1], "===== backend/docs/protocol.md\n# Protocol\n\n**Status**: Plan\n") {
 			t.Errorf("the second reading is not of both documents as they stand:\n%s", readings[1])
 		}
+		// What was turned away was not written: there is nothing of it to read.
+		if strings.Contains(readings[1], "===== docs/qa/risks.md") {
+			t.Errorf("the second reading holds a document that was turned away:\n%s", readings[1])
+		}
 		state := map[string]WrittenDocument{}
 		refused := 0
 		for _, doc := range plan.Documents {
@@ -761,13 +765,13 @@ func TestRun_RulesTooLongToPassOn(t *testing.T) {
 		t.Errorf("the minutes of a plan no rule was passed on to:\n%s", minutes)
 	}
 
-	// The bound itself: a rule of exactly the room that is left fits, one byte
-	// more does not.
-	p := &planner{rules: []rules.Rule{{File: "a.md", Text: strings.Repeat("x", maxRules-10)}, {File: "b.md", Text: strings.Repeat("y", 10)}, {File: "c.md", Text: "z"}}}
+	// The bound itself is 60000 bytes, the number the documentation gives: a
+	// rule of exactly the room that is left fits, one byte more does not.
+	p := &planner{rules: []rules.Rule{{File: "a.md", Text: strings.Repeat("x", 59990)}, {File: "b.md", Text: strings.Repeat("y", 10)}, {File: "c.md", Text: "z"}}}
 	if book := p.rulesFor([]string{"docs/a.md"}); !reflect.DeepEqual(book.files(), []string{"a.md", "b.md"}) || len(book.left) != 1 || book.left[0].File != "c.md" {
 		t.Errorf("shown %v, left %v; want the rules that fill the room, and the next one left", book.files(), book.left)
 	}
-	p = &planner{rules: []rules.Rule{{File: "a.md", Text: strings.Repeat("x", maxRules+1)}, {File: "b.md", Text: strings.Repeat("y", maxRules)}}}
+	p = &planner{rules: []rules.Rule{{File: "a.md", Text: strings.Repeat("x", 60001)}, {File: "b.md", Text: strings.Repeat("y", 60000)}}}
 	if book := p.rulesFor([]string{"docs/a.md"}); !reflect.DeepEqual(book.files(), []string{"b.md"}) || len(book.left) != 1 {
 		t.Errorf("shown %v, left %v; want the rule that is as long as the room", book.files(), book.left)
 	}
@@ -996,7 +1000,9 @@ func TestRuleCheckPrompt(t *testing.T) {
 				break
 			}
 		}
-		if c.Step == "rulecheck" || c.Step == "redocuments" {
+		// The builder is played by a model of its own: who reads its documents,
+		// and who puts them right.
+		if c.Step == "redocuments" || c.Step == "rulecheck" && strings.Contains(prompt, "the Builder (builder).") {
 			played[c.Step] = name
 		}
 		return base(c)

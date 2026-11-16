@@ -556,6 +556,20 @@ func TestInstall_Roster(t *testing.T) {
 				t.Errorf("%s: the roster names %s, and the rule about where documents are kept does not", preset, doc)
 			}
 		}
+		// The same goes for the documents about quality, which are about no
+		// one repo: the rule gives them a place under docs/, and the roster
+		// keeps them there.
+		quality := 0
+		for _, role := range roster.Roles {
+			for _, doc := range role.Owns {
+				if strings.HasPrefix(doc, "docs/qa/") {
+					quality++
+				}
+			}
+		}
+		if quality == 0 || !strings.Contains(string(governance), "| `docs/qa/` |") || !strings.Contains(string(governance), "→ `docs/qa/`。") {
+			t.Errorf("%s: the roster keeps %d documents in docs/qa/; the rule about where documents are kept has to name that place", preset, quality)
+		}
 		if got := rosterOf(dir); strings.Contains(got, "{{") {
 			t.Errorf("%s: the roster holds a piece of its template:\n%s", preset, got)
 		}
