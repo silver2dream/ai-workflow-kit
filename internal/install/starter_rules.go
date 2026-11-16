@@ -5,7 +5,6 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -276,18 +275,25 @@ func ensureStarterRules(targetDir, preset string, ctx RuleContext) error {
 	return nil
 }
 
-// HasOwnRules reports whether a project has rule files of its own: any rule
-// beside the kit's. Such a project is not written a rule over, so what its
-// owner would answer about it has nowhere to go but those files.
+// HasOwnRules reports whether a project has rule files of its own: a rule
+// anywhere under its rules directory, the kit's folder apart. Claude Code
+// reads the rule files in subdirectories too, so a rule in a folder counts.
+// Such a project is not written a rule over, so what its owner would answer
+// about it has nowhere to go but those files.
 func HasOwnRules(targetDir string) bool {
-	entries, err := os.ReadDir(layout.Rules(targetDir))
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			return true
+	found := false
+	kit := layout.KitRules(targetDir)
+	_ = filepath.WalkDir(layout.Rules(targetDir), func(file string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil // a directory that is not there, or cannot be read, holds no rule
+		case entry.IsDir() && file == kit:
+			return filepath.SkipDir
+		case !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md"):
+			found = true
+			return filepath.SkipAll
 		}
-	}
-	return false
+		return nil
+	})
+	return found
 }

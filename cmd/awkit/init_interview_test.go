@@ -150,9 +150,6 @@ func TestAskInit_TheSkeletonFitsOrNot(t *testing.T) {
 	if got, _ := asked(t, empty, "n\n", start, given); got.Scaffold {
 		t.Error("the person said n, and the skeleton is written")
 	}
-	if got, _ := asked(t, empty, "YES\n", start, given); !got.Scaffold {
-		t.Error("the person said YES, and the skeleton is not written")
-	}
 
 	taken := t.TempDir()
 	if err := os.Mkdir(filepath.Join(taken, "backend"), 0o755); err != nil {
@@ -160,6 +157,20 @@ func TestAskInit_TheSkeletonFitsOrNot(t *testing.T) {
 	}
 	if got, out := asked(t, taken, "\n", start, given); got.Scaffold || !strings.Contains(out, "Write it, y or n [n] > ") {
 		t.Errorf("a project that has a backend directory: scaffold %v\n%s", got.Scaffold, out)
+	}
+	// Where the default is n, yes has to be read as yes, however it is typed.
+	for _, yes := range []string{"y", "Y", "yes", "YES", "Yes"} {
+		if got, out := asked(t, taken, yes+"\n", start, given); !got.Scaffold || strings.Contains(out, "is neither y nor n") {
+			t.Errorf("the person said %s, and the skeleton is not written:\n%s", yes, out)
+		}
+	}
+	for _, no := range []string{"n", "N", "no", "NO"} {
+		if got, out := asked(t, empty, no+"\n", start, given); got.Scaffold || strings.Contains(out, "is neither y nor n") {
+			t.Errorf("the person said %s, and the skeleton is written:\n%s", no, out)
+		}
+	}
+	if _, out := asked(t, empty, "maybe\n\n", start, given); !strings.Contains(out, "\"maybe\" is neither y nor n") {
+		t.Errorf("an answer that is neither is not said to be:\n%s", out)
 	}
 	if !skeletonFits(empty, install.PresetGodotGo) || skeletonFits(taken, install.PresetGodotGo) || skeletonFits(empty, install.PresetGeneric) {
 		t.Error("skeletonFits: an empty godot-go project has room, one with a backend directory and a generic one have not")
