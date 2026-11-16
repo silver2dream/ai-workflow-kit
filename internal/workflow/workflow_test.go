@@ -109,6 +109,8 @@ func TestFormatExitReasonDetails(t *testing.T) {
 		{"max_failures", "maximum failures"},
 		{"escalation_triggered", "escalation"},
 		{"interrupted", "interrupted"},
+		{"config_not_found", "config not found"},
+		{"config_invalid", "awkit validate"},
 		{"unknown_reason", "unknown_reason"},
 	}
 

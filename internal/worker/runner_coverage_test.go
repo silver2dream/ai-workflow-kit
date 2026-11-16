@@ -101,100 +101,6 @@ func TestCov_FormatDuration(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// containsString
-// ---------------------------------------------------------------------------
-
-func TestCov_ContainsString(t *testing.T) {
-	tests := []struct {
-		values []string
-		target string
-		want   bool
-	}{
-		{[]string{"a", "b", "c"}, "b", true},
-		{[]string{"a", "b", "c"}, "d", false},
-		{nil, "a", false},
-		{[]string{}, "a", false},
-		{[]string{"root"}, "root", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.target, func(t *testing.T) {
-			if got := containsString(tt.values, tt.target); got != tt.want {
-				t.Errorf("containsString(%v, %q) = %v, want %v", tt.values, tt.target, got, tt.want)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// buildValidRepos
-// ---------------------------------------------------------------------------
-
-func TestCov_BuildValidRepos(t *testing.T) {
-	t.Run("nil config", func(t *testing.T) {
-		repos := buildValidRepos(nil)
-		if !containsString(repos, "root") {
-			t.Error("expected 'root' in repos")
-		}
-		if !containsString(repos, "backend") {
-			t.Error("expected 'backend' in repos")
-		}
-		if !containsString(repos, "frontend") {
-			t.Error("expected 'frontend' in repos")
-		}
-	})
-
-	t.Run("with repos", func(t *testing.T) {
-		cfg := &workflowConfig{
-			Repos: []workflowRepo{
-				{Name: "api"},
-				{Name: "web"},
-			},
-		}
-		repos := buildValidRepos(cfg)
-		if !containsString(repos, "root") {
-			t.Error("expected 'root' in repos")
-		}
-		if !containsString(repos, "api") {
-			t.Error("expected 'api' in repos")
-		}
-		if !containsString(repos, "web") {
-			t.Error("expected 'web' in repos")
-		}
-	})
-
-	t.Run("empty name skipped", func(t *testing.T) {
-		cfg := &workflowConfig{
-			Repos: []workflowRepo{
-				{Name: ""},
-				{Name: "svc"},
-			},
-		}
-		repos := buildValidRepos(cfg)
-		if len(repos) != 2 { // root + svc
-			t.Errorf("expected 2 repos, got %d: %v", len(repos), repos)
-		}
-	})
-
-	t.Run("no duplicate root", func(t *testing.T) {
-		cfg := &workflowConfig{
-			Repos: []workflowRepo{
-				{Name: "root"},
-			},
-		}
-		repos := buildValidRepos(cfg)
-		count := 0
-		for _, r := range repos {
-			if r == "root" {
-				count++
-			}
-		}
-		if count != 1 {
-			t.Errorf("expected 1 'root', got %d", count)
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
 // resolveRepoConfig
 // ---------------------------------------------------------------------------
 
@@ -486,58 +392,6 @@ func TestCov_BuildRetryConfig(t *testing.T) {
 		}
 		if cfg.BaseDelay != 10*time.Second {
 			t.Errorf("expected BaseDelay=10s, got %v", cfg.BaseDelay)
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
-// workflowFeedback
-// ---------------------------------------------------------------------------
-
-func TestCov_WorkflowFeedback_IsEnabled(t *testing.T) {
-	t.Run("nil enabled defaults true", func(t *testing.T) {
-		f := &workflowFeedback{}
-		if !f.isEnabled() {
-			t.Error("expected true when Enabled is nil")
-		}
-	})
-
-	t.Run("explicitly true", func(t *testing.T) {
-		v := true
-		f := &workflowFeedback{Enabled: &v}
-		if !f.isEnabled() {
-			t.Error("expected true")
-		}
-	})
-
-	t.Run("explicitly false", func(t *testing.T) {
-		v := false
-		f := &workflowFeedback{Enabled: &v}
-		if f.isEnabled() {
-			t.Error("expected false")
-		}
-	})
-}
-
-func TestCov_WorkflowFeedback_MaxHistory(t *testing.T) {
-	t.Run("zero defaults to 10", func(t *testing.T) {
-		f := &workflowFeedback{}
-		if f.maxHistory() != 10 {
-			t.Errorf("expected 10, got %d", f.maxHistory())
-		}
-	})
-
-	t.Run("negative defaults to 10", func(t *testing.T) {
-		f := &workflowFeedback{MaxHistoryInPrompt: -5}
-		if f.maxHistory() != 10 {
-			t.Errorf("expected 10, got %d", f.maxHistory())
-		}
-	})
-
-	t.Run("custom value", func(t *testing.T) {
-		f := &workflowFeedback{MaxHistoryInPrompt: 20}
-		if f.maxHistory() != 20 {
-			t.Errorf("expected 20, got %d", f.maxHistory())
 		}
 	})
 }
@@ -1281,3 +1135,128 @@ repos:
 // ---------------------------------------------------------------------------
 // resolveSpecName and resolveTaskLine — ensure env var stripped
 // ---------------------------------------------------------------------------
+
+// The ticket's repo reaches the Worker in lower case. A configuration that
+// writes the name with capitals is still the one that is meant: the repo is
+// valid, and its type, path and commands are the configured ones.
+func TestRepoIsFoundWhateverTheCaseOfItsName(t *testing.T) {
+	cfg := &workflowConfig{Repos: []workflowRepo{
+		{Name: "Backend", Type: "directory", Path: "services/backend/", Language: "node", PackageManager: "pnpm",
+			Verify: workflowRepoVerify{Build: "make build", Test: "make test"}},
+		{Name: "Tools", Type: "submodule", Path: "tools/", Verify: workflowRepoVerify{Setup: "make deps"}},
+	}}
+
+	if repoType, repoPath := resolveRepoConfig(cfg, "backend"); repoType != "directory" || repoPath != "services/backend/" {
+		t.Errorf("backend resolves to %s at %s, want the configured directory", repoType, repoPath)
+	}
+	if repoType, repoPath := resolveRepoConfig(cfg, "tools"); repoType != "submodule" || repoPath != "tools/" {
+		t.Errorf("tools resolves to %s at %s, want the configured submodule", repoType, repoPath)
+	}
+	if got := getConfigVerifyCommands(cfg, "backend"); len(got) != 2 || got[0] != "make build" || got[1] != "make test" {
+		t.Errorf("the commands of backend = %v, want the configured ones", got)
+	}
+	if got := getSetupCommand(cfg, "tools"); got != "make deps" {
+		t.Errorf("the setup of tools = %q, want the configured one", got)
+	}
+	if got := getSetupCommand(cfg, "backend"); got != "pnpm install --frozen-lockfile 2>/dev/null || pnpm install" {
+		t.Errorf("the setup of backend = %q, want the one for its package manager", got)
+	}
+	// A repo the configuration names and says nothing more about is a
+	// directory at the root; so is one it does not know.
+	bare := &workflowConfig{Repos: []workflowRepo{{Name: "Docs"}}}
+	for _, name := range []string{"docs", "nowhere"} {
+		if repoType, repoPath := resolveRepoConfig(bare, name); repoType != "directory" || repoPath != "./" {
+			t.Errorf("%s resolves to %s at %s, want a directory at the root", name, repoType, repoPath)
+		}
+	}
+}
+
+// The run accepts a ticket for such a repo: it gets as far as the next rule,
+// that a release ticket is for the root. A repo the configuration does not
+// have is refused, with the names as the configuration writes them.
+func TestRunIssue_ARepoNamedWithCapitals(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, ".ai", "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("repos:\n  - {name: Backend, path: backend/, type: directory}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for repo, wantInError := range map[string]string{
+		"backend": "release tickets are allowed only for root repo",
+		"Backend": "release tickets are allowed only for root repo",
+		"nowhere": `repo must be one of: root, Backend (got "nowhere")`,
+	} {
+		path := filepath.Join(dir, "ticket.md")
+		ticket := "# [feat] a release\n- Repo: " + repo + "\n- Release: true\n" // without a block: a block refuses a release for another repo itself
+		if err := os.WriteFile(path, []byte(ticket), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		result, err := RunIssue(ctx, RunIssueOptions{IssueID: 7, TicketFile: path, StateRoot: dir})
+
+		if err == nil || !strings.Contains(err.Error(), wantInError) || result != nil {
+			t.Errorf("a ticket for %s: result %+v, error %v; want the error to mention %q", repo, result, err, wantInError)
+		}
+	}
+}
+
+// A configuration that cannot be read leaves the Worker with every default:
+// the same numbers a file that says nothing gives.
+func TestLoadWorkflowConfig_IsTheSharedReader(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workflow.yaml")
+	if err := os.WriteFile(path, []byte("repos:\n  - {name: backend, path: backend/}\nescalation: {retry_count: -1}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadWorkflowConfig(path)
+	if err != nil {
+		t.Fatalf("loadWorkflowConfig: %v", err)
+	}
+	if cfg.Timeouts.GHSeconds != 60 || cfg.Timeouts.GitSeconds != 120 || cfg.Timeouts.CodexMinutes != 30 || cfg.Worker.Backend != "codex" {
+		t.Errorf("the defaults are not filled in: %+v %+v", cfg.Timeouts, cfg.Worker)
+	}
+	if cfg.Escalation.RetryCount != 0 || cfg.Escalation.RetryDelaySeconds != 5 {
+		t.Errorf("escalation = %+v, want no retries and the default delay", cfg.Escalation)
+	}
+	if got := cfg.BaseBranch(); got != "develop" {
+		t.Errorf("the base branch of a file that names none = %q", got)
+	}
+
+	if err := os.WriteFile(path, []byte("timeouts: {gh_seconds: soon}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := loadWorkflowConfig(path); err == nil {
+		t.Errorf("a file with a value of the wrong kind was read as %+v", cfg)
+	}
+	if _, err := loadWorkflowConfig(filepath.Join(dir, "absent.yaml")); !os.IsNotExist(err) {
+		t.Errorf("a file that is not there: err = %v", err)
+	}
+}
+
+// A timeout the caller leaves open is the configuration's; one the caller
+// sets stays; a configuration that names none gives the defaults.
+func TestFillTimeouts(t *testing.T) {
+	configured := workflowTimeouts{GHSeconds: 7, GitSeconds: 8, CodexMinutes: 9}
+
+	opts := RunIssueOptions{}
+	opts.fillTimeouts(configured)
+	if opts.GHTimeout != 7*time.Second || opts.GitTimeout != 8*time.Second || opts.CodexTimeout != 9*time.Minute {
+		t.Errorf("timeouts left open = %v, %v, %v; want the configured 7s, 8s, 9m", opts.GHTimeout, opts.GitTimeout, opts.CodexTimeout)
+	}
+
+	opts = RunIssueOptions{GHTimeout: time.Second, GitTimeout: 2 * time.Second, CodexTimeout: 3 * time.Minute}
+	opts.fillTimeouts(configured)
+	if opts.GHTimeout != time.Second || opts.GitTimeout != 2*time.Second || opts.CodexTimeout != 3*time.Minute {
+		t.Errorf("timeouts the caller set = %v, %v, %v; want them kept", opts.GHTimeout, opts.GitTimeout, opts.CodexTimeout)
+	}
+
+	opts = RunIssueOptions{GitTimeout: 2 * time.Second}
+	opts.fillTimeouts(workflowTimeouts{GHSeconds: -1})
+	if opts.GHTimeout != 60*time.Second || opts.GitTimeout != 2*time.Second || opts.CodexTimeout != 30*time.Minute {
+		t.Errorf("without configured timeouts = %v, %v, %v; want 60s, the caller's 2s, 30m", opts.GHTimeout, opts.GitTimeout, opts.CodexTimeout)
+	}
+}

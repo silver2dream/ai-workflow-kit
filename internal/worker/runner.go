@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	repocfg "github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
-	"gopkg.in/yaml.v3"
 )
 
 // RunIssueOptions controls worker execution for a single issue.
@@ -43,82 +43,20 @@ type RunIssueResult struct {
 	ExitCode int
 }
 
-type workflowConfig struct {
-	Repos      []workflowRepo     `yaml:"repos"`
-	Git        workflowGit        `yaml:"git"`
-	Escalation workflowEscalation `yaml:"escalation"`
-	Timeouts   workflowTimeouts   `yaml:"timeouts"`
-	Lessons    workflowLessons    `yaml:"lessons"`
-	Feedback   workflowFeedback   `yaml:"feedback"`
-	Worker     workflowWorker     `yaml:"worker"`
-}
-
-type workflowWorker struct {
-	Backend    string             `yaml:"backend"`
-	ClaudeCode workflowClaudeCode `yaml:"claude_code"`
-	// KnowledgeGraph controls injection of a ticket-relevant slice of
-	// .understand-anything/knowledge-graph.json into the Worker prompt.
-	// "auto" (default, inject when the file exists) | "off".
-	KnowledgeGraph string `yaml:"knowledge_graph"`
-}
-
-type workflowClaudeCode struct {
-	Model                      string `yaml:"model"`
-	MaxTurns                   int    `yaml:"max_turns"`
-	DangerouslySkipPermissions bool   `yaml:"dangerously_skip_permissions"`
-}
-
-type workflowFeedback struct {
-	Enabled            *bool `yaml:"enabled"`
-	MaxHistoryInPrompt int   `yaml:"max_history_in_prompt"`
-}
-
-func (f *workflowFeedback) isEnabled() bool {
-	if f.Enabled == nil {
-		return true
-	}
-	return *f.Enabled
-}
-
-func (f *workflowFeedback) maxHistory() int {
-	if f.MaxHistoryInPrompt <= 0 {
-		return 10
-	}
-	return f.MaxHistoryInPrompt
-}
-
-type workflowRepo struct {
-	Name           string             `yaml:"name"`
-	Path           string             `yaml:"path"`
-	Type           string             `yaml:"type"`
-	Language       string             `yaml:"language"`
-	PackageManager string             `yaml:"package_manager"`
-	Verify         workflowRepoVerify `yaml:"verify"`
-}
-
-type workflowRepoVerify struct {
-	Setup string `yaml:"setup"`
-	Build string `yaml:"build"`
-	Test  string `yaml:"test"`
-}
-
-type workflowGit struct {
-	IntegrationBranch string `yaml:"integration_branch"`
-	ReleaseBranch     string `yaml:"release_branch"`
-}
-
-type workflowEscalation struct {
-	RetryCount        int `yaml:"retry_count"`
-	RetryDelaySeconds int `yaml:"retry_delay_seconds"`
-}
-
-type workflowTimeouts struct {
-	GitSeconds       int `yaml:"git_seconds"`         // Git operations timeout (default: 120)
-	GHSeconds        int `yaml:"gh_seconds"`          // GitHub CLI operations timeout (default: 60)
-	CodexMinutes     int `yaml:"codex_minutes"`       // Codex execution timeout (default: 30)
-	GHRetryCount     int `yaml:"gh_retry_count"`      // Max retry attempts for gh CLI calls (default: 3)
-	GHRetryBaseDelay int `yaml:"gh_retry_base_delay"` // Base delay in seconds for retry backoff (default: 2)
-}
+// The configuration is read by package config, for everyone. These are the
+// names the Worker has for it.
+type (
+	workflowConfig     = config.Config
+	workflowWorker     = config.Worker
+	workflowClaudeCode = config.ClaudeCode
+	workflowFeedback   = config.Feedback
+	workflowRepo       = config.Repo
+	workflowRepoVerify = config.Verify
+	workflowGit        = config.Git
+	workflowEscalation = config.Escalation
+	workflowTimeouts   = config.Timeouts
+	workflowLessons    = config.Lessons
+)
 
 type attemptInfo struct {
 	AttemptNumber         int
@@ -197,59 +135,33 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		repoName = "root"
 	}
 
-	configPath := filepath.Join(stateRoot, ".ai", "config", "workflow.yaml")
+	configPath := config.Path(stateRoot)
 	cfg, cfgErr := loadWorkflowConfig(configPath)
 	if cfgErr != nil {
-		cfg = &workflowConfig{}
+		cfg = config.Default()
 	}
 
-	// Apply configured timeouts (config overrides defaults, opts overrides config)
-	if opts.GHTimeout == 0 {
-		if cfg.Timeouts.GHSeconds > 0 {
-			opts.GHTimeout = time.Duration(cfg.Timeouts.GHSeconds) * time.Second
-		} else {
-			opts.GHTimeout = 60 * time.Second
-		}
-	}
-	if opts.GitTimeout == 0 {
-		if cfg.Timeouts.GitSeconds > 0 {
-			opts.GitTimeout = time.Duration(cfg.Timeouts.GitSeconds) * time.Second
-		} else {
-			opts.GitTimeout = 120 * time.Second
-		}
-	}
-	if opts.CodexTimeout == 0 {
-		if cfg.Timeouts.CodexMinutes > 0 {
-			opts.CodexTimeout = time.Duration(cfg.Timeouts.CodexMinutes) * time.Minute
-		} else {
-			opts.CodexTimeout = 30 * time.Minute
-		}
-	}
+	opts.fillTimeouts(cfg.Timeouts)
 
 	// Build retry config from workflow.yaml
 	ghRetryConfig := buildRetryConfig(cfg.Timeouts)
 
-	integrationBranch := cfg.Git.IntegrationBranch
-	if integrationBranch == "" {
-		integrationBranch = "develop"
-	}
+	integrationBranch := cfg.BaseBranch()
 	releaseBranch := cfg.Git.ReleaseBranch
 	if releaseBranch == "" {
 		releaseBranch = "main"
 	}
 
 	retryCount := cfg.Escalation.RetryCount
-	if retryCount == 0 {
-		retryCount = 2
-	}
 	retryDelay := time.Duration(cfg.Escalation.RetryDelaySeconds) * time.Second
-	if retryDelay == 0 {
+	if retryDelay <= 0 {
 		retryDelay = 5 * time.Second
 	}
 
-	validRepos := buildValidRepos(cfg)
-	if !containsString(validRepos, repoName) {
-		return nil, fmt.Errorf("repo must be one of: %s (got %q)", strings.Join(validRepos, ", "), repoName)
+	// The ticket's repo is lowered above; the configuration may write the
+	// name with capitals, and finds it all the same.
+	if !cfg.HasTicketRepo(repoName) {
+		return nil, fmt.Errorf("repo must be one of: %s (got %q)", strings.Join(cfg.TicketRepos(), ", "), repoName)
 	}
 
 	repoType, repoPath := resolveRepoConfig(cfg, repoName)
@@ -1088,70 +1000,57 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	return result, nil
 }
 
+// fillTimeouts gives the timeouts the caller left open the values of the
+// configuration. A timeout the caller set stays.
+func (opts *RunIssueOptions) fillTimeouts(timeouts workflowTimeouts) {
+	defaults := config.Default().Timeouts
+	pick := func(configured, fallback int) int {
+		if configured > 0 {
+			return configured
+		}
+		return fallback
+	}
+	if opts.GHTimeout == 0 {
+		opts.GHTimeout = time.Duration(pick(timeouts.GHSeconds, defaults.GHSeconds)) * time.Second
+	}
+	if opts.GitTimeout == 0 {
+		opts.GitTimeout = time.Duration(pick(timeouts.GitSeconds, defaults.GitSeconds)) * time.Second
+	}
+	if opts.CodexTimeout == 0 {
+		opts.CodexTimeout = time.Duration(pick(timeouts.CodexMinutes, defaults.CodexMinutes)) * time.Minute
+	}
+}
+
 func loadWorkflowConfig(path string) (*workflowConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg workflowConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
+	return config.LoadFile(path)
 }
 
-func buildValidRepos(cfg *workflowConfig) []string {
-	valid := []string{"root"}
-	if cfg == nil {
-		return append(valid, "backend", "frontend")
-	}
-	for _, repo := range cfg.Repos {
-		if repo.Name != "" && !containsString(valid, repo.Name) {
-			valid = append(valid, repo.Name)
-		}
-	}
-	return valid
-}
-
+// resolveRepoConfig returns the type and the path of the repo a ticket names.
+// A repo the configuration does not know, or says nothing more about, is a
+// directory at the root.
 func resolveRepoConfig(cfg *workflowConfig, repoName string) (string, string) {
+	repoType, repoPath := "directory", "./"
 	if cfg == nil {
-		return "directory", "./"
+		return repoType, repoPath
 	}
-	for _, repo := range cfg.Repos {
-		if repo.Name == repoName {
-			repoType := repo.Type
-			if repoType == "" {
-				repoType = "directory"
-			}
-			repoPath := repo.Path
-			if repoPath == "" {
-				repoPath = "./"
-			}
-			return repoType, repoPath
+	if repo := cfg.FindRepo(repoName); repo != nil {
+		if repo.Type != "" {
+			repoType = repo.Type
+		}
+		if repo.Path != "" {
+			repoPath = repo.Path
 		}
 	}
-	return "directory", "./"
+	return repoType, repoPath
 }
 
-// getConfigVerifyCommands returns verification commands from workflow.yaml config
+// getConfigVerifyCommands returns the build and test commands the
+// configuration gives the repo a ticket names.
 func getConfigVerifyCommands(cfg *workflowConfig, repoName string) []string {
 	if cfg == nil {
 		return nil
 	}
-	for _, repo := range cfg.Repos {
-		if repo.Name == repoName {
-			var commands []string
-			if repo.Verify.Build != "" {
-				commands = append(commands, repo.Verify.Build)
-			}
-			if repo.Verify.Test != "" {
-				commands = append(commands, repo.Verify.Test)
-			}
-			return commands
-		}
-	}
-	return nil
+	return cfg.GetVerifyCommands(repoName)
 }
 
 // getSetupCommand returns the setup command for a repo.
@@ -1160,15 +1059,14 @@ func getSetupCommand(cfg *workflowConfig, repoName string) string {
 	if cfg == nil {
 		return ""
 	}
-	for _, repo := range cfg.Repos {
-		if repo.Name == repoName {
-			if repo.Verify.Setup != "" {
-				return repo.Verify.Setup
-			}
-			return inferSetupCommand(repo.Language, repo.PackageManager)
-		}
+	repo := cfg.FindRepo(repoName)
+	if repo == nil {
+		return ""
 	}
-	return ""
+	if repo.Verify.Setup != "" {
+		return repo.Verify.Setup
+	}
+	return inferSetupCommand(repo.Language, repo.PackageManager)
 }
 
 // inferSetupCommand returns a dependency install command based on language and package manager.
@@ -1238,7 +1136,7 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	// old raw replay of recent rejections) plus the cheap top-category
 	// one-liners.
 	in.LessonsSection = loadLessonsSection(stateRoot, issueID, ticket, lessonsCfg)
-	if feedbackCfg == nil || feedbackCfg.isEnabled() {
+	if feedbackCfg == nil || feedbackCfg.IsEnabled() {
 		in.TopCategorySection = loadTopCategorySummary(stateRoot)
 	}
 
@@ -2113,15 +2011,6 @@ func generateSessionID(role string) string {
 		random = []byte{0, 0, 0, 0}
 	}
 	return fmt.Sprintf("%s-%s-%x", role, now, random)
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func extractTicketValue(content, key string) string {

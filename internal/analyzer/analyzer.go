@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
 // Constants for loop safety
@@ -47,12 +49,19 @@ func New(stateRoot string, config *Config) *Analyzer {
 func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	// Check for config
 	if a.Config == nil {
-		configPath := filepath.Join(a.StateRoot, ".ai", "config", "workflow.yaml")
+		configPath := config.Path(a.StateRoot)
 		config, err := LoadConfig(configPath)
 		if err != nil {
+			// A file that is not there is created; a file that cannot be used
+			// is corrected. The run stops either way, and says which.
+			reason := ReasonConfigNotFound
+			if !os.IsNotExist(err) {
+				reason = ReasonConfigInvalid
+				fmt.Fprintf(os.Stderr, "[analyzer] error: %v\n", err)
+			}
 			return &Decision{
 				NextAction: ActionNone,
-				ExitReason: ReasonConfigNotFound,
+				ExitReason: reason,
 			}, nil
 		}
 		a.Config = config

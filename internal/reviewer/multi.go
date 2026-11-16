@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
@@ -163,7 +163,7 @@ type MultiModelSettings struct {
 // without explicit secondary_reviewers, it defaults to the single
 // architecture-focused opus reviewer documented in workflow.yaml.
 func LoadMultiModelSettings(stateRoot string) *MultiModelSettings {
-	cfg, err := analyzer.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := analyzer.LoadConfig(config.Path(stateRoot))
 	if err != nil || !cfg.Review.MultiModel {
 		return nil
 	}

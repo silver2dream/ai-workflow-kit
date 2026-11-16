@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/selfheal"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
@@ -97,7 +98,7 @@ func cmdReconcile(args []string) int {
 // scaffold reconcile. Shared by the reconcile command and the automatic pass in
 // analyze-next so both behave identically.
 func runScaffoldReconcile(stateRoot string, dryRun bool) selfheal.ScaffoldReconcile {
-	cfg, err := kickoff.LoadConfig(filepath.Join(stateRoot, ".ai", "config", "workflow.yaml"))
+	cfg, err := kickoff.LoadConfig(config.Path(stateRoot))
 	if err != nil {
 		return selfheal.ScaffoldReconcile{Healthy: true, Message: fmt.Sprintf("skipped: config not loadable (%v)", err)}
 	}

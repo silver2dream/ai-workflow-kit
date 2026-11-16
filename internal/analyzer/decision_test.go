@@ -159,6 +159,7 @@ func TestExitReasonConstants(t *testing.T) {
 		"ReasonMaxConsecutiveFailures": ReasonMaxConsecutiveFailures,
 		"ReasonNoActionableTasks":      ReasonNoActionableTasks,
 		"ReasonConfigNotFound":         ReasonConfigNotFound,
+		"ReasonConfigInvalid":          ReasonConfigInvalid,
 		"ReasonLoopCountError":         ReasonLoopCountError,
 		"ReasonGitHubAPIError":         ReasonGitHubAPIError,
 	}
@@ -171,6 +172,7 @@ func TestExitReasonConstants(t *testing.T) {
 		"ReasonMaxConsecutiveFailures": "max_consecutive_failures",
 		"ReasonNoActionableTasks":      "no_actionable_tasks",
 		"ReasonConfigNotFound":         "config_not_found",
+		"ReasonConfigInvalid":          "config_invalid",
 		"ReasonLoopCountError":         "loop_count_error",
 		"ReasonGitHubAPIError":         "github_api_error",
 	}

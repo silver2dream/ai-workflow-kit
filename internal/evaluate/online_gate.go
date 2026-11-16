@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
 // CheckN1KickoffDryRun checks if kickoff can be executed in dry-run mode.
 // This is a placeholder implementation.
 func CheckN1KickoffDryRun(rootPath string) GateResult {
 	// Placeholder: check if essential files exist for kickoff
-	configPath := filepath.Join(rootPath, ".ai", "config", "workflow.yaml")
+	configPath := config.Path(rootPath)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return Fail("workflow.yaml not found for kickoff")
 	}

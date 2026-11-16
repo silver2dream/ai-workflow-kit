@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -169,5 +170,45 @@ func TestReadSourceFiles_MissingFile(t *testing.T) {
 	sources := ReadSourceFiles(dir, diff)
 	if len(sources) != 0 {
 		t.Errorf("should return empty map for missing files, got %d entries", len(sources))
+	}
+}
+
+// What a pull request changes is compared with the branch it goes to: as the
+// remote has it when it has, the local branch otherwise.
+func TestDiffBase(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q", "-b", "develop")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "a.txt")
+	git("commit", "-q", "-m", "first")
+	ctx := context.Background()
+
+	if got := DiffBase(ctx, dir, "develop"); got != "develop" {
+		t.Errorf("without a remote branch the base is %q, want the local develop", got)
+	}
+	git("update-ref", "refs/remotes/origin/develop", git("rev-parse", "HEAD"))
+	if got := DiffBase(ctx, dir, "develop"); got != "origin/develop" {
+		t.Errorf("with a remote branch the base is %q, want origin/develop", got)
+	}
+	if got := DiffBase(ctx, dir, "release"); got != "release" {
+		t.Errorf("a branch the remote does not have gives %q, want the name as it is", got)
+	}
+	// Outside a repository there is nothing to ask: the name as it is.
+	if got := DiffBase(ctx, t.TempDir(), "develop"); got != "develop" {
+		t.Errorf("outside a repository the base is %q", got)
 	}
 }

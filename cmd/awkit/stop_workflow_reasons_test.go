@@ -19,6 +19,9 @@ func TestStopWorkflowAcceptsAnalyzerExitReasons(t *testing.T) {
 		analyzer.ReasonMaxConsecutiveFailures,
 		analyzer.ReasonNoActionableTasks,
 		analyzer.ReasonConfigNotFound,
+		analyzer.ReasonConfigInvalid,
+		analyzer.ReasonInvalidTicket,
+		analyzer.ReasonBlockedByDependencies,
 		analyzer.ReasonLoopCountError,
 		analyzer.ReasonGitHubAPIError,
 	}

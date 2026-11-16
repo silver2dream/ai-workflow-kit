@@ -4,9 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
 func usageHooks() {
@@ -76,7 +76,7 @@ func cmdHooksList(args []string) int {
 		*stateRoot = root
 	}
 
-	configPath := filepath.Join(*stateRoot, ".ai", "config", "workflow.yaml")
+	configPath := config.Path(*stateRoot)
 	cfg, err := analyzer.LoadConfig(configPath)
 	if err != nil {
 		errorf("failed to load config: %v\n", err)

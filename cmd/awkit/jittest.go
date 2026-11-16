@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 )
 
@@ -44,6 +45,9 @@ Examples:
   awkit jittest --mark-fp
 `)
 }
+
+// runJiTTests generates and runs the JiT tests. Replaced in tests.
+var runJiTTests = jittest.Run
 
 func cmdJiTTest(args []string) int {
 	fs := flag.NewFlagSet("jittest", flag.ContinueOnError)
@@ -112,7 +116,7 @@ func cmdJiTTest(args []string) int {
 	}
 
 	// Load config
-	cfg, err := analyzer.LoadConfig(root + "/.ai/config/workflow.yaml")
+	cfg, err := analyzer.LoadConfig(config.Path(root))
 	if err != nil {
 		errorf("failed to load config: %v\n", err)
 		return 1
@@ -135,23 +139,31 @@ func cmdJiTTest(args []string) int {
 		return 0
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(jitCfg.TimeoutSeconds)*time.Second)
+	defer cancel()
+
+	// A configuration may name no repo: the root of the repository is one.
+	language := ""
+	if len(cfg.Repos) > 0 {
+		language = cfg.Repos[0].Language
+	}
 	input := jittest.Input{
 		PRNumber:    *pr,
 		IssueNumber: *issue,
 		WorkDir:     root,
+		BaseBranch:  jittest.DiffBase(ctx, root, cfg.BaseBranch()),
+		HeadBranch:  "HEAD",
+		Language:    language,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(jitCfg.TimeoutSeconds)*time.Second)
-	defer cancel()
-
-	result, err := jittest.Run(ctx, input, jitCfg)
+	result, err := runJiTTests(ctx, input, jitCfg)
 	if err != nil {
 		errorf("jittest: %v\n", err)
 		return 1
 	}
 
 	// Record stats
-	if recordErr := jittest.RecordRun(root, cfg.Repos[0].Language, result); recordErr != nil {
+	if recordErr := jittest.RecordRun(root, language, result); recordErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to record stats: %v\n", recordErr)
 	}
 
