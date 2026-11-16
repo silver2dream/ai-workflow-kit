@@ -48,23 +48,35 @@ AWK 告訴 agent 的事分成三種檔案，各管一件事：
 
 `.claude/rules/_kit/git-workflow.md`：分支、commit 格式、PR 的規則，由 `awkit generate` 依設定檔產生。
 
-### Preset 附的起始規則
+### 專案的起始規則
 
-`godot-go` preset 建立專案時，會寫下三份起始規則，並列在設定檔的 `rules.custom`：
+`awkit init` 建立專案時寫下一套起始規則，放在 `.claude/rules/`，並列在設定檔的 `rules.custom`：
 
-| 檔案 | 範圍 |
-|---|---|
-| `.claude/rules/backend.md` | `backend/`：Go 的結構、錯誤處理、context 與並發、資料的修改 |
-| `.claude/rules/frontend.md` | `frontend/`：全面 C#、Core 與 Godot 的分層、訊號、客戶端的界線 |
-| `.claude/rules/testing.md` | 兩邊的測試：每個變更帶測試、三道關卡、失敗的測試怎麼處理 |
+| 檔案 | 管什麼 | 適用於 |
+|---|---|---|
+| `docs-source-of-truth.md` | 文件放哪、每份文件的狀態與擁有者、一個主題只有一個定義處、800 行就拆 | 文件 |
+| `design-before-implementation.md` | 新系統動工之前要有的最小設計包 | 程式碼 |
+| `new-system-owner-boundary.md` | 動工之前先決定每一類真相的 owner | 程式碼 |
+| `readiness-update-policy.md` | 影響部署的變更，在同一個 PR 內同步文件與設定 | 程式碼 |
+| `security.md` | 身分、SQL、錯誤訊息、機密、輸入驗證 | 程式碼 |
+| `coding-style.md` | 資料的修改、檔案與函式的大小、錯誤處理 | 程式碼 |
+| `testing.md` | 每個變更帶測試、三道 gate、各語言的寫法 | 程式碼 |
+| `audit-checklist.md` | 會給出評分或 go/no-go 的審計，下結論之前要做完的五個階段 | 一律 |
+| `agents.md` | 平行執行、subagent、交付變更時要回報什麼 | 一律 |
+| `backend.md`、`frontend.md` | `godot-go` preset：Go 後端的分層與資料規則、Godot C# 前端的分層與用法 | 各自的資料夾 |
+| `architecture.md` | `generic` preset：整個 repository 的結構、邊界、資料的規則 | 程式碼 |
 
-它們從寫下的那一刻起就是專案自己的：升級不會動，`awkit init` 再跑一次也不會覆寫。架構定案之後，把決定寫進文件，再回來把這些檢查清單收緊。`generic` preset 不假設技術棧，所以沒有起始規則。
+「程式碼」是各 repo 的資料夾（`backend/**`、`frontend/**`）。repo 就是整個 repository 的專案沒有這樣的資料夾，那幾份就一律適用。
+
+規則裡屬於這個專案的部分，寫的時候就填好了：repo 與它們的資料夾來自設定檔；契約的位置與「已經決定的技術選擇」來自 `awkit init` 問你的問題（或 `--contract`、`--decided`）。你答的技術選擇會連同日期、照你的原話寫進那個 repo 的規則（`backend.md`、`frontend.md`，或 `architecture.md`）第 0 節，標成 owner 已定；沒答的就寫「還沒有決定」，並說明之後由哪份文件決定。
+
+它們從寫下的那一刻起就是專案自己的：升級不會動，`awkit init` 再跑一次也不會覆寫。架構定案之後，把決定寫進文件，再回來把這些檢查清單收緊。
 
 ### 寫一份規則檔
 
 1. 建立 `.claude/rules/<名稱>.md`。
 2. 把 `<名稱>` 加進 `.ai/config.yaml` 的 `rules.custom`。
-3. 執行 `awkit generate`，`AGENTS.md` 就會要求 Worker 讀它。
+3. 執行 `awkit generate`，`AGENTS.md` 就會列出它與它適用的檔案。Worker 讀的是適用於它那張票的規則，不是每一份。
 
 寫法：
 

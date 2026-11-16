@@ -60,7 +60,9 @@ awkit run                        # works through them
 | `generic` (default) | One repository of any stack. You set its build and test commands in `.ai/config.yaml`. |
 | `godot-go` | `backend/` in Go and `frontend/` in Godot C#, with rules for both. `--scaffold` adds a skeleton that builds and passes its tests. |
 
-`awkit init` writes the configuration with the branches your repository has, the kit under `.claude/`, the guides (`CLAUDE.md`, `AGENTS.md`) and a CI workflow for every repo that has build or test commands. It ends by saying what it wrote and what to do next.
+At a terminal, `awkit init` asks a few questions first: what the project is built with, who writes the code, where pull requests go, and what is already decided about how each part is built. Enter takes the default, and `--yes` asks nothing.
+
+It writes the configuration with the branches your repository has, the kit under `.claude/`, the rules the project starts with (where documents go, design before implementation, security, testing and more, with what you said is decided in your own words), the guides (`CLAUDE.md`, `AGENTS.md`) and a CI workflow for every repo that has build or test commands. It ends by saying what it wrote and what to do next.
 
 While it works:
 
@@ -146,7 +148,7 @@ What a review turned back is distilled, once the change is finally approved, int
   state/             what runs leave behind: results, logs, lessons (ignored by git)
 .claude/
   rules/_kit/        the kit's rule (branches, commits, pull requests), generated
-  rules/             your project's rules; the godot-go preset starts you with three
+  rules/             your project's rules; awkit init starts you with a set to tighten
   skills/            what the Principal follows: the loop, the ticket format
   agents/            the subagents it hands reviews and conflicts to
 CLAUDE.md, AGENTS.md   what agents are told, generated from the configuration

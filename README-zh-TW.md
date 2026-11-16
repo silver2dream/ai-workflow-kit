@@ -60,7 +60,9 @@ awkit run                        # 一張一張做完
 | `generic`（預設） | 單一 repository、不限技術棧。建置與測試指令由你填進 `.ai/config.yaml`。 |
 | `godot-go` | `backend/` 用 Go、`frontend/` 用 Godot C#，附兩邊的規則。加 `--scaffold` 會多一份能建置、測試會過的專案骨架。 |
 
-`awkit init` 會寫下設定檔（分支用 repository 裡已有的）、`.claude/` 下的 kit、兩份指引（`CLAUDE.md`、`AGENTS.md`），以及每個有建置或測試指令的 repo 各一個 CI workflow。結尾會說它寫了什麼、接下來做什麼。
+在終端機裡，`awkit init` 會先問幾個問題：專案用什麼做的、誰寫程式、pull request 合併到哪裡、每個部分已經決定了哪些技術選擇。按 Enter 就用預設值，加 `--yes` 就不問。
+
+它寫下設定檔（分支用 repository 裡已有的）、`.claude/` 下的 kit、專案的起始規則（文件治理、設計先於實作、安全、測試等，你答的技術選擇會照原話寫進去）、兩份指引（`CLAUDE.md`、`AGENTS.md`），以及每個有建置或測試指令的 repo 各一個 CI workflow。結尾會說它寫了什麼、接下來做什麼。
 
 工作進行中：
 
@@ -146,7 +148,7 @@ awkit run --issue 42   # 只做這一張票
   state/             每次 run 留下的東西：結果、log、教訓（git 忽略）
 .claude/
   rules/_kit/        kit 的規則（分支、commit、pull request），產生的
-  rules/             專案自己的規則；godot-go preset 會先給你三份
+  rules/             專案自己的規則；awkit init 先寫下一套，之後由你收緊
   skills/            Principal 照著走的流程：主迴圈、票券格式
   agents/            它把審查與衝突交出去的 subagent
 CLAUDE.md, AGENTS.md   告訴 agent 的事，由設定檔產生
