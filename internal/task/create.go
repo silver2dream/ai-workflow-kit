@@ -14,6 +14,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
@@ -66,7 +67,7 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 		cfg = &analyzer.Config{}
 	} else if !cfg.HasTicketRepo(block.Repo) {
 		// The Worker would refuse the ticket; better not to create it.
-		return nil, fmt.Errorf("ticket body: the awk-ticket block names repo %q, which is not a repo of .ai/config/workflow.yaml (it has: %s)",
+		return nil, fmt.Errorf("ticket body: the awk-ticket block names repo %q, which is not a repo of "+layout.ConfigFile+" (it has: %s)",
 			block.Repo, strings.Join(cfg.TicketRepos(), ", "))
 	}
 	label, repo := resolveGHParams(opts, cfg)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	repocfg "github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
@@ -181,15 +182,15 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	branch := fmt.Sprintf("feat/ai-issue-%d", opts.IssueID)
-	logDir := filepath.Join(stateRoot, ".ai", "exe-logs")
-	runDir := filepath.Join(stateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", opts.IssueID))
+	logDir := layout.Logs(stateRoot)
+	runDir := layout.Run(stateRoot, opts.IssueID)
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(stateRoot, ".ai", "results"), 0700); err != nil {
+	if err := os.MkdirAll(layout.Results(stateRoot), 0700); err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Join(stateRoot, ".ai", "state"), 0700); err != nil {
@@ -1214,7 +1215,7 @@ func buildWorkerPrompt(in workerPromptInputs) string {
 	}
 
 	builder.WriteString("\nBEFORE making code changes, create an implementation plan file at:\n")
-	builder.WriteString(fmt.Sprintf(".ai/runs/issue-%d/plan.md\n\n", in.IssueID))
+	builder.WriteString(fmt.Sprintf(layout.RunsDir+"/issue-%d/plan.md\n\n", in.IssueID))
 	builder.WriteString("The plan file MUST contain:\n")
 	builder.WriteString("- ## Summary — brief description of the approach (1-3 sentences)\n")
 	builder.WriteString("- ## Files to modify — list of files and what changes\n")
@@ -1694,7 +1695,7 @@ func readPlanFile(runDir string) string {
 // so look there first; runDir (under the state root) stays as a fallback.
 func resolvePlanContent(workDir, runDir string, issueID int) string {
 	if workDir != "" {
-		inWorktree := filepath.Join(workDir, ".ai", "runs", fmt.Sprintf("issue-%d", issueID))
+		inWorktree := layout.Run(workDir, issueID)
 		if plan := readPlanFile(inWorktree); plan != "" {
 			return plan
 		}
@@ -1961,7 +1962,7 @@ func writeIssueResult(ctx context.Context, stateRoot string, info issueResultCon
 	}
 
 	// Best-effort LLM usage from the worker log (zeros for text-only backends).
-	logUsage := ScanUsageFromLog(filepath.Join(stateRoot, ".ai", "exe-logs", fmt.Sprintf("issue-%d.worker.log", info.IssueID)))
+	logUsage := ScanUsageFromLog(layout.WorkerLog(stateRoot, info.IssueID))
 	result.Metrics.TokensIn = logUsage.TokensIn
 	result.Metrics.TokensOut = logUsage.TokensOut
 	result.Metrics.CostUSD = logUsage.CostUSD

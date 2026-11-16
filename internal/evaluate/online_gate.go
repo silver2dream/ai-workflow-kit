@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // CheckN1KickoffDryRun checks if kickoff can be executed in dry-run mode.
@@ -17,7 +18,7 @@ func CheckN1KickoffDryRun(rootPath string) GateResult {
 		return Fail("workflow.yaml not found for kickoff")
 	}
 
-	skillPath := filepath.Join(rootPath, ".ai", "skills", "principal-workflow", "SKILL.md")
+	skillPath := filepath.Join(layout.Skills(rootPath), "principal-workflow", "SKILL.md")
 	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
 		return Fail("principal-workflow skill not found")
 	}
@@ -36,7 +37,7 @@ func CheckN2RollbackOutput(rootPath string) GateResult {
 // This is a placeholder implementation.
 func CheckN3StatsJSON(rootPath string) GateResult {
 	// Check if stats.json exists in results directory
-	statsPath := filepath.Join(rootPath, ".ai", "results", "stats.json")
+	statsPath := filepath.Join(layout.Results(rootPath), "stats.json")
 	data, err := os.ReadFile(statsPath)
 	if err != nil {
 		if os.IsNotExist(err) {

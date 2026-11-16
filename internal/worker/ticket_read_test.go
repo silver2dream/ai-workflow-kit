@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	evtrace "github.com/silver2dream/ai-workflow-kit/internal/trace"
 )
 
@@ -329,11 +330,11 @@ func TestTicketForDispatch(t *testing.T) {
 // block that cannot be used stops the run, and no prose stands in for it.
 func TestRunIssue_ReadsTheTicketBlock(t *testing.T) {
 	dir := t.TempDir()
-	configDir := filepath.Join(dir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(dir))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte("repos:\n  - name: backend\n    path: backend/\n    type: directory\n"), 0o644); err != nil {
+	if err := os.WriteFile(layout.Config(dir), []byte("repos:\n  - name: backend\n    path: backend/\n    type: directory\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/generate"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 //go:embed deprecated.txt
@@ -122,8 +123,8 @@ func Install(kit fs.FS, targetDir string, opts Options) (*InstallResult, error) 
 	}
 
 	// Copy .ai/skills/ directory if it exists in the kit
-	if _, err := fs.Stat(kit, ".ai/skills"); err == nil {
-		if err := copyDir(kit, ".ai/skills", filepath.Join(targetDir, ".ai", "skills"), opts.Force); err != nil {
+	if _, err := fs.Stat(kit, layout.SkillsDir); err == nil {
+		if err := copyDir(kit, layout.SkillsDir, layout.Skills(targetDir), opts.Force); err != nil {
 			return nil, err
 		}
 	}
@@ -226,7 +227,7 @@ func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 
 		// Skip workflow.yaml - it's managed by applyPreset, not copyDir
 		// This prevents the embedded default config from overwriting preset-generated config
-		if strings.HasSuffix(path, "workflow.yaml") {
+		if path == layout.ConfigFile {
 			return nil
 		}
 
@@ -270,7 +271,7 @@ func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 // ensureRoster writes the roster of a preset into a project that has none.
 // A roster that is there is the project's own and is never replaced.
 func ensureRoster(targetDir, preset string) error {
-	file := filepath.Join(targetDir, filepath.FromSlash(council.RosterPath))
+	file := layout.Roster(targetDir)
 	if _, err := os.Stat(file); err == nil {
 		return nil
 	}
@@ -284,10 +285,10 @@ func ensureRuntimeDirs(targetDir string) error {
 	dirs := []string{
 		filepath.Join(targetDir, ".ai", "state"),
 		filepath.Join(targetDir, ".ai", "state", "traces"),
-		filepath.Join(targetDir, ".ai", "results"),
-		filepath.Join(targetDir, ".ai", "runs"),
-		filepath.Join(targetDir, ".ai", "exe-logs"),
-		filepath.Join(targetDir, ".ai", "temp"),
+		layout.Results(targetDir),
+		layout.Runs(targetDir),
+		layout.Logs(targetDir),
+		layout.Temp(targetDir),
 		filepath.Join(targetDir, ".ai", "logs"),
 		filepath.Join(targetDir, ".worktrees"),
 	}
@@ -300,10 +301,10 @@ func ensureRuntimeDirs(targetDir string) error {
 	keepFiles := []string{
 		filepath.Join(targetDir, ".ai", "state", ".gitkeep"),
 		filepath.Join(targetDir, ".ai", "state", "traces", ".gitkeep"),
-		filepath.Join(targetDir, ".ai", "results", ".gitkeep"),
-		filepath.Join(targetDir, ".ai", "runs", ".gitkeep"),
-		filepath.Join(targetDir, ".ai", "exe-logs", ".gitkeep"),
-		filepath.Join(targetDir, ".ai", "temp", ".gitkeep"),
+		filepath.Join(layout.Results(targetDir), ".gitkeep"),
+		filepath.Join(layout.Runs(targetDir), ".gitkeep"),
+		filepath.Join(layout.Logs(targetDir), ".gitkeep"),
+		filepath.Join(layout.Temp(targetDir), ".gitkeep"),
 		filepath.Join(targetDir, ".ai", "logs", ".gitkeep"),
 	}
 	for _, f := range keepFiles {
@@ -325,11 +326,11 @@ func ensureGitIgnore(targetDir string) error {
 		markerStart,
 		"# Runtime state (do not commit)",
 		".ai/state/",
-		".ai/results/",
-		".ai/runs/",
-		".ai/exe-logs/",
+		layout.ResultsDir + "/",
+		layout.RunsDir + "/",
+		layout.LogsDir + "/",
 		".ai/logs/",
-		".ai/temp/",
+		layout.TempDir + "/",
 		".worktrees/",
 		"# Claude Code local settings (do not commit)",
 		".claude/settings.local.json",
@@ -416,12 +417,12 @@ func ensureClaudeLinks(targetDir string) error {
 	links := []link{
 		{
 			name:   "rules",
-			source: filepath.Join(targetDir, ".ai", "rules"),
+			source: layout.Rules(targetDir),
 			target: filepath.Join(claudeDir, "rules"),
 		},
 		{
 			name:   "skills",
-			source: filepath.Join(targetDir, ".ai", "skills"),
+			source: layout.Skills(targetDir),
 			target: filepath.Join(claudeDir, "skills"),
 		},
 	}

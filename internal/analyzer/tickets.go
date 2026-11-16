@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
@@ -235,7 +236,7 @@ func (a *Analyzer) ticketProblem(issue int, meta ticket.Meta) error {
 		}
 	}
 	if !a.Config.HasTicketRepo(meta.Repo) {
-		return fmt.Errorf("the awk-ticket block is not valid: repo %q is not a repo of .ai/config/workflow.yaml (it has: %s)",
+		return fmt.Errorf("the awk-ticket block is not valid: repo %q is not a repo of "+layout.ConfigFile+" (it has: %s)",
 			meta.Repo, strings.Join(a.Config.TicketRepos(), ", "))
 	}
 	return nil
@@ -267,7 +268,7 @@ const resultNoChanges = "success_no_changes"
 // workerResult returns the status the Worker last reported for an issue. worked
 // is false when this workflow never dispatched a Worker for it.
 func (a *Analyzer) workerResult(issue int) (status string, worked bool) {
-	data, err := os.ReadFile(filepath.Join(a.StateRoot, ".ai", "results", fmt.Sprintf("issue-%d.json", issue)))
+	data, err := os.ReadFile(layout.Result(a.StateRoot, issue))
 	if os.IsNotExist(err) {
 		return "", false
 	}

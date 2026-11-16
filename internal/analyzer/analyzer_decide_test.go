@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // MockGitHubClient is a mock implementation of GitHubClientInterface for testing
@@ -238,7 +240,7 @@ func TestDecide_ConfigNotValid(t *testing.T) {
 		"not YAML":                  "project: [unclosed\n",
 	} {
 		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, ".ai", "config", "workflow.yaml")
+		path := layout.Config(tmpDir)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -448,7 +450,7 @@ func TestDecide_PRReadyFromResultFile(t *testing.T) {
 	}
 
 	// Create result file with PR URL
-	resultDir := filepath.Join(tmpDir, ".ai", "results")
+	resultDir := layout.Results(tmpDir)
 	os.MkdirAll(resultDir, 0755)
 	resultData, _ := json.Marshal(map[string]string{"pr_url": "https://github.com/owner/repo/pull/150"})
 	os.WriteFile(filepath.Join(resultDir, "issue-15.json"), resultData, 0644)
@@ -902,7 +904,7 @@ func TestExtractPRNumberForIssue_PRNumberField(t *testing.T) {
 	a := newTestAnalyzer(tmpDir, config, mockClient)
 
 	// Create result file with pr_number integer field
-	resultDir := filepath.Join(tmpDir, ".ai", "results")
+	resultDir := layout.Results(tmpDir)
 	os.MkdirAll(resultDir, 0755)
 	resultData, _ := json.Marshal(map[string]any{"pr_number": 999})
 	os.WriteFile(filepath.Join(resultDir, "issue-90.json"), resultData, 0644)

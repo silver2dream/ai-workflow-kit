@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
 
@@ -141,11 +142,11 @@ func TestGetTestCommandFromConfig(t *testing.T) {
 			tmpDir := t.TempDir()
 
 			if tt.configYAML != "" {
-				configDir := filepath.Join(tmpDir, ".ai", "config")
+				configDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(configDir, 0755); err != nil {
 					t.Fatalf("failed to create config dir: %v", err)
 				}
-				if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(tt.configYAML), 0644); err != nil {
+				if err := os.WriteFile(layout.Config(tmpDir), []byte(tt.configYAML), 0644); err != nil {
 					t.Fatalf("failed to write config: %v", err)
 				}
 			}
@@ -228,11 +229,11 @@ func TestGetRepoSettingsFromConfig(t *testing.T) {
 			tmpDir := t.TempDir()
 
 			if tt.configYAML != "" {
-				configDir := filepath.Join(tmpDir, ".ai", "config")
+				configDir := filepath.Dir(layout.Config(tmpDir))
 				if err := os.MkdirAll(configDir, 0755); err != nil {
 					t.Fatalf("failed to create config dir: %v", err)
 				}
-				if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(tt.configYAML), 0644); err != nil {
+				if err := os.WriteFile(layout.Config(tmpDir), []byte(tt.configYAML), 0644); err != nil {
 					t.Fatalf("failed to write config: %v", err)
 				}
 			}
@@ -371,11 +372,11 @@ func TestWorkflowConfigParsing(t *testing.T) {
       test: "npm test"
 `
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".ai", "config")
+	configDir := filepath.Dir(layout.Config(tmpDir))
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "workflow.yaml"), []byte(configYAML), 0644); err != nil {
+	if err := os.WriteFile(layout.Config(tmpDir), []byte(configYAML), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 

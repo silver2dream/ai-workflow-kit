@@ -5,13 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func TestCleanTemp(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create .ai/temp/ directory
-	tempDir := filepath.Join(dir, ".ai", "temp")
+	tempDir := layout.Temp(dir)
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +151,7 @@ func TestCleanOrphans_RemovesOldTmpFiles(t *testing.T) {
 	dir := t.TempDir()
 
 	stateDir := filepath.Join(dir, ".ai", "state")
-	resultsDir := filepath.Join(dir, ".ai", "results")
+	resultsDir := layout.Results(dir)
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +275,7 @@ func TestDryRun_DoesNotDelete(t *testing.T) {
 	dir := t.TempDir()
 
 	// Set up temp tickets
-	tempDir := filepath.Join(dir, ".ai", "temp")
+	tempDir := layout.Temp(dir)
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

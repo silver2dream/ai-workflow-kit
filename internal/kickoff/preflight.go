@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/upgrade"
 )
 
@@ -416,8 +417,7 @@ func (p *PreflightChecker) CheckPTY() CheckResult {
 
 // CheckPermissions checks if settings.local.json has required Task tool permissions
 func (p *PreflightChecker) CheckPermissions() CheckResult {
-	// Get state root from config path: .ai/config/workflow.yaml -> .ai/config -> .ai -> root
-	stateRoot := filepath.Dir(filepath.Dir(filepath.Dir(p.configPath)))
+	stateRoot := layout.ProjectOf(p.configPath)
 
 	missing := upgrade.CheckPermissions(stateRoot)
 	if len(missing) == 0 {
@@ -438,8 +438,7 @@ func (p *PreflightChecker) CheckPermissions() CheckResult {
 
 // CheckAgents checks if .claude/agents/ has required agent definitions
 func (p *PreflightChecker) CheckAgents() CheckResult {
-	// Get state root from config path: .ai/config/workflow.yaml -> .ai/config -> .ai -> root
-	stateRoot := filepath.Dir(filepath.Dir(filepath.Dir(p.configPath)))
+	stateRoot := layout.ProjectOf(p.configPath)
 
 	missing := upgrade.CheckAgents(stateRoot)
 	if len(missing) == 0 {
@@ -458,10 +457,9 @@ func (p *PreflightChecker) CheckAgents() CheckResult {
 	}
 }
 
-// baseDir returns the project root directory derived from the config path.
-// configPath is typically .ai/config/workflow.yaml, so project root is 3 levels up.
+// baseDir returns the root of the project the configuration belongs to.
 func (p *PreflightChecker) baseDir() string {
-	d := filepath.Dir(filepath.Dir(filepath.Dir(p.configPath)))
+	d := layout.ProjectOf(p.configPath)
 	if d == "." || d == "" {
 		d, _ = os.Getwd()
 	}

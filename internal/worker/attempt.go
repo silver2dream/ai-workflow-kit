@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // AttemptGuard manages retry logic and failure tracking
@@ -54,7 +56,7 @@ func NewAttemptGuard(stateRoot string, issueID int) *AttemptGuard {
 
 // Check determines if the worker can proceed with the current attempt
 func (g *AttemptGuard) Check() (*AttemptResult, error) {
-	runDir := filepath.Join(g.StateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", g.IssueID))
+	runDir := layout.Run(g.StateRoot, g.IssueID)
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create run directory: %w", err)
 	}
@@ -97,7 +99,7 @@ func (g *AttemptGuard) RecordFailure(errorType string, retryable bool) (err erro
 	stateDir := filepath.Join(g.StateRoot, ".ai", "state")
 	historyFile := filepath.Join(stateDir, "failure_history.jsonl")
 
-	runDir := filepath.Join(g.StateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", g.IssueID))
+	runDir := layout.Run(g.StateRoot, g.IssueID)
 	countFile := filepath.Join(runDir, "fail_count.txt")
 	attempt := g.readFailCount(countFile)
 
@@ -131,7 +133,7 @@ func (g *AttemptGuard) RecordFailure(errorType string, retryable bool) (err erro
 
 // Reset resets the fail count
 func (g *AttemptGuard) Reset() error {
-	runDir := filepath.Join(g.StateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", g.IssueID))
+	runDir := layout.Run(g.StateRoot, g.IssueID)
 	countFile := filepath.Join(runDir, "fail_count.txt")
 	return os.WriteFile(countFile, []byte("0"), 0644)
 }

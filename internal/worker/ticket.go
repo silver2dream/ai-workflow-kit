@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
@@ -213,7 +214,7 @@ func readLegacyTicket(body string) *TicketMetadata {
 
 // SaveTicketFile saves the issue body to a ticket file
 func SaveTicketFile(stateRoot string, issueNumber int, body string) (string, error) {
-	tempDir := filepath.Join(stateRoot, ".ai", "temp")
+	tempDir := layout.Temp(stateRoot)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
@@ -228,7 +229,7 @@ func SaveTicketFile(stateRoot string, issueNumber int, body string) (string, err
 
 // LoadTicketFile loads a ticket file content
 func LoadTicketFile(stateRoot string, issueNumber int) (string, error) {
-	ticketPath := filepath.Join(stateRoot, ".ai", "temp", fmt.Sprintf("ticket-%d.md", issueNumber))
+	ticketPath := layout.Ticket(stateRoot, issueNumber)
 	data, err := os.ReadFile(ticketPath)
 	if err != nil {
 		return "", err
@@ -238,7 +239,7 @@ func LoadTicketFile(stateRoot string, issueNumber int) (string, error) {
 
 // CleanupTicketFile removes the ticket file
 func CleanupTicketFile(stateRoot string, issueNumber int) error {
-	ticketPath := filepath.Join(stateRoot, ".ai", "temp", fmt.Sprintf("ticket-%d.md", issueNumber))
+	ticketPath := layout.Ticket(stateRoot, issueNumber)
 	err := os.Remove(ticketPath)
 	if os.IsNotExist(err) {
 		return nil

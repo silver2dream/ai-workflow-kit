@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -136,7 +138,7 @@ func TestSaveTicketFile_ExpectedPath(t *testing.T) {
 		t.Fatalf("SaveTicketFile: %v", err)
 	}
 
-	expectedPath := filepath.Join(dir, ".ai", "temp", "ticket-99.md")
+	expectedPath := layout.Ticket(dir, 99)
 	if path != expectedPath {
 		t.Errorf("path = %q, want %q", path, expectedPath)
 	}
@@ -148,7 +150,7 @@ func TestSaveTicketFile_ExpectedPath(t *testing.T) {
 
 func TestReadFailCount_InvalidContent(t *testing.T) {
 	dir := t.TempDir()
-	runDir := filepath.Join(dir, ".ai", "runs", "issue-1")
+	runDir := layout.Run(dir, 1)
 	os.MkdirAll(runDir, 0755)
 	os.WriteFile(filepath.Join(runDir, "fail_count.txt"), []byte("not-a-number"), 0644)
 
@@ -160,7 +162,7 @@ func TestReadFailCount_InvalidContent(t *testing.T) {
 
 func TestReadFailCount_ValidCount(t *testing.T) {
 	dir := t.TempDir()
-	runDir := filepath.Join(dir, ".ai", "runs", "issue-5")
+	runDir := layout.Run(dir, 5)
 	os.MkdirAll(runDir, 0755)
 	os.WriteFile(filepath.Join(runDir, "fail_count.txt"), []byte("3"), 0644)
 
@@ -185,7 +187,7 @@ func TestWriteResultAtomic_CreatesResultDir(t *testing.T) {
 		t.Fatalf("WriteResultAtomic: %v", err)
 	}
 
-	resultPath := filepath.Join(dir, ".ai", "results", "issue-77.json")
+	resultPath := layout.Result(dir, 77)
 	if _, err := os.Stat(resultPath); err != nil {
 		t.Errorf("result file should exist at %s: %v", resultPath, err)
 	}

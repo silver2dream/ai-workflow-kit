@@ -7,6 +7,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 func usageHooks() {
@@ -114,7 +115,7 @@ func cmdHooksList(args []string) int {
 	if totalHooks == 0 {
 		fmt.Println("No hooks configured.")
 		fmt.Println("")
-		fmt.Println("Add hooks to .ai/config/workflow.yaml:")
+		fmt.Println("Add hooks to " + layout.ConfigFile + ":")
 		fmt.Println("  hooks:")
 		fmt.Println("    pre_dispatch:")
 		fmt.Println("      - command: \"echo dispatching\"")

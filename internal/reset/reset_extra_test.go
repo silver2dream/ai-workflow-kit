@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // ---------------------------------------------------------------------------
@@ -244,7 +246,7 @@ func TestResetLock_DryRun(t *testing.T) {
 
 func TestResetAttempts_RemovesRunsDir(t *testing.T) {
 	dir := t.TempDir()
-	runsDir := filepath.Join(dir, ".ai", "runs")
+	runsDir := layout.Runs(dir)
 	if err := os.MkdirAll(filepath.Join(runsDir, "issue-1"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +282,7 @@ func TestResetAttempts_NoDirs_NoResults(t *testing.T) {
 
 func TestResetAttempts_DryRun(t *testing.T) {
 	dir := t.TempDir()
-	runsDir := filepath.Join(dir, ".ai", "runs", "issue-1")
+	runsDir := layout.Run(dir, 1)
 	if err := os.MkdirAll(runsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +295,7 @@ func TestResetAttempts_DryRun(t *testing.T) {
 		t.Fatal("expected at least 1 result in dry-run mode")
 	}
 	// Dir should still exist
-	if _, err := os.Stat(filepath.Join(dir, ".ai", "runs")); err != nil {
+	if _, err := os.Stat(layout.Runs(dir)); err != nil {
 		t.Error("runs dir should NOT be deleted in dry-run mode")
 	}
 }
@@ -306,7 +308,7 @@ func TestResetDeprecated_RemovesFiles(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create one deprecated file
-	deprecatedPath := filepath.Join(dir, ".ai", "skills", "principal-workflow", "tasks")
+	deprecatedPath := filepath.Join(layout.Skills(dir), "principal-workflow", "tasks")
 	if err := os.MkdirAll(deprecatedPath, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +439,7 @@ func TestResetEvents_NoDir_ReturnsNil(t *testing.T) {
 
 func TestResults_DeletesResultFiles(t *testing.T) {
 	dir := t.TempDir()
-	resultsDir := filepath.Join(dir, ".ai", "results")
+	resultsDir := layout.Results(dir)
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +477,7 @@ func TestResults_NoDir_ReturnsNil(t *testing.T) {
 
 func TestResults_DryRun(t *testing.T) {
 	dir := t.TempDir()
-	resultsDir := filepath.Join(dir, ".ai", "results")
+	resultsDir := layout.Results(dir)
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -586,4 +588,3 @@ func TestResetAll_DryRun_WithFiles(t *testing.T) {
 		t.Error("loop_count should still exist in dry-run mode")
 	}
 }
-

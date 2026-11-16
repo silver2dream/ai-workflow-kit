@@ -2,8 +2,9 @@ package worker
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // A ticket without an awk-ticket block is read from its prose, the way every
@@ -142,7 +143,7 @@ Fix the issue.
 		t.Fatalf("SaveTicketFile failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(tmpDir, ".ai", "temp", "ticket-123.md")
+	expectedPath := layout.Ticket(tmpDir, 123)
 	if ticketPath != expectedPath {
 		t.Errorf("ticketPath = %q, want %q", ticketPath, expectedPath)
 	}

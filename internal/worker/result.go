@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // IssueResult represents the result JSON file structure (.ai/results/issue-{N}.json)
@@ -114,7 +116,7 @@ func (t *ExecutionTrace) GetStartedAtTime() (time.Time, error) {
 
 // LoadResult loads an issue result from the results directory
 func LoadResult(stateRoot string, issueNumber int) (*IssueResult, error) {
-	resultPath := filepath.Join(stateRoot, ".ai", "results", fmt.Sprintf("issue-%d.json", issueNumber))
+	resultPath := layout.Result(stateRoot, issueNumber)
 	data, err := os.ReadFile(resultPath)
 	if err != nil {
 		return nil, err
@@ -216,7 +218,7 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 // the existing pr_url is preserved. This prevents losing PR information when
 // Worker retries fail.
 func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) error {
-	resultDir := filepath.Join(stateRoot, ".ai", "results")
+	resultDir := layout.Results(stateRoot)
 	if err := os.MkdirAll(resultDir, 0700); err != nil {
 		return fmt.Errorf("failed to create results directory: %w", err)
 	}
@@ -240,7 +242,7 @@ func WriteResultAtomic(stateRoot string, issueNumber int, result *IssueResult) e
 
 // ReadFailCount reads the fail count for an issue from the runs directory
 func ReadFailCount(stateRoot string, issueNumber int) int {
-	failCountPath := filepath.Join(stateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", issueNumber), "fail_count.txt")
+	failCountPath := filepath.Join(layout.Run(stateRoot, issueNumber), "fail_count.txt")
 	data, err := os.ReadFile(failCountPath)
 	if err != nil {
 		return 0
@@ -255,7 +257,7 @@ func ReadFailCount(stateRoot string, issueNumber int) int {
 
 // ResetFailCount resets the fail count for an issue
 func ResetFailCount(stateRoot string, issueNumber int) error {
-	failCountPath := filepath.Join(stateRoot, ".ai", "runs", fmt.Sprintf("issue-%d", issueNumber), "fail_count.txt")
+	failCountPath := filepath.Join(layout.Run(stateRoot, issueNumber), "fail_count.txt")
 	// Remove the file to reset count to 0
 	if err := os.Remove(failCountPath); err != nil && !os.IsNotExist(err) {
 		return err

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
@@ -33,9 +34,9 @@ Options:
   --help          Show this help
 
 Examples:
-  awkit run-issue --issue 25 --ticket .ai/temp/ticket-25.md
-  awkit run-issue 25 .ai/temp/ticket-25.md backend
-  awkit run-issue --issue 25 --ticket .ai/temp/ticket-25.md --merge-issue conflict --pr-number 30
+  awkit run-issue --issue 25 --ticket `+layout.TempDir+`/ticket-25.md
+  awkit run-issue 25 `+layout.TempDir+`/ticket-25.md backend
+  awkit run-issue --issue 25 --ticket `+layout.TempDir+`/ticket-25.md --merge-issue conflict --pr-number 30
 `)
 }
 

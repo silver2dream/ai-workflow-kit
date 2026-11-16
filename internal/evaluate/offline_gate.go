@@ -11,6 +11,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/audit"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // CheckO3Audit runs the project audit. P0 findings (missing CLAUDE.md,
@@ -38,9 +39,9 @@ func CheckO3Audit(rootPath string) GateResult {
 // requiredIgnoredPaths lists paths that must be ignored by git.
 var requiredIgnoredPaths = []string{
 	".ai/state",
-	".ai/results",
-	".ai/runs",
-	".ai/exe-logs",
+	layout.ResultsDir,
+	layout.RunsDir,
+	layout.LogsDir,
 }
 
 // CheckO0GitIgnore checks if required paths are ignored by git.

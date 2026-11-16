@@ -10,6 +10,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // A project whose configuration names no repo is one repo, its root. The
@@ -17,7 +18,7 @@ import (
 // whether there is one.
 func TestCmdJiTTest_AProjectWithoutRepos(t *testing.T) {
 	dir := t.TempDir()
-	config := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	config := layout.Config(dir)
 	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func TestCmdJiTTest_GivesTheGeneratorTheBranchAndTheLanguage(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	file := filepath.Join(dir, ".ai", "config", "workflow.yaml")
+	file := layout.Config(dir)
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		t.Fatal(err)
 	}

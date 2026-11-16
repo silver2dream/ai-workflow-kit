@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
@@ -578,7 +579,7 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 			"1. 任務描述是否清晰\n"+
 			"2. 是否有技術難點\n"+
 			"3. 是否需要調整任務範圍\n\n"+
-			"執行日誌位置：.ai/runs/issue-%d/", failCount, opts.IssueNumber)
+			"執行日誌位置："+layout.RunsDir+"/issue-%d/", failCount, opts.IssueNumber)
 		_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber, comment)
 
 		logger.Log("✓ 已標記為 worker-failed")
@@ -715,7 +716,7 @@ type DispatchLogger struct {
 
 // NewDispatchLogger creates a new dispatch logger
 func NewDispatchLogger(stateRoot string, issueNumber int) *DispatchLogger {
-	logDir := filepath.Join(stateRoot, ".ai", "exe-logs")
+	logDir := layout.Logs(stateRoot)
 	_ = os.MkdirAll(logDir, 0755)
 
 	logPath := filepath.Join(logDir, "principal.log")

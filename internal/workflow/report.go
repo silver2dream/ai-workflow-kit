@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
 // Report holds the generated workflow report
@@ -110,9 +112,9 @@ func formatExitReasonDetails(reason string) string {
 	case "blocked_by_dependencies":
 		return "⏸ **Workflow stopped: every pending ticket waits for another issue.**\n\nA ticket starts once every issue in its `depends_on` is closed as completed. What the tickets wait for is still open and not pending, was closed as not planned, or the tickets wait for each other. Reopen or finish that issue, or correct `depends_on`, then run `awkit run`.\n"
 	case "config_not_found":
-		return "✗ **Workflow stopped: workflow config not found.**\n\nCheck `.ai/config/workflow.yaml`, or run `awkit doctor`.\n"
+		return "✗ **Workflow stopped: workflow config not found.**\n\nCheck `" + layout.ConfigFile + "`, or run `awkit doctor`.\n"
 	case "config_invalid":
-		return "✗ **Workflow stopped: the workflow config is not valid.**\n\nRun `awkit validate` to see what is wrong with `.ai/config/workflow.yaml`, correct it, then run `awkit run`.\n"
+		return "✗ **Workflow stopped: the workflow config is not valid.**\n\nRun `awkit validate` to see what is wrong with `" + layout.ConfigFile + "`, correct it, then run `awkit run`.\n"
 	case "loop_count_error", "github_api_error":
 		return "✗ **Workflow stopped: the analyzer could not read its state.**\n\nRun `awkit doctor` and check GitHub CLI access, then run `awkit run`.\n"
 	default:
