@@ -557,6 +557,51 @@ escalation:
 
 ---
 
+## 議會名冊：`.ai/roster.yaml`
+
+`awkit plan` 規劃時坐在桌邊的角色，寫在 `.ai/roster.yaml`，不在 `workflow.yaml` 裡。`awkit init` 會依 preset 寫出一份（`godot-go` 是小型遊戲工作室：producer、game-designer、numerical-designer、tech-lead、qa；其他 preset 是 product-owner、user-advocate、architect、skeptic）；專案沒有名冊時，第一次執行 `awkit plan` 也會寫一份。這個檔案是專案自己的，升級不會覆寫它。
+
+```yaml
+# language: 繁體中文      # 議會書寫的語言；不寫就跟著需求的語言
+model: sonnet            # 沒有另外指定 model 的角色都用它，主持人也是
+
+limits:
+  disputes: 5            # 拿出來對辯的爭點數
+  dispute_rounds: 2      # 每個爭點來回的次數
+  calls: 80              # 一次規劃的模型呼叫上限
+  parallel: 3            # 同時進行的呼叫數
+  timeout_seconds: 600   # 單次呼叫的時限
+
+roles:
+  - id: product-owner
+    title: Product Owner
+    decides: true        # 仍有爭議時由它裁決；整份名冊恰好一個
+    stance: |
+      You answer for the outcome: what is built, for whom, and what is left out...
+    owns:
+      - docs/product/requirements.md
+  - id: architect
+    title: Architect
+    plans: true          # 由它擬出票券；整份名冊恰好一個
+    model: opus          # 這個角色改用別的模型
+    stance: |
+      You answer for how it is built and in what order...
+    owns:
+      - docs/tech/architecture.md
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `roles[].id` | 小寫英數與連字號；出現在會議記錄與其他角色的發言裡 |
+| `roles[].stance` | 這個角色主張什麼、反對什麼。立場要寫到彼此會衝突：大家都點頭的議會，產出的是沒人檢驗過的計畫 |
+| `roles[].owns` | 只有這個角色會寫的文件。必須是 `docs/` 底下的 `.md`，一份文件只能有一個擁有者；`docs/decisions.md`、`docs/README.md` 與 `docs/plans/` 由議會自己維護，不能指派 |
+| `roles[].decides` / `plans` | 各恰好一個角色；可以是同一個角色，但分開比較好 |
+| `limits.calls` | 超過就停下，已完成的部分會保留，用 `awkit plan --resume <plan>` 接著做 |
+
+一份文件最長約 40,000 位元組：角色每次都是整份重寫，超過這個長度的文件議會不會動它，並在會議記錄裡說明。名冊寫錯（沒有人裁決、兩個角色擁有同一份文件、拼錯欄位）會在 `awkit validate` 與 `awkit plan` 一開始就報錯。
+
+---
+
 ## Config Migration
 
 AWK 升級時可能引入 config 格式變更。Migration 系統會自動處理這些變更。

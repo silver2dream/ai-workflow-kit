@@ -1,4 +1,4 @@
-// Package ticket reads the machine-readable part of a ticket.
+// Package ticket reads and writes the machine-readable part of a ticket.
 //
 // A ticket is a GitHub issue. What the workflow needs to know about it (which
 // repo it is for, which tickets must land first, which safety flags it sets)
@@ -20,12 +20,13 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Schema is the version of the block this build reads.
+// Schema is the version of the block this build reads and writes.
 const Schema = 1
 
 // Info is the info string of the fenced block.
@@ -214,4 +215,52 @@ func (m Meta) Validate() error {
 		return fmt.Errorf("release is set for repo %q; only a ticket for the %s repo can be a release", m.Repo, RootRepo)
 	}
 	return nil
+}
+
+var plainScalar = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_./-]*$`)
+
+// Render returns the block as it goes into an issue body, fences included.
+// Only what is set is written, in a fixed order.
+func Render(meta Meta) string {
+	var b strings.Builder
+	b.WriteString("```" + Info + "\n")
+	fmt.Fprintf(&b, "schema: %d\n", meta.Schema)
+	fmt.Fprintf(&b, "repo: %s\n", yamlScalar(meta.Repo))
+	if len(meta.DependsOn) > 0 {
+		numbers := make([]string, len(meta.DependsOn))
+		for i, issue := range meta.DependsOn {
+			numbers[i] = strconv.Itoa(issue)
+		}
+		fmt.Fprintf(&b, "depends_on: [%s]\n", strings.Join(numbers, ", "))
+	}
+	if meta.Severity != "" {
+		fmt.Fprintf(&b, "severity: %s\n", meta.Severity)
+	}
+	for _, flag := range []struct {
+		name string
+		set  bool
+	}{
+		{"release", meta.Release},
+		{"allow_parent_changes", meta.AllowParentChanges},
+		{"allow_script_changes", meta.AllowScriptChanges},
+		{"allow_secrets", meta.AllowSecrets},
+	} {
+		if flag.set {
+			fmt.Fprintf(&b, "%s: true\n", flag.name)
+		}
+	}
+	b.WriteString("```\n")
+	return b.String()
+}
+
+// yamlScalar writes a string so that YAML reads the same string back.
+func yamlScalar(value string) string {
+	switch strings.ToLower(value) {
+	case "true", "false", "yes", "no", "on", "off", "null", "y", "n":
+		return strconv.Quote(value)
+	}
+	if plainScalar.MatchString(value) {
+		return value
+	}
+	return strconv.Quote(value)
 }

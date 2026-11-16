@@ -62,6 +62,7 @@ AWK treats its agents as first-class users of a real interface, not prose-in / r
 ## ✨ Features
 
 ### Core Workflow
+- **Planning by argument**: `awkit plan` has the roles of a roster argue a brief out, write the documents each owns, record the decisions with who held otherwise, and propose the tickets. Nothing is created until you approve the work list
 - **Issues are the work**: a ticket is a GitHub issue with the task label and a small `yaml awk-ticket` block that names its repo and the tickets it waits for. No spec files, no task lists to keep in sync
 - **In order, by dependency**: tickets run in the order of their numbers, each once what it depends on has landed; `awkit run --issue N` does one ticket and stops
 - **GitHub as state machine**: uses issues/PRs + labels to track progress
@@ -136,9 +137,11 @@ More details: `docs/ai-workflow-architecture.md`.
 .
 ├── .ai/                         # the kit
 │   ├── config/workflow.yaml     # main config
+│   ├── roster.yaml              # who sits at the table when `awkit plan` plans
 │   ├── rules/                   # git workflow rules + optional rule packs
 │   ├── skills/                  # what the Principal follows: the loop, the ticket format
 │   └── state/, results/         # runtime state (gitignored)
+├── docs/                        # the council's documents, decisions.md and plans/
 ├── .claude/                     # agents, rules and skills for Claude Code (generated)
 ├── CLAUDE.md, AGENTS.md         # instructions for the Principal and the Worker (generated)
 └── .github/workflows/           # CI, one workflow per repo, generated from the config
@@ -231,9 +234,42 @@ awkit init --preset godot-go --force
 awkit generate
 ```
 
-### 2) Create tickets and run the workflow
+### 2) Plan the work: the council
 
-The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block in its body.
+```bash
+awkit plan "A daily login reward: seven days, the reward grows, a missed day starts over"
+```
+
+The roles of `.ai/roster.yaml` argue the brief out. Each one states where it stands; they object to each other; the objections that matter most go back and forth between the two roles concerned; a moderator who takes no side says where things stand; the deciding role rules on what is still disputed. Then every role writes the documents it owns, and the planning role draws up the tickets, which the table gets to object to once.
+
+The order of play is in code, not in a prompt: awkit asks each role in turn, counts the rounds and the model calls, and is the only one that writes files, so a role cannot write a document another role owns.
+
+| What a plan leaves | |
+|---|---|
+| `docs/plans/<plan>/minutes.md` | who said what: positions, objections, each dispute and how it ended |
+| `docs/decisions.md` | the decisions, each under a name that stays (`D7`), with who held otherwise, and what the plan assumes (`A3`); append-only |
+| `docs/<area>/*.md` | the documents, each written by the one role that owns it |
+| `docs/plans/<plan>/tickets.yaml` | the proposed tickets, in working order |
+
+Nothing is on GitHub yet. Read the work list, change what you want changed, then:
+
+```bash
+awkit plan approve <plan>    # creates the issues, each after the ones it depends on
+```
+
+**What only you can answer.** A plan never waits for a person: where the roles need an answer only you have, the deciding role states what the plan assumes, the assumption goes on record under its own name, and the end of the plan lists them. To be asked instead, start the plan with `--ask`: a minute or so into the meeting the council puts its questions to you, at most seven, and argues from your answers. A question you skip is left to the council to assume.
+
+```bash
+awkit plan --ask "A daily login reward: seven days, the reward grows, a missed day starts over"
+```
+
+**The next plan builds on this one.** Every role reads the decisions on record and its own documents as they stand. It changes what the new brief changes, and leaves a document the brief does not touch as it is. The planning role is shown what earlier plans ticketed, so the same work is not ticketed twice. A new ticket can wait for an issue that exists (`depends_on: ["#12"]`), or for a ticket of an earlier plan that is not on GitHub yet (`depends_on: ["<plan>/<key>"]`); `awkit plan approve` then tells you to approve that plan first.
+
+The roster is yours to change: the roles, what each stands for, the documents each owns, the model that plays it, how many model calls a plan may make. `awkit init` writes one that fits the preset: a small game studio for `godot-go`. A plan that stops half way goes on with `awkit plan --resume <plan>`; what was answered is kept, and a work list you changed by hand stays as you left it.
+
+### 3) Tickets and the run
+
+The work is a queue of tickets: GitHub issues with the task label, each with a `yaml awk-ticket` block in its body. `awkit plan approve` creates them from the council's work list; you can also write one yourself:
 
 ````markdown
 ## Summary

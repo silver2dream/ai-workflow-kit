@@ -6,11 +6,15 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 )
 
 func usageValidate() {
 	fmt.Fprint(os.Stderr, `Validate workflow configuration
+
+Checks .ai/config/workflow.yaml and, when the project has one, the roster of
+the planning council (.ai/roster.yaml).
 
 Usage:
   awkit validate [options]
@@ -86,6 +90,19 @@ func cmdValidate(args []string) int {
 		}
 	} else {
 		output.Success("Referenced paths: OK")
+	}
+
+	// The roster of the planning council, when the project has one: a roster
+	// that cannot hold a meeting is found here, not ten minutes into a plan.
+	rosterFile := filepath.Join(baseDir, filepath.FromSlash(council.RosterPath))
+	if _, err := os.Stat(rosterFile); err == nil {
+		roster, err := council.LoadRoster(rosterFile)
+		if err != nil {
+			fmt.Println("")
+			output.Error(fmt.Sprintf("%s: %v", council.RosterPath, err))
+			return 1
+		}
+		output.Success(fmt.Sprintf("Roster: %d roles (%s decides, %s plans)", len(roster.Roles), roster.Decider().ID, roster.Planner().ID))
 	}
 
 	fmt.Println("")
