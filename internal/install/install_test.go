@@ -1,8 +1,11 @@
 package install
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -11,14 +14,13 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 )
 
-// createMinimalMockFS creates a mock FS with minimal required files
+// createMinimalMockFS is a kit as small as a kit can be: a rule, a skill and
+// a subagent, at the paths they have in a project.
 func createMinimalMockFS() fstest.MapFS {
 	return fstest.MapFS{
-		".ai/config/workflow.schema.json": &fstest.MapFile{Data: []byte(`{}`)},
-		".ai/scripts/generate.sh":         &fstest.MapFile{Data: []byte("#!/bin/bash\necho test")},
-		".ai/rules/.gitkeep":              &fstest.MapFile{Data: []byte("")},
-		".ai/commands/.gitkeep":           &fstest.MapFile{Data: []byte("")},
-		".ai/templates/.gitkeep":          &fstest.MapFile{Data: []byte("")},
+		".claude/rules/_kit/git-workflow.md":         &fstest.MapFile{Data: []byte("# git workflow\n")},
+		".claude/skills/principal-workflow/SKILL.md": &fstest.MapFile{Data: []byte("# principal workflow\n")},
+		".claude/agents/pr-reviewer.md":              &fstest.MapFile{Data: []byte("# pr reviewer\n")},
 	}
 }
 
@@ -50,10 +52,9 @@ func TestInstall_CurrentDirectory(t *testing.T) {
 		t.Error(".ai directory was not created")
 	}
 
-	// Verify config directory was created
-	configDir := filepath.Dir(layout.Config(tmpDir))
-	if _, err := os.Stat(configDir); os.IsNotExist(err) {
-		t.Error(".ai/config directory was not created")
+	// Verify the configuration was written
+	if _, err := os.Stat(layout.Config(tmpDir)); os.IsNotExist(err) {
+		t.Error("the configuration was not written")
 	}
 }
 
@@ -192,115 +193,6 @@ func TestInstall_ForceConfig(t *testing.T) {
 	}
 }
 
-func TestInstall_PresetConfigNotOverwrittenByCopyDir(t *testing.T) {
-	// This test ensures that when using a preset (e.g., godot-go),
-	// the preset's workflow.yaml is NOT overwritten by copyDir
-	// which copies the embedded default workflow.yaml.
-	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create a mock FS that includes a default workflow.yaml
-	// (simulating the embedded kit files with a different config)
-	mockFS := fstest.MapFS{
-		".ai/config/workflow.yaml":                &fstest.MapFile{Data: []byte("language: unity\n")},
-		".ai/config/workflow.schema.json":         &fstest.MapFile{Data: []byte(`{}`)},
-		".ai/scripts/generate.sh":                 &fstest.MapFile{Data: []byte("#!/bin/bash\necho test")},
-		".ai/rules/.gitkeep":                      &fstest.MapFile{Data: []byte("")},
-		".ai/rules/_examples/testing-strategy.md": &fstest.MapFile{Data: []byte("# Testing rules")},
-		".ai/rules/_examples/api-design.md":       &fstest.MapFile{Data: []byte("# API rules")},
-		".ai/commands/.gitkeep":                   &fstest.MapFile{Data: []byte("")},
-		".ai/templates/.gitkeep":                  &fstest.MapFile{Data: []byte("")},
-	}
-
-	// Install with the godot-go preset and force mode
-	result, err := Install(mockFS, tmpDir, Options{
-		Preset:     PresetGodotGo,
-		Force:      true,
-		NoGenerate: true,
-	})
-	if err != nil {
-		t.Fatalf("Install failed: %v", err)
-	}
-	if result == nil {
-		t.Fatal("Install returned nil result")
-	}
-
-	// Read the resulting workflow.yaml
-	content, err := os.ReadFile(layout.Config(tmpDir))
-	if err != nil {
-		t.Fatalf("failed to read workflow.yaml: %v", err)
-	}
-
-	// It should hold the preset's languages, NOT "unity" (from the embedded default)
-	if strings.Contains(string(content), "language: unity") {
-		t.Error("workflow.yaml was overwritten by copyDir - should preserve preset config")
-	}
-	if !strings.Contains(string(content), "language: csharp") || !strings.Contains(string(content), "language: go") {
-		t.Error("workflow.yaml should contain the godot-go preset languages (go and csharp)")
-	}
-}
-
-func TestInstall_Upgrade(t *testing.T) {
-	// Test upgrade scenario: existing config should be preserved
-	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create existing workflow.yaml with custom content
-	configDir := filepath.Dir(layout.Config(tmpDir))
-	os.MkdirAll(configDir, 0o755)
-	customConfig := "project:\n  name: my-custom-project\n  type: monorepo\n"
-	os.WriteFile(layout.Config(tmpDir), []byte(customConfig), 0o644)
-
-	// Create existing scripts directory with old content
-	scriptsDir := filepath.Join(tmpDir, ".ai", "scripts")
-	os.MkdirAll(scriptsDir, 0o755)
-	os.WriteFile(filepath.Join(scriptsDir, "old-script.sh"), []byte("old content"), 0o644)
-
-	mockFS := fstest.MapFS{
-		".ai/config/workflow.schema.json": &fstest.MapFile{Data: []byte(`{}`)},
-		".ai/scripts/generate.sh":         &fstest.MapFile{Data: []byte("#!/bin/bash\necho new")},
-		".ai/scripts/kickoff.sh":          &fstest.MapFile{Data: []byte("#!/bin/bash\necho kickoff")},
-		".ai/rules/.gitkeep":              &fstest.MapFile{Data: []byte("")},
-		".ai/commands/.gitkeep":           &fstest.MapFile{Data: []byte("")},
-		".ai/templates/.gitkeep":          &fstest.MapFile{Data: []byte("")},
-	}
-
-	// Simulate upgrade: Force=true with SkipConfig=true
-	result, err := Install(mockFS, tmpDir, Options{
-		Force:      true,
-		SkipConfig: true,
-		NoGenerate: true,
-	})
-	if err != nil {
-		t.Fatalf("Install (upgrade) failed: %v", err)
-	}
-	if result == nil {
-		t.Fatal("Install returned nil result")
-	}
-
-	// Config should be skipped (preserved)
-	if !result.ConfigSkipped {
-		t.Error("expected ConfigSkipped to be true during upgrade")
-	}
-
-	// Verify original config preserved
-	content, _ := os.ReadFile(layout.Config(tmpDir))
-	if string(content) != customConfig {
-		t.Error("workflow.yaml was overwritten during upgrade")
-	}
-
-	// Verify new scripts were added
-	if _, err := os.Stat(filepath.Join(scriptsDir, "kickoff.sh")); os.IsNotExist(err) {
-		t.Error("new script kickoff.sh was not added during upgrade")
-	}
-}
-
 func TestInstall_GitIgnoreContainsClaudeSettings(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "awkit-test-*")
 	if err != nil {
@@ -397,7 +289,8 @@ func TestInstall_GitIgnoreUpdatedOnUpgrade(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create existing .gitignore with OLD AWK section (missing __pycache__)
+	// An ignore file with awkit's section as an earlier version wrote it: one
+	// line for every directory a run wrote to.
 	oldGitignore := `# User entries
 *.bak
 
@@ -436,11 +329,15 @@ func TestInstall_GitIgnoreUpdatedOnUpgrade(t *testing.T) {
 	if !strings.Contains(string(content), "__pycache__/") {
 		t.Error(".gitignore should contain __pycache__/ after upgrade")
 	}
-	if !strings.Contains(string(content), ".ai/temp/") {
-		t.Error(".gitignore should contain .ai/temp/ after upgrade")
+	// A run writes below the state directory now: that line covers it, and
+	// the lines for where a run wrote before are gone.
+	if !strings.Contains(string(content), "\n.ai/state/\n") || !strings.Contains(string(content), "\n.worktrees/\n") {
+		t.Errorf(".gitignore should ignore the state directory and the worktrees:\n%s", content)
 	}
-	if !strings.Contains(string(content), ".ai/logs/") {
-		t.Error(".gitignore should contain .ai/logs/ after upgrade")
+	for _, gone := range []string{".ai/results/", ".ai/runs/", ".ai/exe-logs/", ".ai/temp/", ".ai/logs/"} {
+		if strings.Contains(string(content), gone) {
+			t.Errorf(".gitignore still has %s after the upgrade:\n%s", gone, content)
+		}
 	}
 
 	// Should preserve user entries
@@ -665,5 +562,153 @@ func TestInstall_Roster(t *testing.T) {
 	}
 	if got := rosterOf(dir); got != "" {
 		t.Errorf("an upgrade wrote a roster:\n%s", got)
+	}
+}
+
+// What an install writes into a new project, and nothing more: the
+// configuration and the roster under .ai, the kit under .claude, and the
+// directories a run writes to. There is no second copy of the kit, no
+// placeholder file in a directory git ignores, and no example.
+func TestInstall_WritesTheLayout(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(createMinimalMockFS(), dir, Options{Preset: "generic", NoGenerate: true}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	var files []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		files = append(files, filepath.ToSlash(rel))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		".ai/config.yaml",
+		".ai/roster.yaml",
+		".claude/agents/pr-reviewer.md",
+		".claude/rules/_kit/git-workflow.md",
+		".claude/skills/principal-workflow/SKILL.md",
+		".gitattributes",
+		".gitignore",
+	}
+	sort.Strings(files)
+	if !reflect.DeepEqual(files, want) {
+		t.Errorf("an install wrote\n%v\nwant\n%v", files, want)
+	}
+
+	for _, sub := range []string{".ai/state", ".ai/state/results", ".ai/state/runs", ".ai/state/logs", ".ai/state/tmp", ".worktrees"} {
+		if info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(sub))); err != nil || !info.IsDir() {
+			t.Errorf("%s is not there for a run to write to (err %v)", sub, err)
+		}
+	}
+
+	// What a run leaves behind is one line of the ignore file.
+	ignore, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	for _, line := range []string{"\n.ai/state/\n", "\n.worktrees/\n", "\n.claude/settings.local.json\n"} {
+		if !strings.Contains(string(ignore), line) {
+			t.Errorf(".gitignore lacks %q:\n%s", strings.TrimSpace(line), ignore)
+		}
+	}
+	for _, gone := range []string{".ai/results", ".ai/runs", ".ai/exe-logs", ".ai/temp", ".ai/logs", ".claude/rules", ".claude/skills"} {
+		if strings.Contains(string(ignore), gone) {
+			t.Errorf(".gitignore still names %s:\n%s", gone, ignore)
+		}
+	}
+}
+
+// A kit is its .claude directory. What else the kit's file system holds, a
+// configuration of its own for one, is not installed: a project's
+// configuration comes from its preset.
+func TestInstall_OnlyTheKitIsInstalled(t *testing.T) {
+	dir := t.TempDir()
+	kit := createMinimalMockFS()
+	kit[".ai/config.yaml"] = &fstest.MapFile{Data: []byte("language: unity\n")}
+	kit["docs/examples/rules/testing-strategy.md"] = &fstest.MapFile{Data: []byte("# Testing rules")}
+
+	if _, err := Install(kit, dir, Options{Preset: PresetGodotGo, Force: true, NoGenerate: true}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	content, err := os.ReadFile(layout.Config(dir))
+	if err != nil {
+		t.Fatalf("the configuration: %v", err)
+	}
+	if strings.Contains(string(content), "language: unity") {
+		t.Error("the kit's own configuration was installed over the preset's")
+	}
+	if !strings.Contains(string(content), "language: csharp") || !strings.Contains(string(content), "language: go") {
+		t.Errorf("the configuration is not the godot-go preset's:\n%s", content)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "docs")); !os.IsNotExist(err) {
+		t.Errorf("what the kit holds outside .claude was installed (err %v)", err)
+	}
+}
+
+// An upgrade writes the kit's files over and adds the ones that are new. It
+// leaves alone what is the project's: its configuration, and whatever else it
+// keeps under .claude, which is Claude Code's directory before it is AWK's.
+func TestInstall_Upgrade(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(rel string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			return "(not there: " + err.Error() + ")"
+		}
+		return string(content)
+	}
+	const customConfig = "project:\n  name: my-custom-project\n  type: monorepo\n"
+	own := map[string]string{
+		".claude/rules/backend.md":              "the project's rule",
+		".claude/skills/release-notes/SKILL.md": "the project's skill",
+		".claude/agents/designer.md":            "the project's subagent",
+		".claude/commands/deploy.md":            "the project's command",
+		".claude/settings.json":                 "{}",
+	}
+	write(".ai/config.yaml", customConfig)
+	write(".claude/rules/_kit/git-workflow.md", "the kit's rule as an earlier version had it")
+	for rel, content := range own {
+		write(rel, content)
+	}
+
+	result, err := Install(createMinimalMockFS(), dir, Options{Force: true, SkipConfig: true, NoGenerate: true})
+	if err != nil {
+		t.Fatalf("Install (upgrade): %v", err)
+	}
+
+	if !result.ConfigSkipped || read(".ai/config.yaml") != customConfig {
+		t.Errorf("the configuration was not kept: skipped %v, content %q", result.ConfigSkipped, read(".ai/config.yaml"))
+	}
+	if got := read(".claude/rules/_kit/git-workflow.md"); got != "# git workflow\n" {
+		t.Errorf("the kit's rule was not written over: %q", got)
+	}
+	for _, added := range []string{".claude/skills/principal-workflow/SKILL.md", ".claude/agents/pr-reviewer.md"} {
+		if strings.HasPrefix(read(added), "(not there") {
+			t.Errorf("%s was not added", added)
+		}
+	}
+	for rel, content := range own {
+		if got := read(rel); got != content {
+			t.Errorf("%s is the project's own and was touched: %q", rel, got)
+		}
+	}
+	// An upgrade writes no roster: `awkit plan` does, the first time it runs.
+	if _, err := os.Stat(layout.Roster(dir)); !os.IsNotExist(err) {
+		t.Errorf("an upgrade wrote a roster (err %v)", err)
 	}
 }

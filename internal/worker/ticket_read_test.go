@@ -118,8 +118,8 @@ func TestReadTicketMetadata_LegacyTicket(t *testing.T) {
 		},
 		{
 			"what only a legacy ticket can say",
-			"- Repo: backend\n- script_whitelist: CLAUDE.md .ai/config/workflow.yaml\n- secret_patterns: sk_live_[a-z]+ tok_[0-9]+\n",
-			&TicketMetadata{Legacy: true, Repo: "backend", ScriptWhitelist: "CLAUDE.md .ai/config/workflow.yaml", SecretPatterns: []string{"sk_live_[a-z]+", "tok_[0-9]+"}},
+			"- Repo: backend\n- script_whitelist: CLAUDE.md .ai/config.yaml\n- secret_patterns: sk_live_[a-z]+ tok_[0-9]+\n",
+			&TicketMetadata{Legacy: true, Repo: "backend", ScriptWhitelist: "CLAUDE.md .ai/config.yaml", SecretPatterns: []string{"sk_live_[a-z]+", "tok_[0-9]+"}},
 		},
 	}
 	for _, tt := range tests {

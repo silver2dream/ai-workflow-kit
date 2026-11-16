@@ -21,11 +21,11 @@ Usage:
   awkit validate [options]
 
 Options:
-  --config      Path to workflow.yaml (default: `+layout.ConfigFile+`)
+  --config      Path to the configuration (default: `+layout.ConfigFile+`)
 
 Examples:
   awkit validate
-  awkit validate --config /path/to/workflow.yaml
+  awkit validate --config /path/to/config.yaml
 `)
 }
 

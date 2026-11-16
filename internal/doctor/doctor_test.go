@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -176,5 +177,40 @@ func TestRunAll_EmptyDir_NoErrors(t *testing.T) {
 		if r.Status == "error" {
 			t.Errorf("unexpected error result: %+v", r)
 		}
+	}
+}
+
+// In a project that has not been upgraded most commands stop. The doctor is
+// where a person looks for why: it says so first, and says what to do.
+func TestCheckLayout(t *testing.T) {
+	earlier := t.TempDir()
+	path := filepath.Join(earlier, ".ai", "config", "workflow.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("project: {name: demo}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results := New(earlier).CheckLayout()
+	if len(results) != 1 || results[0].Status != "error" || results[0].Name != "Layout" || !strings.Contains(results[0].Message, "awkit upgrade") {
+		t.Errorf("in a project of an earlier awkit: %+v, want one error that names `awkit upgrade`", results)
+	}
+	// With a context that is done, the checks that ask GitHub start nothing.
+	done, cancel := context.WithCancel(context.Background())
+	cancel()
+	if all := New(earlier).RunAll(done); len(all) == 0 || all[0].Name != "Layout" {
+		t.Errorf("the doctor does not say it first: %+v", all)
+	}
+
+	current := t.TempDir()
+	path = filepath.Join(current, ".ai", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("project: {name: demo}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if results := New(current).CheckLayout(); len(results) != 0 {
+		t.Errorf("in a project that keeps its files where awkit keeps them now: %+v", results)
 	}
 }

@@ -340,10 +340,17 @@ var warnReviewFail sync.Once
 // os.IsNotExist tells a project without a configuration from one whose
 // configuration is broken. A file that is not valid YAML, or holds a value of
 // the wrong kind, is an error whoever asks: a configuration that is half read
-// is not used.
+// is not used. And a project whose configuration is still where an earlier
+// awkit kept it gets an *OldLayoutError, which is not "no configuration": a
+// command that goes on without one must not go on here.
 func LoadFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			if old := oldLayout(path); old != nil {
+				return nil, old
+			}
+		}
 		return nil, err
 	}
 	var cfg Config
@@ -364,6 +371,33 @@ func LoadFile(path string) (*Config, error) {
 // Load reads the configuration of the project at root.
 func Load(root string) (*Config, error) {
 	return LoadFile(Path(root))
+}
+
+// OldLayoutError says that a project still keeps its files where an earlier
+// awkit put them. Nothing is read from there: `awkit upgrade` moves them.
+type OldLayoutError struct {
+	// Root is the project, Found its configuration at the earlier place.
+	Root, Found string
+}
+
+func (e *OldLayoutError) Error() string {
+	return fmt.Sprintf("this project keeps its files where an earlier awkit put them (%s); run `awkit upgrade` to move them (the configuration goes to %s)",
+		layout.OldConfigFile, layout.ConfigFile)
+}
+
+// oldLayout looks, for a configuration that is not at path, whether the
+// project has one at the earlier place. A path that is not where a project
+// keeps its configuration was named by itself, and has no earlier place.
+func oldLayout(path string) *OldLayoutError {
+	root := layout.ProjectOf(path)
+	if filepath.Clean(path) != filepath.Clean(layout.Config(root)) {
+		return nil
+	}
+	found := layout.In(root, layout.OldConfigFile)
+	if _, err := os.Stat(found); err != nil {
+		return nil
+	}
+	return &OldLayoutError{Root: root, Found: found}
 }
 
 // ParseError says that the configuration was read and is not valid.

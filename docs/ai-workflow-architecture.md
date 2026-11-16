@@ -3,7 +3,7 @@
 > Version: 1.4
 > Status: Implementation Complete
 
-> **注意**：本文件為高層概念架構,部分圖表與檔案清單早於 v0.14.0 的子系統(學習迴圈 `internal/lessons`、結構化 review + multi-model 共識、knowledge-graph 注入、token/成本觀測、原生 Windows/ConPTY 支援)。整體 Principal→Worker→Reviewer 骨架仍準確;各子系統的權威說明見 [API Reference](developer/api-reference.md#主要子系統internal) 與 [Configuration](user/configuration.md)。本文件中提及的 `.ai/commands/`、`.ai/scripts/*.sh`、`repo_scan.json`/`audit.json` 等為已移除的舊實作,現以 `.ai/skills/` 與內建 Go 命令取代。
+> **注意**：本文件為高層概念架構,部分圖表與檔案清單早於 v0.14.0 的子系統(學習迴圈 `internal/lessons`、結構化 review + multi-model 共識、knowledge-graph 注入、token/成本觀測、原生 Windows/ConPTY 支援)。整體 Principal→Worker→Reviewer 骨架仍準確;各子系統的權威說明見 [API Reference](developer/api-reference.md#主要子系統internal) 與 [Configuration](user/configuration.md)。本文件中提及的 `.ai/commands/`、`.ai/scripts/*.sh`、`repo_scan.json`/`audit.json` 等為已移除的舊實作,現以 `.claude/skills/` 與內建 Go 命令取代。
 
 ---
 
@@ -219,10 +219,10 @@ while True:
     2. 如果沒有 pending: 工作完成，結束（票券只來自已存在的 Issue）
     3. 選擇優先級最高的 issue
     4. 執行 Worker: `awkit run-issue <id> <file>`
-    5. 讀取結果: `cat .ai/results/issue-<id>.json`
+    5. 讀取結果: `cat .ai/state/results/issue-<id>.json`
     6. 如果成功且有 PR:
        - 審查: `gh pr diff <pr_number>`
-       - 判斷是否符合 .ai/rules/*.md
+       - 判斷是否符合 .claude/rules/*.md
        - 通過: `gh pr merge --squash --delete-branch --auto`
        - 拒絕: request changes + requeue issue
     7. 繼續下一輪
@@ -250,7 +250,7 @@ while True:
 ### 4.3 Result Schema
 
 ```json
-// .ai/results/issue-42.json
+// .ai/state/results/issue-42.json
 {
   "issue_id": "42",
   "status": "success",           // success | failed
@@ -260,7 +260,7 @@ while True:
   "head_sha": "abc123...",
   "timestamp_utc": "2024-12-18T15:30:00Z",
   "pr_url": "https://github.com/.../pull/123",
-  "summary_file": ".ai/runs/issue-42/summary.txt"
+  "summary_file": ".ai/state/runs/issue-42/summary.txt"
 }
 ```
 
@@ -504,7 +504,7 @@ A:
 ```bash
 gh issue list --label ai-task     # 查看任務狀態
 gh pr list                         # 查看 PR
-cat .ai/results/*.json            # 查看執行結果
+cat .ai/state/results/*.json            # 查看執行結果
 ```
 
 ---
@@ -513,7 +513,7 @@ cat .ai/results/*.json            # 查看執行結果
 
 ### A.1 Issue Template
 
-票券內文（完整說明見 `.ai/skills/principal-workflow/tasks/create-task.md`；用 `awkit create-task` 建立）：
+票券內文（完整說明見 `.claude/skills/principal-workflow/tasks/create-task.md`；用 `awkit create-task` 建立）：
 
 ````markdown
 ## Summary

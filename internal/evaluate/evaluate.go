@@ -28,7 +28,7 @@ type OfflineGateResults struct {
 	O0  GateResult // Git ignore - checks that state/result dirs are ignored
 	O1  GateResult // Scan repo - placeholder for repo scanning
 	O3  GateResult // Audit project - placeholder for project audit
-	O5  GateResult // Config validation - validates workflow.yaml
+	O5  GateResult // Config validation - validates the project's configuration
 	O7  GateResult // Version sync - placeholder for version sync check
 	O8  GateResult // File encoding - checks for CRLF/UTF-16
 	O10 GateResult // Test suite - placeholder for test suite

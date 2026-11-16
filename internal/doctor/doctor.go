@@ -54,6 +54,9 @@ func New(stateRoot string) *Doctor {
 func (d *Doctor) RunAll(ctx context.Context) []CheckResult {
 	var results []CheckResult
 
+	// 0. Is this a project awkit can work in at all
+	results = append(results, d.CheckLayout()...)
+
 	// 1. Check local state files
 	results = append(results, d.CheckLoopCount()...)
 	results = append(results, d.CheckConsecutiveFailures()...)
@@ -82,6 +85,20 @@ func (d *Doctor) RunAll(ctx context.Context) []CheckResult {
 	results = append(results, d.CheckJiTTestCalibration()...)
 
 	return results
+}
+
+// CheckLayout says when the project still keeps files where an earlier awkit
+// put them. Nothing is read from there, so most commands do not work until
+// `awkit upgrade` has moved them.
+func (d *Doctor) CheckLayout() []CheckResult {
+	if !migrate.UsesOldLayout(d.StateRoot) {
+		return nil
+	}
+	return []CheckResult{{
+		Name:    "Layout",
+		Status:  "error",
+		Message: "the project keeps files where an earlier awkit put them; run 'awkit upgrade' to move them ('awkit upgrade --dry-run' shows every step first)",
+	}}
 }
 
 // CheckLoopCount checks the loop count state
@@ -431,7 +448,7 @@ func (d *Doctor) CheckJiTTestCalibration() []CheckResult {
 			Name:   "JiTTest Calibration",
 			Status: "warning",
 			Message: fmt.Sprintf(
-				"JiTTest FP rate %.1f%% across %d runs. Consider upgrading failure_policy to \"block\" in workflow.yaml.",
+				"JiTTest FP rate %.1f%% across %d runs. Consider upgrading failure_policy to \"block\" in "+layout.ConfigFile+".",
 				stats.FalsePositiveRate(), stats.TotalRuns,
 			),
 		}}
@@ -455,7 +472,7 @@ func (d *Doctor) CheckConfigVersion() []CheckResult {
 		Name:   "Config Version",
 		Status: "warning",
 		Message: fmt.Sprintf(
-			"workflow.yaml is version %s (latest: %s). Run 'awkit upgrade' to migrate.",
+			layout.ConfigFile+" is version %s (latest: %s). Run 'awkit upgrade' to migrate.",
 			currentVersion, migrate.LatestVersion,
 		),
 	}}

@@ -135,14 +135,15 @@ AWK 把它的 agent 當成真正介面的一等使用者,而非「prose 進 / re
 
 ```
 .
-├── .ai/                         # kit 本體
-│   ├── config/workflow.yaml     # 主設定檔
+├── .ai/
+│   ├── config.yaml              # 專案的設定檔
 │   ├── roster.yaml              # `awkit plan` 規劃時坐在桌邊的角色
-│   ├── rules/                   # git 工作流規則 + 可選的規則包
+│   └── state/                   # 執行留下的東西：結果、日誌（gitignored）
+├── .claude/                     # agent 讀的東西，放在 Claude Code 會找的位置
+│   ├── rules/_kit/              # kit 的規則；你自己的規則放在這個資料夾旁邊
 │   ├── skills/                  # Principal 依循的流程：主迴圈、票券格式
-│   └── state/、results/         # 執行期狀態（gitignored）
+│   └── agents/                  # Principal 交辦工作的 subagent
 ├── docs/                        # 議會的文件、decisions.md 與 plans/
-├── .claude/                     # 給 Claude Code 的 agents、rules、skills（產生的）
 ├── CLAUDE.md、AGENTS.md         # 給 Principal 與 Worker 的指引（產生的）
 └── .github/workflows/           # CI：每個 repo 一份 workflow，由設定檔產生
 ```
@@ -182,7 +183,7 @@ awkit init --preset godot-go --scaffold --dry-run
 
 | Preset | 內容 |
 |--------|------|
-| `generic`（預設） | 單一 repo、不限技術棧。在 `.ai/config/workflow.yaml` 填 `verify.build` 與 `verify.test`，其餘不做任何假設。 |
+| `generic`（預設） | 單一 repo、不限技術棧。在 `.ai/config.yaml` 填 `verify.build` 與 `verify.test`，其餘不做任何假設。 |
 | `godot-go` | Monorepo：`backend/` 用 Go、`frontend/` 用 Godot C#。加上 `--scaffold` 會建立可直接建置、測試會過的骨架（建置需要 .NET 8 SDK，開啟遊戲需要 Godot 4 .NET 版）。 |
 
 執行 `awkit list-presets` 查看詳細說明。骨架的檔案結構請參考 [Getting Started](docs/getting-started.md)。
@@ -206,23 +207,24 @@ awkit check-update
 curl -fsSL https://github.com/silver2dream/ai-workflow-kit/releases/latest/download/install.sh | bash
 ```
 
-更新專案內的 kit 檔案（保留你的 workflow.yaml）：
+更新專案內的 kit 檔案（保留你的 config.yaml）：
 
 ```bash
 awkit upgrade
-awkit generate
 ```
+
+舊版 awkit 建立的專案把檔案放在別的位置（`.ai/config/workflow.yaml`、`.ai/rules/`、`.ai/skills/`、`.ai/results/` 等）。`awkit upgrade` 會把它們搬到現在的位置並把這次搬動 commit 起來；想先看每一步，用 `awkit upgrade --dry-run`。專案升級之前，其他指令會停下來並提示你先升級。
 
 其他更新選項：
 
 ```bash
-# 只套用不同的 preset 到 workflow.yaml
+# 只套用不同的 preset 到 config.yaml
 awkit init --preset godot-go --force-config
 
-# 升級 kit 檔案，並覆蓋 workflow.yaml（需要 --preset）
+# 升級 kit 檔案，並覆蓋 config.yaml（需要 --preset）
 awkit upgrade --force-config --preset godot-go
 
-# 完整重置：更新 kit 檔案並套用 preset 到 workflow.yaml
+# 完整重置：更新 kit 檔案並套用 preset 到 config.yaml
 awkit init --preset godot-go --force
 ```
 
@@ -284,7 +286,7 @@ Add a health endpoint.
 
 ```yaml awk-ticket
 schema: 1
-repo: backend          # a repo of .ai/config/workflow.yaml, or root
+repo: backend          # a repo of .ai/config.yaml, or root
 depends_on: [12]       # optional: issues that must be done first
 ```
 ````
@@ -310,11 +312,11 @@ touch .ai/state/STOP
 
 ## ⚙️ 設定
 
-主設定：`.ai/config/workflow.yaml`
+主設定：`.ai/config.yaml`
 
 ### Repo type
 
-AWK 支援三種專案結構類型，在 `.ai/config/workflow.yaml` 中設定：
+AWK 支援三種專案結構類型，在 `.ai/config.yaml` 中設定：
 
 | Type | 說明 | 使用情境 |
 |------|------|----------|
@@ -346,17 +348,17 @@ repos:
 | 欄位 | 意義 |
 |------|------|
 | `schema` | 固定為 `1` |
-| `repo` | `workflow.yaml` 裡的 repo，或 `root` |
+| `repo` | `config.yaml` 裡的 repo，或 `root` |
 | `depends_on` | 必須先完成的 Issue |
 | `severity` | `P0` 到 `P3`（可省略） |
 | `release` | `true` 表示 PR 送往 release 分支（僅限 root repo） |
 | `allow_script_changes`、`allow_parent_changes`、`allow_secrets` | 安全旗標；票沒有明確設定就是關閉 |
 
-完整說明：`.ai/skills/principal-workflow/tasks/create-task.md`。
+完整說明：`.claude/skills/principal-workflow/tasks/create-task.md`。
 
 ### Config 區段
 
-`workflow.yaml` 的頂層區段（完整參考：[docs/user/configuration.md](docs/user/configuration.md)）：
+`config.yaml` 的頂層區段（完整參考：[docs/user/configuration.md](docs/user/configuration.md)）：
 
 | 區段 | 用途 |
 |------|------|
@@ -415,7 +417,7 @@ lessons:
 ## 🔁 CI
 
 **使用者專案：**
-- `awkit init` 會為每個有建置或測試指令的 repo 寫出一份 CI workflow，指令取自 `workflow.yaml`
+- `awkit init` 會為每個有建置或測試指令的 repo 寫出一份 CI workflow，指令取自 `config.yaml`
 - `awkit upgrade` 與 `awkit generate` 會讓這些 workflow 跟著設定檔走。把 workflow 第一行的註解刪掉，它就歸你管，awkit 不再動它
 
 **此 repo（awkit 本身）：**
@@ -442,7 +444,7 @@ lessons:
 |------|------|
 | [Quick Start](docs/user/quick-start.md) | 5 分鐘快速設定 |
 | [Getting Started](docs/user/getting-started.md) | 詳細入門指南 |
-| [Configuration](docs/user/configuration.md) | 完整 `workflow.yaml` 參考 |
+| [Configuration](docs/user/configuration.md) | 完整 `config.yaml` 參考 |
 | [Skills](docs/user/skills.md) | Slash-command 技能參考 |
 | [Troubleshooting](docs/user/troubleshooting.md) | 錯誤排解（含 Windows） |
 | [FAQ](docs/user/faq.md) | 常見問題 |
@@ -470,7 +472,7 @@ lessons:
 - PR 工作流
 
 快速參考：
-- 分支策略與 commit 格式：`.ai/rules/_kit/git-workflow.md`
+- 分支策略與 commit 格式：`.claude/rules/_kit/git-workflow.md`
 - PR 的 base 是 `develop`；`main` 只用於發版
 
 ---

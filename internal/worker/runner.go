@@ -139,6 +139,12 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	configPath := config.Path(stateRoot)
 	cfg, cfgErr := loadWorkflowConfig(configPath)
 	if cfgErr != nil {
+		// A project that has not been upgraded has a configuration, at its
+		// earlier place: working from the defaults would ignore it.
+		var old *config.OldLayoutError
+		if errors.As(cfgErr, &old) {
+			return nil, cfgErr
+		}
 		cfg = config.Default()
 	}
 
@@ -674,7 +680,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		// Fallback to config's verify.build and verify.test
 		verifyCommands = getConfigVerifyCommands(cfg, repoName)
 		if len(verifyCommands) > 0 {
-			logger.Log("使用 workflow.yaml 預設驗證命令")
+			logger.Log("使用設定檔的預設驗證命令")
 		}
 	}
 
@@ -1670,7 +1676,12 @@ func stageChanges(ctx context.Context, wtDir, repoName string, timeout time.Dura
 		return err
 	}
 	if repoName == "root" {
-		_ = runGit(ctx, wtDir, timeout, "reset", "-q", ".ai", ".worktrees")
+		// What a run leaves behind is never part of a commit, whatever the
+		// project's ignore file says. The project's configuration and roster
+		// are staged like any other file: a change to them is then checked
+		// like a change to any control file, where it used to be dropped
+		// without a word.
+		_ = runGit(ctx, wtDir, timeout, "reset", "-q", "--", layout.StateDir, ".worktrees")
 	}
 	return nil
 }

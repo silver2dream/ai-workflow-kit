@@ -85,7 +85,7 @@ Principal Agent 的主工作流程。
 每個 Skill 由以下檔案組成：
 
 ```
-.ai/skills/<skill-name>/
+.claude/skills/<skill-name>/
 ├── SKILL.md           # 技能入口和總覽
 ├── phases/            # 流程階段
 │   ├── analyze.md     # 分析階段指令
@@ -102,7 +102,7 @@ Principal Agent 的主工作流程。
 ### 1. 建立目錄結構
 
 ```bash
-mkdir -p .ai/skills/my-skill/phases
+mkdir -p .claude/skills/my-skill/phases
 ```
 
 ### 2. 建立 SKILL.md

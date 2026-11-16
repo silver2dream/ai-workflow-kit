@@ -10,6 +10,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/hooks"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
@@ -45,7 +46,7 @@ Exit codes:
      fields tell you exactly what to fix. Fix and resubmit in this session.
   1  operational failure (GitHub, config, ...)
 
-Config (workflow.yaml):
+Config (`+layout.ConfigFile+`):
   review.score_threshold  Minimum score to approve (default: 7)
   review.merge_strategy   Merge strategy: squash, merge, rebase (default: squash)
 
