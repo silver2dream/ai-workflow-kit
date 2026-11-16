@@ -150,9 +150,6 @@ func TestAskInit_TheSkeletonFitsOrNot(t *testing.T) {
 	if got, _ := asked(t, empty, "n\n", start, given); got.Scaffold {
 		t.Error("the person said n, and the skeleton is written")
 	}
-	if got, _ := asked(t, empty, "YES\n", start, given); !got.Scaffold {
-		t.Error("the person said YES, and the skeleton is not written")
-	}
 
 	taken := t.TempDir()
 	if err := os.Mkdir(filepath.Join(taken, "backend"), 0o755); err != nil {
@@ -160,6 +157,20 @@ func TestAskInit_TheSkeletonFitsOrNot(t *testing.T) {
 	}
 	if got, out := asked(t, taken, "\n", start, given); got.Scaffold || !strings.Contains(out, "Write it, y or n [n] > ") {
 		t.Errorf("a project that has a backend directory: scaffold %v\n%s", got.Scaffold, out)
+	}
+	// Where the default is n, yes has to be read as yes, however it is typed.
+	for _, yes := range []string{"y", "Y", "yes", "YES", "Yes"} {
+		if got, out := asked(t, taken, yes+"\n", start, given); !got.Scaffold || strings.Contains(out, "is neither y nor n") {
+			t.Errorf("the person said %s, and the skeleton is not written:\n%s", yes, out)
+		}
+	}
+	for _, no := range []string{"n", "N", "no", "NO"} {
+		if got, out := asked(t, empty, no+"\n", start, given); got.Scaffold || strings.Contains(out, "is neither y nor n") {
+			t.Errorf("the person said %s, and the skeleton is written:\n%s", no, out)
+		}
+	}
+	if _, out := asked(t, empty, "maybe\n\n", start, given); !strings.Contains(out, "\"maybe\" is neither y nor n") {
+		t.Errorf("an answer that is neither is not said to be:\n%s", out)
 	}
 	if !skeletonFits(empty, install.PresetGodotGo) || skeletonFits(taken, install.PresetGodotGo) || skeletonFits(empty, install.PresetGeneric) {
 		t.Error("skeletonFits: an empty godot-go project has room, one with a backend directory and a generic one have not")
@@ -561,5 +572,33 @@ func TestCmdInit_TheWorkerThatIsInstalled(t *testing.T) {
 	})
 	if cfg, err := config.Load(dir); err != nil || cfg.Worker.Backend != install.WorkerClaudeCode {
 		t.Errorf("only claude is installed, and the Worker is %+v (%v)", cfg.Worker.Backend, err)
+	}
+}
+
+// --contract and --decided answer their questions at a terminal too: the
+// contract is not asked for, nor the repo a --decided spoke for, and the repo
+// nobody spoke for still is.
+func TestCmdInit_AtATerminalTheContractAndTheDecisionsOfAFlag(t *testing.T) {
+	dir := inNewDir(t)
+	atTerminal(t, "n\n\n\nplain C#\n")
+	out := captureStdout(t, func() {
+		args := []string{"--preset", "godot-go", "--contract", "backend/api/proto/", "--decided", "backend=PostgreSQL"}
+		if code := cmdInit(args); code != 0 {
+			t.Errorf("cmdInit = %d, want 0", code)
+		}
+	})
+	for _, unasked := range []string{"The contract between", "Where is it", "  backend [] > "} {
+		if strings.Contains(out, unasked) {
+			t.Errorf("what a flag said was asked for again (%q):\n%s", unasked, out)
+		}
+	}
+	if !strings.Contains(out, "What is already decided") || !strings.Contains(out, "  frontend [] > ") {
+		t.Errorf("the repo no flag spoke for was not asked about:\n%s", out)
+	}
+	if backend := rule(t, dir, "backend"); !strings.Contains(backend, "：「PostgreSQL」") || !strings.Contains(backend, "`backend/api/proto/`") {
+		t.Errorf("backend.md does not carry what the flags said:\n%s", backend)
+	}
+	if frontend := rule(t, dir, "frontend"); !strings.Contains(frontend, "：「plain C#」") {
+		t.Errorf("frontend.md does not carry what was typed:\n%s", frontend)
 	}
 }

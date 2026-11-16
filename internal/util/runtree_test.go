@@ -23,13 +23,17 @@ func needsShell(t *testing.T) {
 // however deep. The sleep here is the child of a shell that is the child of
 // the command, and holds the command's output open for as long as it lives:
 // with the command alone killed, the wait went on until the sleep was done.
+//
+// The limit is seconds, not a fraction of one: the shell has to start and
+// print its first line within it, and on a busy machine that takes a while.
 func TestRunWithChildren_StopsWhatTheCommandStarted(t *testing.T) {
 	needsShell(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	const limit, asleep = 4 * time.Second, 60 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 
 	var output bytes.Buffer
-	cmd := exec.CommandContext(ctx, "sh", "-c", `echo started; sh -c "sleep 5; echo deep"; echo finished`)
+	cmd := exec.CommandContext(ctx, "sh", "-c", `echo started; sh -c "sleep 60; echo deep"; echo finished`)
 	cmd.Stdout, cmd.Stderr = &output, &output
 	cmd.WaitDelay = 5 * time.Second
 
@@ -40,8 +44,8 @@ func TestRunWithChildren_StopsWhatTheCommandStarted(t *testing.T) {
 	if err == nil || ctx.Err() != context.DeadlineExceeded {
 		t.Errorf("a command out of time: err = %v, context %v; want an error at the deadline", err, ctx.Err())
 	}
-	if took > 3*time.Second {
-		t.Errorf("the command was waited for %v after a limit of 300ms: what it started was not stopped with it", took)
+	if took > asleep/2 {
+		t.Errorf("the command was waited for %v after a limit of %v: what it started was not stopped with it", took, limit)
 	}
 	if got := output.String(); !strings.Contains(got, "started") || strings.Contains(got, "deep") || strings.Contains(got, "finished") {
 		t.Errorf("output = %q, want what was printed before the limit and nothing after", got)
@@ -73,17 +77,17 @@ func TestRunWithChildren_ACommandThatEndsByItself(t *testing.T) {
 		t.Errorf("a command that fails: %q, %v; want its output and exit code 7", out, err)
 	}
 
-	// What the command left in the background writes its mark a second
-	// after the command has ended.
-	started := time.Now()
-	if out, err := run(dir, "(sleep 1; echo alive > mark) >/dev/null 2>&1 & echo left"); err != nil || !strings.Contains(out, "left") {
+	// What the command left in the background writes its mark a few seconds
+	// after it was started. The command has ended before that: the mark is
+	// not there yet when it returns, and appears afterwards.
+	mark := filepath.Join(dir, "mark")
+	if out, err := run(dir, "(sleep 4; echo alive > mark) >/dev/null 2>&1 & echo left"); err != nil || !strings.Contains(out, "left") {
 		t.Fatalf("a command that leaves something running: %q, %v", out, err)
 	}
-	if took := time.Since(started); took > 900*time.Millisecond {
-		t.Fatalf("the command was waited for %v: it should end without waiting for what it left running", took)
+	if _, err := os.Stat(mark); err == nil {
+		t.Fatal("the command was waited for until what it left running had finished")
 	}
-	mark := filepath.Join(dir, "mark")
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
 		if _, err := os.Stat(mark); err == nil {
 			break
 		}

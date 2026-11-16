@@ -288,28 +288,47 @@ func TestStarterRules_SayWhatTheOwnerDecided(t *testing.T) {
 	}
 }
 
-// A project has rules of its own once a rule file is beside the kit's.
+// A project has rules of its own once a rule file is under its rules
+// directory, wherever: Claude Code reads the ones in subdirectories too. The
+// kit's folder is the kit's.
 func TestHasOwnRules(t *testing.T) {
+	write := func(t *testing.T, file string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	dir := t.TempDir()
 	if HasOwnRules(dir) {
 		t.Error("a project without a rules directory has rules of its own")
 	}
-	if err := os.MkdirAll(filepath.Join(layout.KitRules(dir)), 0o755); err != nil {
+	// What is no rule of the project's own: the kit's rules, wherever in the
+	// kit's folder; a file that is no rule; a directory with a rule's name.
+	write(t, filepath.Join(layout.KitRules(dir), "git-workflow.md"))
+	write(t, filepath.Join(layout.KitRules(dir), "more", "security.md"))
+	write(t, filepath.Join(layout.Rules(dir), "notes.txt"))
+	if err := os.MkdirAll(filepath.Join(layout.Rules(dir), "folder.md"), 0o755); err != nil {
 		t.Fatal(err)
-	}
-	for _, kit := range []string{filepath.Join(layout.KitRules(dir), "git-workflow.md"), filepath.Join(layout.Rules(dir), "notes.txt")} {
-		if err := os.WriteFile(kit, []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
 	}
 	if HasOwnRules(dir) {
-		t.Error("the kit's rule, or a file that is no rule, counts as a rule of the project's own")
+		t.Error("the kit's rules, a file that is no rule or a directory count as a rule of the project's own")
 	}
-	if err := os.WriteFile(filepath.Join(layout.Rules(dir), "backend.md"), []byte("# Backend"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !HasOwnRules(dir) {
+
+	flat := t.TempDir()
+	write(t, filepath.Join(layout.Rules(flat), "backend.md"))
+	if !HasOwnRules(flat) {
 		t.Error("a rule file beside the kit's does not count as the project's own")
+	}
+
+	nested := t.TempDir()
+	write(t, filepath.Join(layout.KitRules(nested), "git-workflow.md"))
+	write(t, filepath.Join(layout.Rules(nested), "backend", "api.md"))
+	if !HasOwnRules(nested) {
+		t.Error("a rule file in a subdirectory does not count as the project's own")
 	}
 }
 
