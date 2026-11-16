@@ -7,19 +7,26 @@
 // ever answers one question with one text, and only this package writes to
 // disk, so a role cannot write a document another role owns.
 //
+// How a document is written is the project's to say: a role is given the
+// project's rules for the files it writes, and what it wrote is read against
+// them (byrules.go).
+//
 // A plan ends with a proposal. Nothing is created on GitHub until a person
 // approves the work list.
 package council
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"os"
 	"path"
 	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -64,7 +71,8 @@ type Role struct {
 	Model string `yaml:"model"`
 	// Stance is what the role stands for, pushes for and pushes back on.
 	Stance string `yaml:"stance"`
-	// Owns lists the documents only this role writes: paths under docs/.
+	// Owns lists the documents only this role writes: Markdown files, by their
+	// paths from the project's root.
 	Owns []string `yaml:"owns"`
 	// Decides marks the one role that rules on what stays disputed.
 	Decides bool `yaml:"decides"`
@@ -72,20 +80,78 @@ type Role struct {
 	Plans bool `yaml:"plans"`
 }
 
-//go:embed rosters/*.yaml
+// The rosters a project starts with are templates: the engineering documents
+// a roster names are kept with the project's repos, wherever those are.
+//
+//go:embed rosters/*.yaml.tmpl
 var rosters embed.FS
 
-// DefaultRoster returns the roster a new project of a preset starts with. A
-// preset without one of its own gets the generic roster.
-func DefaultRoster(preset string) []byte {
-	if data, err := rosters.ReadFile("rosters/" + preset + ".yaml"); err == nil {
-		return data
+// rosterRepos is what a roster a project starts with is written from.
+type rosterRepos []Repo
+
+// Docs lists the directories of the repos' engineering documents, each once,
+// in the order of the repos. A project that names no repo has the one that is
+// the whole repository.
+func (repos rosterRepos) Docs() []string {
+	var dirs []string
+	for _, entry := range repos {
+		if dir := layout.RepoDocs(entry.Path); !contains(dirs, dir) {
+			dirs = append(dirs, dir)
+		}
 	}
-	data, err := rosters.ReadFile("rosters/generic.yaml")
+	if len(dirs) == 0 {
+		dirs = []string{layout.EngineeringDocs}
+	}
+	return dirs
+}
+
+// DocsOf returns the directory of the engineering documents of the first repo
+// built with a toolchain, and of the first repo when none is.
+func (repos rosterRepos) DocsOf(toolchain string) string {
+	for _, entry := range repos {
+		if repo.ToolchainOf(entry.Language) == toolchain {
+			return layout.RepoDocs(entry.Path)
+		}
+	}
+	return repos.Docs()[0]
+}
+
+// plainScalar is a path YAML reads as the string it is, without quotes.
+var plainScalar = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_./-]*$`)
+
+// rosterFile writes a document's path as a value of the roster.
+func rosterFile(dir, name string) string {
+	file := dir + name
+	if plainScalar.MatchString(file) {
+		return file
+	}
+	return fmt.Sprintf("%q", file)
+}
+
+// DefaultRoster returns the roster a new project of a preset starts with,
+// written for the project's repos: the engineering documents it names are the
+// ones of those repos (layout.RepoDocs). A preset without a roster of its own
+// gets the generic one. It fails when the roster could not hold a meeting for
+// such repos: one that lies outside the project, say.
+func DefaultRoster(preset string, repos []Repo) ([]byte, error) {
+	text, err := rosters.ReadFile("rosters/" + preset + ".yaml.tmpl")
 	if err != nil {
-		panic("council: the generic roster is missing from the build: " + err.Error())
+		if text, err = rosters.ReadFile("rosters/generic.yaml.tmpl"); err != nil {
+			panic("council: the generic roster is missing from the build: " + err.Error())
+		}
 	}
-	return data
+	tmpl, err := template.New("roster").Option("missingkey=error").Funcs(template.FuncMap{"file": rosterFile}).Parse(string(text))
+	if err != nil {
+		panic("council: the roster of " + preset + " is not a template: " + err.Error())
+	}
+	var out bytes.Buffer
+	if err := tmpl.Execute(&out, rosterRepos(repos)); err != nil {
+		return nil, fmt.Errorf("the roster of %s cannot be written: %w", preset, err)
+	}
+	if _, err := ParseRoster(out.Bytes()); err != nil {
+		return nil, fmt.Errorf("the roster a project of these repos starts with cannot be used: %w", err)
+	}
+	return out.Bytes(), nil
 }
 
 // LoadRoster reads and checks a roster file.
@@ -176,10 +242,16 @@ func (r *Roster) Validate() error {
 			if err := checkOwnedPath(doc); err != nil {
 				return fmt.Errorf("role %q: %w", role.ID, err)
 			}
-			if other, taken := owner[doc]; taken {
+			// Two paths that differ in case only are one file where the file
+			// system does not tell them apart.
+			file := strings.ToLower(doc)
+			switch other, taken := owner[file]; {
+			case taken && other == role.ID:
+				return fmt.Errorf("role %q owns %s twice", role.ID, doc)
+			case taken:
 				return fmt.Errorf("%s has two owners, %q and %q; a document has one", doc, other, role.ID)
 			}
-			owner[doc] = role.ID
+			owner[file] = role.ID
 		}
 	}
 	if len(deciders) != 1 {
@@ -236,22 +308,45 @@ const DecisionsPath = "docs/decisions.md"
 // PlansDir holds one folder per plan. Only this package writes there.
 const PlansDir = "docs/plans"
 
+// indexPath is the index of the project's documents. Only this package keeps
+// the part of it between its two marker lines.
+const indexPath = "docs/README.md"
+
+// instructions are the files an agent is instructed by, in whichever
+// directory they lie. `awkit generate` or a person writes them, never a role.
+var instructions = map[string]bool{"claude.md": true, "claude.local.md": true, "agents.md": true}
+
 // checkOwnedPath checks that a path can be a role's document: a markdown file
-// under docs/, written the way it is stored, and not one of the files this
-// package keeps.
+// of the project, named from the project's root the way it is stored. It is
+// not one of the files this package keeps, not a file an agent is instructed
+// by, and not in a directory a tool keeps for itself (.claude, .ai, .git,
+// .github): what a role writes is there to be read, not to be obeyed.
+//
+// Where the file system does not tell upper case from lower, neither does
+// this check: Docs/Decisions.md is the decision log there.
 func checkOwnedPath(doc string) error {
-	clean := path.Clean(doc)
+	// An empty path is not plain either: Clean makes "." of it.
+	plain := path.Clean(doc) == doc && !strings.ContainsAny(doc, `\:`) &&
+		!strings.HasPrefix(doc, "/") && doc != ".." && !strings.HasPrefix(doc, "../")
+	if !plain {
+		return fmt.Errorf("document %q: write the path plainly, from the project's root and with forward slashes (e.g. docs/design/game-design.md)", doc)
+	}
+	names := strings.Split(doc, "/")
+	for _, name := range names {
+		if strings.HasPrefix(name, ".") {
+			return fmt.Errorf("document %q is in %s, which a tool keeps for itself; a role's document is kept elsewhere", doc, name)
+		}
+	}
+	lower := strings.ToLower(doc)
 	switch {
-	case doc == "" || clean != doc || strings.Contains(doc, "\\"):
-		return fmt.Errorf("document %q: write the path plainly, with forward slashes (e.g. docs/design/game-design.md)", doc)
-	case !strings.HasPrefix(doc, "docs/"):
-		return fmt.Errorf("document %q is outside docs/", doc)
-	case !strings.HasSuffix(doc, ".md"):
+	case !strings.HasSuffix(lower, ".md"):
 		return fmt.Errorf("document %q is not a markdown file", doc)
-	case doc == DecisionsPath || doc == "docs/README.md":
+	case lower == strings.ToLower(DecisionsPath) || lower == strings.ToLower(indexPath):
 		return fmt.Errorf("document %q is kept by the council itself and has no owner", doc)
-	case strings.HasPrefix(doc, PlansDir+"/"):
+	case strings.HasPrefix(lower, strings.ToLower(PlansDir)+"/"):
 		return fmt.Errorf("document %q is under %s/, where the council keeps its plans", doc, PlansDir)
+	case instructions[strings.ToLower(names[len(names)-1])]:
+		return fmt.Errorf("document %q is what an agent is instructed by, not a document a role writes", doc)
 	}
 	return nil
 }

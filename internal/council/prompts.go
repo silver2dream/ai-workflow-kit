@@ -36,12 +36,7 @@ func (p *planner) frame(role *Role) string {
 	for _, repo := range p.repos {
 		fmt.Fprintf(&b, "- %s%s\n", repo.Name, repoNote(repo))
 	}
-	if len(role.Owns) > 0 {
-		b.WriteString("\nThe documents you own. Nobody else writes them, and you write no other:\n")
-		for _, doc := range role.Owns {
-			fmt.Fprintf(&b, "- %s\n", doc)
-		}
-	}
+	b.WriteString(p.documentMap(role))
 	if log := p.decisionLog(); log != "" {
 		b.WriteString("\nDecisions already on record (docs/decisions.md):\n")
 		b.WriteString(log)
@@ -51,6 +46,30 @@ func (p *planner) frame(role *Role) string {
 	b.WriteString("\n</brief>\n")
 	b.WriteString(p.ownerSaid())
 	return b.String()
+}
+
+// documentMap tells a role where the project's documents are and whose each
+// is. A role that does not know proposes a document nobody writes, or one in
+// a place the project's rules keep it out of, and a decision follows it there.
+func (p *planner) documentMap(role *Role) string {
+	var b strings.Builder
+	for _, other := range p.roster.Roles {
+		for _, doc := range other.Owns {
+			whose := other.ID
+			if other.ID == role.ID {
+				whose = "you"
+			}
+			fmt.Fprintf(&b, "- %s (%s)\n", doc, whose)
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	yours := "You own none of them: you write no document."
+	if len(role.Owns) > 0 {
+		yours = "You write the ones that are yours, and no other."
+	}
+	return "\nThe project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or adds one:\n" + b.String() + yours + "\n"
 }
 
 // ownerSaid tells what the owner of the project answered when the table's
@@ -340,7 +359,7 @@ func (p *planner) decisionPrompt(role *Role, plan *Plan) string {
 	b.WriteString("\nThe disputes that were not settled, in full:\n\n")
 	b.WriteString(p.disputesText(plan, true))
 	b.WriteString(`
-Your task now: decide. Rule on every point that is still disputed: which way it goes, and why. Then state the other decisions the plan rests on, the agreed ones included, briefly. A decision says what is built, or how; who writes which document is not one. Write each so that it can be checked later. A decision that changes one already on record names it (D12) and says what it becomes.
+Your task now: decide. Rule on every point that is still disputed: which way it goes, and why. Then state the other decisions the plan rests on, the agreed ones included, briefly. A decision says what is built, or how. Which documents there are, where each is kept and who writes it is not one: the list above says, and the documents are written there whatever is decided. Write each so that it can be checked later. A decision that changes one already on record names it (D12) and says what it becomes.
 
 The plan is no larger than the brief. What the brief does not ask for stays out, however much the table said about it, unless what it asks for cannot work without it; where you take such a thing in, the decision says why.
 
@@ -389,7 +408,8 @@ func decisionsText(plan *Plan) string {
 
 // documentsPrompt asks a role to write the documents it owns. asked are the
 // ones the council can write: what the role owns, without what is too long.
-func (p *planner) documentsPrompt(role *Role, plan *Plan, asked []string) string {
+// book holds the project's rules for those files.
+func (p *planner) documentsPrompt(role *Role, plan *Plan, asked []string, book rulebook) string {
 	var b strings.Builder
 	b.WriteString(p.frame(role))
 	b.WriteString(p.standing(role))
@@ -413,26 +433,19 @@ func (p *planner) documentsPrompt(role *Role, plan *Plan, asked []string) string
 	b.WriteString(`
 A document is the current truth about its subject, not the minutes of a meeting: no "we discussed", no "it was proposed", no list of the decisions and no account of who objected; docs/decisions.md holds those. Where a decision settles something, the document follows it, also where you held otherwise, and names the decision (D4) where a reader will ask why. What rests on an assumption says so and names it (A2).
 `)
+	b.WriteString(p.byTheRules(role, plan, book))
 	if written {
 		b.WriteString(`
 A document that is written already: change what this meeting changes and keep the rest as it is, word for word. When the meeting changes nothing in it, do not write it again; answer for it with this single line:
-<<<UNCHANGED docs/the/path.md>>>
+<<<UNCHANGED path/of/the/document.md>>>
 `)
 	}
 	fmt.Fprintf(&b, `
-Start every document you write with this header, then a title:
----
-status: draft
-owner: %s
-updated: %s
-plan: %s
----
-
-Keep each document under 300 lines. Answer with the documents and nothing else, each one between these two lines:
-<<<DOCUMENT docs/the/path.md>>>
+One document is at most %d bytes: the council writes a document whole. Answer with the documents and nothing else, each one between these two lines:
+<<<DOCUMENT path/of/the/document.md>>>
 (the whole document)
 <<<END>>>
-`, role.ID, p.today(), plan.ID)
+`, maxDocument)
 	return b.String()
 }
 
@@ -512,7 +525,7 @@ const ticketShape = `{
       "scope": ["what is built or changed"],
       "acceptance": ["behaviour a test can check"],
       "testing": ["what must be tested"],
-      "reads": ["docs/... the developer has to read"],
+      "reads": ["the path of a document the developer has to read"],
       "depends_on": ["key of a ticket that must be done first"]
     }
   ],

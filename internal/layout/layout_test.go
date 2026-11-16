@@ -108,3 +108,34 @@ func TestARunWritesBelowTheStateDirectory(t *testing.T) {
 		}
 	}
 }
+
+// A repo in a directory of its own keeps its engineering documents there; one
+// that is the whole repository keeps them apart from the product documents.
+// The rules a project starts with and the roster it starts with both go by
+// this, so they name the same files.
+func TestRepoDocs(t *testing.T) {
+	for dir, want := range map[string]string{
+		"backend":      "backend/docs/",
+		"backend/":     "backend/docs/",
+		"./backend/":   "backend/docs/",
+		" backend ":    "backend/docs/",
+		"apps/server":  "apps/server/docs/",
+		"apps/server/": "apps/server/docs/",
+		"apps\\server": "apps/server/docs/",
+		".\\backend\\": "backend/docs/",
+		"./":           "docs/engineering/",
+		".":            "docs/engineering/",
+		"":             "docs/engineering/",
+		"/":            "docs/engineering/",
+	} {
+		if got := RepoDocs(dir); got != want {
+			t.Errorf("RepoDocs(%q) = %q, want %q", dir, got, want)
+		}
+	}
+	if got := RepoDocs("apps" + string(filepath.Separator) + "server"); got != "apps/server/docs/" {
+		t.Errorf("a directory written the way this system writes it gives %q", got)
+	}
+	if EngineeringDocs != "docs/engineering/" {
+		t.Errorf("EngineeringDocs = %q", EngineeringDocs)
+	}
+}

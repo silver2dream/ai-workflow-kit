@@ -69,10 +69,7 @@ func (r RuleRepo) IsRoot() bool {
 // directory of its own keeps them there; one that is the whole repository
 // keeps them apart from the product documents under docs/.
 func (r RuleRepo) Docs() string {
-	if r.IsRoot() {
-		return "docs/engineering/"
-	}
-	return r.Path + "docs/"
+	return layout.RepoDocs(r.Path)
 }
 
 // RuleContext is what a starter rule is written from.

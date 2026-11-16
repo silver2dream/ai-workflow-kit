@@ -407,11 +407,14 @@ func TestRun_KeepsTheIssuesOfAnApprovedList(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	github := &issues{}
-	if _, err := Approve(context.Background(), ApproveOptions{Root: root, ID: plan.ID, Repos: testRepos, Roster: roster, Create: github.create}); err != nil {
+	index := readFile(t, root, "docs/README.md")
+	if _, err := Approve(context.Background(), ApproveOptions{Root: root, ID: plan.ID, Repos: testRepos, Create: github.create}); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
-	if index := readFile(t, root, "docs/README.md"); !strings.Contains(index, "2 tickets, 2 on GitHub") {
-		t.Errorf("the index does not show what was created:\n%s", index)
+	// What was created is in the work list. The index points there and holds
+	// none of it, so an approval leaves it as it was.
+	if after := readFile(t, root, "docs/README.md"); after != index || !strings.Contains(index, "[tickets.yaml](plans/"+plan.ID+"/tickets.yaml)") {
+		t.Errorf("the index after the approval:\n%s\nbefore it:\n%s", after, index)
 	}
 
 	again, err := Run(context.Background(), Options{Root: root, ID: plan.ID, Roster: roster, Model: model, Repos: testRepos, Now: fixedNow})

@@ -16,8 +16,9 @@ paths:
 | 位置 | 角色 | 用途 | 不得用於 |
 |---|---|---|---|
 | `docs/` | **產品與設計文件** | 產品、企劃與設計。`docs/README.md` 是索引與**跨文件主題的權威地圖**：每個主題指到它唯一的定義處。由程式產生的文件不手改，改產生它的程式或資料再重跑。`docs/research/` 是調研（Working Note），只留依據，**結論要寫回對應的定義處才算定案** | {{if .RootRepo}}工程現況（工程文件放 `{{.RootRepo.Docs}}`）{{else}}工程文件、工程現況{{end}} |
-| `docs/decisions.md` | 決策紀錄 | 只增不改：每個決定有一個不變的編號（`D7`）、理由與不同意見；由 `awkit plan` 的議會寫入 | 改寫或刪除過去的決定 |
+| `docs/decisions.md` | 決策紀錄 | 只增不改：每個決定有一個不變的編號（`D7`）、理由與不同意見；由 `awkit plan` 的議會寫入 | 改寫或刪除過去的決定；當成現況的定義處（現況寫在文件裡，這裡記的是當時怎麼定的） |
 | `docs/plans/` | 規劃紀錄 | 每次規劃留下的需求、會議紀錄與票券提案 | 當成設計的定義處 |
+| `docs/qa/` | 跨 repo 的品質規劃 | 風險清單與測試策略：哪一類失敗、在哪一層驗、要什麼證據 | 另立工程事實：協定、時序與數值由工程文件定義，這裡只引用 |
 {{- range .Repos}}
 | `{{.Docs}}architecture.md` | `{{.Name}}` 的工程**唯一權威** | 分層、鐵律、環境變數、新增模組的做法 | 產品規劃 |
 | `{{.Docs}}`（其他） | `{{.Name}}` 的工程設計與調研 | 各專題的工程設計；`research/`（調研筆記，Working Note）。**調研的結論要寫回 architecture.md 才算定案**，調研筆記只保留依據 | 另立一份定案 |
@@ -49,10 +50,10 @@ governed 文件只允許這六種狀態：`Current State`／`Partial`／`Plan`�
 ## 路由規則
 
 1. 產品與設計（商業、系統、玩法、世界觀、數值的設計）→ `docs/`；工程文件不放這裡{{if .RootRepo}}，放 `{{.RootRepo.Docs}}`{{end}}。
-2. 一個 repo 的工程設計與實作現況 → 它的工程文件目錄（或模組 README，連回 architecture.md）。
-3. 兩處需要同一資訊：一處定義、另一處連結，**不複製**。
+2. 一個 repo 的工程設計與實作現況 → 它的工程文件目錄（或模組 README，連回 architecture.md）。跨 repo 的風險與測試策略 → `docs/qa/`。
+3. 兩份文件需要同一資訊：一份定義、另一份連結，**不複製**。
 4. 調研報告與筆記（Working Note）放在 owner 目錄的 `research/`（產品層 → `docs/research/`{{range .Repos}}、`{{.Name}}` → `{{.Docs}}research/`{{end}}），每份標 `Status: Working Note` 與 `Last Verified`，並在檔頭連到它的上位權威文件。
-5. 決定記在 `docs/decisions.md`；別的文件引用它的編號，不重抄內容。
+5. 決定的經過、理由與不同意見記在 `docs/decisions.md`。文件寫的是結論：照決定寫出現況，在讀者會問為什麼的地方點名編號（`D4`），不重抄理由。
 
 ## 禁止
 

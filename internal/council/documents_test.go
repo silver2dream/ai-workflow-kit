@@ -54,7 +54,7 @@ func TestRun_DocumentsThatAreAlreadyThere(t *testing.T) {
 	// A role is shown its document whole before it writes, and is told it may
 	// leave it; a role with nothing written yet is not offered that.
 	skeptic := model.promptOf("skeptic", "documents")
-	for _, want := range []string{"Your documents as they stand:\n===== docs/qa/risks.md\n# Risks\n\nThe database can be down.\n", "keep the rest as it is, word for word", "<<<UNCHANGED docs/the/path.md>>>"} {
+	for _, want := range []string{"Your documents as they stand:\n===== docs/qa/risks.md\n# Risks\n\nThe database can be down.\n", "keep the rest as it is, word for word", "<<<UNCHANGED path/of/the/document.md>>>"} {
 		if !strings.Contains(skeptic, want) {
 			t.Errorf("the skeptic's question should say %q:\n%s", want, skeptic)
 		}

@@ -135,7 +135,11 @@ func TestRosterPresetFor(t *testing.T) {
 // that is there is the project's own.
 func TestPlanRoster(t *testing.T) {
 	dir := t.TempDir()
-	game := []council.Repo{{Name: "backend", Language: "go"}, {Name: "frontend", Language: "godot"}}
+	writePlanConfig(t, dir, "repos:\n  - {name: server, path: apps/server/, type: directory, language: go}\n  - {name: client, path: client/, type: directory, language: godot}\n")
+	game, err := planRepos(dir)
+	if err != nil {
+		t.Fatalf("planRepos: %v", err)
+	}
 
 	roster, err := planRoster(dir, "", game)
 	if err != nil {
@@ -144,10 +148,42 @@ func TestPlanRoster(t *testing.T) {
 	if roster.Role("numerical-designer") == nil {
 		t.Errorf("a Go and Godot project did not get the game studio's roster: %v", roster.IDs())
 	}
+	// It is written for the repos the configuration names: their engineering
+	// documents are kept with them. The root of the repository, which a
+	// ticket can be for, is not a repo of the configuration and gets none.
+	if want := []string{"apps/server/docs/architecture.md", "client/docs/architecture.md", "apps/server/docs/protocol.md"}; !reflect.DeepEqual(roster.Role("tech-lead").Owns, want) {
+		t.Errorf("the tech lead owns %v, want %v", roster.Role("tech-lead").Owns, want)
+	}
 	file := layout.Roster(dir)
+	want, err := council.DefaultRoster("godot-go", []council.Repo{{Name: "server", Language: "go", Path: "apps/server/"}, {Name: "client", Language: "godot", Path: "client/"}})
+	if err != nil {
+		t.Fatalf("DefaultRoster: %v", err)
+	}
 	written, err := os.ReadFile(file)
-	if err != nil || string(written) != string(council.DefaultRoster("godot-go")) {
-		t.Errorf("the roster was not written to %s: %v", file, err)
+	if err != nil || string(written) != string(want) {
+		t.Errorf("the roster was not written to %s: %v\n%s", file, err, written)
+	}
+
+	// A repo that is the whole repository keeps its engineering documents in
+	// docs/engineering/, whatever path the configuration gives it.
+	whole := t.TempDir()
+	writePlanConfig(t, whole, "repos:\n  - {name: root, path: app/, type: root, language: go}\n")
+	if got := configuredRepos(whole); !reflect.DeepEqual(got, []council.Repo{{Name: "root", Language: "go", Path: "./"}}) {
+		t.Errorf("configuredRepos = %+v", got)
+	}
+	repos, err := planRepos(whole)
+	if err != nil {
+		t.Fatalf("planRepos: %v", err)
+	}
+	single, err := planRoster(whole, "", repos)
+	if err != nil {
+		t.Fatalf("planRoster: %v", err)
+	}
+	if want := []string{"docs/engineering/architecture.md"}; single.Role("architect") == nil || !reflect.DeepEqual(single.Role("architect").Owns, want) {
+		t.Errorf("the roster of a project that is one repo: %v, want the architect to own %v", single.IDs(), want)
+	}
+	if got := configuredRepos(t.TempDir()); got != nil {
+		t.Errorf("a project without a configuration has the repos %+v", got)
 	}
 
 	// Changed by the project: kept, and used.
@@ -193,10 +229,16 @@ type scriptedCouncil struct {
 	toldOwner int
 	// leaves makes every role leave the documents that are written as they are.
 	leaves bool
+	// finds makes the reader of the documents find the architect's document
+	// at odds with a rule, and the architect leave it as it is.
+	finds bool
+	// rules counts the questions that carried the rule about documents, by
+	// what was asked.
+	rules map[string]int
 }
 
 var councilRole = regexp.MustCompile(`^You are the .+? \(([a-z0-9-]+)\) at a planning meeting`)
-var councilOwned = regexp.MustCompile(`(?m)^- (docs/\S+\.md)$`)
+var councilOwned = regexp.MustCompile(`(?m)^- (\S+\.md)$`)
 
 func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string, error) {
 	m.mu.Lock()
@@ -210,7 +252,26 @@ func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string
 		role = match[1]
 	}
 	block := func(json string) (string, error) { return "```json\n" + json + "\n```\n", nil }
+	carried := func(question string) {
+		if strings.Contains(prompt, "<rule file=\".claude/rules/docs.md\" about=\"the files that match docs/**, **/docs/**\">\n# Docs\n\nA document says how far it is.\n</rule>") {
+			m.mu.Lock()
+			if m.rules == nil {
+				m.rules = map[string]int{}
+			}
+			m.rules[question]++
+			m.mu.Unlock()
+		}
+	}
 	switch {
+	case strings.Contains(prompt, "You check documents against the rules of a software project"):
+		carried("read")
+		if m.finds && strings.Contains(prompt, "the Architect (architect).") {
+			return block(`{"findings": [{"document": "backend/docs/architecture.md", "rule": "docs.md", "point": "It does not say   how far it is.", "fix": "Say so."}]}`)
+		}
+		return block(`{"findings": []}`)
+	case strings.Contains(prompt, "Your task now: put right what the check found"):
+		carried("put right")
+		return "<<<UNCHANGED backend/docs/architecture.md>>>\n", nil
 	case strings.Contains(prompt, "state your position on the brief"):
 		question := ""
 		if m.curious {
@@ -228,15 +289,17 @@ func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string
 		}
 		return block(`{"decisions": [{"title": "scope", "decision": "Build the endpoint.", "rationale": "It is small.", "dissent": ""}], "assumptions": [` + assumptions + `]}`)
 	case strings.Contains(prompt, "write the documents you own"):
-		// The documents asked for are listed between the task and the rules.
+		carried("write")
+		// The documents asked for are listed right under the task.
 		task := prompt[strings.Index(prompt, "write the documents you own"):]
+		task = task[:strings.Index(task, "A document is the current truth")]
 		var b strings.Builder
 		for _, match := range councilOwned.FindAllStringSubmatch(task, -1) {
 			if m.leaves {
 				fmt.Fprintf(&b, "<<<UNCHANGED %s>>>\n", match[1])
 				continue
 			}
-			fmt.Fprintf(&b, "<<<DOCUMENT %s>>>\n---\nstatus: draft\n---\n# %s\n<<<END>>>\n", match[1], match[1])
+			fmt.Fprintf(&b, "<<<DOCUMENT %s>>>\n# %s\n<<<END>>>\n", match[1], match[1])
 		}
 		return b.String(), nil
 	case strings.Contains(prompt, "Your task now: turn the plan into tickets"):
@@ -294,7 +357,7 @@ func TestCmdPlan_FromABriefToIssues(t *testing.T) {
 	if !fileExists(layout.Roster(dir)) {
 		t.Error("no roster was written")
 	}
-	for _, doc := range []string{"docs/product/requirements.md", "docs/tech/architecture.md", "docs/qa/risks.md", "docs/decisions.md", "docs/README.md"} {
+	for _, doc := range []string{"docs/product/requirements.md", "backend/docs/architecture.md", "docs/qa/risks.md", "docs/decisions.md", "docs/README.md"} {
 		if !fileExists(filepath.Join(dir, filepath.FromSlash(doc))) {
 			t.Errorf("%s was not written", doc)
 		}
@@ -366,7 +429,11 @@ func TestCmdValidate_Roster(t *testing.T) {
 	}
 
 	roster := layout.Roster(dir)
-	if err := os.WriteFile(roster, council.DefaultRoster("godot-go"), 0o644); err != nil {
+	game, err := council.DefaultRoster("godot-go", []council.Repo{{Name: "backend", Language: "go", Path: "backend/"}, {Name: "frontend", Language: "godot", Path: "frontend/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(roster, game, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if code, out := validate(); code != 0 || !strings.Contains(out, "Roster: 5 roles (producer decides, tech-lead plans)") {
@@ -544,9 +611,112 @@ func TestCmdPlan_WhatAPlanWroteAndWhatWaits(t *testing.T) {
 	}
 }
 
+// The documents are written by the project's rules: `awkit plan` reads the
+// rule files and hands them to the council, says so when one of them cannot
+// be read as its author meant, and tells the person what is still at odds
+// with a rule once the meeting is over.
+func TestCmdPlan_WritesByTheProjectsRules(t *testing.T) {
+	origModel := planModel
+	t.Cleanup(func() { planModel = origModel })
+	project := func(t *testing.T) string {
+		dir := t.TempDir()
+		writePlanConfig(t, dir, "repos:\n  - {name: backend, path: backend/, language: go}\n")
+		for file, content := range map[string]string{
+			".claude/rules/docs.md":     "---\npaths: \"docs/**, **/docs/**\"\n---\n\n# Docs\n\nA document says how far it is.\n",
+			".claude/rules/frontend.md": "---\npaths: [\"frontend/**\"]\n---\n\n# Frontend\n\nC# only.\n",
+			".claude/rules/notes.txt":   "not a rule\n",
+			".claude/skills/x/SKILL.md": "not a rule either\n",
+			".claude/rules/broke.md":    "---\npaths: [docs/**\n---\n\n# Broke\n\nMeant for the documents.\n",
+			// The kit's rule is not the project's: it is not passed on, and
+			// nothing is said when its frontmatter cannot be read.
+			".claude/rules/_kit/git.md": "---\npaths: [x\n---\n\n# Git\n\nA commit is `[type] subject`.\n",
+		} {
+			full := filepath.Join(dir, filepath.FromSlash(file))
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	run := func(t *testing.T, dir string, model *scriptedCouncil) (stdout, stderr string) {
+		t.Helper()
+		planModel = model
+		stdout = captureStdout(t, func() {
+			stderr = captureStderr(func() {
+				if code := cmdPlan([]string{"Add a health endpoint.", "--state-root", dir}); code != 0 {
+					t.Errorf("cmdPlan = %d", code)
+				}
+			})
+		})
+		return stdout, stderr
+	}
+
+	// Nothing at odds: the rules were handed on, and there is nothing to tell.
+	dir := project(t)
+	model := &scriptedCouncil{}
+	stdout, stderr := run(t, dir, model)
+	// Four roles write and are read: each question carries the rule.
+	if want := map[string]int{"write": 4, "read": 4}; !reflect.DeepEqual(model.rules, want) {
+		t.Errorf("questions that carried the rule about documents: %v, want %v", model.rules, want)
+	}
+	if want := "Documents: 4 roles write what they own, by 2 rule(s) of the project"; !strings.Contains(stdout, want) {
+		t.Errorf("the output should say %q:\n%s", want, stdout)
+	}
+	if want := ".claude/rules/broke.md: its frontmatter is not valid YAML, or its paths are not a list of patterns, so it holds for every file the council writes"; !strings.Contains(stderr, want) {
+		t.Errorf("the rule that cannot be read should be named: %q\n%s", want, stderr)
+	}
+	if strings.Contains(stdout+stderr, "at odds") || strings.Contains(stdout+stderr, "frontend.md") || strings.Contains(stdout+stderr, "_kit") {
+		t.Errorf("there is nothing at odds, and the output says:\n%s\n%s", stdout, stderr)
+	}
+
+	// A point that still stands is told, with where to read more.
+	dir = project(t)
+	model = &scriptedCouncil{finds: true}
+	stdout, stderr = run(t, dir, model)
+	plans, _ := filepath.Glob(filepath.Join(dir, "docs", "plans", "*"))
+	if len(plans) != 1 {
+		t.Fatalf("%d plans, want one", len(plans))
+	}
+	id := filepath.Base(plans[0])
+	if want := map[string]int{"write": 4, "read": 4, "put right": 1}; !reflect.DeepEqual(model.rules, want) {
+		t.Errorf("questions that carried the rule about documents: %v, want %v", model.rules, want)
+	}
+	if want := "1 point(s) where a document is still at odds with a rule of the project (docs/plans/" + id + "/minutes.md):"; !strings.Contains(stderr, want) {
+		t.Errorf("the person should be warned %q:\n%s", want, stderr)
+	}
+	for _, want := range []string{"  backend/docs/architecture.md against .claude/rules/docs.md\n       It does not say how far it is.\n",
+		"Put the document right, or the rule, before you approve the work list.\n", "  architect: 1 point(s) at odds with the rules; architect puts them right"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the output should say %q:\n%s", want, stdout)
+		}
+	}
+	// The plan is finished all the same: what stands is the person's to weigh.
+	if !strings.Contains(stdout, "tickets proposed") || !fileExists(filepath.Join(plans[0], "tickets.yaml")) {
+		t.Errorf("the plan did not finish:\n%s", stdout)
+	}
+
+	// A project without rules: nothing is said about any.
+	bare := t.TempDir()
+	writePlanConfig(t, bare, "repos:\n  - {name: backend, path: backend/, language: go}\n")
+	model = &scriptedCouncil{}
+	stdout, stderr = run(t, bare, model)
+	for _, said := range []string{"rule(s)", "at odds", ".claude/rules"} {
+		if model.rules != nil || strings.Contains(stdout+stderr, said) {
+			t.Errorf("a project without rules: %v, and the output says %q:\n%s\n%s", model.rules, said, stdout, stderr)
+		}
+	}
+	if !strings.Contains(stdout, "Documents: 4 roles write what they own\n") {
+		t.Errorf("the output of a project without rules:\n%s", stdout)
+	}
+}
+
 // A Worker reads the project from the integration branch: an approval says so
-// when what the council wrote under docs/ is not committed. A dry run creates
-// nothing and has nothing to warn about.
+// when what the council wrote is not committed, under docs/ or where the
+// roster keeps a document with its repo. A dry run creates nothing and has
+// nothing to warn about.
 func TestCmdPlanApprove_WarnsAboutDocsThatAreNotCommitted(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
@@ -567,11 +737,11 @@ func TestCmdPlanApprove_WarnsAboutDocsThatAreNotCommitted(t *testing.T) {
 	planCreate = func(ctx context.Context, stateRoot, title, bodyFile string) (int, error) { return 1, nil }
 
 	// Nothing under docs/: nothing to say.
-	if got := uncommittedDocs(dir); got != "" {
+	if got := uncommittedDocs(dir, nil); got != "" {
 		t.Errorf("a project without docs has uncommitted docs: %q", got)
 	}
 	// A folder that is not a repository: nothing to say either.
-	if got := uncommittedDocs(t.TempDir()); got != "" {
+	if got := uncommittedDocs(t.TempDir(), nil); got != "" {
 		t.Errorf("outside a repository: %q", got)
 	}
 
@@ -601,26 +771,54 @@ func TestCmdPlanApprove_WarnsAboutDocsThatAreNotCommitted(t *testing.T) {
 		t.Errorf("a dry run warns about docs that are not committed:\n%s", warned)
 	}
 	warned := approve()
-	for _, want := range []string{"docs/ has changes that are not committed. A Worker reads the project from the integration branch (develop) and will not see them:", "?? docs/"} {
+	// The architect's document is kept with the repo: it is named too.
+	for _, want := range []string{"The project's documents have changes that are not committed. A Worker reads the project from the integration branch (develop) and will not see them:", "?? docs/", "?? backend/"} {
 		if !strings.Contains(warned, want) {
 			t.Errorf("the approval should warn %q:\n%s", want, warned)
 		}
 	}
+	roster, err := council.LoadRoster(layout.Roster(dir))
+	if err != nil {
+		t.Fatalf("the roster of the project: %v", err)
+	}
+	if architect := roster.Role("architect"); architect == nil || !reflect.DeepEqual(architect.Owns, []string{"backend/docs/architecture.md"}) {
+		t.Fatalf("the architect of the test owns %v", architect)
+	}
 
-	// Committed: nothing to warn about. Then many changed files: the first
-	// eight are named, the rest counted.
+	// docs/ committed: the document kept with the repo is still not, and only
+	// the roster knows of it.
 	git("add", "docs")
 	git("commit", "-q", "-m", "docs")
-	if got := uncommittedDocs(dir); got != "" {
+	if got := uncommittedDocs(dir, nil); got != "" {
 		t.Errorf("committed docs are said to be uncommitted: %q", got)
 	}
+	if got := uncommittedDocs(dir, roster); !strings.Contains(got, "backend/") || strings.Contains(got, "docs/product") {
+		t.Errorf("the document kept with the repo is not named, or one that is committed is: %q", got)
+	}
+	if warned := approve(); !strings.Contains(warned, "?? backend/") {
+		t.Errorf("an approval does not warn about the document kept with the repo:\n%s", warned)
+	}
+	// What is not a document is nobody's business here.
+	if err := os.WriteFile(filepath.Join(dir, "backend", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "backend/docs")
+	git("commit", "-q", "-m", "the architecture")
+	if got := uncommittedDocs(dir, roster); got != "" {
+		t.Errorf("with every document committed: %q", got)
+	}
+	if warned := approve(); strings.Contains(warned, "not committed") {
+		t.Errorf("an approval warns with every document committed:\n%s", warned)
+	}
+
+	// Many changed files: the first eight are named, the rest counted.
 	for i := 0; i < 11; i++ {
 		file := filepath.Join(dir, "docs", fmt.Sprintf("note-%02d.md", i))
 		if err := os.WriteFile(file, []byte("a note\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	lines := strings.Split(uncommittedDocs(dir), "\n")
+	lines := strings.Split(uncommittedDocs(dir, roster), "\n")
 	if len(lines) != 9 || !strings.Contains(lines[0], "docs/note-00.md") || lines[8] != "  ... and 3 more" {
 		t.Errorf("many uncommitted docs are listed as %q, want eight and a count", lines)
 	}

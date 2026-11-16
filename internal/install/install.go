@@ -268,17 +268,40 @@ func copyDir(src fs.FS, srcDir, dstDir string, force bool) error {
 	})
 }
 
-// ensureRoster writes the roster of a preset into a project that has none.
-// A roster that is there is the project's own and is never replaced.
+// ensureRoster writes the roster of a preset into a project that has none,
+// for the project's repos: the engineering documents it names are kept with
+// them, where the project's rules say they are. A roster that is there is the
+// project's own and is never replaced.
 func ensureRoster(targetDir, preset string) error {
 	file := layout.Roster(targetDir)
 	if _, err := os.Stat(file); err == nil {
 		return nil
 	}
+	roster, err := council.DefaultRoster(preset, rosterRepos(targetDir, preset))
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(file, council.DefaultRoster(preset), 0o644)
+	return os.WriteFile(file, roster, 0o644)
+}
+
+// rosterRepos lists the repos a project's first roster is written for: the
+// ones of its configuration, or the ones of its preset when the configuration
+// cannot be read.
+func rosterRepos(targetDir, preset string) []council.Repo {
+	var repos []council.Repo
+	if cfg, err := config.LoadFile(config.Path(targetDir)); err == nil {
+		for _, r := range cfg.Repos {
+			repos = append(repos, council.Repo{Name: r.Name, Language: r.Language, Path: rulePath(r.Type, r.Path)})
+		}
+		return repos
+	}
+	for _, r := range PresetRepos(preset) {
+		repos = append(repos, council.Repo{Name: r.Name, Path: r.Path})
+	}
+	return repos
 }
 
 // ensureRuntimeDirs creates the directories a run writes to: the state

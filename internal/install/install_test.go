@@ -523,20 +523,110 @@ func TestInstall_Roster(t *testing.T) {
 		return string(data)
 	}
 
-	for preset, want := range map[string]string{"generic": "generic", "godot-go": "godot-go"} {
+	// The roster is the one of the preset, written for the project's repos:
+	// the engineering documents it names are kept with them. The rules the
+	// project starts with name the same files as the authority on each repo,
+	// so the council writes where the rules say the truth is.
+	for preset, want := range map[string]struct {
+		engineer string
+		owns     []string
+	}{
+		"generic":  {"architect", []string{"docs/engineering/architecture.md"}},
+		"godot-go": {"tech-lead", []string{"backend/docs/architecture.md", "frontend/docs/architecture.md", "backend/docs/protocol.md"}},
+	} {
 		dir := t.TempDir()
 		if _, err := Install(createMinimalMockFS(), dir, Options{Preset: preset, NoGenerate: true}); err != nil {
 			t.Fatalf("%s: Install: %v", preset, err)
 		}
-		if got := rosterOf(dir); got == "" || got != string(council.DefaultRoster(want)) {
-			t.Errorf("%s: the project did not get the %s roster (%d bytes)", preset, want, len(got))
+		roster, err := council.LoadRoster(layout.Roster(dir))
+		if err != nil {
+			t.Fatalf("%s: the roster that was written cannot hold a meeting: %v", preset, err)
 		}
-		if _, err := council.LoadRoster(layout.Roster(dir)); err != nil {
-			t.Errorf("%s: the roster that was written cannot hold a meeting: %v", preset, err)
+		engineer := roster.Role(want.engineer)
+		if engineer == nil || !reflect.DeepEqual(engineer.Owns, want.owns) {
+			t.Errorf("%s: the project did not get the roster of its preset for its repos: %s owns %v, want %v (roles: %v)", preset, want.engineer, engineer, want.owns, roster.IDs())
+			continue
+		}
+		governance, err := os.ReadFile(filepath.Join(layout.Rules(dir), "docs-source-of-truth.md"))
+		if err != nil {
+			t.Fatalf("%s: %v", preset, err)
+		}
+		for _, doc := range want.owns {
+			if strings.HasSuffix(doc, "/architecture.md") && !strings.Contains(string(governance), "| `"+doc+"` |") {
+				t.Errorf("%s: the roster names %s, and the rule about where documents are kept does not", preset, doc)
+			}
+		}
+		// The same goes for the documents about quality, which are about no
+		// one repo: the rule gives them a place under docs/, and the roster
+		// keeps them there.
+		quality := 0
+		for _, role := range roster.Roles {
+			for _, doc := range role.Owns {
+				if strings.HasPrefix(doc, "docs/qa/") {
+					quality++
+				}
+			}
+		}
+		if quality == 0 || !strings.Contains(string(governance), "| `docs/qa/` |") || !strings.Contains(string(governance), "→ `docs/qa/`。") {
+			t.Errorf("%s: the roster keeps %d documents in docs/qa/; the rule about where documents are kept has to name that place", preset, quality)
+		}
+		// What the council's documents were found at odds with for no good
+		// reason, when the rule was read to the letter: a document states what
+		// was decided (that is no copy of the decision log), one number named
+		// twice in one document is no second definition, and a test strategy
+		// may name the cases it asks for.
+		for _, want := range []string{
+			"當成現況的定義處（現況寫在文件裡，這裡記的是當時怎麼定的）",
+			"3. 兩份文件需要同一資訊：一份定義、另一份連結，**不複製**。",
+			"文件寫的是結論：照決定寫出現況，在讀者會問為什麼的地方點名編號（`D4`），不重抄理由。",
+			"另立工程事實：協定、時序與數值由工程文件定義，這裡只引用",
+		} {
+			if !strings.Contains(string(governance), want) {
+				t.Errorf("%s: the rule about where documents are kept should say %q", preset, want)
+			}
+		}
+		for _, loose := range []string{"別的文件引用它的編號，不重抄內容", "兩處需要同一資訊", "單一 repo 的測試細節"} {
+			if strings.Contains(string(governance), loose) {
+				t.Errorf("%s: the rule about where documents are kept still says %q", preset, loose)
+			}
+		}
+		if got := rosterOf(dir); strings.Contains(got, "{{") {
+			t.Errorf("%s: the roster holds a piece of its template:\n%s", preset, got)
 		}
 	}
-	if string(council.DefaultRoster("generic")) == string(council.DefaultRoster("godot-go")) {
-		t.Fatal("the two rosters of the test are the same one")
+
+	// A project that kept its configuration gets a roster for the repos that
+	// configuration names, not for the ones of the preset.
+	kept := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(kept, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const config = "project:\n  name: kept\n  type: monorepo\nrepos:\n  - {name: server, path: apps/server/, type: directory, language: go}\n  - {name: client, path: client/, type: directory, language: godot}\ngit:\n  integration_branch: develop\n  release_branch: main\n"
+	if err := os.WriteFile(layout.Config(kept), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Install(createMinimalMockFS(), kept, Options{Preset: "godot-go", NoGenerate: true})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !result.ConfigSkipped {
+		t.Fatal("the configuration of the test was not kept")
+	}
+	roster, err := council.LoadRoster(layout.Roster(kept))
+	if err != nil {
+		t.Fatalf("the roster of the project that kept its configuration: %v", err)
+	}
+	if want := []string{"apps/server/docs/architecture.md", "client/docs/architecture.md", "apps/server/docs/protocol.md"}; !reflect.DeepEqual(roster.Role("tech-lead").Owns, want) {
+		t.Errorf("the tech lead owns %v, want %v", roster.Role("tech-lead").Owns, want)
+	}
+
+	// A configuration that was kept and cannot be read says nothing about the
+	// repos: the roster is the one for the repos of the preset.
+	if got, want := rosterRepos(t.TempDir(), "godot-go"), []council.Repo{{Name: "backend", Path: "backend/"}, {Name: "frontend", Path: "frontend/"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the repos of a project without a configuration = %+v, want those of its preset %+v", got, want)
+	}
+	if got, want := rosterRepos(kept, "godot-go"), []council.Repo{{Name: "server", Language: "go", Path: "apps/server/"}, {Name: "client", Language: "godot", Path: "client/"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the repos of the project that kept its configuration = %+v, want %+v", got, want)
 	}
 
 	// The project's own roster is kept, also when the config is forced.
