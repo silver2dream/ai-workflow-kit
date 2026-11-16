@@ -16,7 +16,7 @@ Windows、Linux、macOS。Windows 上要有 Git for Windows（Claude Code 需要
 
 ### 支援哪些語言？
 
-任何語言：Worker 與審查只執行你在 `verify.build`、`verify.test` 給的指令。`go` 與 `csharp`／`godot` 另外有 CI 工具鏈的安裝步驟；`godot-go` preset 附一份 Go 後端加 Godot C# 前端的骨架與規則。
+任何語言：Worker 與審查只執行你在 `verify.build`、`verify.test` 給的指令。`go` 與 `csharp`／`godot` 另外有 CI 工具鏈的安裝步驟；`godot-go` preset 附一份 Go 後端加 Godot C# 前端的骨架，以及這兩邊的規則。
 
 ### 它會自己合併嗎？會等我嗎？
 
@@ -76,7 +76,7 @@ Worker 在 `.worktrees/` 下自己的 worktree 裡工作，只能透過 pull req
 
 ### 怎麼告訴 agent 我的專案的規矩？
 
-把規則寫在 `.claude/rules/<名稱>.md`，再把名稱列進設定檔的 `rules.custom`，然後 `awkit generate`。見 [Skills 與規則](skills.md)。
+`awkit init` 已經寫下一套起始規則（文件治理、設計先於實作、安全、測試等），它們是專案自己的：直接改。要加新的，把規則寫在 `.claude/rules/<名稱>.md`，再把名稱列進設定檔的 `rules.custom`，然後 `awkit generate`。見 [Skills 與規則](skills.md)。
 
 ### 設定檔可以放別的地方嗎？
 

@@ -34,6 +34,8 @@ awkit init --preset godot-go --scaffold   # Go 後端 + Godot C# 前端，附能
 awkit init --dry-run                      # 只看會寫哪些檔
 ```
 
+在終端機裡執行時，`awkit init` 會先問幾個問題，按 Enter 就用括號裡的預設值：專案用什麼做的、要不要建骨架、誰寫程式、pull request 合併到哪個分支、repo 之間的契約放哪裡、每個 repo 已經決定了哪些技術選擇。答案會寫進設定檔與專案的起始規則（`.claude/rules/`，見 [Skills 與規則](skills.md)）。不想被問就加 `--yes`；每一題也有對應的選項，`awkit init --help` 會列出來。
+
 `awkit init` 結尾會列出它寫了什麼。要看的是設定檔 `.ai/config.yaml`：
 
 - **分支**（`git.integration_branch`、`git.release_branch`）：填的是 repository 裡已有的分支。有 `develop` 就是 `develop` 合併、預設分支發版；沒有就是單一主幹。pull request 都開向 integration branch。

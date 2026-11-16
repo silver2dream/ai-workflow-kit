@@ -1,0 +1,73 @@
+{{.CodeFrontmatter}}# Coding Style
+{{if .Has "go"}}
+## Go Mutation Rules
+
+These rules govern Go code under {{.PathsOf "go"}}. Go is NOT a functional language — idiomatic Go uses pointer receivers and in-place mutation. Follow these concrete rules:
+
+### ALLOWED (idiomatic Go, do NOT avoid)
+```go
+// ✅ Pointer receiver modifying own fields
+func (s *Service) SetWorker(w *Worker) { s.worker = w }
+
+// ✅ Scan into struct fields
+rows.Scan(&p.UserID, &p.Nickname, &p.Level)
+
+// ✅ Building a struct then passing pointer to repository
+player := &Player{UserID: id, Status: "active"}
+repo.Create(ctx, player)
+
+// ✅ Accumulating results in a slice
+var items []*Item
+for rows.Next() { items = append(items, &it) }
+```
+
+### FORBIDDEN (causes bugs)
+```go
+// ❌ Mutating a struct received by value (caller won't see changes)
+func process(p Player) { p.Level = 10 }  // BUG: caller's copy unchanged
+
+// ❌ Mutating shared/cached data without copy
+cached := cache.Get(key)
+cached.Level = 99        // BUG: corrupts cache for other readers
+// FIX: copy := *cached; copy.Level = 99; use &copy
+
+// ❌ Mutating a slice/map parameter that caller doesn't expect to change
+func enrich(items []*Item) { items[0].Quantity = 0 }  // BUG: caller's data changed
+// FIX: return new slice, or document mutation in function name (e.g., MutateItems)
+
+// ❌ Storing a reference to request data that may be reused
+func (s *Service) Handle(req *Request) {
+    s.lastReq = req  // BUG: req may be pooled/reused by framework
+}
+```
+
+### ONE RULE
+**Own data → mutate freely. Shared/received data → copy first or document mutation in the function name.**
+{{else}}
+## Mutation
+
+**Own data → mutate freely. Shared/received data → copy first or document mutation in the function name.** Data taken from a cache, passed in by a caller, or held by more than one owner is not yours to change in place.
+{{end}}
+## File Organization
+
+MANY SMALL FILES > FEW LARGE FILES:
+- High cohesion, low coupling
+- At most 800 lines per file; generated code is not counted
+- Extract utilities (e.g., converters, helpers) from large files when possible
+- Organize by feature/domain, not by type
+
+A type's methods may be split across several files by concern (core use cases, background work, validation) to keep every file under the limit. The type itself stays one.
+
+## Errors and Input Validation
+
+Handle or return every error; never swallow one. What a caller may see and what goes only to the server log is in `security.md` (錯誤訊息洩漏); which layer validates what is in `security.md` (輸入驗證) and in the repo's architecture document.
+
+## Code Quality Checklist
+
+Before marking work complete:
+- [ ] Functions are small (<50 lines)
+- [ ] Files are focused (at most 800 lines; see File Organization)
+- [ ] No deep nesting (>4 levels)
+- [ ] Proper error handling
+- [ ] No hardcoded values (server: constants or configuration{{if .Has "dotnet"}}; client: visual parameters in theme resources, design numbers in data files, neither written into C#{{end}})
+- [ ] No mutation of shared/cached/received data without copy

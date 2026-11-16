@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -410,9 +411,23 @@ Usage:
 Arguments:
   project_path    Path to the project (default: current directory)
 
+At a terminal, init asks what the options below leave open: what the project
+is built with, who writes the code, where pull requests go, and what is
+already decided about how each part is built. The answers go into the
+configuration and into the rules the project starts with (.claude/rules/),
+which are the project's own from then on. An option answers its question;
+--yes takes the default for every question that is left.
+
 Options:
-  --preset        Project preset (%s) [default: generic]
-  --scaffold      Create minimal project structure for the preset
+  --preset        What the project is built with (%s) [default: generic]
+  --scaffold      Write the preset's project skeleton
+  --worker        Who writes the code: %s [default: codex, or claude-code
+                  where only claude is installed]
+  --contract      Where the contract between the repos is defined (for instance
+                  backend/api/proto/); it is named in the rules
+  --decided       <repo>=<what is decided about how it is built>, in your words;
+                  it goes into that repo's rules as your decision. Once per repo
+  --yes, -y       Ask nothing
   --force         Overwrite all existing kit files, the CI workflows the project took
                   over, and scaffold files if --scaffold
   --force-config  Overwrite only the configuration (apply preset to existing project)
@@ -422,14 +437,14 @@ Options:
 
 Examples:
   awkit init
-  awkit init --preset godot-go
   awkit init --preset godot-go --scaffold
+  awkit init --preset godot-go --decided backend="PostgreSQL, gRPC" --yes
   awkit init /path/to/project --force
   awkit init --preset godot-go --force-config  # Apply preset to existing project
   awkit init --dry-run
 
 Run 'awkit list-presets' to see available presets.
-`, availablePresetNames())
+`, availablePresetNames(), strings.Join(install.WorkerBackends, " or "))
 }
 
 func usageUpgrade() {
@@ -546,24 +561,29 @@ func cmdInit(args []string) int {
 	forceConfig := fs.Bool("force-config", false, "")
 	dryRun := fs.Bool("dry-run", false, "")
 	projectName := fs.String("project-name", "", "")
+	worker := fs.String("worker", "", "")
+	contract := fs.String("contract", "", "")
+	decided := decidedFlag{}
+	fs.Var(decided, "decided", "")
+	yes := fs.Bool("yes", false, "")
+	yesShort := fs.Bool("y", false, "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
 	// Reorder args to put flags before positional arguments
 	// This is needed because flag.Parse stops at the first non-flag argument
+	takesValue := map[string]bool{"preset": true, "project-name": true, "worker": true, "contract": true, "decided": true}
 	var flags []string
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			flags = append(flags, arg)
-			// Check if this flag takes a value
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && strings.Contains(arg, "=") == false {
-				// Flags that take values: --preset, --project-name
-				if arg == "--preset" || arg == "--project-name" {
-					i++
-					flags = append(flags, args[i])
-				}
+			// A flag that takes a value takes the next argument, unless the
+			// value is written into the flag itself (--preset=godot-go).
+			if i+1 < len(args) && !strings.Contains(arg, "=") && takesValue[strings.TrimLeft(arg, "-")] {
+				i++
+				flags = append(flags, args[i])
 			}
 		} else {
 			positional = append(positional, arg)
@@ -603,6 +623,11 @@ func cmdInit(args []string) int {
 	if *scaffold && !install.HasScaffold(*preset) {
 		return noScaffoldForPreset(*preset)
 	}
+	if *worker != "" && !slices.Contains(install.WorkerBackends, *worker) {
+		errorf("Unknown Worker %q\n", *worker)
+		fmt.Fprintf(os.Stderr, "A Worker is one of: %s\n", strings.Join(install.WorkerBackends, ", "))
+		return 2
+	}
 
 	// Resolve target for display
 	displayTarget := targetDir
@@ -612,6 +637,32 @@ func cmdInit(args []string) int {
 		}
 	}
 
+	// What the project is set up from: the flags, and what the repository and
+	// this machine say where a flag says nothing.
+	given := initGiven{Scaffold: *scaffold, Worker: *worker != "", Decided: map[string]bool{}}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "preset":
+			given.Preset = true
+		case "contract":
+			given.Contract = true
+		}
+	})
+	for name := range decided {
+		given.Decided[name] = true
+	}
+	given.OwnRules = install.HasOwnRules(targetDir)
+	choices := initChoices{
+		Preset:   *preset,
+		Scaffold: *scaffold,
+		Worker:   *worker,
+		Branches: branchesFor(targetDir),
+		Answers:  install.Answers{Contract: *contract, Decided: decided},
+	}
+	if choices.Worker == "" {
+		choices.Worker = defaultWorker()
+	}
+
 	// A project an earlier awkit set up keeps its files elsewhere. Setting it
 	// up again next to them would leave it with two of everything.
 	if _, err := os.Stat(layout.In(targetDir, layout.OldConfigFile)); err == nil {
@@ -619,6 +670,20 @@ func cmdInit(args []string) int {
 		fmt.Fprintln(os.Stderr, "Run 'awkit upgrade' there to move them. It keeps the project's configuration, rules and skills.")
 		return 1
 	}
+
+	// A person at the terminal is asked what the flags left open. There is
+	// nothing to ask where the answers have nowhere to go: a project that
+	// keeps the configuration it has gets no new rules either.
+	_, configErr := os.Stat(config.Path(targetDir))
+	writesConfig := configErr != nil || *force || *forceConfig
+	if writesConfig && !*yes && !*yesShort && !*dryRun && initAtTerminal() {
+		choices = askInit(initInput, os.Stdout, targetDir, displayTarget, choices, given)
+	}
+	if err := checkDecided(choices.Preset, choices.Answers.Decided); err != nil {
+		errorf("%v\n", err)
+		return 2
+	}
+	*preset, *scaffold = choices.Preset, choices.Scaffold
 
 	if *dryRun {
 		fmt.Println("")
@@ -640,7 +705,7 @@ func cmdInit(args []string) int {
 		fmt.Println("  " + layout.RosterFile)
 		fmt.Println("  " + layout.KitRulesDir + "/")
 		for _, rule := range install.StarterRules(*preset) {
-			fmt.Println("  " + layout.RulesDir + "/" + rule + ".md (a starter rule of the preset; the project's own from then on)")
+			fmt.Println("  " + layout.RulesDir + "/" + rule + ".md (a rule the project starts with; its own from then on)")
 		}
 		fmt.Println("  " + layout.SkillsDir + "/")
 		fmt.Println("  " + layout.AgentsDir + "/")
@@ -703,7 +768,9 @@ func cmdInit(args []string) int {
 		ProjectName: *projectName,
 		Force:       *force,
 		ForceConfig: *forceConfig,
-		Branches:    branchesFor(targetDir),
+		Branches:    choices.Branches,
+		Worker:      choices.Worker,
+		Answers:     choices.Answers,
 		NoGenerate:  *noGenerate,
 		CI:          ciPolicy,
 		Scaffold:    *scaffold,
@@ -720,11 +787,7 @@ func cmdInit(args []string) int {
 	}
 
 	summary := collectInitSummary(targetDir, *preset, result)
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "preset" {
-			summary.PresetNamed = true
-		}
-	})
+	summary.PresetNamed = given.Preset
 	printInitSummary(os.Stdout, summary)
 
 	warnUpdateAvailable()

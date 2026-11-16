@@ -109,7 +109,7 @@ commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如
 | 鍵 | 預設 | 說明 |
 |---|---|---|
 | `kit` | `[git-workflow]` | kit 的規則，`awkit generate` 寫到 `.claude/rules/_kit/`，升級時會更新 |
-| `custom` | `[]` | 專案自己的規則。名稱 `backend` 對應 `.claude/rules/backend.md`；列在這裡，`AGENTS.md` 才會要 Worker 讀它。檔案不存在時 `awkit generate` 會警告 |
+| `custom` | `[]` | 專案自己的規則。名稱 `backend` 對應 `.claude/rules/backend.md`；列在這裡，`AGENTS.md` 才會列出它與它適用的檔案，Worker 才知道哪些票要讀它。新專案這裡列的是 `awkit init` 寫下的起始規則。檔案不存在時 `awkit generate` 會警告 |
 
 寫規則的方式見 [Skills 與規則](skills.md)。
 

@@ -18,9 +18,13 @@ Default priority: correctness > minimal diff > speed.
 
 ## MUST-READ (before any work)
 
-- Read and obey: `.claude/rules/_kit/git-workflow.md` (branch and PR conventions; the runner makes the commits, you do not)
+These are the project's rules. A rule applies to the files it names: read the ones that apply to the files your ticket changes, and obey them. A document you write or move is a file too.
 
-Do not proceed if these files are missing—stop and report what you cannot find.
+| Rule | Applies to |
+|---|---|
+| `.claude/rules/_kit/git-workflow.md` | everything (branch and PR conventions; the runner makes the commits, you do not) |
+
+Do not proceed if a rule that applies is missing—stop and report what you cannot find.
 
 ---
 

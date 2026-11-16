@@ -63,13 +63,22 @@ func TestVerifyTestEvidence_ASuiteCutOffIsNoEvidence(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "parse_test.go"), []byte(testFile), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The suite passes one test, pauses, and passes another. How long it
+	// pauses is in a file beside it: long for the run that is cut off, not at
+	// all for the one that is to finish.
 	script := "#!/bin/sh\n" +
 		"echo '--- PASS: TestParseAcceptsInput (0.00s)'\n" +
-		"sleep 1\n" +
+		"sleep \"$(cat \"$(dirname \"$0\")/pause\")\"\n" +
 		"echo '--- PASS: TestParseTheRest (0.00s)'\n"
 	scriptPath := filepath.Join(dir, "run-test.sh")
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	pause := func(seconds string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "pause"), []byte(seconds), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	verify := func(limit time.Duration) *EvidenceError {
 		return VerifyTestEvidence(context.Background(), VerifyOptions{
@@ -87,18 +96,23 @@ func TestVerifyTestEvidence_ASuiteCutOffIsNoEvidence(t *testing.T) {
 		})
 	}
 
-	cut := verify(300 * time.Millisecond)
+	// The limit leaves the shell the time to start and print the first line,
+	// also on a machine that is busy: a limit of a fraction of a second was
+	// sometimes over before the shell had started.
+	pause("60")
+	cut := verify(4 * time.Second)
 	if cut == nil {
 		t.Fatal("a suite cut off at its time limit was accepted as evidence")
 	}
-	if cut.Code != 2 || !strings.Contains(cut.Message, "ran out of time after 300ms") || !strings.Contains(cut.Message, "timeouts.verify_minutes") {
+	if cut.Code != 2 || !strings.Contains(cut.Message, "ran out of time after 4s") || !strings.Contains(cut.Message, "timeouts.verify_minutes") {
 		t.Errorf("the review of a suite cut off: code %d, %q; want a failed run that names the limit and its setting", cut.Code, cut.Message)
 	}
 	if details := strings.Join(cut.Details, "\n"); !strings.Contains(details, "1 test(s) had passed and 0 had failed when the run was stopped") {
 		t.Errorf("the details do not say how far the run had come: %q", details)
 	}
 
-	if whole := verify(30 * time.Second); whole != nil {
+	pause("0")
+	if whole := verify(time.Minute); whole != nil {
 		t.Errorf("the same suite with time to finish was refused: %s %v", whole.Message, whole.Details)
 	}
 }

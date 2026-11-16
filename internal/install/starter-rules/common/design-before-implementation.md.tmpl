@@ -1,0 +1,121 @@
+{{.CodeFrontmatter}}# design before implementation
+
+## Purpose
+
+Stop code-first delivery for new systems and force minimum design quality before engineering work begins.
+
+Scope note (this project): product input = `docs/`; where design documents and current-state documents go is in `docs-source-of-truth.md`; owner decisions are in `new-system-owner-boundary.md`. The planning council (`awkit plan`) writes the design package and records what was decided in `docs/decisions.md`; a ticket names the documents it implements.
+
+## Core rule
+
+A new system must not begin implementation until the minimum design package exists.
+
+The minimum design package is:
+
+1. engineering framing,
+2. architecture document or architecture delta,
+3. current-state document in the owner directory,
+4. open questions list,
+5. initial test and readiness impact plan.
+
+## What counts as a new system
+
+Treat work as a new system if it introduces any of the following:
+
+- a new gameplay or business workflow,
+- a new server module,
+- a new external integration,
+- a new persistent data model,
+- a new deploy dependency,
+- a new operational or capacity model.
+
+## Minimum design package
+
+### Engineering framing
+
+Must answer:
+
+- what problem is being solved,
+- what is explicitly out of scope,
+- what is server authoritative,
+- what is client authoritative,
+- what data is created or mutated,
+- what existing systems are touched.
+
+### Architecture document
+
+Must answer:
+
+- owner boundaries,
+- read path and write path,
+- dependency graph,
+- consistency model,
+- idempotency or retry model,
+- scale and failure assumptions,
+- operational impact.
+
+### Current-state document in the owner directory
+
+Must answer:
+
+- implementation location,
+- API or infra contract,
+- persistence or deploy contract,
+- observability expectations,
+- test surface.
+
+### Open questions list
+
+Must list unresolved items that can still block correctness, scale, or ownership.
+
+### Test and readiness plan
+
+Must answer:
+
+- what unit or integration tests are required,
+- whether infra validation is required,
+- whether readiness docs must change,
+- what evidence will be needed before sign-off.
+
+## Allowed exceptions
+
+This rule can be bypassed only for:
+
+- production hotfixes,
+- trivial refactors with no behavior change,
+- isolated typo or docs-only edits,
+- mechanical renames with no contract or behavior impact.
+
+If an exception is used, document why.
+
+## Mandatory topics before first implementation commit
+
+At minimum, the design must explicitly cover:
+
+- authority boundaries,
+- state transitions,
+- concurrency or conflict model,
+- retry or idempotency model,
+- error classification,
+- observability hooks,
+- security and validation responsibilities.
+
+## Forbidden patterns
+
+The following are violations:
+
+1. starting migrations before authoritative data ownership is defined,
+2. starting APIs before request and error semantics are defined,
+3. starting infra changes before runtime and secret contracts are defined,
+4. starting implementation with only a product document and no engineering framing,
+5. treating test planning as something to decide after code is finished.
+
+## Definition of done
+
+This rule is satisfied only when:
+
+1. the minimum design package exists,
+2. the owners are decided (see `new-system-owner-boundary.md`),
+3. the first code change can point to its design inputs,
+4. open questions are tracked instead of hidden,
+5. readiness impact is explicitly classified before implementation starts.

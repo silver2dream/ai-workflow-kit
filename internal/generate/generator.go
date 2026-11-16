@@ -9,6 +9,7 @@ import (
 	awkit "github.com/silver2dream/ai-workflow-kit"
 	projectconfig "github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/rules"
 )
 
 // Backtick for use in templates
@@ -155,6 +156,53 @@ type TemplateContext struct {
 	HasSubmodules  bool
 	HasDirectories bool
 	IsSingleRepo   bool
+	// RuleFiles are the rule files the configuration lists, as they are on
+	// disk: the kit's first, then the project's own, in the order listed.
+	RuleFiles []ruleFile
+}
+
+// ruleFile is a rule file the configuration lists, as the guides name it.
+type ruleFile struct {
+	// Name is the rule's name in the configuration.
+	Name string
+	// File is its path from the project's root.
+	File string
+	// Kit says the rule comes with AWK.
+	Kit bool
+	// Scope is what the rule is about: its patterns, or "everything".
+	Scope string
+	// Missing says the file could not be read.
+	Missing bool
+}
+
+// gitWorkflowRule is the kit's git rule. It is generated here, so what it is
+// about is known without reading it: everything.
+const gitWorkflowRule = "git-workflow"
+
+// listedRules reads the rule files a configuration lists.
+func listedRules(stateRoot string, listed RulesConfig) []ruleFile {
+	var files []ruleFile
+	add := func(name, dir string, kit bool) {
+		file := ruleFile{Name: name, File: dir + "/" + name + ".md", Kit: kit, Scope: "everything"}
+		if kit && name == gitWorkflowRule {
+			files = append(files, file)
+			return
+		}
+		rule, err := rules.Load(stateRoot, file.File)
+		if err != nil {
+			file.Missing = true
+		} else {
+			file.Scope = rule.Scope()
+		}
+		files = append(files, file)
+	}
+	for _, name := range listed.Kit {
+		add(name, layout.KitRulesDir, true)
+	}
+	for _, name := range listed.Custom {
+		add(name, layout.RulesDir, false)
+	}
+	return files
 }
 
 // Generate runs the AWK generator to create helper docs and scaffolding
@@ -182,7 +230,7 @@ func Generate(opts Options) (*Result, error) {
 	}
 
 	// Build template context
-	ctx := buildContext(config)
+	ctx := buildContext(opts.StateRoot, config)
 
 	result := &Result{}
 
@@ -279,8 +327,10 @@ func loadConfig(path string) (*Config, error) {
 	return projectconfig.LoadFile(path)
 }
 
-func buildContext(config *Config) *TemplateContext {
-	ctx := &TemplateContext{Config: *config}
+// buildContext collects what the guides are written from: the configuration,
+// and the rule files it lists as they are in the project at stateRoot.
+func buildContext(stateRoot string, config *Config) *TemplateContext {
+	ctx := &TemplateContext{Config: *config, RuleFiles: listedRules(stateRoot, config.Rules)}
 
 	for _, repo := range config.Repos {
 		switch repo.Type {
@@ -321,21 +371,20 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("| The workflow loop: what to do for each next action, and when to stop | " + code(layout.SkillsDir+"/principal-workflow/SKILL.md") + " |\n")
 	sb.WriteString("| What a ticket must contain | " + code(layout.SkillsDir+"/principal-workflow/references/ticket.md") + " |\n")
 
-	// The kit's git rule has a row of its own; every other rule file says how
-	// code is written here.
-	var codeRules []string
-	for _, rule := range ctx.Rules.Kit {
-		if rule == "git-workflow" {
-			sb.WriteString("| Branches, commit format, pull requests | " + code(layout.KitRulesDir+"/git-workflow.md") + " |\n")
+	// The kit's git rule has a row of its own. The other rule files share
+	// one, however many they are: this file is read on every iteration of a
+	// run, a rule is loaded by the files it names, and which rule is about
+	// which files is in AGENTS.md.
+	others := 0
+	for _, rule := range ctx.RuleFiles {
+		if rule.Kit && rule.Name == gitWorkflowRule {
+			sb.WriteString("| Branches, commit format, pull requests | " + code(rule.File) + " |\n")
 			continue
 		}
-		codeRules = append(codeRules, code(layout.KitRulesDir+"/"+rule+".md"))
+		others++
 	}
-	for _, rule := range ctx.Rules.Custom {
-		codeRules = append(codeRules, code(layout.RulesDir+"/"+rule+".md"))
-	}
-	if len(codeRules) > 0 {
-		sb.WriteString("| How code is written here | " + strings.Join(codeRules, ", ") + " |\n")
+	if others > 0 {
+		sb.WriteString("| How code and documents are written here | The rule files under " + code(layout.RulesDir+"/") + ". Each names the files it is about; " + code("AGENTS.md") + " lists them |\n")
 	} else {
 		sb.WriteString("| How code is written here | No rule file yet. One goes in " + code(layout.RulesDir+"/") + " and is listed under " + code("rules.custom") + " in the configuration |\n")
 	}
@@ -393,22 +442,21 @@ func generateAgentsMd(path string, ctx *TemplateContext) error {
 	sb.WriteString("---\n\n")
 	sb.WriteString("Default priority: correctness > minimal diff > speed.\n\n")
 	sb.WriteString("## MUST-READ (before any work)\n\n")
-
-	// Kit rules
-	for _, rule := range ctx.Rules.Kit {
-		if rule == "git-workflow" {
-			sb.WriteString(fmt.Sprintf("- Read and obey: %s"+layout.KitRulesDir+"/%s.md%s (branch and PR conventions; the runner makes the commits, you do not)\n", bt, rule, bt))
-		} else {
-			sb.WriteString(fmt.Sprintf("- Read and obey: %s"+layout.KitRulesDir+"/%s.md%s\n", bt, rule, bt))
+	sb.WriteString("These are the project's rules. A rule applies to the files it names: read the ones that apply to the files your ticket changes, and obey them. A document you write or move is a file too.\n\n")
+	sb.WriteString("| Rule | Applies to |\n")
+	sb.WriteString("|---|---|\n")
+	for _, rule := range ctx.RuleFiles {
+		scope := rule.Scope
+		switch {
+		case rule.Missing:
+			scope = "the file is missing"
+		case rule.Kit && rule.Name == gitWorkflowRule:
+			scope += " (branch and PR conventions; the runner makes the commits, you do not)"
 		}
+		sb.WriteString("| " + bt + rule.File + bt + " | " + scope + " |\n")
 	}
 
-	// Custom rules
-	for _, rule := range ctx.Rules.Custom {
-		sb.WriteString(fmt.Sprintf("- Read and obey: %s"+layout.RulesDir+"/%s.md%s\n", bt, rule, bt))
-	}
-
-	sb.WriteString("\nDo not proceed if these files are missing—stop and report what you cannot find.\n\n")
+	sb.WriteString("\nDo not proceed if a rule that applies is missing—stop and report what you cannot find.\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString("## NON-NEGOTIABLE HARD RULES\n\n")
 	sb.WriteString("### 0. Use existing architecture & do not reinvent\n")
@@ -580,6 +628,13 @@ func generateGitWorkflowMd(path string, ctx *TemplateContext) error {
 		section++
 	}
 
+	sb.WriteString(fmt.Sprintf("## %d. Issues\n\n", section))
+	sb.WriteString("- A ticket is a GitHub issue, and an issue cannot be deleted: one opened by mistake stays for good.\n")
+	sb.WriteString("- Issues are created by " + code("awkit plan approve") + " (the tickets of a plan a person approved) and by " + code("awkit create-task") + " (one ticket a person asked for). Nothing else creates one: no " + code("gh issue create") + ", and none on an agent's own initiative.\n")
+	sb.WriteString("- A to-do of the session (\"note this for later\", \"make a task of it\") is not an issue. Keep it in the session, or write it into the pull request.\n")
+	sb.WriteString("- When it is not clear that an issue was asked for, it was not: ask the person, and without one to ask, open none.\n\n")
+	section++
+
 	sb.WriteString(fmt.Sprintf("## %d. Rule files\n\n", section))
 	sb.WriteString("- The files under " + code(layout.KitRulesDir+"/") + " come with AWK and are rewritten when it is upgraded. The files beside that directory are the project's own.\n")
 	sb.WriteString("- A rule file holds rules: what is required, what is forbidden, what to check. The state of the project is not a rule; point to where it is defined.\n")
@@ -716,17 +771,20 @@ func cleanStaleAgents(agentsDir string, builtinNames, customNames map[string]boo
 	return nil
 }
 
-func validateCustomRules(stateRoot string, rules RulesConfig) []string {
+func validateCustomRules(stateRoot string, listed RulesConfig) []string {
 	var warnings []string
-	for _, rule := range rules.Custom {
+	for _, rule := range listed.Custom {
 		shown := layout.RulesDir + "/" + rule + ".md"
-		data, err := os.ReadFile(filepath.Join(layout.Rules(stateRoot), rule+".md"))
-		if err != nil {
+		read, err := rules.Load(stateRoot, shown)
+		switch {
+		case err != nil:
 			warnings = append(warnings, fmt.Sprintf("custom rule '%s' not found: %s", rule, shown))
-			continue
-		}
-		if strings.TrimSpace(string(data)) == "" {
+		case strings.TrimSpace(read.Text) == "" && read.Problem == "":
 			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is empty: %s", rule, shown))
+		case read.Problem != "":
+			// The rule is in force all the same, for every file: that is how
+			// Claude Code loads it.
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s': %s, so it applies to every file: %s", rule, read.Problem, shown))
 		}
 	}
 	return warnings

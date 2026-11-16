@@ -1,0 +1,83 @@
+# Production Audit Checklist
+
+## Purpose
+
+Prevent confirmation bias and coverage gaps in production audits, readiness reviews, and system analysis.
+
+## Trigger
+
+This checklist is mandatory when the task involves any of:
+
+- production readiness audit
+- system design review
+- capacity/scale analysis (baseline = the target scale in the planning documents under `docs/`, not a number of your own)
+- security audit
+- time-limited or expiration system review
+- any task where the output is a score, rating, or go/no-go decision
+
+## Core rule
+
+**All five phases must be completed before writing any conclusion, score, or rating.**
+
+If time or context is insufficient to complete all phases, the output must explicitly list which phases were skipped and mark the conclusion as partial.
+
+## Phase 1: Startup path (trace entrypoint to bottom)
+
+- Read the entrypoint line by line (each repo's architecture document names it: {{.ArchitectureDocs}})
+- For every dependency initialization: classify error handling as Fatal, Warn, or Skip
+- List all conditional validation blocks (if xxx != nil) and what gets skipped when the condition is false
+- Identify the worst-case startup state (which dependencies can be nil) and which requests fail at runtime
+
+## Phase 2: Data cross-reference (code × shipped data)
+
+- Read the data the project actually ships: data tables and their generated code, migrations, and the environment variable table of the architecture document against the deploy configuration
+- For every enum, map, or whitelist in code: verify all values in shipped data are covered
+- List any shipped data values that code does not handle
+
+## Phase 3: Write path quantification (per-operation cost)
+
+- List all write operations (grant, use, sell, consume, cleanup, etc.)
+- For each: trace the full call chain and count database queries, cache reads, cache writes
+- Identify which queries reload unchanged data (write amplification)
+- Calculate: target concurrent users × ops per second × queries per op = total database queries per second
+- Flag any number that exceeds what one node of the datastore handles, and state the baseline you used (for PostgreSQL, about 10K simple queries/sec)
+
+## Phase 4: Concurrency and failure modes
+
+- Verify transaction boundaries: are related mutations in the same transaction?
+- For every check-then-act pattern: confirm re-check inside transaction (TOCTOU)
+- For distributed locks: check renewal, TTL adequacy, and fallback when the lock service is unavailable
+- For CAS failures: is behavior retry or skip? What are the consequences of skip?
+
+## Phase 5: Anti-confirmation-bias gate
+
+Before writing the conclusion:
+
+- List at least three assumptions that have NOT been verified
+- For every positive rating ("well designed", "production ready", "9/10"): state the specific evidence (file:line) and ask "under what condition could this be bypassed?"
+- For every claim: attach a verifiable reference (file:line or command)
+
+## Output format
+
+When completing an audit, output the checklist status before the conclusion:
+
+```
+## Audit Checklist Status
+- [x] Phase 1: Startup path — verified main.go:1-450, found N issues
+- [x] Phase 2: Data cross-reference — verified the shipped data tables, found N mismatches
+- [x] Phase 3: Write path — quantified N ops, estimated X queries/sec at the target scale
+- [x] Phase 4: Concurrency — verified N transaction boundaries, found N issues
+- [x] Phase 5: Anti-bias — listed N unverified assumptions
+```
+
+If any phase is unchecked, the conclusion must be marked as **partial audit**.
+
+## Forbidden patterns
+
+The following are violations:
+
+1. Writing a score or go/no-go decision before all five phases are complete (or explicitly marked as skipped).
+2. Rating a subsystem as "well designed" based only on service-layer code without tracing the startup path.
+3. Claiming "fail-closed" without verifying the condition under which the fail-closed check is skipped.
+4. Claiming production readiness at the target scale without quantifying per-operation database cost.
+5. Delegating all research to subagents that only read the same code layer (e.g., five agents all reading service code, none reading the entrypoint or shipped data).

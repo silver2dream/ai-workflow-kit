@@ -29,6 +29,7 @@ type initSummary struct {
 	NoCommands  []string // the repos that have no build or test command yet
 
 	Skills, Subagents, Rules int      // what is under .claude now
+	OwnRules                 int      // the rules the configuration lists as the project's own
 	Workflows                []string // the CI workflows written, by file name
 	SkeletonDirs             []string // the top directories the skeleton wrote into
 	SkeletonFiles            int
@@ -56,6 +57,7 @@ func collectInitSummary(targetDir, preset string, result *install.InstallResult)
 
 	if cfg, err := config.LoadFile(config.Path(targetDir)); err == nil {
 		s.Integration, s.Release = cfg.Git.IntegrationBranch, cfg.Git.ReleaseBranch
+		s.OwnRules = len(cfg.Rules.Custom)
 		for _, repo := range cfg.Repos {
 			s.Repos = append(s.Repos, repo.Name)
 			if strings.TrimSpace(repo.Verify.Build) == "" && strings.TrimSpace(repo.Verify.Test) == "" {
@@ -158,6 +160,9 @@ func printInitSummary(w io.Writer, s initSummary) {
 	row(layout.ConfigFile, about)
 	row(layout.RosterFile, "who sits on the planning council (awkit plan)")
 	row(".claude/", fmt.Sprintf("what agents read: %s, %s, %s", counted(s.Skills, "skill"), counted(s.Subagents, "subagent"), counted(s.Rules, "rule file")))
+	if !s.ConfigKept && s.OwnRules > 0 {
+		row(layout.RulesDir+"/", fmt.Sprintf("the project's own rules, %d to start with: tighten them as the design settles", s.OwnRules))
+	}
 	row("CLAUDE.md, AGENTS.md", "the guides, generated from the configuration")
 	if len(s.Workflows) > 0 {
 		row(".github/workflows/", strings.Join(s.Workflows, ", "))

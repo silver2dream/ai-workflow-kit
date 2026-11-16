@@ -21,7 +21,7 @@ func TestRepoInstructionFilesMatchGenerator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load the kit's own workflow.yaml: %v", err)
 	}
-	ctx := buildContext(config)
+	ctx := buildContext(repoRoot, config)
 
 	files := []struct {
 		repoPath string

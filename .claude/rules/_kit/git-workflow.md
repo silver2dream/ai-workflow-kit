@@ -22,7 +22,14 @@ Scope: every branch, commit and pull request of this project. `awkit generate` w
 - The body contains `Closes #<issue>`, which ties the pull request to its ticket.
 - It is merged once the required checks have passed.
 
-## 4. Rule files
+## 4. Issues
+
+- A ticket is a GitHub issue, and an issue cannot be deleted: one opened by mistake stays for good.
+- Issues are created by `awkit plan approve` (the tickets of a plan a person approved) and by `awkit create-task` (one ticket a person asked for). Nothing else creates one: no `gh issue create`, and none on an agent's own initiative.
+- A to-do of the session ("note this for later", "make a task of it") is not an issue. Keep it in the session, or write it into the pull request.
+- When it is not clear that an issue was asked for, it was not: ask the person, and without one to ask, open none.
+
+## 5. Rule files
 
 - The files under `.claude/rules/_kit/` come with AWK and are rewritten when it is upgraded. The files beside that directory are the project's own.
 - A rule file holds rules: what is required, what is forbidden, what to check. The state of the project is not a rule; point to where it is defined.

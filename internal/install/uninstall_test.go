@@ -99,6 +99,12 @@ func TestUninstall(t *testing.T) {
 		"CLAUDE.md",
 		"main.go",
 	}
+	// The rules the project started with are its own, like the one it wrote
+	// itself: an uninstall leaves them.
+	for _, rule := range StarterRules(PresetGeneric) {
+		left = append(left, ".claude/rules/"+rule+".md")
+	}
+	sort.Strings(left)
 	if got := filesOf(t, dir); !reflect.DeepEqual(got, left) {
 		t.Errorf("left in the project:\n%v\nwant\n%v", got, left)
 	}
