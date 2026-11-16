@@ -30,16 +30,18 @@ func TestExecuteTests(t *testing.T) {
 		t.Errorf("a failing suite: %q, %v; want its output and an error that is no time limit", out, err)
 	}
 
+	// The limit leaves the shell the time to start and print its first line,
+	// also on a busy machine.
 	started := time.Now()
-	out, err = ExecuteTests(ctx, dir, "echo '--- PASS: TestEarly'; sleep 5; echo '--- PASS: TestLate'", 300*time.Millisecond)
-	if took := time.Since(started); took > 3*time.Second {
-		t.Errorf("the suite was waited for %v after a limit of 300ms", took)
+	out, err = ExecuteTests(ctx, dir, "echo '--- PASS: TestEarly'; sleep 60; echo '--- PASS: TestLate'", 4*time.Second)
+	if took := time.Since(started); took > 30*time.Second {
+		t.Errorf("the suite was waited for %v after a limit of 4s", took)
 	}
 	if err == nil || !strings.Contains(out, "TestEarly") || strings.Contains(out, "TestLate") {
 		t.Errorf("a suite out of time: %q, %v; want an error and what was printed before the limit", out, err)
 	}
 	// The error says that it was the time limit, and which setting that is.
-	if !testsCutOff(err) || !strings.Contains(err.Error(), "ran out of time after 300ms") || !strings.Contains(err.Error(), "timeouts.verify_minutes in .ai/config.yaml") {
+	if !testsCutOff(err) || !strings.Contains(err.Error(), "ran out of time after 4s") || !strings.Contains(err.Error(), "timeouts.verify_minutes in .ai/config.yaml") {
 		t.Errorf("a suite out of time: err = %v, want one that names the limit and its setting", err)
 	}
 

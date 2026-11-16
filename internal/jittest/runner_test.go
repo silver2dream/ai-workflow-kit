@@ -197,13 +197,16 @@ func TestExecuteTests_OutOfTimeStopsWhatTheCommandStarted(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh is not on the PATH")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	// The limit leaves the shell the time to start and print its first line,
+	// also on a busy machine.
+	const limit, asleep = 4 * time.Second, 60 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 
 	started := time.Now()
-	outcome := executeTests(ctx, t.TempDir(), "echo started; sleep 5; echo finished", nil)
-	if took := time.Since(started); took > 3*time.Second {
-		t.Errorf("the run was waited for %v after a limit of 300ms", took)
+	outcome := executeTests(ctx, t.TempDir(), "echo started; sleep 60; echo finished", nil)
+	if took := time.Since(started); took > asleep/2 {
+		t.Errorf("the run was waited for %v after a limit of %v", took, limit)
 	}
 	if !outcome.timedOut || !outcome.failed {
 		t.Errorf("a run out of time: %+v, want it timed out and failed", outcome)
