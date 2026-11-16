@@ -30,7 +30,7 @@ AWK 告訴 agent 的事分成三種檔案，各管一件事：
 /post-mortem issue 42 的 Worker 連續失敗三次
 ```
 
-分析出的教訓可以用 `awkit lessons add` 記進[學習迴圈](configuration.md#lessons---學習迴圈設定)。
+分析出的教訓可以用 `awkit lessons add` 記進[學習迴圈](configuration.md#lessons)。
 
 ### `release-checklist`
 
@@ -127,6 +127,6 @@ description: 做什麼（步驟 → 步驟）。什麼時候用；不適用時�
 
 ## 更多資源
 
-- [快速開始](getting-started.md)
-- [配置說明](configuration.md)
-- [架構說明](../developer/architecture.md)
+- [開始使用](getting-started.md)
+- [設定檔](configuration.md)
+- [架構](../developer/architecture.md)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -117,6 +118,12 @@ func cmdEvents(args []string) int {
 		events, err = reader.ReadCurrentSessionFiltered(filter)
 	}
 
+	// No run yet: there is no session to read the events of. That is not an
+	// error, and the other ways of asking (--all, --issue) say the same.
+	if errors.Is(err, os.ErrNotExist) {
+		fmt.Println("No events found: no run has been started in this project yet")
+		return 0
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading events: %v\n", err)
 		return 1

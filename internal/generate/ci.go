@@ -100,6 +100,9 @@ func planCIWorkflows(stateRoot string, ctx *TemplateContext, policy CIPolicy) ci
 	workflowDir := filepath.Join(stateRoot, ".github", "workflows")
 	projectWorkflow := filepath.Join(workflowDir, "ci.yml")
 	projectOwnsCI := ciStateOf(projectWorkflow) == ciProjectOwn
+	// A note names a file as the generator's other lines do: from the
+	// project's root.
+	shown := progress{root: stateRoot}.path
 
 	wanted := map[string]bool{}
 	covered := false
@@ -110,7 +113,7 @@ func planCIWorkflows(stateRoot string, ctx *TemplateContext, policy CIPolicy) ci
 		case policy == CIRewrite, state == ciOwnedByKit:
 			plan.write = append(plan.write, file)
 		case state == ciProjectOwn:
-			plan.notes = append(plan.notes, fmt.Sprintf("Kept: %s is the project's own", file.path))
+			plan.notes = append(plan.notes, fmt.Sprintf("Kept: %s is the project's own", shown(file.path)))
 		case besideProjectCI && projectOwnsCI:
 			covered = true
 		case policy == CIRefresh:
@@ -144,10 +147,10 @@ func planCIWorkflows(stateRoot string, ctx *TemplateContext, policy CIPolicy) ci
 	}
 
 	if covered {
-		plan.notes = append(plan.notes, fmt.Sprintf("Kept: %s is the project's own and is taken to cover every repo, so no per-repo workflow is added (awkit generate --generate-ci writes them)", projectWorkflow))
+		plan.notes = append(plan.notes, fmt.Sprintf("Kept: %s is the project's own and is taken to cover every repo, so no per-repo workflow is added (awkit generate --generate-ci writes them)", shown(projectWorkflow)))
 	}
 	if policy == CIRewrite && projectOwnsCI && !wanted[projectWorkflow] && len(plan.write) > 0 {
-		plan.notes = append(plan.notes, fmt.Sprintf("NOTE: %s does not come from this config; remove it if it repeats the per-repo workflows", projectWorkflow))
+		plan.notes = append(plan.notes, fmt.Sprintf("NOTE: %s does not come from this config; remove it if it repeats the per-repo workflows", shown(projectWorkflow)))
 	}
 
 	// A workflow awkit owns that no repo accounts for any more: the repo is

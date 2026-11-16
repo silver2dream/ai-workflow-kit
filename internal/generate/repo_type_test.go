@@ -41,7 +41,7 @@ func TestGetRepoType_DetectRootType(t *testing.T) {
 	// Test detection of root type repo
 	config := &Config{
 		Project: ProjectConfig{Name: "test", Type: "single-repo"},
-		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Repos: []RepoConfig{
 			{
 				Name:     "root",
@@ -63,7 +63,7 @@ func TestGetRepoType_DetectDirectoryType(t *testing.T) {
 	// Test detection of directory type repo
 	config := &Config{
 		Project: ProjectConfig{Name: "test", Type: "monorepo"},
-		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Repos: []RepoConfig{
 			{
 				Name:     "backend",
@@ -85,7 +85,7 @@ func TestGetRepoType_DetectSubmoduleType(t *testing.T) {
 	// Test detection of submodule type repo
 	config := &Config{
 		Project: ProjectConfig{Name: "test", Type: "monorepo"},
-		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Repos: []RepoConfig{
 			{
 				Name:     "backend",
@@ -107,7 +107,7 @@ func TestGetRepoType_DefaultToDirectoryWhenTypeMissing(t *testing.T) {
 	// Test default to directory when type is not specified
 	config := &Config{
 		Project: ProjectConfig{Name: "test", Type: "monorepo"},
-		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Repos: []RepoConfig{
 			{
 				Name:     "backend",
@@ -129,7 +129,7 @@ func TestGetRepoType_DefaultToDirectoryWhenRepoNotFound(t *testing.T) {
 	// Test default to directory when repo name not found
 	config := &Config{
 		Project: ProjectConfig{Name: "test", Type: "monorepo"},
-		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Repos: []RepoConfig{
 			{
 				Name:     "backend",
@@ -176,7 +176,7 @@ func TestGetRepoPath_DetectRepoPath(t *testing.T) {
 	// Test detection of repo path
 	config := &Config{
 		Project: ProjectConfig{Name: "test", Type: "monorepo"},
-		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Repos: []RepoConfig{
 			{
 				Name:     "backend",
@@ -198,7 +198,7 @@ func TestGetRepoPath_RootTypePathIsDot(t *testing.T) {
 	// Test root type has path ./ or .
 	config := &Config{
 		Project: ProjectConfig{Name: "test", Type: "single-repo"},
-		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main", CommitFormat: "[type] subject"},
+		Git:     GitConfig{IntegrationBranch: "develop", ReleaseBranch: "main"},
 		Repos: []RepoConfig{
 			{
 				Name:     "root",

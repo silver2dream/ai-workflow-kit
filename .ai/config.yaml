@@ -1,356 +1,39 @@
-# AI Workflow Kit Configuration
-# Version: 1.2
-
+# 這個專案給 AWK 的設定。沒寫的鍵用預設值；每個鍵的說明在
+# docs/user/configuration.md。
+#
+# 改過之後執行 awkit generate：CLAUDE.md、AGENTS.md 與 .claude/rules/_kit/
+# 都是從這份檔案產生的。awkit validate 檢查這份檔案。
 version: "1.2"
 
-# ============================================================
-# Project Configuration
-# ============================================================
 project:
   name: "ai-workflow"
   description: "AI Autonomous Development Workflow"
-  type: "single-repo"  # monorepo | single-repo
-
-# ============================================================
-# Repository Configuration
-# ============================================================
-# type 選項：
-#   - root: 根目錄（single-repo 時使用，path 必須是 ./）
-#   - directory: 子目錄（同一個 repo 內的資料夾）
-#   - submodule: Git submodule（獨立 repo，有自己的 .git）
-#
-# 各 type 行為差異：
-#   - root: 所有操作在 repo 根目錄執行
-#   - directory: 操作在 worktree root 執行，變更限定在子目錄
-#   - submodule: commit/push 先在 submodule 執行，再更新 parent reference
-#
-# language：這個 repo 用什麼語言，任何名稱都可以。下列語言 AWK 有額外支援
-# （CI 的工具鏈安裝、審查時逐一核對測試名稱）：
-#   - go
-#   - csharp / godot（Godot C# 專案只需要 .NET SDK）
-#   - typescript / javascript / node、python（審查時核對測試名稱）
-# 其他語言（或 generic）：AWK 只執行 verify 的指令，不做任何假設。
-#
-# verify：Worker 開 PR 前執行、審查時再跑一次測試、CI 也用同一組指令。
-#   - setup: 建置前要先跑的指令（可省略）
-#   - build / test: 建置與測試指令；兩者都沒設就不會產生 CI workflow
-#
-# package_manager: "npm" | "yarn" | "pnpm"（node 專案沒設 verify.setup 時用來推斷安裝指令）
-#
-# ============================================================
-# 範例配置
-# ============================================================
-#
-# 範例 1: Single repo (獨立專案)
-# project:
-#   type: "single-repo"
-# repos:
-#   - name: root
-#     path: ./
-#     type: root
-#     language: go
-#     verify:
-#       build: "go build ./..."
-#       test: "go test ./..."
-#
-# 範例 2: Monorepo with directories (共用 .git)
-# project:
-#   type: "monorepo"
-# repos:
-#   - name: backend
-#     path: backend/
-#     type: directory
-#     language: go
-#   - name: frontend
-#     path: frontend/
-#     type: directory
-#     language: csharp
-#
-# 範例 3: Monorepo with submodules (獨立 .git)
-# project:
-#   type: "monorepo"
-# repos:
-#   - name: backend
-#     path: backend/
-#     type: submodule
-#     language: go
-#     # submodule 特有選項：
-#     # allow_parent_changes: false  # 是否允許修改 submodule 外的檔案
+  type: "single-repo"
 
 repos:
   - name: root
     path: ./
-    type: root  # submodule | directory | root
+    type: root
     language: go
     verify:
+      # Worker 開 pull request 前執行；審查時測試會再跑一次。
       build: "go build ./..."
       test: "go test ./..."
 
-# ============================================================
-# Git Configuration
-# ============================================================
 git:
+  # pull request 合併進 integration branch；發版從 release branch。
   integration_branch: "develop"
   release_branch: "main"
-  commit_format: "[type] subject"
-  pr_body_template: |
-    Closes #${ISSUE_ID}
-    
-    ${COMMIT_MSG}
 
-# ============================================================
-# Audit Configuration
-# ============================================================
-audit:
-  checks:
-    - dirty-worktree
-    - submodule-sync
-    - missing-tests
-    - missing-ci
-  custom: []
-
-# ============================================================
-# GitHub Configuration
-# ============================================================
-# Token 從環境變數讀取，不要在此處硬編碼
-# 設定方式：
-#   - 互動式: gh auth login
-#   - 環境變數: export GH_TOKEN=ghp_xxxx
-#   - CI/CD: 設定 GITHUB_TOKEN secret
-github:
-  # 用於 issue/PR 操作的 repo（預設為當前 repo）
-  repo: ""  # 留空表示使用 git remote origin
-  # issue 標籤
-  labels:
-    task: "ai-task"
-    in_progress: "in-progress"
-    pr_ready: "pr-ready"
-    review_failed: "review-failed"
-    worker_failed: "worker-failed"
-    needs_human_review: "needs-human-review"
-    merge_conflict: "merge-conflict"
-    needs_rebase: "needs-rebase"
-    completed: "completed"
-
-# ============================================================
-# Rules Configuration
-# ============================================================
-# Kit 核心規則 vs 使用者自訂規則：
-#   - Kit 核心規則：awkit generate 自動生成到 .claude/rules/_kit/
-#     - git-workflow.md（從模板生成，包含分支配置）
-#   - 使用者自訂規則：放在 .claude/rules/（不會被覆蓋）
-#     - backend-go.md, frontend-unity.md 等
-#
-# 規則查找順序：
-#   1. .claude/rules/{rule}.md（使用者自訂優先）
-#   2. .claude/rules/_kit/{rule}.md（Kit 核心）
 rules:
-  # Kit 核心規則（由 awkit generate 管理，不要手動編輯）
-  kit:
-    - git-workflow  # 由 awkit generate 產生,含分支配置
-  
-  # 專案自己的規則：檔案放在 .claude/rules/<名稱>.md，名稱列在這裡，
-  # Worker 才會被要求讀它。升級不會動這些檔案。
+  # 專案自己的規則：名稱對應 .claude/rules/<名稱>.md，列在這裡 Worker 才會被要求讀它。
   custom: []
 
-# ============================================================
-# Agents Configuration
-# ============================================================
-# 內建 Agent（由 awkit generate 管理）：
-#   - pr-reviewer: PR 審查 Agent
-#   - conflict-resolver: 合併衝突解決 Agent
-#
-# 自訂 Agent：定義在 custom 清單中
-# 每個自訂 Agent 會在 awkit generate 時生成到 .claude/agents/
-#
-# 自訂 Agent 欄位：
-#   - name: Agent 名稱（小寫字母、數字、連字號）
-#   - description: Agent 描述（必填）
-#   - tools: 允許使用的工具（預設：Read, Grep, Glob, Bash）
-#   - model: 使用的模型（haiku | sonnet | opus，預設：opus）
-#   - trigger: 觸發時機（review_pr | check_result | dispatch_worker | generate_tasks）
-#   - condition: 觸發條件表達式
-agents:
-  builtin:
-    - pr-reviewer
-    - conflict-resolver
-  custom: []
-
-# ============================================================
-# Timeouts Configuration
-# ============================================================
-# 各項操作的超時設定（秒/分鐘）
-# 如果不設定，使用以下預設值：
-#   - git_seconds: 120 (Git 操作，如 fetch, push, rebase)
-#   - gh_seconds: 60 (GitHub CLI 操作，如 issue view, pr view)
-#   - codex_minutes: 30 (Codex Worker 執行時間)
-timeouts:
-  git_seconds: 120
-  gh_seconds: 60
-  codex_minutes: 30
-  # GitHub API retry configuration
-  gh_retry_count: 3          # max retry attempts for gh CLI calls
-  gh_retry_base_delay: 2     # base delay in seconds (exponential backoff)
-
-# ============================================================
-# Escalation Configuration
-# ============================================================
-# 定義何時 Principal 應該暫停並請求人工介入
-#
-# triggers: 基於模式匹配的觸發器
-#   - pattern: 正則表達式，匹配 issue/PR 內容
-#   - action: pause_and_ask | require_human_approval | notify_only
-#
-# 限制條件：
-#   - max_consecutive_failures: 連續失敗次數上限
-#   - max_single_pr_files: 單一 PR 最大文件數
-#   - max_single_pr_lines: 單一 PR 最大行數變更
-escalation:
-  triggers:
-    # 安全相關：必須人工審批
-    - pattern: "security|vulnerability|credential|secret|password|token"
-      action: "require_human_approval"
-    # 危險操作：暫停並詢問
-    - pattern: "delete|drop|truncate|remove.*all|destroy"
-      action: "pause_and_ask"
-    # 資料庫 migration：通知
-    - pattern: "migration|schema.*change|alter.*table"
-      action: "notify_only"
-  
-  # 失敗限制
-  max_consecutive_failures: 3
-  
-  # 重試設定
-  retry_count: 2
-  retry_delay_seconds: 5
-
-  # PR 大小限制（超過則需人工審查）
-  max_single_pr_files: 50
-  max_single_pr_lines: 500
-
-# ============================================================
-# Review Configuration
-# ============================================================
-# 審查相關設定
-review:
-  # Minimum score (1-10) to approve a PR (default: 7)
-  score_threshold: 7
-  # Merge strategy: squash | merge | rebase (default: squash)
-  merge_strategy: squash
-  # Severity/verdict consistency gate (default: true).
-  # Blocks reviews where the score and severity-tagged findings disagree:
-  # score < threshold requires >=1 Critical/Important item; score >= threshold
-  # must not list any Critical item. Set false to disable.
-  # severity_consistency: true
-  # Maintainer review feedback (default: true).
-  # What a person with write access writes through GitHub's review interface
-  # (the body of a review, a comment on a line of the diff) outranks the
-  # automated verdict: the pull request is not merged while such feedback is
-  # open on its current commit, the Worker is sent back with it, and it is
-  # recorded as human evidence for the learning loop. Merging never waits
-  # for a review; feedback written after the merge is picked up before the
-  # next dispatch and turned into lessons. Set false to disable.
-  # human_feedback: true
-  # Multi-model cross review (enforced by `awkit submit-review` in Go).
-  # When true, submit-review fetches the PR diff and runs each secondary
-  # reviewer via `claude --print` in parallel, then applies the weighted
-  # consensus: final score = primary × 0.7 + secondaries (split 0.3 evenly).
-  # If any reviewer reports [ERROR] findings, the final score is capped at 6.
-  # Failed secondaries are reported in the consensus section and excluded
-  # from scoring. When secondary_reviewers is omitted, one architecture-
-  # focused opus reviewer is used.
-  # multi_model: false
-  # secondary_reviewers:
-  #   - backend: claude
-  #     model: opus
-  #     focus_area: architecture
-  #   - backend: claude
-  #     model: sonnet
-  #     focus_area: security
-
-# ============================================================
-# Feedback Configuration
-# ============================================================
-# Review feedback loop: records rejection patterns and injects
-# historical feedback into Worker prompts to avoid repeat mistakes.
-#
-# enabled: true (default) - set to false to disable feedback recording
-# max_history_in_prompt: 10 (default) - max feedback entries injected into Worker prompt
-feedback:
-  enabled: true
-  max_history_in_prompt: 10
-
-# ============================================================
-# Lessons Configuration (Learning Loop)
-# ============================================================
-# Record -> distill -> inject -> verify: when a rejected pull request is
-# later approved, the objection and the change that fixed it are distilled
-# into a compact lesson (.ai/state/lessons.json, committable). Lessons are
-# injected into future Worker/Reviewer prompts and settled hit/miss against
-# the pull requests they applied to. Proven lessons can be promoted to hard
-# gates via `awkit lessons promote <id>` (opens a human-gated issue).
-# Design: https://github.com/silver2dream/ai-workflow-kit/blob/main/docs/developer/specs/learning-loop/design.md
-#
-# enabled: true (default) — set false to disable injection + distillation
-#   (feedback recording continues regardless).
-# max_active: 30 (default) — active+proven cap; lowest-scoring retire first
-# inject_top_k: 3 (default) — max lessons injected per prompt (small k wins)
-# inject_max_chars: 800 (default) — hard character budget for the section
-# distiller:
-#   backend: claude (default; uses `claude --print --max-turns 1`)
-#   model: sonnet (default)
-#   timeout_seconds: 60 (default)
-lessons:
-  enabled: true
-
-# ============================================================
-# Hooks Configuration
-# ============================================================
-# Lifecycle hooks: run custom shell commands at workflow events.
-# Each event supports a list of commands with timeout and failure policy.
-#
-# Events: pre_dispatch, post_dispatch, pre_review, post_review, on_merge, on_failure
-# on_failure options: warn (default) | abort | ignore
-#
-# Example:
-#   hooks:
-#     pre_dispatch:
-#       - command: "echo dispatching issue $AWK_ISSUE"
-#         timeout: "30s"
-#         on_failure: warn
-#     on_merge:
-#       - command: "curl -X POST $SLACK_WEBHOOK -d '{\"text\": \"PR merged\"}'"
-#         timeout: "10s"
-#         on_failure: ignore
-hooks: {}
-
-# ============================================================
-# Worker Configuration
-# ============================================================
-# AI Worker backend selection.
-# backend: codex (default) | claude-code
-#
-# codex settings:
-#   full_auto: true (default) — use --full-auto flag
-#   max_attempts: 1 (default) — codex-level retry count
-#
-# claude_code settings:
-#   model: sonnet (default)
-#   max_turns: 50 (default)
-#   dangerously_skip_permissions: false (default)
-#
-# knowledge_graph: auto (default) | off
-#   When a codebase knowledge graph exists at
-#   .understand-anything/knowledge-graph.json (generated by the
-#   Understand-Anything plugin or compatible tools), "auto" injects a
-#   ticket-relevant slice (matched files + their dependents) into the Worker
-#   prompt as a CODEBASE MAP section. Set "off" to disable.
 worker:
+  # 誰來寫程式：codex 或 claude-code。
   backend: codex
 
-# ============================================================
-# Notification Configuration
-# ============================================================
-# notifications: (planned for future release)
-# Slack/Discord webhook notifications are not yet implemented in Go code.
-# See: https://github.com/silver2dream/ai-workflow-kit/issues for updates.
+review:
+  # 審查分數（滿分 10）達到這個數字才合併，以及合併的方式：squash、merge 或 rebase。
+  score_threshold: 7
+  merge_strategy: squash

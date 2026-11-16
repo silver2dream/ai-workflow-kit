@@ -298,7 +298,11 @@ func TestCmdUpgrade_ShowsWhatTheGeneratorWarnedAbout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(strings.Replace(string(content), "  custom: []\n\nagents:", "  custom: [house-rules]\n\nagents:", 1)), 0o644); err != nil {
+	listed := strings.Replace(string(content), "  custom: []\n", "  custom: [house-rules]\n", 1)
+	if listed == string(content) {
+		t.Fatalf("the configuration has no empty list of rules to add one to:\n%s", content)
+	}
+	if err := os.WriteFile(path, []byte(listed), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -2,12 +2,15 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
@@ -418,5 +421,69 @@ func TestSetPrincipalShellTimeouts(t *testing.T) {
 	}
 	if got := os.Getenv("BASH_MAX_TIMEOUT_MS"); got != want {
 		t.Errorf("BASH_MAX_TIMEOUT_MS = %q, want %s: it was below what a Worker may take", got, want)
+	}
+}
+
+// What a run starts from, once its checks have passed. cmdRun makes this one
+// call between the checks and the lock; here is what the call has to leave
+// behind. Left out, a Worker is killed twelve minutes in (the shell
+// timeouts), the first analyze-next ends the run (the marker of the last
+// one), or the loop stops at a limit the last run reached (the counters).
+func TestStartRun(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range shellTimeoutSettings {
+		t.Setenv(name, "120000")
+	}
+	t.Setenv(analyzer.ScopeEnv, "")
+
+	// What the last run left behind.
+	if err := stopmark.Write(dir, "awkit stop-workflow", "needs_human_review"); err != nil {
+		t.Fatal(err)
+	}
+	for counter, left := range map[string]string{"loop_count": "37", "consecutive_failures": "4"} {
+		if err := os.WriteFile(layout.State(dir, counter), []byte(left), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := startRun(dir, 42); err != nil {
+		t.Fatalf("startRun: %v", err)
+	}
+
+	for _, name := range shellTimeoutSettings {
+		if got := os.Getenv(name); got != "3900000" {
+			t.Errorf("%s = %q, want the 65 minutes a dispatch may take", name, got)
+		}
+	}
+	if got, err := analyzer.ScopeFromEnv(); err != nil || got != 42 {
+		t.Errorf("the run is limited to %d (%v), want ticket 42", got, err)
+	}
+	if reason, present := stopmark.Read(dir); present {
+		t.Errorf("the STOP marker of the last run is still there (%q)", reason)
+	}
+	for _, counter := range []string{"loop_count", "consecutive_failures"} {
+		if got, err := os.ReadFile(layout.State(dir, counter)); err != nil || string(got) != "0" {
+			t.Errorf("%s = %q (%v), want 0", counter, got, err)
+		}
+	}
+	if info, err := os.Stat(layout.Logs(dir)); err != nil || !info.IsDir() {
+		t.Errorf("the log directory is not there: %v", err)
+	}
+
+	// A run of every ticket has no limit, whatever the last one had.
+	if err := startRun(dir, 0); err != nil {
+		t.Fatalf("startRun: %v", err)
+	}
+	if got, err := analyzer.ScopeFromEnv(); err != nil || got != 0 {
+		t.Errorf("a run without --issue is limited to %d (%v)", got, err)
+	}
+
+	// A project the run cannot write to: it says what it could not do.
+	blocked := filepath.Join(t.TempDir(), "a-file")
+	if err := os.WriteFile(blocked, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := startRun(blocked, 0); err == nil {
+		t.Error("a run started in a project whose state cannot be written")
 	}
 }

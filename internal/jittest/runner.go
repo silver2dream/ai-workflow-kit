@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
 
 // RunTests writes generated tests to the worktree, executes the test command,
@@ -203,7 +205,11 @@ var executeTests = func(ctx context.Context, workDir, testCommand string, testFi
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	// When the time is up the command is stopped together with the test
+	// binaries it started: they hold its output open, and the wait went on
+	// until they were done. One that escapes is waited for this much longer.
+	cmd.WaitDelay = 5 * time.Second
+	err := util.RunWithChildren(cmd)
 	outcome := testExecOutcome{
 		stdout: stdout.String(),
 		stderr: stderr.String(),

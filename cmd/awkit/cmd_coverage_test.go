@@ -860,10 +860,11 @@ func TestUsageRun_ContainsContent(t *testing.T) {
 
 // `awkit help` lists what a person runs. The commands of the Principal and
 // its agents are not among them: thirty-three commands in one list hid the
-// six a person needs.
+// few a person needs. The two a person runs after changing the configuration
+// are among those.
 func TestUsage_ListsWhatAPersonRuns(t *testing.T) {
 	output := captureStderr(usage)
-	for _, command := range []string{"init", "doctor", "plan", "create-task", "run", "status", "stop", "events", "lessons", "upgrade", "reset", "uninstall"} {
+	for _, command := range []string{"init", "doctor", "generate", "validate", "plan", "create-task", "run", "status", "stop", "events", "lessons", "upgrade", "reset", "uninstall"} {
 		if got := strings.Count(output, "\n  "+command+" "); got != 1 {
 			t.Errorf("the usage lists %q %d times, want once", command, got)
 		}
@@ -938,7 +939,7 @@ func TestUsageAll_ListsEveryCommandOnce(t *testing.T) {
 	}
 	// Every command the short list names is in the full one.
 	short := captureStderr(usage)
-	for _, command := range []string{"init", "doctor", "plan", "create-task", "run", "status", "stop", "events", "lessons", "upgrade", "reset", "uninstall"} {
+	for _, command := range []string{"init", "doctor", "generate", "validate", "plan", "create-task", "run", "status", "stop", "events", "lessons", "upgrade", "reset", "uninstall"} {
 		if !strings.Contains(short, "\n  "+command+" ") || !strings.Contains(output, "\n  "+command+" ") {
 			t.Errorf("%q is not in both lists", command)
 		}

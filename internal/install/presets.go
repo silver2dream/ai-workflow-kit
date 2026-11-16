@@ -57,9 +57,21 @@ func unknownPreset(preset string) error {
 	return fmt.Errorf("%w: %q (available: %s)", ErrUnknownPreset, preset, strings.Join(Presets, ", "))
 }
 
+// configHeader opens every preset's configuration. A new file holds what a
+// person sets and nothing else: a key that is left out has its default, and
+// no key is written that nothing reads.
+const configHeader = `# The configuration of this project for AWK. A key that is left out takes its
+# default; every key is described in
+# https://github.com/silver2dream/ai-workflow-kit/blob/main/docs/user/configuration.md
+#
+# After a change, awkit generate writes CLAUDE.md, AGENTS.md and the CI
+# workflows again, and awkit validate checks this file.
+version: "1.2"
+`
+
 // sharedSections are the sections every preset shares. The rules a project's
-// agents are told to read are the kit's and the ones the preset starts the
-// project with: the list is taken from the files, so the two cannot differ.
+// agents are told to read are the ones the preset starts the project with:
+// the list is taken from the files, so the two cannot differ.
 func sharedSections(preset string, branches Branches) string {
 	custom := "  custom: []\n"
 	if rules := StarterRules(preset); len(rules) > 0 {
@@ -68,7 +80,7 @@ func sharedSections(preset string, branches Branches) string {
 			custom += "    - " + rule + "\n"
 		}
 	}
-	return gitSection(branches) + configBeforeRules + "\nrules:\n  kit:\n    - git-workflow\n" + custom + configAfterRules
+	return gitSection(branches) + rulesComment + custom + configAfterRules
 }
 
 // gitSection says where pull requests go. The names are the caller's: init
@@ -81,76 +93,31 @@ git:
   # is where releases are cut from; with a single trunk the two are the same.
   integration_branch: %s
   release_branch: %s
-  commit_format: "[type] subject"
 `, strconv.Quote(branches.Integration), strconv.Quote(branches.Release))
 }
 
-const configBeforeRules = `
-
-audit:
-  checks:
-    - dirty-worktree
-    - submodule-sync
-    - missing-tests
-    - missing-ci
-  custom: []
-
-github:
-  repo: ""
-  labels:
-    task: "ai-task"
-    in_progress: "in-progress"
-    pr_ready: "pr-ready"
-    worker_failed: "worker-failed"
-    needs_human_review: "needs-human-review"
-    review_failed: "review-failed"
-    merge_conflict: "merge-conflict"
-    needs_rebase: "needs-rebase"
+const rulesComment = `
+rules:
+  # The project's own rules: a name here is the file .claude/rules/<name>.md,
+  # and a Worker is told to read the rules that are listed.
 `
 
 const configAfterRules = `
-agents:
-  builtin:
-    - pr-reviewer
-    - conflict-resolver
-  custom: []
-
-timeouts:
-  git_seconds: 120
-  gh_seconds: 60
-  codex_minutes: 30
-  gh_retry_count: 3
-  gh_retry_base_delay: 2
+worker:
+  # Who writes the code: codex or claude-code.
+  backend: codex
 
 review:
+  # The score out of 10 a review has to give before a pull request is merged,
+  # and how it is merged: squash, merge or rebase.
   score_threshold: 7
   merge_strategy: squash
-
-escalation:
-  triggers: []
-  max_consecutive_failures: 3
-  retry_count: 2
-  retry_delay_seconds: 5
-  max_single_pr_files: 50
-  max_single_pr_lines: 500
-
-feedback:
-  enabled: true
-  max_history_in_prompt: 10
-
-hooks: {}
-
-worker:
-  backend: codex
 `
 
 func genericConfig(projectName string, branches Branches) []byte {
-	head := fmt.Sprintf(`# AWK Configuration
-version: "1.2"
-
+	head := fmt.Sprintf(configHeader+`
 project:
   name: %q
-  description: "Project using AWK"
   type: "single-repo"
 
 repos:
@@ -169,12 +136,9 @@ repos:
 }
 
 func godotGoConfig(projectName string, branches Branches) []byte {
-	head := fmt.Sprintf(`# AWK Configuration (Go backend + Godot C# frontend)
-version: "1.2"
-
+	head := fmt.Sprintf(configHeader+`
 project:
   name: %q
-  description: "Go backend and Godot C# frontend"
   type: "monorepo"
 
 repos:
