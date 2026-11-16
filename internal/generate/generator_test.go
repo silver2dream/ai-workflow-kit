@@ -157,7 +157,7 @@ func TestBuildContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := buildContext(tt.config)
+			ctx := buildContext(t.TempDir(), tt.config)
 			if ctx.HasSubmodules != tt.wantSubmodules {
 				t.Errorf("HasSubmodules = %v, want %v", ctx.HasSubmodules, tt.wantSubmodules)
 			}

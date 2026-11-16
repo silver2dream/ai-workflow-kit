@@ -14,11 +14,29 @@ import (
 )
 
 // generated runs one of the generators for a configuration and returns what
-// it wrote.
+// it wrote. The rule files the configuration lists are in the project: a rule
+// named after a repo is about that repo's directory, any other about
+// everything.
 func generated(t *testing.T, generate func(string, *TemplateContext) error, cfg Config) string {
 	t.Helper()
+	root := t.TempDir()
+	for _, name := range cfg.Rules.Custom {
+		writeRuleFile(t, root, layout.RulesDir, name, cfg)
+	}
+	for _, name := range cfg.Rules.Kit {
+		if name != gitWorkflowRule {
+			writeRuleFile(t, root, layout.KitRulesDir, name, cfg)
+		}
+	}
+	return generatedIn(t, root, generate, cfg)
+}
+
+// generatedIn runs one of the generators for a configuration in a project
+// directory as it is.
+func generatedIn(t *testing.T, root string, generate func(string, *TemplateContext) error, cfg Config) string {
+	t.Helper()
 	out := filepath.Join(t.TempDir(), "out.md")
-	if err := generate(out, buildContext(&cfg)); err != nil {
+	if err := generate(out, buildContext(root, &cfg)); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
 	data, err := os.ReadFile(out)
@@ -26,6 +44,23 @@ func generated(t *testing.T, generate func(string, *TemplateContext) error, cfg 
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func writeRuleFile(t *testing.T, root, dir, name string, cfg Config) {
+	t.Helper()
+	text := "# " + name + "\n\nA rule.\n"
+	for _, repo := range cfg.Repos {
+		if repo.Name == name {
+			text = "---\npaths:\n  - \"" + repo.Path + "**\"\n---\n\n" + text
+		}
+	}
+	file := filepath.Join(root, filepath.FromSlash(dir), name+".md")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func godotGoProject() Config {
@@ -54,7 +89,7 @@ func TestGenerateClaudeMd_IsAMap(t *testing.T) {
 		"`.claude/skills/principal-workflow/SKILL.md`",
 		"| What a ticket must contain | `.claude/skills/principal-workflow/references/ticket.md` |",
 		"| Branches, commit format, pull requests | `.claude/rules/_kit/git-workflow.md` |",
-		"| How code is written here | `.claude/rules/backend.md`, `.claude/rules/frontend.md` |",
+		"| How code and documents are written here | The rule files under `.claude/rules/`. Each names the files it is about; `AGENTS.md` lists them |",
 		"`docs/README.md` (the index) and `docs/decisions.md` (append-only)",
 		"| Who sits on the planning council | `.ai/roster.yaml` |",
 		"`.ai/state/`; read it with `awkit status` and `awkit events`",
@@ -90,21 +125,44 @@ func TestGenerateClaudeMd_IsAMap(t *testing.T) {
 	}
 }
 
-// A project with no rule file of its own is told where one goes. A rule of
-// the kit other than the git rule is a rule about code like the project's.
+// A project with no rule file of its own is told where one goes. One that
+// has rules gets one row for all of them, however many they are: the file is
+// read on every iteration of a run, and which rule is about which files is in
+// AGENTS.md. A rule of the kit other than the git rule counts like the
+// project's own.
 func TestGenerateClaudeMd_TheRulesRow(t *testing.T) {
+	const where = "| How code is written here | No rule file yet. One goes in `.claude/rules/` and is listed under `rules.custom` in the configuration |"
+	const row = "| How code and documents are written here | The rule files under `.claude/rules/`. Each names the files it is about; `AGENTS.md` lists them |"
+
 	none := godotGoProject()
 	none.Rules.Custom = nil
 	got := generated(t, generateClaudeMd, none)
-	if !strings.Contains(got, "| How code is written here | No rule file yet. One goes in `.claude/rules/` and is listed under `rules.custom` in the configuration |") {
+	if !strings.Contains(got, where) || strings.Contains(got, row) {
 		t.Errorf("a project without rules of its own:\n%s", got)
+	}
+
+	two := generated(t, generateClaudeMd, godotGoProject())
+	many := godotGoProject()
+	many.Rules.Custom = []string{"backend", "frontend", "agents", "security", "testing", "docs-source-of-truth", "coding-style", "audit-checklist"}
+	got = generated(t, generateClaudeMd, many)
+	if !strings.Contains(got, row) || strings.Contains(got, where) {
+		t.Errorf("a project with rules of its own:\n%s", got)
+	}
+	if got != two {
+		t.Errorf("CLAUDE.md grew with the number of rules:\n%s", got)
+	}
+	for _, name := range many.Rules.Custom {
+		if strings.Contains(got, name+".md") {
+			t.Errorf("CLAUDE.md names the rule file %s.md: the list of rules is in AGENTS.md", name)
+		}
 	}
 
 	more := godotGoProject()
 	more.Rules.Kit = []string{"git-workflow", "security"}
+	more.Rules.Custom = nil
 	got = generated(t, generateClaudeMd, more)
-	if !strings.Contains(got, "| How code is written here | `.claude/rules/_kit/security.md`, `.claude/rules/backend.md`, `.claude/rules/frontend.md` |") {
-		t.Errorf("a second rule of the kit:\n%s", got)
+	if !strings.Contains(got, row) || strings.Contains(got, where) {
+		t.Errorf("a second rule of the kit is a rule like the project's own:\n%s", got)
 	}
 	if strings.Count(got, "git-workflow.md") != 1 {
 		t.Errorf("the git rule is named %d times, want once", strings.Count(got, "git-workflow.md"))
@@ -115,6 +173,91 @@ func TestGenerateClaudeMd_TheRulesRow(t *testing.T) {
 	if got := generated(t, generateClaudeMd, noGit); strings.Contains(got, "git-workflow") {
 		t.Errorf("a project that does not use the kit's git rule is pointed at it:\n%s", got)
 	}
+}
+
+// A Worker is not a Claude Code session in the project's root: nothing loads
+// a rule for it by the files the rule names. AGENTS.md tells it which rule is
+// about which files, so that it reads the ones that apply to its ticket and
+// not every rule of the project.
+func TestGenerateAgentsMd_RulesWithWhatTheyAreAbout(t *testing.T) {
+	cfg := godotGoProject()
+	cfg.Rules.Custom = []string{"backend", "frontend", "agents"}
+	got := generated(t, generateAgentsMd, cfg)
+
+	for _, want := range []string{
+		"## MUST-READ (before any work)\n\nThese are the project's rules. A rule applies to the files it names: read the ones that apply to the files your ticket changes, and obey them. A document you write or move is a file too.\n\n",
+		"| Rule | Applies to |\n|---|---|\n",
+		"| `.claude/rules/_kit/git-workflow.md` | everything (branch and PR conventions; the runner makes the commits, you do not) |\n",
+		"| `.claude/rules/backend.md` | `backend/**` |\n",
+		"| `.claude/rules/frontend.md` | `frontend/**` |\n",
+		"| `.claude/rules/agents.md` | everything |\n",
+		"Do not proceed if a rule that applies is missing—stop and report what you cannot find.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("AGENTS.md lacks %q:\n%s", want, section(got, "## MUST-READ"))
+		}
+	}
+	if strings.Contains(got, "Read and obey:") {
+		t.Error("AGENTS.md still tells a Worker to read every rule")
+	}
+
+	// The kit's rules come first, then the project's, in the order listed.
+	rows := section(got, "## MUST-READ")
+	order := []string{"_kit/git-workflow.md", "rules/backend.md", "rules/frontend.md", "rules/agents.md"}
+	at := -1
+	for _, name := range order {
+		next := strings.Index(rows, name)
+		if next < at {
+			t.Errorf("%s is out of the order the configuration lists the rules in:\n%s", name, rows)
+		}
+		at = next
+	}
+
+	// A rule that is listed and not there: the Worker is told so where the
+	// rule is named, not left to find out.
+	root := t.TempDir()
+	writeRuleFile(t, root, layout.RulesDir, "backend", cfg)
+	got = generatedIn(t, root, generateAgentsMd, cfg)
+	for _, want := range []string{
+		"| `.claude/rules/backend.md` | `backend/**` |\n",
+		"| `.claude/rules/frontend.md` | the file is missing |\n",
+		"| `.claude/rules/agents.md` | the file is missing |\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("AGENTS.md of a project with missing rule files lacks %q:\n%s", want, section(got, "## MUST-READ"))
+		}
+	}
+
+	// The git rule is written by the generator: what it is about is known
+	// without the file, which a first run has yet to write.
+	if !strings.Contains(got, "| `.claude/rules/_kit/git-workflow.md` | everything (") {
+		t.Errorf("the git rule, before its file is written:\n%s", section(got, "## MUST-READ"))
+	}
+
+	// A rule of the kit other than the git rule is read like the project's.
+	kit := godotGoProject()
+	kit.Rules.Kit = []string{"git-workflow", "backend"}
+	kit.Rules.Custom = nil
+	if got := generated(t, generateAgentsMd, kit); !strings.Contains(got, "| `.claude/rules/_kit/backend.md` | `backend/**` |\n") {
+		t.Errorf("a second rule of the kit:\n%s", section(got, "## MUST-READ"))
+	}
+
+	// No rule at all: the table is there and empty, and nothing is named.
+	bare := godotGoProject()
+	bare.Rules = RulesConfig{}
+	if got := generated(t, generateAgentsMd, bare); strings.Contains(section(got, "## MUST-READ"), ".md`") {
+		t.Errorf("a project that lists no rule:\n%s", section(got, "## MUST-READ"))
+	}
+}
+
+// section returns a guide from a heading to the next heading of its level.
+func section(text, heading string) string {
+	_, rest, found := strings.Cut(text, heading)
+	if !found {
+		return "(no section " + heading + ")"
+	}
+	body, _, _ := strings.Cut(rest, "\n## ")
+	return heading + body
 }
 
 // The git rule file says its rules without shouting, and says what the
@@ -139,7 +282,12 @@ func TestGenerateGitWorkflowMd_Rules(t *testing.T) {
 		"## 3. Pull requests",
 		"- A change reaches `develop` or `main` through a pull request, never by a direct push.",
 		"`Closes #<issue>`",
-		"## 4. Rule files",
+		"## 4. Issues",
+		"- A ticket is a GitHub issue, and an issue cannot be deleted: one opened by mistake stays for good.",
+		"- Issues are created by `awkit plan approve` (the tickets of a plan a person approved) and by `awkit create-task` (one ticket a person asked for). Nothing else creates one: no `gh issue create`, and none on an agent's own initiative.",
+		"is not an issue. Keep it in the session, or write it into the pull request.",
+		"- When it is not clear that an issue was asked for, it was not: ask the person, and without one to ask, open none.",
+		"## 5. Rule files",
 		"the code and the log are right, and the rule file is corrected",
 	} {
 		if !strings.Contains(got, want) {
@@ -178,14 +326,17 @@ func TestGenerateGitWorkflowMd_Submodules(t *testing.T) {
 	for _, want := range []string{
 		"This project uses submodules:\n- `engine` (go)\n",
 		"## 4. Submodules\n\n- The commit a submodule is pinned to is reachable from that submodule's `develop`.\n- A pinned commit changes only when the ticket asks for it.\n",
-		"## 5. Rule files",
+		"## 5. Issues",
+		"## 6. Rule files",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the git rule file of a project with submodules lacks %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "## 4. Rule files") {
-		t.Error("two sections are numbered 4")
+	for _, twice := range []string{"## 4. Issues", "## 4. Rule files", "## 5. Rule files"} {
+		if strings.Contains(got, twice) {
+			t.Errorf("the sections are not numbered as they come: %q", twice)
+		}
 	}
 
 	single := godotGoProject()
