@@ -6,7 +6,10 @@
 // worked on, and a rule that names none into every session. Whoever is not a
 // Claude Code session in the project's root (a Worker played by another
 // tool, a role of the planning council, a review of a worktree) is told what
-// applies by this package instead.
+// applies by this package instead, and it reads a rule file the way Claude
+// Code does: `paths:` is a list or one string of patterns separated by
+// commas, and frontmatter that cannot be read makes the rule one about
+// everything, not an error.
 package rules
 
 import (
@@ -32,36 +35,43 @@ type Rule struct {
 	Paths []string
 	// Text is the rule without its frontmatter.
 	Text string
+	// Problem says what is wrong with the rule's frontmatter, when it cannot
+	// be read. Such a rule names no file and so is about everything: it is
+	// in force, and more widely than its author meant.
+	Problem string
 }
 
 // Load reads a rule file of a project. file is its path from the project's
-// root, with forward slashes.
+// root, with forward slashes. It fails when the file cannot be read; what is
+// wrong inside the file is the rule's Problem.
 func Load(root, file string) (Rule, error) {
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
 	if err != nil {
 		return Rule{File: file}, err
 	}
-	return Parse(file, data)
+	return Parse(file, data), nil
 }
 
 // Parse reads a rule from the content of its file.
-func Parse(file string, data []byte) (Rule, error) {
+func Parse(file string, data []byte) Rule {
 	rule := Rule{File: file}
 	text := strings.ReplaceAll(string(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))), "\r\n", "\n")
 
 	if rest, found := strings.CutPrefix(text, "---\n"); found {
-		head, body, closed := cutFrontmatter(rest)
-		if !closed {
-			return rule, fmt.Errorf("%s: the frontmatter is opened with --- and never closed", file)
-		}
 		var meta struct {
 			Paths pathList `yaml:"paths"`
 		}
-		if err := yaml.Unmarshal([]byte(head), &meta); err != nil {
-			return rule, fmt.Errorf("%s: the frontmatter cannot be read: %w", file, err)
+		head, body, closed := cutFrontmatter(rest)
+		switch {
+		case !closed:
+			rule.Problem = "its frontmatter is opened with --- and never closed"
+		case yaml.Unmarshal([]byte(head), &meta) != nil:
+			rule.Problem = "its frontmatter is not valid YAML, or its paths are not a list of patterns"
+			text = body
+		default:
+			rule.Paths = meta.Paths
+			text = body
 		}
-		rule.Paths = meta.Paths
-		text = body
 	}
 
 	rule.Text = strings.TrimLeft(text, "\n")
@@ -72,7 +82,7 @@ func Parse(file string, data []byte) (Rule, error) {
 			break
 		}
 	}
-	return rule, nil
+	return rule
 }
 
 // cutFrontmatter splits what follows the opening --- at the closing one.

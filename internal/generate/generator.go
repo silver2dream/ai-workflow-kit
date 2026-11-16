@@ -775,13 +775,16 @@ func validateCustomRules(stateRoot string, listed RulesConfig) []string {
 	var warnings []string
 	for _, rule := range listed.Custom {
 		shown := layout.RulesDir + "/" + rule + ".md"
-		data, err := os.ReadFile(filepath.Join(layout.Rules(stateRoot), rule+".md"))
-		if err != nil {
+		read, err := rules.Load(stateRoot, shown)
+		switch {
+		case err != nil:
 			warnings = append(warnings, fmt.Sprintf("custom rule '%s' not found: %s", rule, shown))
-			continue
-		}
-		if strings.TrimSpace(string(data)) == "" {
+		case strings.TrimSpace(read.Text) == "" && read.Problem == "":
 			warnings = append(warnings, fmt.Sprintf("custom rule '%s' is empty: %s", rule, shown))
+		case read.Problem != "":
+			// The rule is in force all the same, for every file: that is how
+			// Claude Code loads it.
+			warnings = append(warnings, fmt.Sprintf("custom rule '%s': %s, so it applies to every file: %s", rule, read.Problem, shown))
 		}
 	}
 	return warnings

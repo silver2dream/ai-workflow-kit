@@ -260,6 +260,59 @@ func section(text, heading string) string {
 	return heading + body
 }
 
+// A rule whose frontmatter cannot be read is in force all the same: Claude
+// Code loads it into every session, as a rule that names no file. So the
+// Worker is told it applies to everything, not that the file is missing, and
+// whoever runs `awkit generate` is told what is wrong with it.
+func TestGeneratedGuides_ARuleWhoseFrontmatterCannotBeRead(t *testing.T) {
+	cfg := godotGoProject()
+	cfg.Rules.Custom = []string{"backend", "frontend"}
+	root := t.TempDir()
+	writeRuleFile(t, root, layout.RulesDir, "frontend", cfg)
+	broken := filepath.Join(root, filepath.FromSlash(layout.RulesDir), "backend.md")
+	if err := os.WriteFile(broken, []byte("---\npaths: [\"backend/**\"\n---\n\n# Backend\n\nA rule.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := generatedIn(t, root, generateAgentsMd, cfg)
+	if !strings.Contains(got, "| `.claude/rules/backend.md` | everything |\n") {
+		t.Errorf("the rule with broken frontmatter is not said to apply to everything:\n%s", section(got, "## MUST-READ"))
+	}
+	if !strings.Contains(got, "| `.claude/rules/frontend.md` | `frontend/**` |\n") {
+		t.Errorf("the rule beside it lost what it is about:\n%s", section(got, "## MUST-READ"))
+	}
+
+	warnings := validateCustomRules(root, cfg.Rules)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "custom rule 'backend': its frontmatter is not valid YAML") || !strings.Contains(warnings[0], "so it applies to every file: .claude/rules/backend.md") {
+		t.Errorf("the warnings are %q, want one that says what is wrong with backend.md and what follows from it", warnings)
+	}
+
+	// Frontmatter that is opened and never closed: the same.
+	if err := os.WriteFile(broken, []byte("---\npaths:\n  - \"backend/**\"\n\n# Backend\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if warnings := validateCustomRules(root, cfg.Rules); len(warnings) != 1 || !strings.Contains(warnings[0], "never closed") {
+		t.Errorf("the warnings for frontmatter that is never closed are %q", warnings)
+	}
+
+	// Broken frontmatter and nothing after it: what is wrong is the
+	// frontmatter, and that is what is said.
+	if err := os.WriteFile(broken, []byte("---\npaths: [\"backend/**\"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if warnings := validateCustomRules(root, cfg.Rules); len(warnings) != 1 || !strings.Contains(warnings[0], "not valid YAML") || strings.Contains(warnings[0], "is empty") {
+		t.Errorf("the warnings for broken frontmatter and no text are %q", warnings)
+	}
+
+	// A rule that is nothing but frontmatter says nothing: it is empty.
+	if err := os.WriteFile(broken, []byte("---\npaths:\n  - \"backend/**\"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if warnings := validateCustomRules(root, cfg.Rules); len(warnings) != 1 || !strings.Contains(warnings[0], "'backend' is empty") {
+		t.Errorf("the warnings for a rule that is only frontmatter are %q", warnings)
+	}
+}
+
 // The git rule file says its rules without shouting, and says what the
 // project's branches are.
 func TestGenerateGitWorkflowMd_Rules(t *testing.T) {

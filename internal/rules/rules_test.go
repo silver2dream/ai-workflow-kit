@@ -85,9 +85,9 @@ func TestParse(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		rule, err := Parse(c.file, []byte(c.data))
-		if err != nil {
-			t.Errorf("%s: %v", c.name, err)
+		rule := Parse(c.file, []byte(c.data))
+		if rule.Problem != "" {
+			t.Errorf("%s: %s", c.name, rule.Problem)
 			continue
 		}
 		if rule.File != c.file || rule.Title != c.title || rule.Text != c.text || !reflect.DeepEqual(rule.Paths, c.paths) {
@@ -96,19 +96,28 @@ func TestParse(t *testing.T) {
 	}
 }
 
-func TestParse_WhatCannotBeRead(t *testing.T) {
-	for name, data := range map[string]string{
-		"never closed":       "---\npaths:\n  - a\n# Title\n",
-		"not YAML":           "---\npaths: [a\n---\n# Title\n",
-		"paths is a mapping": "---\npaths:\n  a: b\n---\n# Title\n",
-	} {
-		rule, err := Parse(".claude/rules/r.md", []byte(data))
-		if err == nil {
-			t.Errorf("%s: read as %+v, want an error", name, rule)
-			continue
+// Frontmatter that cannot be read does not take the rule out of force:
+// Claude Code loads such a rule as one that names no file, into every
+// session. So it is a rule about everything here too, and it says what is
+// wrong with it, for `awkit generate` to tell the person.
+func TestParse_FrontmatterThatCannotBeRead(t *testing.T) {
+	cases := []struct {
+		name, data, problem, text string
+	}{
+		{"never closed", "---\npaths:\n  - a\n# Title\n", "never closed", "---\npaths:\n  - a\n# Title\n"},
+		{"not YAML", "---\npaths: [a\n---\n# Title\n", "not valid YAML", "# Title\n"},
+		{"paths is a mapping", "---\npaths:\n  a: b\n---\n# Title\n", "not a list of patterns", "# Title\n"},
+	}
+	for _, c := range cases {
+		rule := Parse(".claude/rules/r.md", []byte(c.data))
+		if !strings.Contains(rule.Problem, c.problem) {
+			t.Errorf("%s: the problem is %q, want it to say %q", c.name, rule.Problem, c.problem)
 		}
-		if !strings.Contains(err.Error(), ".claude/rules/r.md") && !strings.Contains(err.Error(), "paths") {
-			t.Errorf("%s: the error does not say where: %v", name, err)
+		if !rule.Everywhere() || rule.Scope() != "everything" {
+			t.Errorf("%s: the rule is about %v, want everything", c.name, rule.Paths)
+		}
+		if rule.Title != "Title" || rule.Text != c.text {
+			t.Errorf("%s: title %q, text %q; want the title found and the text %q", c.name, rule.Title, rule.Text, c.text)
 		}
 	}
 }
@@ -125,6 +134,13 @@ func TestLoad(t *testing.T) {
 	rule, err := Load(root, ".claude/rules/backend.md")
 	if err != nil || rule.Title != "Backend" || !reflect.DeepEqual(rule.Paths, []string{"backend/**"}) {
 		t.Errorf("Load = %+v, %v", rule, err)
+	}
+	// What is wrong inside a file is not a failure to read it.
+	if err := os.WriteFile(file, []byte("---\npaths: [a\n---\n# Broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rule, err := Load(root, ".claude/rules/backend.md"); err != nil || rule.Problem == "" || rule.Title != "Broken" {
+		t.Errorf("Load of a rule with broken frontmatter = %+v, %v", rule, err)
 	}
 	missing, err := Load(root, ".claude/rules/nothing.md")
 	if !os.IsNotExist(err) || missing.File != ".claude/rules/nothing.md" {
