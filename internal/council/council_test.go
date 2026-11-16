@@ -57,6 +57,7 @@ var (
 	promptStep = []struct{ marker, step string }{
 		// The two that carry the project's rules come first: what a rule
 		// says must not be taken for the task of another step.
+		{"say which of the findings above still stand", "recheck"},
 		{"You check documents against the rules of a software project", "rulecheck"},
 		{"Your task now: put right what the check found", "redocuments"},
 		{"state your position on the brief", "position"},
@@ -866,7 +867,7 @@ func TestPrompts_WhatARoleIsTold(t *testing.T) {
 		"- skeptic (Skeptic) - you",
 		"- backend (go, in backend/)",
 		"- root\n",
-		"The documents you own. Nobody else writes them, and you write no other:\n- docs/qa/risks.md\n",
+		"The project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or adds one:\n- docs/product/requirements.md (owner)\n- docs/product/journeys.md (designer)\n- docs/tech/architecture.md (builder)\n- docs/qa/risks.md (you)\nYou write the ones that are yours, and no other.\n",
 		"Your documents as they stand:\n===== docs/qa/risks.md\n# Risks\n\nThe database can be down.\n",
 		"Decisions already on record (docs/decisions.md):\n# Decisions\n\n1. **stack**: Go.",
 		"<brief>\n加入健康檢查端點。\n</brief>",
@@ -880,8 +881,8 @@ func TestPrompts_WhatARoleIsTold(t *testing.T) {
 	// where the role has to have read it: for its position and for writing.
 	for step, wantContent := range map[string]bool{"position": true, "objections": false, "documents": true, "review": false} {
 		prompt := model.promptOf("skeptic", step)
-		if !strings.Contains(prompt, "The documents you own.") {
-			t.Errorf("%s: the role is not told what it owns", step)
+		if !strings.Contains(prompt, "- docs/qa/risks.md (you)\nYou write the ones that are yours, and no other.\n") || !strings.Contains(prompt, "- docs/tech/architecture.md (builder)\n") {
+			t.Errorf("%s: the role is not told which documents there are and which are its own", step)
 		}
 		if got := strings.Contains(prompt, "The database can be down."); got != wantContent {
 			t.Errorf("%s: shows the document's content = %v, want %v", step, got, wantContent)

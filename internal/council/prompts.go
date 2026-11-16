@@ -36,12 +36,7 @@ func (p *planner) frame(role *Role) string {
 	for _, repo := range p.repos {
 		fmt.Fprintf(&b, "- %s%s\n", repo.Name, repoNote(repo))
 	}
-	if len(role.Owns) > 0 {
-		b.WriteString("\nThe documents you own. Nobody else writes them, and you write no other:\n")
-		for _, doc := range role.Owns {
-			fmt.Fprintf(&b, "- %s\n", doc)
-		}
-	}
+	b.WriteString(p.documentMap(role))
 	if log := p.decisionLog(); log != "" {
 		b.WriteString("\nDecisions already on record (docs/decisions.md):\n")
 		b.WriteString(log)
@@ -51,6 +46,30 @@ func (p *planner) frame(role *Role) string {
 	b.WriteString("\n</brief>\n")
 	b.WriteString(p.ownerSaid())
 	return b.String()
+}
+
+// documentMap tells a role where the project's documents are and whose each
+// is. A role that does not know proposes a document nobody writes, or one in
+// a place the project's rules keep it out of, and a decision follows it there.
+func (p *planner) documentMap(role *Role) string {
+	var b strings.Builder
+	for _, other := range p.roster.Roles {
+		for _, doc := range other.Owns {
+			whose := other.ID
+			if other.ID == role.ID {
+				whose = "you"
+			}
+			fmt.Fprintf(&b, "- %s (%s)\n", doc, whose)
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	yours := "You own none of them: you write no document."
+	if len(role.Owns) > 0 {
+		yours = "You write the ones that are yours, and no other."
+	}
+	return "\nThe project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or adds one:\n" + b.String() + yours + "\n"
 }
 
 // ownerSaid tells what the owner of the project answered when the table's
@@ -340,7 +359,7 @@ func (p *planner) decisionPrompt(role *Role, plan *Plan) string {
 	b.WriteString("\nThe disputes that were not settled, in full:\n\n")
 	b.WriteString(p.disputesText(plan, true))
 	b.WriteString(`
-Your task now: decide. Rule on every point that is still disputed: which way it goes, and why. Then state the other decisions the plan rests on, the agreed ones included, briefly. A decision says what is built, or how; who writes which document is not one. Write each so that it can be checked later. A decision that changes one already on record names it (D12) and says what it becomes.
+Your task now: decide. Rule on every point that is still disputed: which way it goes, and why. Then state the other decisions the plan rests on, the agreed ones included, briefly. A decision says what is built, or how. Which documents there are, where each is kept and who writes it is not one: the list above says, and the documents are written there whatever is decided. Write each so that it can be checked later. A decision that changes one already on record names it (D12) and says what it becomes.
 
 The plan is no larger than the brief. What the brief does not ask for stays out, however much the table said about it, unless what it asks for cannot work without it; where you take such a thing in, the decision says why.
 

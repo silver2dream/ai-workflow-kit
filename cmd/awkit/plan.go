@@ -41,8 +41,8 @@ What a plan does:
 
   The documents are written by the project's rules (`+layout.RulesDir+`/): a role
   is given the rules that hold for the files it writes, what it wrote is read
-  against them, and it puts right what was found. What still stands after
-  that is in the minutes, and is told to you.
+  against them, and it puts right what was found, once. What still stands
+  after that is in the minutes, and is told to you.
 
   What only you can answer, the council assumes, and says so: a plan never
   waits for a person. With --ask it puts its questions to you first, a minute

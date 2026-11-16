@@ -66,13 +66,28 @@ func (m *table) checksOf(role *Role) []string {
 	return out
 }
 
+// rechecksOf returns the questions the reader was asked about which findings
+// still stand in one role's documents, in order.
+func (m *table) rechecksOf(role *Role) []string {
+	var out []string
+	for _, prompt := range m.prompts("moderator", "recheck") {
+		if strings.Contains(prompt, fmt.Sprintf("by their owner, the %s (%s), and were read against the project's rules once.", role.Title, role.ID)) {
+			out = append(out, prompt)
+		}
+	}
+	return out
+}
+
 // following is the agreeable table whose documents the reader finds nothing
 // wrong with.
 func following(roster *Roster) func(c call) (string, error) {
 	base := agreeable(roster)
 	return func(c call) (string, error) {
-		if c.Step == "rulecheck" {
+		switch c.Step {
+		case "rulecheck":
 			return block(`{"findings": []}`), nil
+		case "recheck":
+			return block(`{"stands": []}`), nil
 		}
 		return base(c)
 	}
@@ -87,19 +102,18 @@ func finding(point string) string {
 const revised = "<<<DOCUMENT backend/docs/architecture.md>>>\n# Architecture\n\n**Status**: Plan\n\nRevised by builder.\n<<<END>>>\n"
 
 // checked is the following table where the reader finds the builder's
-// document at odds with the rule about documents, as often as found says, and
-// the builder answers the finding with its revision.
-func checked(roster *Roster, found int, revision string) func(c call) (string, error) {
+// document at odds with the rule about documents, and the builder answers the
+// finding with its revision. readings says how often the reader holds to it:
+// never, when it first reads the document, or also once the builder has had
+// its turn.
+func checked(roster *Roster, readings int, revision string) func(c call) (string, error) {
 	base := following(roster)
-	builder := roster.Role("builder")
-	asked := 0
 	return func(c call) (string, error) {
 		switch {
-		case c.Step == "rulecheck" && strings.Contains(c.Prompt, fmt.Sprintf("the %s (%s).", builder.Title, builder.ID)):
-			asked++
-			if asked <= found {
-				return finding(fmt.Sprintf("Reading %d: it has no **Status** line.", asked)), nil
-			}
+		case c.Step == "rulecheck" && strings.Contains(c.Prompt, "the Builder (builder).") && readings >= 1:
+			return finding("Reading 1: it has no **Status** line."), nil
+		case c.Step == "recheck" && readings >= 2:
+			return block(`{"stands": [{"finding": 1, "point": "Reading 2: it has no **Status** line.", "fix": "Add the line under the title."}]}`), nil
 		case c.Step == "redocuments":
 			return revision, nil
 		}
@@ -158,10 +172,18 @@ func TestRun_DocumentsAreWrittenByTheProjectsRules(t *testing.T) {
 			}
 		}
 		for _, want := range []string{"The project has rules (.claude/rules/). These hold for the files you write, and your documents follow them:",
-			fmt.Sprintf("Where no rule says how a document starts, start it with its title, and under it this line:\nOwner: %s. Written: 2026-11-14, in plan %s.\n", role.ID, plan.ID),
+			"write it so, and add nothing of your own to what a rule lays down.",
 			"One document is at most 40000 bytes: the council writes a document whole.", "<<<DOCUMENT path/of/the/document.md>>>"} {
 			if !strings.Contains(writing, want) {
 				t.Errorf("the question to %s should say %q:\n%s", tt.role, want, writing)
+			}
+		}
+		// How a document starts is the rules' to say. The line awkit has for a
+		// project without rules is not put beside them: a role given both
+		// wrote both, and the document had two headers.
+		for _, own := range []string{"under it this line", "Written: 2026-11-14, in plan"} {
+			if strings.Contains(writing, own) {
+				t.Errorf("the question to %s gives a header of awkit's own beside the rules: %q", tt.role, own)
 			}
 		}
 		// What awkit prescribed before the project's rules did is gone.
@@ -261,13 +283,32 @@ func TestRun_WhatTheCheckFindsIsPutRightOnce(t *testing.T) {
 	if got := readFile(t, root, "backend/docs/architecture.md"); got != "# Architecture\n\n**Status**: Plan\n\nRevised by builder.\n" {
 		t.Errorf("the document is not the one the builder handed in the second time:\n%s", got)
 	}
-	// What the builder changed is read again, as it now stands, and no third time.
-	readings := model.checksOf(roster.Role("builder"))
-	if len(readings) != 2 {
-		t.Fatalf("the builder's document was read %d times, want twice", len(readings))
+	// The reader is then asked which of its findings still stand in the
+	// document as it now is, and not to read it afresh: a reader that starts
+	// over finds something else every time.
+	if first, again := model.checksOf(roster.Role("builder")), model.rechecksOf(roster.Role("builder")); len(first) != 1 || len(again) != 1 {
+		t.Fatalf("the builder's document was read %d times and its findings looked at again %d times, want once each", len(first), len(again))
 	}
-	if !strings.Contains(readings[1], "===== backend/docs/architecture.md\n# Architecture\n\n**Status**: Plan\n\nRevised by builder.\n") || strings.Contains(readings[1], "Written by builder.") {
-		t.Errorf("the second reading is not of the document as it now stands:\n%s", readings[1])
+	looked := model.rechecksOf(roster.Role("builder"))[0]
+	for _, want := range []string{
+		"You check documents against the rules of a software project.",
+		"What that reading found:\n1. backend/docs/architecture.md, against .claude/rules/docs.md: Reading 1: it has no **Status** line.\n   To put right: Add the line under the title.\n",
+		"The owner has had its turn at putting these right. It writes these files and no other:\n- backend/docs/architecture.md\n",
+		"- their owner: builder (Builder)\n",
+		"<rule file=\".claude/rules/docs.md\" about=\"the files that match docs/**, **/docs/**\">",
+		"The documents, as they stand now:\n\n===== backend/docs/architecture.md\n# Architecture\n\n**Status**: Plan\n\nRevised by builder.\n",
+		"Your task: say which of the findings above still stand in the documents as they now are.",
+		"or by taking out of it what belongs in a file the owner does not write and naming that file",
+		"Judge these findings only: what else you might notice now is not asked for.",
+		`{"stands": [{"finding": 1, "point": "what in the document is still at odds, with the words of the rule", "fix": "what is still to change"}]}`,
+		"A finding that is settled is left out; when all are settled the list is empty.",
+	} {
+		if !strings.Contains(looked, want) {
+			t.Errorf("the reader should be asked %q:\n%s", want, looked)
+		}
+	}
+	if strings.Contains(looked, "Written by builder.") || strings.Contains(looked, "name each point where") {
+		t.Errorf("the reader is shown the document as it was, or asked to read it afresh:\n%s", looked)
 	}
 
 	var check RuleCheck
@@ -341,8 +382,9 @@ func TestRun_WhatStillStandsIsOnRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got, readings := model.count("builder", "redocuments"), len(model.checksOf(roster.Role("builder"))); got != 1 || readings != 2 {
-		t.Errorf("the builder revised %d times and was read %d times; want one revision and two readings", got, readings)
+	builder := roster.Role("builder")
+	if got, first, again := model.count("builder", "redocuments"), len(model.checksOf(builder)), len(model.rechecksOf(builder)); got != 1 || first != 1 || again != 1 {
+		t.Errorf("the builder revised %d times, was read %d times and its findings were looked at again %d times; want once each", got, first, again)
 	}
 	open := plan.OpenFindings()
 	if len(open) != 1 || open[0].Point != "Reading 2: it has no **Status** line." || open[0].Owner != "builder" || open[0].Rule != docsRule {
@@ -420,9 +462,9 @@ func TestRun_TheRevisionIsHandedInLikeTheDocuments(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		readings := model.checksOf(roster.Role("builder"))
+		readings := append(model.checksOf(roster.Role("builder")), model.rechecksOf(roster.Role("builder"))...)
 		if len(readings) != 2 {
-			t.Fatalf("%d readings, want two", len(readings))
+			t.Fatalf("the reader was asked %d times, want once to read and once to look again", len(readings))
 		}
 		// First only what the meeting wrote; then what the revision wrote too.
 		if strings.Contains(readings[0], "===== backend/docs/protocol.md") || !strings.Contains(readings[0], "===== backend/docs/architecture.md") {
@@ -876,8 +918,8 @@ func TestRun_StoppedWhileTheDocumentsWereRead(t *testing.T) {
 		if err != nil {
 			t.Fatalf("going on: %v", err)
 		}
-		if asked := model.steps()[before:]; len(asked) < 2 || asked[0] != "builder redocuments" || asked[1] != "moderator rulecheck" {
-			t.Errorf("going on asked %v, want the revision and then its reading", asked)
+		if asked := model.steps()[before:]; len(asked) < 2 || asked[0] != "builder redocuments" || asked[1] != "moderator recheck" {
+			t.Errorf("going on asked %v, want the revision and then the look at what still stands", asked)
 		}
 		if got := readFile(t, root, "backend/docs/architecture.md"); !strings.Contains(got, "Revised by builder.") {
 			t.Errorf("the revision was not written when the plan was gone on with:\n%s", got)
@@ -968,7 +1010,8 @@ func TestRuleCheckPrompt(t *testing.T) {
 	reading := model.checksOf(roster.Role("builder"))[0]
 	for _, want := range []string{
 		"whether the design is good is not yours to say: a table of roles argued that out and decided.",
-		"Write in the language the brief is written in.",
+		// The reader is not shown the brief: it writes as the documents do.
+		"Write in the language the documents are written in. JSON keys, role ids and file paths stay as they are.",
 		"Go by the words of the rule and quote them.",
 		"A rule asks nothing of a document it is not about",
 		"What cannot be put right in these documents (the rule asks for a file the owner does not write, say) is a point too; say so in fix.",
@@ -1069,6 +1112,235 @@ func TestRulebookNamed(t *testing.T) {
 		got, ok := book.named(name)
 		if got.File != want || ok != (want != "") {
 			t.Errorf("named(%q) = %q, %v; want %q", name, got.File, ok, want)
+		}
+	}
+}
+
+// three is the reader's answer with three findings about the builder's
+// document, against three rules.
+const three = `{"findings": [
+  {"document": "backend/docs/architecture.md", "rule": "docs.md", "point": "one", "fix": "fix one"},
+  {"document": "backend/docs/architecture.md", "rule": "backend.md", "point": "two", "fix": "fix two"},
+  {"document": "backend/docs/architecture.md", "rule": "agents.md", "point": "three", "fix": ""}
+]}`
+
+// lookingAgain is the table where the reader finds three points in the
+// builder's document, the builder revises it, and the reader answers stands
+// when it is asked which of them still stand.
+func lookingAgain(roster *Roster, stands func(asked int) string) (*table, *int) {
+	base := following(roster)
+	asked := 0
+	return &table{answer: func(c call) (string, error) {
+		switch {
+		case c.Step == "rulecheck" && strings.Contains(c.Prompt, "the Builder (builder)."):
+			return block(three), nil
+		case c.Step == "redocuments":
+			return revised, nil
+		case c.Step == "recheck":
+			asked++
+			return stands(asked), nil
+		}
+		return base(c)
+	}}, &asked
+}
+
+// The reader says which of its findings still stand, by their numbers. What
+// stands is on record as the finding it was: the same document and rule, with
+// what the reader now says of it, in the order of the findings.
+func TestRun_WhichFindingsStillStand(t *testing.T) {
+	roster := mustRoster(t, repoRoster)
+	root := t.TempDir()
+	model, _ := lookingAgain(roster, func(int) string {
+		return block(`{"stands": [{"finding": 3, "point": "", "fix": " "}, {"finding": 1, "point": "one, still", "fix": "what is left of one"}]}`)
+	})
+
+	plan, err := runWithRules(t, root, roster, model, projectRules())
+
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var check RuleCheck
+	for _, c := range plan.RuleChecks {
+		if c.Owner == "builder" {
+			check = c
+		}
+	}
+	want := []RuleFinding{
+		{Owner: "builder", Document: "backend/docs/architecture.md", Rule: docsRule, Point: "one, still", Fix: "what is left of one"},
+		// The reader said no more than that it stands: the finding reads as it did.
+		{Owner: "builder", Document: "backend/docs/architecture.md", Rule: agentsRule, Point: "three", Fix: ""},
+	}
+	if !check.Settled || len(check.Found) != 3 || !reflect.DeepEqual(check.Open, want) {
+		t.Errorf("the builder's check: found %d, open %+v\nwant open %+v", len(check.Found), check.Open, want)
+	}
+	if !reflect.DeepEqual(plan.OpenFindings(), want) {
+		t.Errorf("open findings = %+v", plan.OpenFindings())
+	}
+	minutes := readFile(t, root, plan.Dir()+"/minutes.md")
+	if want := "- builder: 3 point(s) found; **2 still stand(s)** after the owner's turn\n" +
+		"  - Found: `backend/docs/architecture.md` against `.claude/rules/docs.md`: one\n    - To put right: fix one\n" +
+		"  - Found: `backend/docs/architecture.md` against `.claude/rules/backend.md`: two\n    - To put right: fix two\n" +
+		"  - Found: `backend/docs/architecture.md` against `.claude/rules/agents.md`: three\n" +
+		"  - **Still stands**: `backend/docs/architecture.md` against `.claude/rules/docs.md`: one, still\n    - To put right: what is left of one\n" +
+		"  - **Still stands**: `backend/docs/architecture.md` against `.claude/rules/agents.md`: three\n"; !strings.Contains(minutes, want) {
+		t.Errorf("the minutes should say %q:\n%s", want, minutes)
+	}
+	// The reader is shown the three findings by their numbers.
+	looked := model.rechecksOf(roster.Role("builder"))
+	if len(looked) != 1 || !strings.Contains(looked[0], "1. backend/docs/architecture.md, against .claude/rules/docs.md: one\n   To put right: fix one\n2. backend/docs/architecture.md, against .claude/rules/backend.md: two\n   To put right: fix two\n3. backend/docs/architecture.md, against .claude/rules/agents.md: three\n\nThe owner has had its turn") {
+		t.Errorf("the reader is not shown its findings by their numbers:\n%s", strings.Join(looked, "\n---\n"))
+	}
+	// So is the owner, with what it is to do about a finding that wants
+	// something moved to a document that is not its own.
+	if revision := model.promptOf("builder", "redocuments"); !strings.Contains(revision, "3. backend/docs/architecture.md, against .claude/rules/agents.md: three\n\nYour task now: put right what the check found.") ||
+		!strings.Contains(revision, "Where it wants something moved to a document you do not own, take it out of yours and name that document in its place: its owner writes it there. A finding that misreads the rule, you leave: change nothing for it.") {
+		t.Errorf("the owner is not told what to do with the findings:\n%s", revision)
+	}
+
+	// None stands: everything was put right.
+	model, _ = lookingAgain(roster, func(int) string { return block(`{"stands": []}`) })
+	plan, err = runWithRules(t, t.TempDir(), roster, model, projectRules())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if open := plan.OpenFindings(); open != nil {
+		t.Errorf("nothing stands, and the open findings are %+v", open)
+	}
+
+	// An answer that names a finding there is not, or one twice, is asked for
+	// again, with what was wrong with it.
+	for name, tt := range map[string]struct{ bad, told string }{
+		"a finding past the last":    {`{"stands": [{"finding": 4, "point": "p"}]}`, "finding 4 is not one of the findings: they are numbered 1 to 3"},
+		"a finding before the first": {`{"stands": [{"finding": 0, "point": "p"}]}`, "finding 0 is not one of the findings: they are numbered 1 to 3"},
+		"a finding without a number": {`{"stands": [{"point": "p"}]}`, "finding 0 is not one of the findings"},
+		"a finding below zero":       {`{"stands": [{"finding": -1, "point": "p"}]}`, "finding -1 is not one of the findings"},
+		"a finding named twice":      {`{"stands": [{"finding": 2, "point": "p"}, {"finding": 2, "point": "q"}]}`, "finding 2 is named twice"},
+		"a number in words":          {`{"stands": [{"finding": "two", "point": "p"}]}`, "the JSON of the answer cannot be read"},
+		"no JSON":                    {`All three are settled.`, "the JSON of the answer cannot be read"},
+	} {
+		var second string
+		model, asked := lookingAgain(roster, func(asked int) string {
+			if asked == 1 {
+				return block(tt.bad)
+			}
+			return block(`{"stands": [{"finding": 2, "point": "two, still"}]}`)
+		})
+		base := model.answer
+		model.answer = func(c call) (string, error) {
+			if c.Step == "recheck" && strings.Contains(c.Prompt, "Your previous answer could not be used: ") {
+				second = c.Prompt
+			}
+			return base(c)
+		}
+		plan, err := runWithRules(t, t.TempDir(), roster, model, projectRules())
+		if err != nil {
+			t.Errorf("%s: Run: %v", name, err)
+			continue
+		}
+		if *asked != 2 || !strings.Contains(second, "Your previous answer could not be used: "+tt.told) {
+			t.Errorf("%s: asked %d times; the second question should say %q:\n%s", name, *asked, tt.told, second[max(0, len(second)-500):])
+		}
+		if open := plan.OpenFindings(); len(open) != 1 || open[0].Rule != backendRule || open[0].Point != "two, still" || open[0].Fix != "fix two" {
+			t.Errorf("%s: open findings = %+v", name, open)
+		}
+	}
+}
+
+// A reader that names the part of a rule it means still names the rule.
+func TestRulebookNamed_WithThePartOfTheRule(t *testing.T) {
+	book := rulebook{shown: []rules.Rule{
+		{File: ".claude/rules/security.md", Title: "Security Guidelines"},
+		{File: ".claude/rules/docs-source-of-truth.md", Title: "Docs Source of Truth"},
+		{File: ".claude/rules/backend.md", Title: "Backend Architecture Rules"},
+	}}
+	for name, want := range map[string]string{
+		"security.md (認證與授權)":                           ".claude/rules/security.md",
+		"security.md（認證與授權）":                            ".claude/rules/security.md",
+		"`security.md` §認證與授權":                          ".claude/rules/security.md",
+		".claude/rules/security.md#sql-injection":       ".claude/rules/security.md",
+		"security.md: 認證與授權":                            ".claude/rules/security.md",
+		"security.md：認證":                                ".claude/rules/security.md",
+		"security, 認證與授權":                               ".claude/rules/security.md",
+		"backend.md §5":                                 ".claude/rules/backend.md",
+		"docs-source-of-truth.md 路由規則 3":                ".claude/rules/docs-source-of-truth.md",
+		"Docs Source of Truth":                          ".claude/rules/docs-source-of-truth.md", // a title is taken whole first
+		"Docs Source of Truth (路由規則)":                   "",                                      // a title with a part after it is not looked for
+		"(認證與授權) security.md":                           "",
+		"testing.md (三道 gate)":                          "",
+		" ":                                             "",
+		"§5":                                            "",
+		".claude/rules/security.md (認證) and backend.md": ".claude/rules/security.md",
+	} {
+		got, ok := book.named(name)
+		if got.File != want || ok != (want != "") {
+			t.Errorf("named(%q) = %q, %v; want %q", name, got.File, ok, want)
+		}
+	}
+}
+
+// Every role is shown which documents there are, where, and whose: a role
+// that does not know proposes one nobody writes, and a decision follows it.
+func TestPrompts_TheDocumentMap(t *testing.T) {
+	roster := mustRoster(t, strings.Replace(repoRoster, "    owns: [docs/product/journeys.md]\n", "", 1))
+	model := &table{answer: following(roster)}
+	if _, err := runWithRules(t, t.TempDir(), roster, model, projectRules()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	const head = "The project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or adds one:\n"
+	// A role with documents, in every question it is asked.
+	for _, step := range []string{"position", "objections", "documents", "worklist"} {
+		if prompt := model.promptOf("builder", step); !strings.Contains(prompt, head+"- docs/product/requirements.md (owner)\n- backend/docs/architecture.md (you)\n- docs/qa/risks.md (skeptic)\nYou write the ones that are yours, and no other.\n") {
+			t.Errorf("builder %s: the question does not show the documents and whose they are:\n%s", step, prompt[:min(len(prompt), 2500)])
+		}
+	}
+	// A role without one is told so.
+	if prompt := model.promptOf("designer", "position"); !strings.Contains(prompt, "- docs/qa/risks.md (skeptic)\nYou own none of them: you write no document.\n") || strings.Contains(prompt, "(you)") {
+		t.Errorf("a role that owns no document:\n%s", prompt[:min(len(prompt), 2500)])
+	}
+	// The deciding role is told that where the documents are is not decided here.
+	decide := model.promptOf("owner", "decide")
+	for _, want := range []string{head + "- docs/product/requirements.md (you)\n",
+		"A decision says what is built, or how. Which documents there are, where each is kept and who writes it is not one: the list above says, and the documents are written there whatever is decided."} {
+		if !strings.Contains(decide, want) {
+			t.Errorf("the deciding role should be told %q:\n%s", want, decide)
+		}
+	}
+	// The reader has no seat at the table and is shown no map.
+	if reading := model.checksOf(roster.Role("builder")); len(reading) != 1 || strings.Contains(reading[0], "The project's documents.") {
+		t.Error("the reader is shown the table's map of documents")
+	}
+
+	// A table where nobody owns a document has no map to show.
+	bare := mustRoster(t, "roles:\n  - {id: a, decides: true, stance: s}\n  - {id: b, plans: true, stance: s}\n")
+	p := &planner{roster: bare}
+	if got := p.documentMap(&bare.Roles[0]); got != "" {
+		t.Errorf("the map of a table without documents = %q", got)
+	}
+}
+
+// The reader writes in the language the roster names; where it names none, in
+// the language of the documents, since it is not shown the brief.
+func TestReadersLanguage(t *testing.T) {
+	roster := mustRoster(t, "language: 繁體中文\n"+repoRoster)
+	model := &table{answer: checked(roster, 2, revised)}
+	if _, err := runWithRules(t, t.TempDir(), roster, model, projectRules()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	builder := roster.Role("builder")
+	for name, prompt := range map[string]string{"read": model.checksOf(builder)[0], "look again": model.rechecksOf(builder)[0]} {
+		if !strings.Contains(prompt, "Write everything in 繁體中文. JSON keys, role ids, repo names and file paths stay as they are.") || strings.Contains(prompt, "the language the documents are written in") {
+			t.Errorf("asked to %s, the reader is not told the roster's language:\n%s", name, prompt[:min(len(prompt), 600)])
+		}
+	}
+
+	plain := mustRoster(t, repoRoster)
+	model = &table{answer: checked(plain, 2, revised)}
+	if _, err := runWithRules(t, t.TempDir(), plain, model, projectRules()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for name, prompt := range map[string]string{"read": model.checksOf(builder)[0], "look again": model.rechecksOf(builder)[0]} {
+		if !strings.Contains(prompt, "Write in the language the documents are written in. JSON keys, role ids and file paths stay as they are.") || strings.Contains(prompt, "the language the brief is written in") {
+			t.Errorf("asked to %s, the reader is told of a brief it is not shown:\n%s", name, prompt[:min(len(prompt), 600)])
 		}
 	}
 }

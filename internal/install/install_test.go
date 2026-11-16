@@ -570,6 +570,26 @@ func TestInstall_Roster(t *testing.T) {
 		if quality == 0 || !strings.Contains(string(governance), "| `docs/qa/` |") || !strings.Contains(string(governance), "→ `docs/qa/`。") {
 			t.Errorf("%s: the roster keeps %d documents in docs/qa/; the rule about where documents are kept has to name that place", preset, quality)
 		}
+		// What the council's documents were found at odds with for no good
+		// reason, when the rule was read to the letter: a document states what
+		// was decided (that is no copy of the decision log), one number named
+		// twice in one document is no second definition, and a test strategy
+		// may name the cases it asks for.
+		for _, want := range []string{
+			"當成現況的定義處（現況寫在文件裡，這裡記的是當時怎麼定的）",
+			"3. 兩份文件需要同一資訊：一份定義、另一份連結，**不複製**。",
+			"文件寫的是結論：照決定寫出現況，在讀者會問為什麼的地方點名編號（`D4`），不重抄理由。",
+			"另立工程事實：協定、時序與數值由工程文件定義，這裡只引用",
+		} {
+			if !strings.Contains(string(governance), want) {
+				t.Errorf("%s: the rule about where documents are kept should say %q", preset, want)
+			}
+		}
+		for _, loose := range []string{"別的文件引用它的編號，不重抄內容", "兩處需要同一資訊", "單一 repo 的測試細節"} {
+			if strings.Contains(string(governance), loose) {
+				t.Errorf("%s: the rule about where documents are kept still says %q", preset, loose)
+			}
+		}
 		if got := rosterOf(dir); strings.Contains(got, "{{") {
 			t.Errorf("%s: the roster holds a piece of its template:\n%s", preset, got)
 		}

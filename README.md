@@ -85,7 +85,7 @@ The roles of `.ai/roster.yaml` argue the brief out. Each one states where it sta
 
 The order of play is in code, not in a prompt: awkit asks each role in turn, counts the rounds and the model calls, and is the only one that writes files, so a role cannot write a document another role owns.
 
-The documents are written by your project's rules, not by a format of awkit's. Each role is given the rule files under `.claude/rules/` that hold for the files it writes; what it wrote is read against them by a reader who takes no side; the owner puts right what was found, once. What still stands after that is in the minutes and is told to you when the plan ends.
+The documents are written by your project's rules, not by a format of awkit's. Each role is given the rule files under `.claude/rules/` that hold for the files it writes; what it wrote is read against them by a reader who takes no side; the owner puts right what was found, once; the reader then says which of its findings still stand. Those are in the minutes and are told to you when the plan ends.
 
 | What a plan leaves | |
 |---|---|

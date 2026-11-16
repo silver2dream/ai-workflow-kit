@@ -910,8 +910,8 @@ func (p *planner) documents(ctx context.Context, plan *Plan) error {
 }
 
 // write is one role's turn at the documents: it writes them, they are read
-// against the rules, it puts right what was found, and what it changed is
-// read once more.
+// against the rules, it puts right what was found, and the reader says which
+// of the findings still stand.
 func (p *planner) write(ctx context.Context, plan *Plan, at *seat) error {
 	role := at.role
 	if len(at.asked) == 0 {
@@ -968,7 +968,7 @@ func (p *planner) write(ctx context.Context, plan *Plan, at *seat) error {
 		at.check.Open, at.check.Settled = found, true
 		return nil
 	}
-	open, err := p.checkRules(ctx, "rules recheck "+role.ID, role, plan, writtenBy(at.written), at.book)
+	open, err := p.recheckRules(ctx, "rules recheck "+role.ID, role, plan, writtenBy(at.written), at.book, found)
 	if err != nil {
 		return err
 	}

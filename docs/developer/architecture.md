@@ -23,7 +23,7 @@
 ```
 awkit plan "…"
   └─ council.Run：立場 → 提問 → 異議 → 對辯 → 主持人整理 → 裁定 → 文件 → 票券清單
-       文件：每個角色照對它的檔案生效的規則寫（internal/rules）→ 對照規則檢查 → 擁有者修一次 → 再檢查一次
+       文件：每個角色照對它的檔案生效的規則寫（internal/rules）→ 對照規則檢查 → 擁有者修一次 → 讀者回答哪幾點還在
        寫出各角色的文件、docs/decisions.md、docs/plans/<plan>/{minutes.md,tickets.yaml}
 awkit plan approve <plan>
   └─ council.Approve → task.CreateTask：每張票一個 GitHub issue（ai-task 標籤 + awk-ticket 區塊）

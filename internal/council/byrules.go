@@ -99,6 +99,18 @@ func (book rulebook) files() []string {
 // or its title. It is found when that is one rule.
 func (book rulebook) named(name string) (rules.Rule, bool) {
 	name = strings.TrimPrefix(strings.Trim(strings.TrimSpace(name), "`\"'"), "./")
+	if rule, ok := book.one(name); ok {
+		return rule, true
+	}
+	// A reader may add the part of the rule it means: "security.md (認證與授權)".
+	if cut := strings.IndexAny(name, " (（§#:：,，"); cut > 0 {
+		return book.one(strings.Trim(name[:cut], "`\"'"))
+	}
+	return rules.Rule{}, false
+}
+
+// one returns the rule a name stands for, when it stands for one rule.
+func (book rulebook) one(name string) (rules.Rule, bool) {
 	var found []rules.Rule
 	for _, rule := range book.shown {
 		base := path.Base(rule.File)
@@ -149,15 +161,23 @@ func (p *planner) byTheRules(role *Role, plan *Plan, book rulebook) string {
 	if len(book.shown) == 0 {
 		return fmt.Sprintf("\nStart every document you write with its title, and under it this line:\nOwner: %s. Written: %s, in plan %s.\n", role.ID, p.today(), plan.ID)
 	}
-	return "\nThe project has rules (" + layout.RulesDir + "/). These hold for the files you write, and your documents follow them: where a rule says where a document is kept, how it starts, which state it may claim, what it has to answer, what does not belong in it or how long it may get, write it so. A rule about code, commits or tools is the frame the work is done in: design nothing against it, and do not copy it into a document. A document does not quote the rules and does not say that it follows them.\n\n" +
-		book.text() + p.facts(role, plan) +
-		fmt.Sprintf("\nWhere no rule says how a document starts, start it with its title, and under it this line:\nOwner: %s. Written: %s, in plan %s.\n", role.ID, p.today(), plan.ID)
+	return "\nThe project has rules (" + layout.RulesDir + "/). These hold for the files you write, and your documents follow them: where a rule says where a document is kept, how it starts, which state it may claim, what it has to answer, what does not belong in it or how long it may get, write it so, and add nothing of your own to what a rule lays down. A rule about code, commits or tools is the frame the work is done in: design nothing against it, and do not copy it into a document. A document does not quote the rules and does not say that it follows them.\n\n" +
+		book.text() + p.facts(role, plan)
 }
 
 // checkerFrame opens the question to the reader who checks documents against
 // the rules. Like the moderator it is played with the roster's model and has
 // no stance.
 const checkerFrame = "You check documents against the rules of a software project. You have no opinion on their subject, and whether the design is good is not yours to say: a table of roles argued that out and decided. You say where a document does not do what a rule asks of it, and nothing else."
+
+// readersLanguage tells the reader what to write in. It is not shown the
+// brief, so where the roster names no language it writes as the documents do.
+func (p *planner) readersLanguage() string {
+	if p.roster.Language != "" {
+		return p.languageLine()
+	}
+	return "Write in the language the documents are written in. JSON keys, role ids and file paths stay as they are."
+}
 
 // documentsAsTheyStand shows documents whole, as they are on disk.
 func (p *planner) documentsAsTheyStand(docs []string) string {
@@ -176,7 +196,7 @@ func (p *planner) documentsAsTheyStand(docs []string) string {
 // the rules.
 func (p *planner) ruleCheckPrompt(role *Role, plan *Plan, docs []string, book rulebook) string {
 	var b strings.Builder
-	b.WriteString(checkerFrame + "\n\n" + p.languageLine() + "\n\n")
+	b.WriteString(checkerFrame + "\n\n" + p.readersLanguage() + "\n\n")
 	fmt.Fprintf(&b, "The documents below were written at a planning meeting by their owner, the %s (%s). The owner writes these files and no other:\n", role.Title, role.ID)
 	for _, doc := range role.Owns {
 		fmt.Fprintf(&b, "- %s\n", doc)
@@ -236,6 +256,75 @@ func (p *planner) checkRules(ctx context.Context, step string, role *Role, plan 
 	return findings, nil
 }
 
+// ruleRecheckPrompt asks the reader which of the findings still stand, now
+// that the owner has had its turn. It is not asked to read the documents
+// afresh: a reader that starts over finds something else every time, and the
+// owner has one turn.
+func (p *planner) ruleRecheckPrompt(role *Role, plan *Plan, docs []string, book rulebook, found []RuleFinding) string {
+	var b strings.Builder
+	b.WriteString(checkerFrame + "\n\n" + p.readersLanguage() + "\n\n")
+	fmt.Fprintf(&b, "The documents below were written at a planning meeting by their owner, the %s (%s), and were read against the project's rules once. What that reading found:\n", role.Title, role.ID)
+	b.WriteString(findingsText(found))
+	b.WriteString("\nThe owner has had its turn at putting these right. It writes these files and no other:\n")
+	for _, doc := range role.Owns {
+		fmt.Fprintf(&b, "- %s\n", doc)
+	}
+	b.WriteString("\n" + p.facts(role, plan))
+	b.WriteString("\nThe project's rules that hold for these files:\n\n" + book.text())
+	b.WriteString("The documents, as they stand now:\n\n" + p.documentsAsTheyStand(docs))
+	fmt.Fprintf(&b, `
+Your task: say which of the findings above still stand in the documents as they now are. A finding is settled when the document no longer does what the finding names, whichever way the owner put it right: by changing the document, or by taking out of it what belongs in a file the owner does not write and naming that file. Judge these findings only: what else you might notice now is not asked for.
+
+%s
+{"stands": [{"finding": 1, "point": "what in the document is still at odds, with the words of the rule", "fix": "what is still to change"}]}
+finding is the number of a finding above. A finding that is settled is left out; when all are settled the list is empty.
+`, jsonOnly)
+	return b.String()
+}
+
+// recheckRules asks the reader which of the findings still stand after the
+// owner's turn, and returns those as they now read, in their order.
+func (p *planner) recheckRules(ctx context.Context, step string, role *Role, plan *Plan, docs []string, book rulebook, found []RuleFinding) ([]RuleFinding, error) {
+	type standing struct {
+		Finding int    `json:"finding"`
+		Point   string `json:"point"`
+		Fix     string `json:"fix"`
+	}
+	type answer struct {
+		Stands []standing `json:"stands"`
+	}
+	got, err := settleJSON(ctx, p.session, step, p.roster.Model, p.ruleRecheckPrompt(role, plan, docs, book, found), func(got *answer) error {
+		named := map[int]bool{}
+		for _, stand := range got.Stands {
+			if stand.Finding < 1 || stand.Finding > len(found) {
+				return fmt.Errorf("finding %d is not one of the findings: they are numbered 1 to %d", stand.Finding, len(found))
+			}
+			if named[stand.Finding] {
+				return fmt.Errorf("finding %d is named twice", stand.Finding)
+			}
+			named[stand.Finding] = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	still := map[int]standing{}
+	for _, stand := range got.Stands {
+		still[stand.Finding] = stand
+	}
+	var open []RuleFinding
+	for i, was := range found {
+		stand, stands := still[i+1]
+		if !stands {
+			continue
+		}
+		open = append(open, RuleFinding{Owner: was.Owner, Document: was.Document, Rule: was.Rule,
+			Point: firstNonEmpty(stand.Point, was.Point), Fix: firstNonEmpty(stand.Fix, was.Fix)})
+	}
+	return open, nil
+}
+
 // findingsText lists findings for the role that puts them right.
 func findingsText(findings []RuleFinding) string {
 	var b strings.Builder
@@ -260,7 +349,7 @@ func (p *planner) revisionPrompt(role *Role, plan *Plan, book rulebook, findings
 	b.WriteString("\nThe project's rules that hold for the files you write (" + layout.RulesDir + "/):\n\n" + book.text() + p.facts(role, plan))
 	b.WriteString("\nYour documents were read against these rules. What the check found:\n" + findingsText(findings))
 	b.WriteString(`
-Your task now: put right what the check found. A finding that reads the rule the way it is written, you take in. One that misreads the rule, or asks for what is not yours to do (a file you do not own), you leave: change nothing for it. Change nothing else in a document: what the meeting decided stands, and so does every word the findings are not about.
+Your task now: put right what the check found. A finding that reads the rule the way it is written, you take in. Where it wants something moved to a document you do not own, take it out of yours and name that document in its place: its owner writes it there. A finding that misreads the rule, you leave: change nothing for it. Change nothing else in a document: what the meeting decided stands, and so does every word the findings are not about.
 
 Hand in each document you change, whole, between these two lines:
 <<<DOCUMENT path/of/the/document.md>>>
