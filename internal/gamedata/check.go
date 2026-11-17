@@ -21,6 +21,9 @@ type Finding struct {
 	Key string
 	// Message says what is wrong and what to do about it.
 	Message string
+	// Needs is a file that is not there and puts the finding right when it
+	// is written: the data file a table reads.
+	Needs string
 }
 
 func (f Finding) String() string {
@@ -87,7 +90,8 @@ func (d *Data) checkTables(root fs.FS) []Finding {
 		}
 		for _, input := range t.Inputs {
 			if _, err := fs.Stat(root, input); err != nil {
-				add(t.File, 0, t.Name, "the table %s reads %s, which is not there", t.Name, input)
+				findings = append(findings, Finding{File: t.File, Key: t.Name, Needs: input,
+					Message: fmt.Sprintf("the table %s reads %s, which is not there: write it, or take the table out of the schema", t.Name, input)})
 			}
 		}
 		for _, sheet := range t.Sheets {
@@ -300,6 +304,9 @@ var (
 	// forbidden is what text does not hold: a color, a font, the path of a
 	// file. The game's theme decides those.
 	forbidden = regexp.MustCompile(`res://|user://|#[0-9a-fA-F]{6}\b|\.(png|jpg|jpeg|webp|svg|ttf|otf|tres|tscn)\b`)
+	// unwritten is text that stands in for text not written yet. What the
+	// text tables hold ships.
+	unwritten = regexp.MustCompile(`(?i)(^|[^a-z])(tbd|todo|fixme)([^a-z]|$)|待補|佔位`)
 )
 
 // checkText checks the text tables: each key once and well formed, the
@@ -365,6 +372,9 @@ func (d *Data) checkText() []Finding {
 func checkMarkup(language, text string, add func(format string, args ...any)) {
 	if found := forbidden.FindString(text); found != "" {
 		add("the %s text holds %q: text holds no color, font or path of a file; the game's theme decides those", language, found)
+	}
+	if unwritten.MatchString(text) {
+		add("the %s text %q stands in for text not written yet: what the text tables hold ships, so write the text, or leave the key out until it is", language, text)
 	}
 	closed := map[string]bool{}
 	for _, m := range tag.FindAllStringSubmatch(text, -1) {

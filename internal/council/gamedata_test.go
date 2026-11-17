@@ -226,6 +226,74 @@ func TestRun_GameData(t *testing.T) {
 	}
 }
 
+// A schema defines tables the topic did not name: the role that writes it
+// writes their files too, in its folders of the game data, and what it does
+// not write it is given back to write. A document the topic did not name
+// stays as it is.
+func TestRun_GameDataATableTheTopicDidNotName(t *testing.T) {
+	root := gameProject(t)
+	roster := mustRoster(t, gameRoster)
+	base := agreeable(roster)
+	schema := strings.Replace(racketSchema, "</module>", `	<bean name="Grip" comment="the grips">
+		<var name="id" type="string" group="c,s" comment="code"/>
+		<var name="size" type="int" group="c,s" comment="how wide"/>
+	</bean>
+	<table name="TbGrip" value="Grip" input="grip.csv" mode="map" group="c,s"/>
+	<bean name="Ball" comment="the balls">
+		<var name="id" type="string" group="c,s" comment="code"/>
+	</bean>
+	<table name="TbBall" value="Ball" input="ball.csv" mode="map" group="c,s"/>
+</module>`, 1)
+	rackets := "##var,id,name,power\n,wood,ui.title.start,10"
+	model := &table{answer: func(c call) (string, error) {
+		switch {
+		case c.Step == "agenda":
+			return block(gameAgenda), nil
+		case c.Step == "documents" && c.Role == "numbers":
+			// The grips are written with the schema; the balls are not, and
+			// a document the topic did not name is handed in.
+			return dataFile("gamedata/Defines/racket.xml", schema) + dataFile("gamedata/Datas/racket.csv", rackets) +
+				dataFile("gamedata/Datas/grip.csv", "##var,id,size\n,small,2") +
+				docs("numbers", "docs/balance/rackets.md", "docs/balance/extra.md"), nil
+		case c.Step == "documents" && c.Role == "writer":
+			return "<<<UNCHANGED gamedata/Datas/text/world.csv>>>\n", nil
+		case c.Step == "redata" && c.Role == "numbers":
+			return dataFile("gamedata/Datas/ball.csv", "##var,id\n,soft") + "<<<UNCHANGED gamedata/Defines/racket.xml>>>\n", nil
+		}
+		return base(c)
+	}}
+
+	plan, err := runPlan(t, root, roster, model, "A tennis game.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := readFile(t, root, "gamedata/Datas/grip.csv"); !strings.Contains(got, ",small,2") {
+		t.Errorf("a table the schema defines was not written with it:\n%s", got)
+	}
+	if exists(root, "docs/balance/extra.md") {
+		t.Error("a document the topic did not name was written")
+	}
+	if prompt := model.promptOf("numbers", "documents"); !strings.Contains(prompt, "Every table a schema of yours defines reads a file that is there") {
+		t.Errorf("the role that writes the schema is not told to write its tables:\n%s", prompt)
+	}
+	prompt := model.promptOf("numbers", "redata")
+	if !strings.Contains(prompt, "the table TbBall reads gamedata/Datas/ball.csv, which is not there") || !strings.Contains(prompt, "- gamedata/Datas/ball.csv: not written yet\n") {
+		t.Errorf("the role is not given the table to write:\n%s", prompt)
+	}
+	if got := readFile(t, root, "gamedata/Datas/ball.csv"); !strings.Contains(got, ",soft") {
+		t.Errorf("the table was not written when it was given back:\n%s", got)
+	}
+	check := plan.Topics[0].DataCheck
+	if check == nil || len(check.Found) != 1 || len(check.Open) != 0 || len(plan.DataOpen) != 0 {
+		t.Errorf("the check of the game data: %+v; still %v", check, plan.DataOpen)
+	}
+	for _, want := range []string{"gamedata/Datas/ball.csv", "gamedata/Datas/grip.csv"} {
+		if !contains(plan.GameData, want) {
+			t.Errorf("%s is not among the game data the plan wrote: %v", want, plan.GameData)
+		}
+	}
+}
+
 // What the owners leave is on record, and the plan says so.
 func TestRun_GameDataLeftAsItWasFound(t *testing.T) {
 	root := gameProject(t)

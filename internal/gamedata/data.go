@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -446,6 +447,24 @@ func basisColumns(language string) []string {
 	return []string{"_" + language + "_依據", "_" + language + "_basis"}
 }
 
+// languageCode is the name of a column of text: a language, and the country
+// or the script where the language has more than one (zh_TW, en, pt-BR).
+var languageCode = regexp.MustCompile(`^[a-z]{2,3}([_-][A-Za-z0-9]{2,4})?$`)
+
+// basisOf reads a column as the basis of a translation: the language it is
+// the basis of, and whether it is one. "_依據" alone is one that names none.
+func basisOf(column string) (string, bool) {
+	for _, suffix := range []string{"依據", "basis"} {
+		if column == "_"+suffix {
+			return "", true
+		}
+		if language, ok := strings.CutSuffix(column, "_"+suffix); ok && strings.HasPrefix(language, "_") {
+			return strings.TrimPrefix(language, "_"), true
+		}
+	}
+	return "", false
+}
+
 var limitColumns = []string{"_上限", "_limit"}
 
 func (d *Data) readText(root fs.FS, file string) *TextFile {
@@ -466,8 +485,22 @@ func (d *Data) readText(root fs.FS, file string) *TextFile {
 			d.problem(file, lines[0], "has the column %s twice", column)
 		}
 		header[column] = i
-		if column != keyColumn && column != "" && !strings.HasPrefix(column, "_") {
+		switch {
+		case column == keyColumn || column == "" || strings.HasPrefix(column, "_"):
+		case languageCode.MatchString(column):
 			text.Languages = append(text.Languages, column)
+		default:
+			d.problem(file, lines[0], "has the column %q, which is neither a language (a language code: zh_TW, en, ja) nor a note (a name that starts with _)", column)
+		}
+	}
+	for _, column := range records[0] {
+		column = strings.TrimSpace(column)
+		if language, ok := basisOf(column); ok && !contains(text.Languages, language) {
+			if language == "" {
+				d.problem(file, lines[0], "has the column %s, which names no language: the basis of a translation is _<language>_依據 (_en_依據), the text in the source language it was translated from", column)
+			} else {
+				d.problem(file, lines[0], "has the column %s, the basis of %s, and no column of %s", column, language, language)
+			}
 		}
 	}
 	if _, ok := header[keyColumn]; !ok {

@@ -316,6 +316,11 @@ func (p *planner) putDataRight(ctx context.Context, plan *Plan, r *TopicRecord, 
 		// that writes the table, in the table: it need not answer for the
 		// table then.
 		add(f.File, !f.IsMissingKey())
+		// A table that reads a file that is not there is put right by
+		// writing the file.
+		if f.Needs != "" {
+			add(f.Needs, false)
+		}
 	}
 	if keys := missingKeys(findings); len(keys) > 0 {
 		// The text of a key goes into a text table of the role's, or into a
@@ -364,7 +369,7 @@ func keysText(findings []gamedata.Finding) string {
 
 // gameDataForm tells a role that writes files of the game data what they are.
 const gameDataForm = `
-A table of the game data (.csv) and its schema (.xml) are not documents: they are what the game reads, written in the form the project's rules give for them, and in no other. They hold no title, no prose and no note outside what that form has room for. Write each one whole, every row of it, also the rows this topic does not change. After the topic the game data is checked; what the check finds comes back to you.
+A table of the game data (.csv) and its schema (.xml) are not documents: they are what the game reads, written in the form the project's rules give for them, and in no other. They hold no title, no prose and no note outside what that form has room for. Write each one whole, every row of it, also the rows this topic does not change. Every table a schema of yours defines reads a file that is there: with the schema, hand in the table of each one it defines, in your folders of the game data, also where this topic does not name it. After the topic the game data is checked; what the check finds comes back to you.
 `
 
 // dataRevisionPrompt asks a role to put right what the check of the game data

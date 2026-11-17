@@ -235,6 +235,11 @@ func TestCheck_WhatIsWrongIsFound(t *testing.T) {
 		{"a text table without a key column", "gamedata/Datas/text/world.csv", "key,zh_TW", "id,zh_TW", `has no column "key"`},
 		{"a text table without text", "gamedata/Datas/text/world.csv", "key,zh_TW,zh_CN,en,", "key,_zh_TW,_zh_CN,_en,", "has no column of text"},
 		{"a column twice", "gamedata/Datas/text/world.csv", "key,zh_TW,zh_CN,en,", "key,zh_TW,zh_CN,zh_CN,", "has the column zh_CN twice"},
+		{"a column that is neither a language nor a note", "gamedata/Datas/text/world.csv", "_en_依據,_上限\n", "_en_依據,_上限,status\n", `has the column "status", which is neither a language`},
+		{"a basis that names no language", "gamedata/Datas/text/world.csv", "_en_依據,_上限\n", "_依據,_上限\n", "has the column _依據, which names no language"},
+		{"the basis of a language the table lacks", "gamedata/Datas/text/world.csv", "_en_依據,_上限\n", "_ja_basis,_上限\n", "has the column _ja_basis, the basis of ja, and no column of ja"},
+		{"text that stands in for text", "gamedata/Datas/text/world.csv", "grade.wood.name,木拍,,Wood,木拍,12", "grade.wood.name,待補,,TBD,待補,12", `the zh_TW text "待補" stands in for text not written yet`},
+		{"a translation that stands in for text", "gamedata/Datas/text/world.csv", "grade.wood.name,木拍,,Wood,木拍,12", "grade.wood.name,木拍,,TODO: name,木拍,12", `the en text "TODO: name" stands in`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -272,10 +277,38 @@ func listFindings(findings []Finding) string {
 func TestCheck_WhatIsAllowedIsNotFound(t *testing.T) {
 	project := testProject()
 	project["gamedata/Datas/grade.csv"] = &fstest.MapFile{Data: []byte(strings.Replace(testGrades, ",steel,grade.steel.name,40,5,fast|loud,30", ",steel,grade.steel.name,40,null,,30", 1))}
-	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte(testText + "ui.title.line,一[br]二,,One[br]Two,一[br]二,\n")}
+	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte(testText + "ui.title.line,一[br]二,,One[br]Two,一[br]二,\n" +
+		"ui.title.beast,乳齒象,,Mastodon of Todoroki,乳齒象,\n")}
 	_, findings := check(t, project)
 	for _, f := range findings {
 		t.Errorf("found: %s", f)
+	}
+	// Languages written with their country or script are languages; a basis
+	// written in English is a basis.
+	project = testProject()
+	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte("key,zh_TW,pt-BR,en,_en_basis,_limit\nui.title.go,開始,Iniciar,Start,開始,9\n")}
+	d, findings := check(t, project)
+	for _, f := range findings {
+		if !strings.Contains(f.Message, MissingKey) {
+			t.Errorf("found: %s", f)
+		}
+	}
+	if text := d.Texts[0]; strings.Join(text.Languages, ",") != "zh_TW,pt-BR,en" || strings.Join(text.Translated, ",") != "en" || text.Rows[0].Limit != 9 {
+		t.Errorf("a table with English notes: %v, translated %v, limit %d", text.Languages, text.Translated, text.Rows[0].Limit)
+	}
+}
+
+// A table that reads a file that is not there names the file: writing it puts
+// the finding right.
+func TestCheck_AFileATableNeeds(t *testing.T) {
+	project := testProject()
+	delete(project, "gamedata/Datas/rule.csv")
+	_, findings := check(t, project)
+	if len(findings) != 1 || findings[0].Needs != "gamedata/Datas/rule.csv" || findings[0].File != "gamedata/Defines/world.xml" {
+		t.Fatalf("findings:\n%s", listFindings(findings))
+	}
+	if (Finding{Message: "power is blank"}).Needs != "" {
+		t.Error("a finding names a file it does not need")
 	}
 }
 

@@ -3,6 +3,7 @@ package council
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -209,6 +210,13 @@ func writtenBy(written []WrittenDocument) []string {
 // with the document or with the line that leaves it as it is; missing says
 // what is wrong when it does not.
 func (p *planner) handIn(ctx context.Context, step string, role *Role, prompt string, asked, must []string, missing func(doc string) error) ([]WrittenDocument, error) {
+	// A role that writes game data writes it whole: a schema it hands in
+	// defines tables, and each reads a file of the role's that the topic may
+	// not have named.
+	data := slices.ContainsFunc(asked, p.isGameData)
+	mayWrite := func(doc string) bool {
+		return contains(asked, doc) || data && p.isGameData(doc)
+	}
 	var written []WrittenDocument
 	err := p.session.settle(ctx, step, role.Model, prompt, func(answer string, replay bool) error {
 		docs, err := parseDocuments(answer)
@@ -229,7 +237,7 @@ func (p *planner) handIn(ctx context.Context, step string, role *Role, prompt st
 				continue
 			case !contains(asked, doc.Path) && p.tooLong(doc.Path) != "":
 				continue // too long to be written: it stays, and is on record as left
-			case !contains(asked, doc.Path):
+			case !mayWrite(doc.Path):
 				// Its own, and not what this topic ends in: it stays as it is.
 				written = append(written, WrittenDocument{Path: doc.Path, Owner: role.ID,
 					Refused: "this topic does not end in it"})
