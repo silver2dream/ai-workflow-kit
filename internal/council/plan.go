@@ -49,23 +49,14 @@ type Options struct {
 	// Progress is told what the meeting is doing, a line at a time, and never
 	// by two goroutines at once.
 	Progress func(string)
-	// Ask puts the table's questions to the owner of the project and returns
-	// an answer for each, in their order; an empty answer leaves the question
-	// open. Without it nobody is asked: the meeting never waits for a person,
-	// and the deciding role says what the plan assumes instead.
+	// Ask puts the questions of the agenda to the owner of the project and
+	// returns an answer for each, in their order; an empty answer leaves the
+	// question open. Without it nobody is asked: the meeting never waits for a
+	// person, and the deciding role says what the plan assumes instead.
 	Ask func(ctx context.Context, questions []string) ([]string, error)
 }
 
-// Position is where a role stands on the brief.
-type Position struct {
-	Role      string   `json:"-"`
-	Summary   string   `json:"summary"`
-	Proposals []string `json:"proposals"`
-	Concerns  []string `json:"concerns"`
-	Questions []string `json:"questions"`
-}
-
-// Objection is what one role cannot accept in another's position.
+// Objection is what one role cannot accept in what another said.
 type Objection struct {
 	From  string `json:"-"`
 	To    string `json:"to"`
@@ -103,13 +94,13 @@ type Exchange struct {
 }
 
 // OwnerAnswer is what the owner of the project said to a question of the
-// table. An empty answer means the owner left it open.
+// agenda. An empty answer means the owner left it open.
 type OwnerAnswer struct {
 	Question string `json:"question"`
 	Answer   string `json:"answer"`
 }
 
-// Summary is where the meeting stands, by the moderator.
+// Summary is where a topic stands, by the moderator.
 type Summary struct {
 	Consensus []string `json:"consensus"`
 	Open      []string `json:"open"`
@@ -158,8 +149,8 @@ type RuleCheck struct {
 	// Found is what the reading found, before the owner put anything right.
 	Found []RuleFinding
 	// Settled says how it ended is known: nothing was found, or the owner had
-	// its turn at putting it right and what it changed was read again. It is
-	// false when the meeting stopped in between.
+	// its turn at putting it right and the reader said what still stands. It
+	// is false when the meeting stopped in between.
 	Settled bool
 	// Open is what still stands after the owner's turn.
 	Open []RuleFinding
@@ -179,24 +170,30 @@ type Plan struct {
 	ID    string
 	Brief string
 
-	Positions []Position
-	// Answers are what the owner of the project said when the table's
-	// questions were put to them; empty when nobody was asked.
-	Answers     []OwnerAnswer
-	Objections  []Objection
-	Disputes    []Dispute
-	Summary     Summary
+	// Agenda is what the meeting takes up, in order.
+	Agenda *Agenda
+	// Answers are what the owner of the project said when the questions of
+	// the agenda were put to them; empty when nobody was asked.
+	Answers []OwnerAnswer
+	// Topics are the topics of the agenda as far as they were held, in order.
+	Topics []TopicRecord
+
+	// Decisions and Assumptions are those of every topic, in order.
 	Decisions   []Decision
 	Assumptions []Assumption
-	Documents   []WrittenDocument
+	// Documents is what became of the documents of every topic, in order.
+	Documents []WrittenDocument
 	// Rules are the rule files of the project the documents were written by,
 	// and RulesLeft the ones that hold for them too and were too long,
 	// together with the others, to be passed on.
 	Rules, RulesLeft []string
 	// RuleChecks are what reading the documents against those rules came to,
-	// a role at a time; only the roles whose documents were read are in it.
+	// a role and a topic at a time; only what was read is in it.
 	RuleChecks []RuleCheck
 
+	// Milestones are the steps the plan is built in; only the first one is
+	// ticketed.
+	Milestones     []Milestone
 	Tickets        []Ticket
 	ListObjections []ListObjection
 	Later          []string
@@ -221,49 +218,34 @@ func (plan *Plan) OpenFindings() []RuleFinding {
 	return open
 }
 
-// position returns where a role stands, or nil before it has said.
-func (plan *Plan) position(role string) *Position {
-	for i := range plan.Positions {
-		if plan.Positions[i].Role == role {
-			return &plan.Positions[i]
+// gather puts together what the topics came to, in their order.
+func (plan *Plan) gather() {
+	plan.Decisions, plan.Assumptions, plan.Documents, plan.RuleChecks = nil, nil, nil, nil
+	plan.Rules, plan.RulesLeft = nil, nil
+	for _, topic := range plan.Topics {
+		plan.Decisions = append(plan.Decisions, topic.Decisions...)
+		plan.Assumptions = append(plan.Assumptions, topic.Assumptions...)
+		plan.Documents = append(plan.Documents, topic.Documents...)
+		plan.RuleChecks = append(plan.RuleChecks, topic.RuleChecks...)
+		for _, file := range topic.Rules {
+			if !contains(plan.Rules, file) {
+				plan.Rules = append(plan.Rules, file)
+			}
 		}
-	}
-	return nil
-}
-
-// questions collects what the roles asked the owner, each with who asked.
-func (plan *Plan) questions() []string {
-	var out []string
-	for _, position := range plan.Positions {
-		for _, question := range position.Questions {
-			if strings.TrimSpace(question) != "" {
-				out = append(out, position.Role+": "+oneLine(question))
+		for _, file := range topic.RulesLeft {
+			if !contains(plan.RulesLeft, file) {
+				plan.RulesLeft = append(plan.RulesLeft, file)
 			}
 		}
 	}
-	return out
-}
-
-// undisputed lists the objections that did not become a dispute.
-func (plan *Plan) undisputed() []string {
-	var out []string
-	for _, objection := range plan.Objections {
-		argued := false
-		for _, dispute := range plan.Disputes {
-			if dispute.Challenger == objection.From && dispute.Defender == objection.To {
-				argued = true
-			}
-		}
-		if !argued {
-			out = append(out, fmt.Sprintf("%s to %s: %s", objection.From, objection.To, oneLine(objection.Point)))
-		}
-	}
-	return out
+	sort.Strings(plan.Rules)
+	sort.Strings(plan.RulesLeft)
 }
 
 // planner runs one meeting.
 type planner struct {
 	root       string
+	planID     string
 	brief      string
 	roster     *Roster
 	repos      []Repo
@@ -287,6 +269,11 @@ func (p *planner) read(rel string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// exists reports whether a document is written: there, and not empty.
+func (p *planner) exists(doc string) bool {
+	return strings.TrimSpace(p.read(doc)) != ""
 }
 
 // maxDocument is how long, in bytes, a document may be for the council to
@@ -330,28 +317,53 @@ func (p *planner) tooLong(doc string) string {
 	return ""
 }
 
-// ownDocuments shows a role the documents it owns as they stand, whole.
-func (p *planner) ownDocuments(role *Role) string {
-	var b strings.Builder
-	for _, doc := range role.Owns {
-		content := p.read(doc)
-		switch {
-		case strings.TrimSpace(content) == "":
-			fmt.Fprintf(&b, "- %s: not written yet\n", doc)
-		case len(content) > maxDocument:
-			head, _ := headOf(content, maxDocument/5)
-			fmt.Fprintf(&b, "===== %s (only its beginning: it is too long to be shown whole)\n%s\n", doc, head)
-		default:
-			fmt.Fprintf(&b, "===== %s\n%s\n", doc, strings.TrimRight(content, "\n"))
+// documentsOf lists a role's documents: the files the roster names, written
+// or not, and the Markdown files that are in its folders, in that order.
+func (p *planner) documentsOf(role *Role) []string {
+	docs := append([]string(nil), role.Files()...)
+	for _, folder := range role.Folders() {
+		var found []string
+		_ = filepath.WalkDir(filepath.Join(p.root, filepath.FromSlash(folder)), func(file string, entry os.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return nil // a folder that is not there holds nothing
+			case entry.IsDir() && strings.HasPrefix(entry.Name(), "."):
+				return filepath.SkipDir
+			case entry.IsDir():
+				return nil
+			}
+			rel, err := filepath.Rel(p.root, file)
+			if err != nil {
+				return nil
+			}
+			if doc := filepath.ToSlash(rel); role.OwnsDocument(doc) {
+				found = append(found, doc)
+			}
+			return nil
+		})
+		sort.Strings(found)
+		for _, doc := range found {
+			if !contains(docs, doc) {
+				docs = append(docs, doc)
+			}
 		}
 	}
-	return b.String()
+	return docs
 }
 
-// decisionLog shows the end of the decision log: what is already decided.
+// decisionLog shows the end of the decision log as it was before this plan:
+// what was decided already. What this plan decides is shown apart.
 func (p *planner) decisionLog() string {
 	const shown = 8000
-	log := strings.TrimSpace(p.read(DecisionsPath))
+	log := p.read(DecisionsPath)
+	if at := strings.Index(log, planMarker(p.planID)); at >= 0 {
+		log = log[:at]
+		// The heading of this plan's section stands right before its marker.
+		if heading := strings.LastIndex(log, "\n## "); heading >= 0 {
+			log = log[:heading]
+		}
+	}
+	log = strings.TrimSpace(log)
 	if log == "" {
 		return ""
 	}
@@ -389,11 +401,13 @@ func newID(root, brief string, now time.Time) string {
 
 var planID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// Run holds a meeting: every role states its position, the roles object to
-// each other, the objections that matter most are argued out, the moderator
-// says where things stand, the deciding role rules, every role writes the
-// documents it owns, and the planning role draws up the work list, which the
-// table gets to object to once.
+// Run holds a meeting, the way a studio holds one: the moderator sets the
+// agenda; each topic is taken up in turn, the role it is about proposing, the
+// others speaking after it in the order the agenda gives, two roles that
+// disagree arguing it out, the moderator saying where it stands, the deciding
+// role ruling, and the owners writing what was settled into their documents,
+// which the next topic starts from. Then the planning role lays the plan out
+// in milestones and tickets the first, and the table objects to the list once.
 //
 // The plan is returned also when the meeting stopped early: what was reached
 // is on disk, and Run with the plan's ID goes on from there.
@@ -439,7 +453,7 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &planner{root: opts.Root, brief: plan.Brief, roster: opts.Roster, repos: opts.Repos, rules: opts.Rules,
+	p := &planner{root: opts.Root, planID: plan.ID, brief: plan.Brief, roster: opts.Roster, repos: opts.Repos, rules: opts.Rules,
 		maxTickets: opts.MaxTickets, now: opts.Now, session: session, ask: opts.Ask}
 
 	if err := p.writeFile(plan.Dir()+"/brief.md", plan.Brief+"\n"); err != nil {
@@ -459,67 +473,51 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 	return plan, meetingErr
 }
 
-// meet runs the steps of the meeting in order.
+// meet runs the meeting: the agenda, the owner's questions, the topics in
+// order, the work list.
 func (p *planner) meet(ctx context.Context, plan *Plan) error {
-	steps := []struct {
-		name string
-		run  func(context.Context, *Plan) error
-	}{
-		{"positions", p.positions},
-		{"questions", p.questions},
-		{"objections", p.objections},
-		{"disputes", p.disputes},
-		{"summary", p.summary},
-		{"decisions", p.decide},
-		{"documents", p.documents},
-		{"work list", p.worklist},
+	if err := p.setAgenda(ctx, plan); err != nil {
+		return fmt.Errorf("the meeting stopped at the agenda: %w", err)
 	}
-	for _, step := range steps {
+	if err := p.askOwner(ctx, plan); err != nil {
+		return fmt.Errorf("the meeting stopped at the owner's questions: %w", err)
+	}
+	if err := p.checkBudget(plan); err != nil {
+		return err
+	}
+	for i := range plan.Topics {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := step.run(ctx, plan); err != nil {
-			return fmt.Errorf("the meeting stopped at the %s: %w", step.name, err)
-		}
-	}
-	return nil
-}
-
-// positions asks every role where it stands.
-func (p *planner) positions(ctx context.Context, plan *Plan) error {
-	p.session.say("Positions: %d roles state where they stand", len(p.roster.Roles))
-	positions := make([]Position, len(p.roster.Roles))
-	err := p.session.each(len(p.roster.Roles), func(i int) error {
-		role := &p.roster.Roles[i]
-		position, err := settleJSON(ctx, p.session, "position "+role.ID, role.Model, p.positionPrompt(role), func(got *Position) error {
-			if strings.TrimSpace(got.Summary) == "" {
-				return errors.New("the position has no summary")
-			}
-			return nil
-		})
+		err := p.hold(ctx, plan, i)
+		plan.gather()
 		if err != nil {
+			return fmt.Errorf("the meeting stopped at topic %d (%s): %w", i+1, plan.Topics[i].Topic.ID, err)
+		}
+		// The record of a topic is there as soon as it is held: a long
+		// meeting can be followed in its minutes.
+		if err := p.writeMinutes(plan, nil); err != nil {
 			return err
 		}
-		position.Role = role.ID
-		positions[i] = *position
-		return nil
-	})
-	if err != nil {
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	plan.Positions = positions
+	if err := p.worklist(ctx, plan); err != nil {
+		return fmt.Errorf("the meeting stopped at the work list: %w", err)
+	}
 	return nil
 }
 
 // maxQuestions is how many questions are put to the owner at once.
 const maxQuestions = 7
 
-// questions puts what the roles want to know from the owner of the project to
-// the owner, when there is somebody to ask. What the owner answers, the table
-// knows from here on; what stays open, the deciding role makes an assumption
-// for. Answers that were given are kept: going on with a plan does not ask
-// again.
-func (p *planner) questions(ctx context.Context, plan *Plan) error {
+// askOwner puts the questions of the agenda to the owner of the project, when
+// there is somebody to ask. What the owner answers, the table knows from here
+// on; what stays open, the deciding role makes an assumption for where a
+// ruling rests on it. Answers that were given are kept: going on with a plan
+// does not ask again.
+func (p *planner) askOwner(ctx context.Context, plan *Plan) error {
 	const step = "the owner answers"
 	if kept, ok := p.session.remembered(step); ok {
 		var answers []OwnerAnswer
@@ -529,37 +527,10 @@ func (p *planner) questions(ctx context.Context, plan *Plan) error {
 			return nil
 		}
 	}
-	asked := plan.questions()
-	if p.ask == nil || len(asked) == 0 {
+	list := nonEmpty(plan.Agenda.Questions)
+	if p.ask == nil || len(list) == 0 {
 		return nil
 	}
-
-	// Several roles ask the same thing in their own words: the moderator
-	// makes one list of it. A few questions are put as they were asked.
-	var list []string
-	if len(asked) <= 3 {
-		for _, position := range plan.Positions {
-			list = append(list, nonEmpty(position.Questions)...)
-		}
-	} else {
-		type answer struct {
-			Questions []string `json:"questions"`
-		}
-		got, err := settleJSON(ctx, p.session, "moderator puts the questions", p.roster.Model, p.questionsPrompt(asked), func(got *answer) error {
-			if len(nonEmpty(got.Questions)) == 0 {
-				return errors.New("the list has no question, and the roles asked some")
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		list = nonEmpty(got.Questions)
-	}
-	if len(list) > maxQuestions {
-		list = list[:maxQuestions]
-	}
-
 	p.session.say("Questions: %d for the owner of the project", len(list))
 	said, err := p.ask(ctx, list)
 	if err != nil {
@@ -588,175 +559,67 @@ func (p *planner) questions(ctx context.Context, plan *Plan) error {
 	return nil
 }
 
-// objections asks every role what it cannot accept in the others' positions.
-func (p *planner) objections(ctx context.Context, plan *Plan) error {
-	p.session.say("Objections: every role reads the others' positions")
-	type answer struct {
-		Objections []Objection `json:"objections"`
+// openQuestions lists the questions of the agenda the owner did not answer.
+func (p *planner) openQuestions(plan *Plan) []string {
+	var open []string
+	for _, question := range nonEmpty(plan.Agenda.Questions) {
+		answered := false
+		for _, answer := range p.answers {
+			if answer.Question == question && answer.Answer != "" {
+				answered = true
+			}
+		}
+		if !answered {
+			open = append(open, question)
+		}
 	}
-	perRole := make([][]Objection, len(p.roster.Roles))
-	err := p.session.each(len(p.roster.Roles), func(i int) error {
+	return open
+}
+
+// checkBudget says before the topics are taken up when the roster's calls
+// cannot carry the agenda: a meeting that runs out half way leaves documents
+// that were written from half a meeting.
+func (p *planner) checkBudget(plan *Plan) error {
+	needed := 0
+	for _, record := range plan.Topics {
+		if p.session.isRemembered(record.step("decision")) {
+			continue // held in an earlier run
+		}
+		needed += p.minimumCalls(record.Topic)
+	}
+	if !p.session.isRemembered("work list " + p.roster.Planner().ID) {
+		needed += len(p.roster.Roles) // the draft, and every other role's look at it
+	}
+	if left := p.roster.Limits.Calls - p.session.callsMade(); needed > left {
+		return fmt.Errorf("the agenda needs at least %d more model calls and the roster allows %d more: raise limits.calls in the roster, or shorten the agenda in %s/%s, then go on with `awkit plan --resume %s`",
+			needed, left, plan.Dir(), AgendaFile, plan.ID)
+	}
+	return nil
+}
+
+// minimumCalls is the fewest model calls a topic is held with: the lead, each
+// speaker, the moderator, the deciding role, and every owner who writes, once
+// to write and, where the project has rules for its documents, once to have
+// them read.
+func (p *planner) minimumCalls(topic Topic) int {
+	calls := 1 + len(topic.Speakers) + 2
+	for i := range p.roster.Roles {
 		role := &p.roster.Roles[i]
-		got, err := settleJSON(ctx, p.session, "objections "+role.ID, role.Model, p.objectionPrompt(role, plan), func(got *answer) error {
-			for _, objection := range got.Objections {
-				if objection.To == role.ID {
-					return errors.New("an objection is addressed to yourself")
-				}
-				if p.roster.Role(objection.To) == nil {
-					return fmt.Errorf("an objection is addressed to %q, who is not at the table (the roles are: %s)", objection.To, strings.Join(p.roster.IDs(), ", "))
-				}
-				if strings.TrimSpace(objection.Point) == "" {
-					return errors.New("an objection has no point")
-				}
+		var mine []string
+		for _, doc := range topic.Writes {
+			if role.OwnsDocument(doc) {
+				mine = append(mine, doc)
 			}
-			return nil
-		})
-		if err != nil {
-			return err
 		}
-		for _, objection := range got.Objections {
-			objection.From = role.ID
-			perRole[i] = append(perRole[i], objection)
+		if len(mine) == 0 {
+			continue
 		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	plan.Objections = nil
-	for _, objections := range perRole {
-		plan.Objections = append(plan.Objections, objections...)
-	}
-	p.session.say("  %d objections raised", len(plan.Objections))
-	return nil
-}
-
-// disputes picks the objections to argue out and has each argued.
-func (p *planner) disputes(ctx context.Context, plan *Plan) error {
-	plan.Disputes = nil
-	limit := p.roster.Limits.Disputes
-	switch {
-	case len(plan.Objections) == 0:
-		p.session.say("Disputes: nobody objected")
-		return nil
-	case len(plan.Objections) <= limit:
-		// Few enough to argue every one: nothing for the moderator to pick.
-		for _, objection := range plan.Objections {
-			plan.Disputes = append(plan.Disputes, Dispute{Topic: topicOf(objection.Point), Challenger: objection.From,
-				Defender: objection.To, Point: objection.Point, Wants: objection.Wants})
-		}
-	default:
-		type answer struct {
-			Disputes []Dispute `json:"disputes"`
-		}
-		got, err := settleJSON(ctx, p.session, "moderator picks the disputes", p.roster.Model, p.disputesPrompt(plan), func(got *answer) error {
-			if len(got.Disputes) == 0 {
-				return errors.New("no dispute was picked, and there are objections")
-			}
-			for _, dispute := range got.Disputes {
-				if p.roster.Role(dispute.Challenger) == nil || p.roster.Role(dispute.Defender) == nil || dispute.Challenger == dispute.Defender {
-					return fmt.Errorf("the dispute %q is not between two roles at the table (the roles are: %s)", dispute.Topic, strings.Join(p.roster.IDs(), ", "))
-				}
-				if strings.TrimSpace(dispute.Point) == "" {
-					return fmt.Errorf("the dispute %q has no point", dispute.Topic)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		plan.Disputes = got.Disputes
-		if len(plan.Disputes) > limit {
-			plan.Disputes = plan.Disputes[:limit]
+		calls++
+		if len(p.rulesFor(mine).shown) > 0 {
+			calls++
 		}
 	}
-
-	p.session.say("Disputes: %d points are argued out", len(plan.Disputes))
-	// Each dispute is argued on its own: what a role concedes in one is not
-	// known to it in another, and need not be.
-	return p.session.each(len(plan.Disputes), func(i int) error {
-		return p.argue(ctx, plan, i, &plan.Disputes[i])
-	})
-}
-
-// topicOf names a dispute after the first words of its point.
-func topicOf(point string) string {
-	words := strings.Fields(point)
-	if len(words) > 8 {
-		return strings.Join(words[:8], " ") + "..."
-	}
-	return strings.Join(words, " ")
-}
-
-// argue lets the two roles of a dispute go back and forth: the defender
-// answers, the challenger says whether that settles it. It ends when the
-// defender concedes, the challenger accepts, or the rounds are used up.
-func (p *planner) argue(ctx context.Context, plan *Plan, index int, dispute *Dispute) error {
-	defender, challenger := p.roster.Role(dispute.Defender), p.roster.Role(dispute.Challenger)
-	type defence struct {
-		Stance   string `json:"stance"`
-		Reply    string `json:"reply"`
-		Position string `json:"position"`
-	}
-	type reply struct {
-		Accepts bool   `json:"accepts"`
-		Reply   string `json:"reply"`
-		Wants   string `json:"wants"`
-	}
-
-	for round := 1; round <= p.roster.Limits.DisputeRounds; round++ {
-		step := fmt.Sprintf("dispute %d round %d", index+1, round)
-		answer, err := settleJSON(ctx, p.session, step+" "+defender.ID+" answers", defender.Model, p.defencePrompt(defender, plan, dispute), func(got *defence) error {
-			got.Stance = strings.ToLower(strings.TrimSpace(got.Stance))
-			switch got.Stance {
-			case "concede", "revise", "hold":
-			default:
-				return fmt.Errorf("stance is %q; it is one of concede, revise, hold", got.Stance)
-			}
-			if strings.TrimSpace(got.Reply) == "" {
-				return errors.New("the answer has no reply")
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		exchange := Exchange{Stance: answer.Stance, Reply: answer.Reply, Position: answer.Position}
-		if exchange.Stance == "concede" {
-			dispute.Exchanges = append(dispute.Exchanges, exchange)
-			dispute.Settled = true
-			dispute.Outcome = fmt.Sprintf("%s conceded in round %d", defender.ID, round)
-			break
-		}
-
-		dispute.Exchanges = append(dispute.Exchanges, exchange)
-		verdict, err := settleJSON(ctx, p.session, step+" "+challenger.ID+" replies", challenger.Model, p.replyPrompt(challenger, plan, dispute), func(got *reply) error {
-			if strings.TrimSpace(got.Reply) == "" {
-				return errors.New("the answer has no reply")
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		last := &dispute.Exchanges[len(dispute.Exchanges)-1]
-		last.Answered, last.Accepts, last.Answer, last.StillWants = true, verdict.Accepts, verdict.Reply, verdict.Wants
-		if verdict.Accepts {
-			dispute.Settled = true
-			dispute.Outcome = fmt.Sprintf("%s accepted %s's answer in round %d", challenger.ID, defender.ID, round)
-			break
-		}
-	}
-	if !dispute.Settled {
-		dispute.Outcome = fmt.Sprintf("not settled after %d round(s); it goes to %s", len(dispute.Exchanges), p.roster.Decider().ID)
-	}
-	state := "not settled"
-	if dispute.Settled {
-		state = "settled"
-	}
-	p.session.say("  %s against %s: %s", dispute.Challenger, dispute.Defender, state)
-	return nil
+	return calls
 }
 
 // nobody is how a role says, where it was asked for an empty string, that
@@ -778,284 +641,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-// summary asks the moderator where the meeting stands.
-func (p *planner) summary(ctx context.Context, plan *Plan) error {
-	p.session.say("Summary: the moderator says where the meeting stands")
-	got, err := settleJSON[Summary](ctx, p.session, "moderator sums up", p.roster.Model, p.summaryPrompt(plan), nil)
-	if err != nil {
-		return err
-	}
-	plan.Summary = *got
-	return nil
-}
-
-// decide asks the deciding role to rule, and puts the rulings on record.
-func (p *planner) decide(ctx context.Context, plan *Plan) error {
-	decider := p.roster.Decider()
-	p.session.say("Decisions: %s rules", decider.ID)
-	type answer struct {
-		Decisions   []Decision   `json:"decisions"`
-		Assumptions []Assumption `json:"assumptions"`
-	}
-	got, err := settleJSON(ctx, p.session, "decisions "+decider.ID, decider.Model, p.decisionPrompt(decider, plan), func(got *answer) error {
-		if len(got.Decisions) == 0 {
-			return errors.New("nothing was decided; a plan rests on at least one decision")
-		}
-		for _, decision := range got.Decisions {
-			if strings.TrimSpace(decision.Decision) == "" {
-				return errors.New("a decision does not say what is decided")
-			}
-		}
-		for _, assumption := range got.Assumptions {
-			if strings.TrimSpace(assumption.Assumption) == "" {
-				return errors.New("an assumption does not say what is assumed")
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	plan.Decisions, plan.Assumptions = got.Decisions, got.Assumptions
-	for i := range plan.Decisions {
-		if saysNobody(plan.Decisions[i].Dissent) {
-			plan.Decisions[i].Dissent = ""
-		}
-	}
-	p.number(plan)
-	p.session.say("  %d decided, %d assumed until the owner answers", len(plan.Decisions), len(plan.Assumptions))
-	return p.recordDecisions(plan)
-}
-
-// seat is one role's turn at the documents: what it is asked for, the rules
-// that hold for those files, and what came of it.
-type seat struct {
-	role *Role
-	// asked are the documents the role owns and the council can write.
-	asked []string
-	book  rulebook
-	// written is what became of each document.
-	written []WrittenDocument
-	// check is what reading them against the rules came to; nil when nothing
-	// was read.
-	check *RuleCheck
-}
-
-// documents asks every role to write the documents it owns, by the project's
-// rules for those files. What a role wrote is read against the rules, and the
-// role puts right what was found, once. Only this function writes the
-// documents, and only to the paths the role owns.
-func (p *planner) documents(ctx context.Context, plan *Plan) error {
-	// What each role is asked for: the documents it owns, without the ones
-	// that are too long for the council to write.
-	var seats []*seat
-	for i := range p.roster.Roles {
-		role := &p.roster.Roles[i]
-		if len(role.Owns) == 0 {
-			continue
-		}
-		at := &seat{role: role}
-		for _, doc := range role.Owns {
-			if reason := p.tooLong(doc); reason != "" {
-				at.written = append(at.written, WrittenDocument{Path: doc, Owner: role.ID, Refused: reason})
-				continue
-			}
-			at.asked = append(at.asked, doc)
-		}
-		at.book = p.rulesFor(at.asked)
-		seats = append(seats, at)
-	}
-
-	plan.Rules, plan.RulesLeft = nil, nil
-	for _, at := range seats {
-		for _, rule := range at.book.shown {
-			if !contains(plan.Rules, rule.File) {
-				plan.Rules = append(plan.Rules, rule.File)
-			}
-		}
-		for _, rule := range at.book.left {
-			if !contains(plan.RulesLeft, rule.File) {
-				plan.RulesLeft = append(plan.RulesLeft, rule.File)
-			}
-		}
-	}
-	sort.Strings(plan.Rules)
-	sort.Strings(plan.RulesLeft)
-
-	switch {
-	case len(plan.Rules) == 0:
-		p.session.say("Documents: %d roles write what they own", len(seats))
-	default:
-		p.session.say("Documents: %d roles write what they own, by %d rule(s) of the project", len(seats), len(plan.Rules))
-	}
-	if len(plan.RulesLeft) > 0 {
-		p.session.say("  not passed on, the rules together being longer than one question carries: %s", strings.Join(plan.RulesLeft, ", "))
-	}
-
-	err := p.session.each(len(seats), func(i int) error {
-		return p.write(ctx, plan, seats[i])
-	})
-
-	// What was written is on record, also when a role's turn failed.
-	plan.Documents, plan.RuleChecks = nil, nil
-	for _, at := range seats {
-		plan.Documents = append(plan.Documents, at.written...)
-		if at.check != nil {
-			plan.RuleChecks = append(plan.RuleChecks, *at.check)
-		}
-	}
-	return err
-}
-
-// write is one role's turn at the documents: it writes them, they are read
-// against the rules, it puts right what was found, and the reader says which
-// of the findings still stand.
-func (p *planner) write(ctx context.Context, plan *Plan, at *seat) error {
-	role := at.role
-	if len(at.asked) == 0 {
-		return nil
-	}
-	written, err := p.handIn(ctx, "documents "+role.ID, role, p.documentsPrompt(role, plan, at.asked, at.book), at.asked,
-		at.asked, func(doc string) error { return fmt.Errorf("%s was not handed in; you own it", doc) })
-	if err != nil {
-		return err
-	}
-	at.written = append(at.written, written...)
-
-	// Only what this meeting wrote is read against the rules: a document its
-	// owner left as it was is not this meeting's.
-	read := writtenBy(written)
-	if len(at.book.shown) == 0 || len(read) == 0 {
-		return nil
-	}
-	at.check = &RuleCheck{Owner: role.ID}
-	found, err := p.checkRules(ctx, "rules check "+role.ID, role, plan, read, at.book)
-	if err != nil {
-		return err
-	}
-	at.check.Found = found
-	if len(found) == 0 {
-		at.check.Settled = true
-		return nil
-	}
-
-	p.session.say("  %s: %d point(s) at odds with the rules; %s puts them right", role.ID, len(found), role.ID)
-	revised, err := p.handIn(ctx, "documents revised "+role.ID, role, p.revisionPrompt(role, plan, at.book, found), at.asked,
-		documentsOf(found), func(doc string) error {
-			return fmt.Errorf("%s was not answered for, and a finding names it: hand it in, or leave it as it is with <<<UNCHANGED %s>>>", doc, doc)
-		})
-	if err != nil {
-		return err
-	}
-	changed := false
-	for _, doc := range revised {
-		switch {
-		case doc.Refused != "":
-			at.written = append(at.written, doc)
-		case !doc.Unchanged:
-			changed = true
-			for i := range at.written {
-				if at.written[i].Path == doc.Path && at.written[i].Refused == "" {
-					at.written[i].Unchanged = false
-				}
-			}
-		}
-	}
-	if !changed {
-		// The owner left every document as it was: what was found stands.
-		at.check.Open, at.check.Settled = found, true
-		return nil
-	}
-	open, err := p.recheckRules(ctx, "rules recheck "+role.ID, role, plan, writtenBy(at.written), at.book, found)
-	if err != nil {
-		return err
-	}
-	at.check.Open, at.check.Settled = open, true
-	if len(open) > 0 {
-		p.session.say("  %s: %d point(s) still at odds with the rules", role.ID, len(open))
-	}
-	return nil
-}
-
-// writtenBy lists the documents a meeting wrote: not the ones left as they
-// were, and not the ones that were turned away.
-func writtenBy(written []WrittenDocument) []string {
-	var docs []string
-	for _, doc := range written {
-		if doc.Refused == "" && !doc.Unchanged && !contains(docs, doc.Path) {
-			docs = append(docs, doc.Path)
-		}
-	}
-	return docs
-}
-
-// handIn settles an answer that holds a role's documents: it reads them,
-// turns away what the role does not own, and writes the rest. asked are the
-// documents the role may hand in. must are the ones it has to answer for,
-// with the document or with the line that leaves it as it is; missing says
-// what is wrong when it does not.
-func (p *planner) handIn(ctx context.Context, step string, role *Role, prompt string, asked, must []string, missing func(doc string) error) ([]WrittenDocument, error) {
-	var written []WrittenDocument
-	err := p.session.settle(ctx, step, role.Model, prompt, func(answer string, replay bool) error {
-		docs, err := parseDocuments(answer)
-		if err != nil {
-			return err
-		}
-		var accepted []document
-		written = nil
-		handedIn := map[string]bool{}
-		for _, doc := range docs {
-			switch {
-			case !role.OwnsDocument(doc.Path):
-				// Not an error of form: the document is left out and the
-				// minutes say so. A role does not get to write what
-				// another role owns, however it asks.
-				written = append(written, WrittenDocument{Path: doc.Path, Owner: role.ID,
-					Refused: fmt.Sprintf("%s does not own this document", role.ID)})
-				continue
-			case !contains(asked, doc.Path):
-				continue // too long to be written: it stays, and is on record as left
-			case handedIn[doc.Path]:
-				return fmt.Errorf("%s was handed in twice", doc.Path)
-			}
-			handedIn[doc.Path] = true
-			switch {
-			case doc.Unchanged && strings.TrimSpace(p.read(doc.Path)) == "":
-				return fmt.Errorf("%s is not written yet, so it cannot stay unchanged: write it", doc.Path)
-			case doc.Unchanged:
-				written = append(written, WrittenDocument{Path: doc.Path, Owner: role.ID, Unchanged: true})
-			case strings.TrimSpace(doc.Content) == "":
-				return fmt.Errorf("%s is empty", doc.Path)
-			case len(doc.Content) > maxDocument:
-				return fmt.Errorf("%s is %d bytes long; a document stays under %d bytes, so that it can be rewritten whole: shorten it", doc.Path, len(doc.Content), maxDocument)
-			default:
-				accepted = append(accepted, doc)
-				written = append(written, WrittenDocument{Path: doc.Path, Owner: role.ID})
-			}
-		}
-		for _, owned := range must {
-			if !handedIn[owned] {
-				return missing(owned)
-			}
-		}
-		// An answer from an earlier run was written then. What is on disk
-		// now may have been changed by hand since, and stays.
-		if replay {
-			return nil
-		}
-		for _, doc := range accepted {
-			if err := p.writeFile(doc.Path, doc.Content); err != nil {
-				return broken{err}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return written, nil
 }
 
 func contains(items []string, item string) bool {

@@ -78,6 +78,12 @@ func (s *session) remembered(step string) (string, bool) {
 	return answer, ok
 }
 
+// isRemembered reports whether an earlier run settled a step.
+func (s *session) isRemembered(step string) bool {
+	_, ok := s.remembered(step)
+	return ok
+}
+
 // remember keeps the answer a step was settled with. Only answers that could
 // be used are kept: a plan that is resumed asks again where it failed.
 func (s *session) remember(step, answer string) error {

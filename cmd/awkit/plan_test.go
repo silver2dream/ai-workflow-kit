@@ -151,7 +151,7 @@ func TestPlanRoster(t *testing.T) {
 	// It is written for the repos the configuration names: their engineering
 	// documents are kept with them. The root of the repository, which a
 	// ticket can be for, is not a repo of the configuration and gets none.
-	if want := []string{"apps/server/docs/architecture.md", "client/docs/architecture.md", "apps/server/docs/protocol.md"}; !reflect.DeepEqual(roster.Role("tech-lead").Owns, want) {
+	if want := []string{"apps/server/docs/", "client/docs/"}; !reflect.DeepEqual(roster.Role("tech-lead").Owns, want) {
 		t.Errorf("the tech lead owns %v, want %v", roster.Role("tech-lead").Owns, want)
 	}
 	file := layout.Roster(dir)
@@ -179,7 +179,7 @@ func TestPlanRoster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planRoster: %v", err)
 	}
-	if want := []string{"docs/engineering/architecture.md"}; single.Role("architect") == nil || !reflect.DeepEqual(single.Role("architect").Owns, want) {
+	if want := []string{"docs/engineering/"}; single.Role("architect") == nil || !reflect.DeepEqual(single.Role("architect").Owns, want) {
 		t.Errorf("the roster of a project that is one repo: %v, want the architect to own %v", single.IDs(), want)
 	}
 	if got := configuredRepos(t.TempDir()); got != nil {
@@ -221,8 +221,8 @@ func TestPlanRoster(t *testing.T) {
 type scriptedCouncil struct {
 	mu    sync.Mutex
 	calls int
-	// curious makes two roles ask the owner something, and the deciding role
-	// assume an answer to one of the questions.
+	// curious puts two questions for the owner on the agenda, and makes the
+	// deciding role assume an answer to one of them.
 	curious bool
 	// toldOwner counts the questions in which a role was told what the owner
 	// answered.
@@ -239,6 +239,51 @@ type scriptedCouncil struct {
 
 var councilRole = regexp.MustCompile(`^You are the .+? \(([a-z0-9-]+)\) at a planning meeting`)
 var councilOwned = regexp.MustCompile(`(?m)^- (\S+\.md)$`)
+
+// councilSeat reads a role of the table, and what it writes, from the
+// moderator's question about the agenda.
+var councilSeat = regexp.MustCompile(`(?m)^- ([a-z0-9-]+) \([^)]*\)([^\n]*)\n  Stands for: [^\n]*\n  Writes: ([^\n]*)$`)
+
+// councilFiles names the documents a role writes in a folder of its own.
+var councilFiles = map[string][]string{
+	"product-owner": {"requirements.md"},
+	"user-advocate": {"journeys.md"},
+	"architect":     {"architecture.md"},
+	"skeptic":       {"risks.md", "test-strategy.md"},
+}
+
+// councilAgenda is an agenda of one topic for the table the moderator is
+// shown: the deciding role leads, every other role speaks, and every role
+// writes its documents.
+func councilAgenda(prompt string, questions string) string {
+	lead := ""
+	var speakers, writes []string
+	for _, seat := range councilSeat.FindAllStringSubmatch(prompt, -1) {
+		id, note, owns := seat[1], seat[2], seat[3]
+		if strings.Contains(note, "decides") {
+			lead = id
+		} else {
+			speakers = append(speakers, `"`+id+`"`)
+		}
+		for _, entry := range strings.Split(owns, ", ") {
+			switch {
+			case entry == "nothing":
+			case strings.HasSuffix(entry, "/"):
+				names := councilFiles[id]
+				if len(names) == 0 {
+					names = []string{"notes.md"}
+				}
+				for _, name := range names {
+					writes = append(writes, `"`+entry+name+`"`)
+				}
+			default:
+				writes = append(writes, `"`+entry+`"`)
+			}
+		}
+	}
+	return `{"topics": [{"id": "scope", "title": "What is built", "question": "What is built, and how?", "lead": "` + lead + `", "speakers": [` +
+		strings.Join(speakers, ", ") + `], "reads": [], "writes": [` + strings.Join(writes, ", ") + `]}], "questions": [` + questions + `]}`
+}
 
 func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string, error) {
 	m.mu.Lock()
@@ -272,26 +317,30 @@ func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string
 	case strings.Contains(prompt, "Your task now: put right what the check found"):
 		carried("put right")
 		return "<<<UNCHANGED backend/docs/architecture.md>>>\n", nil
-	case strings.Contains(prompt, "state your position on the brief"):
-		question := ""
+	case strings.Contains(prompt, "Before the meeting you set its agenda"):
+		questions := ""
 		if m.curious {
-			question = map[string]string{"product-owner": `"Who calls the endpoint?"`, "skeptic": `"May it be reached from outside?"`}[role]
+			questions = `"Who calls the endpoint?", "May it be reached from outside?"`
 		}
-		return block(`{"summary": "` + role + ` agrees.", "proposals": ["build it"], "concerns": [], "questions": [` + question + `]}`)
-	case strings.Contains(prompt, "Your task now: object."), strings.Contains(prompt, "Your task now: object to the work list"):
+		return block(councilAgenda(prompt, questions))
+	case strings.Contains(prompt, "Your task now: you lead this topic"):
+		return block(`{"says": "` + role + ` proposes to build it.", "proposals": ["build it"], "concerns": []}`)
+	case strings.Contains(prompt, "Your task now: speak to the topic"):
+		return block(`{"says": "` + role + ` agrees.", "proposals": [], "concerns": [], "objections": []}`)
+	case strings.Contains(prompt, "Your task now: object to the work list"):
 		return block(`{"objections": []}`)
-	case strings.Contains(prompt, "Say where the meeting stands"):
+	case strings.Contains(prompt, "Say where the topic below stands"):
 		return block(`{"consensus": ["build it"], "open": [], "questions": []}`)
-	case strings.Contains(prompt, "Your task now: decide"):
+	case strings.Contains(prompt, "Your task now: decide this topic"):
 		assumptions := ""
 		if m.curious {
 			assumptions = `{"question": "May it be reached   from outside?", "assumption": "No: it is internal only.", "if_wrong": "It needs a token."}, {"question": "", "assumption": "The database is PostgreSQL.", "if_wrong": ""}`
 		}
 		return block(`{"decisions": [{"title": "scope", "decision": "Build the endpoint.", "rationale": "It is small.", "dissent": ""}], "assumptions": [` + assumptions + `]}`)
-	case strings.Contains(prompt, "write the documents you own"):
+	case strings.Contains(prompt, "Your task now: write your documents of this topic"):
 		carried("write")
 		// The documents asked for are listed right under the task.
-		task := prompt[strings.Index(prompt, "write the documents you own"):]
+		task := prompt[strings.Index(prompt, "Your task now: write your documents of this topic"):]
 		task = task[:strings.Index(task, "A document is the current truth")]
 		var b strings.Builder
 		for _, match := range councilOwned.FindAllStringSubmatch(task, -1) {
@@ -302,8 +351,9 @@ func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string
 			fmt.Fprintf(&b, "<<<DOCUMENT %s>>>\n# %s\n<<<END>>>\n", match[1], match[1])
 		}
 		return b.String(), nil
-	case strings.Contains(prompt, "Your task now: turn the plan into tickets"):
-		return block(`{"tickets": [
+	case strings.Contains(prompt, "Your task now: lay the plan out in milestones"):
+		return block(`{"milestones": [{"key": "m1", "title": "The endpoint answers", "goal": "It works.", "done_when": ["GET /healthz answers 200"]},
+			{"key": "m2", "title": "It is watched", "goal": "Somebody hears of it.", "done_when": ["an alert fires"]}], "tickets": [
 			{"key": "t1", "title": "[feat] serve /healthz", "repo": "backend", "summary": "The endpoint.", "scope": ["handler"], "acceptance": ["answers 200"], "testing": ["a test"]},
 			{"key": "t2", "title": "[docs] describe /healthz", "repo": "root", "summary": "The docs.", "scope": ["README"], "acceptance": ["the README names the endpoint"], "testing": [], "depends_on": ["t1"]}
 		], "later": []}`)
@@ -496,7 +546,7 @@ func TestCmdPlan_AskThePersonAtTheTerminal(t *testing.T) {
 		"\n1/2  Who calls the endpoint?\n> ",
 		"\n2/2  May it be reached from outside?\n> ",
 		"  1 answered, 1 left to the council to assume\n",
-		"1 decisions, 5 documents written, 2 tickets proposed",
+		"1 topics, 1 decisions, 5 documents written, 2 milestones, 2 tickets proposed for the first",
 		"The plan assumes 2 thing(s) only you can answer (docs/decisions.md):\n" +
 			"  A1   May it be reached from outside?\n       assumed: No: it is internal only.\n" +
 			"  A2   The database is PostgreSQL.\n" +
@@ -562,7 +612,7 @@ func TestCmdPlan_WhatAPlanWroteAndWhatWaits(t *testing.T) {
 			t.Errorf("cmdPlan = %d", code)
 		}
 	})
-	if !strings.Contains(first, "1 decisions, 5 documents written, 2 tickets proposed") {
+	if !strings.Contains(first, "1 topics, 1 decisions, 5 documents written, 2 milestones, 2 tickets proposed for the first") {
 		t.Errorf("the first plan should say it wrote five documents:\n%s", first)
 	}
 	// The next plan leaves every document as it is.
@@ -572,7 +622,7 @@ func TestCmdPlan_WhatAPlanWroteAndWhatWaits(t *testing.T) {
 			t.Errorf("cmdPlan = %d", code)
 		}
 	})
-	if !strings.Contains(second, "1 decisions, 0 documents written, 2 tickets proposed") {
+	if !strings.Contains(second, "1 topics, 1 decisions, 0 documents written, 2 milestones, 2 tickets proposed for the first") {
 		t.Errorf("the second plan should say it wrote no document:\n%s", second)
 	}
 
@@ -662,7 +712,7 @@ func TestCmdPlan_WritesByTheProjectsRules(t *testing.T) {
 	if want := map[string]int{"write": 4, "read": 4}; !reflect.DeepEqual(model.rules, want) {
 		t.Errorf("questions that carried the rule about documents: %v, want %v", model.rules, want)
 	}
-	if want := "Documents: 4 roles write what they own, by 2 rule(s) of the project"; !strings.Contains(stdout, want) {
+	if want := "  documents: docs/product/requirements.md, docs/ux/journeys.md, backend/docs/architecture.md, docs/qa/risks.md, docs/qa/test-strategy.md, by 2 rule(s) of the project"; !strings.Contains(stdout, want) {
 		t.Errorf("the output should say %q:\n%s", want, stdout)
 	}
 	if want := ".claude/rules/broke.md: its frontmatter is not valid YAML, or its paths are not a list of patterns, so it holds for every file the council writes"; !strings.Contains(stderr, want) {
@@ -708,7 +758,7 @@ func TestCmdPlan_WritesByTheProjectsRules(t *testing.T) {
 			t.Errorf("a project without rules: %v, and the output says %q:\n%s\n%s", model.rules, said, stdout, stderr)
 		}
 	}
-	if !strings.Contains(stdout, "Documents: 4 roles write what they own\n") {
+	if !strings.Contains(stdout, "  documents: docs/product/requirements.md, docs/ux/journeys.md, backend/docs/architecture.md, docs/qa/risks.md, docs/qa/test-strategy.md\n") {
 		t.Errorf("the output of a project without rules:\n%s", stdout)
 	}
 }
@@ -781,7 +831,7 @@ func TestCmdPlanApprove_WarnsAboutDocsThatAreNotCommitted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the roster of the project: %v", err)
 	}
-	if architect := roster.Role("architect"); architect == nil || !reflect.DeepEqual(architect.Owns, []string{"backend/docs/architecture.md"}) {
+	if architect := roster.Role("architect"); architect == nil || !reflect.DeepEqual(architect.Owns, []string{"backend/docs/"}) {
 		t.Fatalf("the architect of the test owns %v", architect)
 	}
 

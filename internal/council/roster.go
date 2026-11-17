@@ -26,7 +26,6 @@ import (
 	"text/template"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
-	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -48,8 +47,10 @@ type Roster struct {
 
 // Limits bound what one plan may cost.
 type Limits struct {
-	// Disputes is how many disputed points are argued out; the rest go to the
-	// deciding role as they are.
+	// Topics is how many topics an agenda may have.
+	Topics int `yaml:"topics"`
+	// Disputes is how many disputed points of one topic are argued out; the
+	// rest go to the deciding role as they are.
 	Disputes int `yaml:"disputes"`
 	// DisputeRounds is how often a disputed point goes back and forth.
 	DisputeRounds int `yaml:"dispute_rounds"`
@@ -71,8 +72,10 @@ type Role struct {
 	Model string `yaml:"model"`
 	// Stance is what the role stands for, pushes for and pushes back on.
 	Stance string `yaml:"stance"`
-	// Owns lists the documents only this role writes: Markdown files, by their
-	// paths from the project's root.
+	// Owns lists what only this role writes, by paths from the project's
+	// root: a Markdown file, or a folder, written with a slash at its end, in
+	// which the role writes any Markdown file and opens a new one when a topic
+	// ends in it.
 	Owns []string `yaml:"owns"`
 	// Decides marks the one role that rules on what stays disputed.
 	Decides bool `yaml:"decides"`
@@ -103,17 +106,6 @@ func (repos rosterRepos) Docs() []string {
 		dirs = []string{layout.EngineeringDocs}
 	}
 	return dirs
-}
-
-// DocsOf returns the directory of the engineering documents of the first repo
-// built with a toolchain, and of the first repo when none is.
-func (repos rosterRepos) DocsOf(toolchain string) string {
-	for _, entry := range repos {
-		if repo.ToolchainOf(entry.Language) == toolchain {
-			return layout.RepoDocs(entry.Path)
-		}
-	}
-	return repos.Docs()[0]
 }
 
 // plainScalar is a path YAML reads as the string it is, without quotes.
@@ -183,14 +175,19 @@ func (r *Roster) applyDefaults() {
 	if r.Model == "" {
 		r.Model = "sonnet"
 	}
+	if r.Limits.Topics <= 0 {
+		r.Limits.Topics = 8
+	}
 	if r.Limits.Disputes <= 0 {
-		r.Limits.Disputes = 5
+		r.Limits.Disputes = 2
 	}
 	if r.Limits.DisputeRounds <= 0 {
 		r.Limits.DisputeRounds = 2
 	}
 	if r.Limits.Calls <= 0 {
-		r.Limits.Calls = 80
+		// Eight topics of five roles, with their documents read against the
+		// project's rules, and the work list.
+		r.Limits.Calls = 200
 	}
 	if r.Limits.Parallel <= 0 {
 		r.Limits.Parallel = 3
@@ -219,8 +216,9 @@ func (r *Roster) Validate() error {
 		return fmt.Errorf("the roster has %d role(s); a discussion needs at least two", len(r.Roles))
 	}
 	seen := map[string]bool{}
-	owner := map[string]string{}
 	var deciders, planners []string
+	type claim struct{ entry, role string }
+	var claims []claim
 	for _, role := range r.Roles {
 		if !roleID.MatchString(role.ID) {
 			return fmt.Errorf("role id %q: use lower-case letters, digits and hyphens, starting with a letter", role.ID)
@@ -238,20 +236,34 @@ func (r *Roster) Validate() error {
 		if role.Plans {
 			planners = append(planners, role.ID)
 		}
-		for _, doc := range role.Owns {
-			if err := checkOwnedPath(doc); err != nil {
+		for _, entry := range role.Owns {
+			if err := checkOwnedEntry(entry); err != nil {
 				return fmt.Errorf("role %q: %w", role.ID, err)
 			}
 			// Two paths that differ in case only are one file where the file
-			// system does not tell them apart.
-			file := strings.ToLower(doc)
-			switch other, taken := owner[file]; {
-			case taken && other == role.ID:
-				return fmt.Errorf("role %q owns %s twice", role.ID, doc)
-			case taken:
-				return fmt.Errorf("%s has two owners, %q and %q; a document has one", doc, other, role.ID)
+			// system does not tell them apart; a file in a folder is the folder
+			// owner's.
+			for _, other := range claims {
+				a, b := strings.ToLower(other.entry), strings.ToLower(entry)
+				var inner, outer claim
+				switch {
+				case a == b && other.role == role.ID:
+					return fmt.Errorf("role %q owns %s twice", role.ID, entry)
+				case a == b:
+					return fmt.Errorf("%s has two owners, %q and %q; a document has one", entry, other.role, role.ID)
+				case strings.HasSuffix(a, "/") && strings.HasPrefix(b, a):
+					inner, outer = claim{entry, role.ID}, other
+				case strings.HasSuffix(b, "/") && strings.HasPrefix(a, b):
+					inner, outer = other, claim{entry, role.ID}
+				default:
+					continue
+				}
+				if inner.role == outer.role {
+					return fmt.Errorf("role %q owns %s twice: it is in %s", role.ID, inner.entry, outer.entry)
+				}
+				return fmt.Errorf("%s is in %s, which %q owns; a document has one owner", inner.entry, outer.entry, outer.role)
 			}
-			owner[file] = role.ID
+			claims = append(claims, claim{entry, role.ID})
 		}
 	}
 	if len(deciders) != 1 {
@@ -293,6 +305,16 @@ func (r *Roster) Planner() *Role {
 	return nil
 }
 
+// Owner returns the role that owns a document, or nil.
+func (r *Roster) Owner(doc string) *Role {
+	for i := range r.Roles {
+		if r.Roles[i].OwnsDocument(doc) {
+			return &r.Roles[i]
+		}
+	}
+	return nil
+}
+
 // IDs lists the role ids in the order of the roster.
 func (r *Roster) IDs() []string {
 	ids := make([]string, len(r.Roles))
@@ -315,6 +337,34 @@ const indexPath = "docs/README.md"
 // instructions are the files an agent is instructed by, in whichever
 // directory they lie. `awkit generate` or a person writes them, never a role.
 var instructions = map[string]bool{"claude.md": true, "claude.local.md": true, "agents.md": true}
+
+// checkOwnedEntry checks an entry of a role's owns: a document, or a folder
+// of documents.
+func checkOwnedEntry(entry string) error {
+	folder, isFolder := strings.CutSuffix(entry, "/")
+	if !isFolder {
+		return checkOwnedPath(entry)
+	}
+	plain := path.Clean(folder) == folder && folder != "." && !strings.ContainsAny(folder, `\:`) &&
+		!strings.HasPrefix(folder, "/") && folder != ".." && !strings.HasPrefix(folder, "../")
+	if !plain {
+		return fmt.Errorf("folder %q: write the path plainly, from the project's root, with forward slashes and a slash at its end (e.g. docs/design/)", entry)
+	}
+	for _, name := range strings.Split(folder, "/") {
+		if strings.HasPrefix(name, ".") {
+			return fmt.Errorf("folder %q is in %s, which a tool keeps for itself; a role's documents are kept elsewhere", entry, name)
+		}
+	}
+	lower := strings.ToLower(entry)
+	plans := strings.ToLower(PlansDir) + "/"
+	switch {
+	case strings.HasPrefix(lower, plans):
+		return fmt.Errorf("folder %q is under %s/, where the council keeps its plans", entry, PlansDir)
+	case strings.HasPrefix(plans, lower):
+		return fmt.Errorf("folder %q holds the council's own files (%s, %s, %s/): own a folder inside it", entry, DecisionsPath, indexPath, PlansDir)
+	}
+	return nil
+}
 
 // checkOwnedPath checks that a path can be a role's document: a markdown file
 // of the project, named from the project's root the way it is stored. It is
@@ -351,12 +401,39 @@ func checkOwnedPath(doc string) error {
 	return nil
 }
 
-// Owns reports whether the role is the owner of a document.
+// OwnsDocument reports whether the role is the owner of a document: the
+// roster names the file, or a folder it is in. A path that cannot be a
+// document is nobody's.
 func (role *Role) OwnsDocument(doc string) bool {
+	if checkOwnedPath(doc) != nil {
+		return false
+	}
 	for _, owned := range role.Owns {
-		if owned == doc {
+		if owned == doc || strings.HasSuffix(owned, "/") && strings.HasPrefix(doc, owned) {
 			return true
 		}
 	}
 	return false
+}
+
+// Files lists the documents the roster names for the role by their files.
+func (role *Role) Files() []string {
+	var files []string
+	for _, owned := range role.Owns {
+		if !strings.HasSuffix(owned, "/") {
+			files = append(files, owned)
+		}
+	}
+	return files
+}
+
+// Folders lists the folders the role writes in.
+func (role *Role) Folders() []string {
+	var folders []string
+	for _, owned := range role.Owns {
+		if strings.HasSuffix(owned, "/") {
+			folders = append(folders, owned)
+		}
+	}
+	return folders
 }

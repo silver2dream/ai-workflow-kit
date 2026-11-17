@@ -32,12 +32,19 @@ Usage:
   awkit plan approve <plan> [--dry-run]
 
 What a plan does:
-  Every role of `+layout.RosterFile+` states where it stands on the brief. The roles
-  object to each other, and the objections that matter most are argued out
-  between the two roles concerned. A moderator who takes no side says where
-  the meeting stands, the deciding role rules on what is still disputed, every
-  role writes the documents it owns, and the planning role draws up the
-  tickets, which the table gets to object to once.
+  A moderator who takes no side sets the agenda: the topics the roles of
+  `+layout.RosterFile+` take up one after another, and for each who speaks, in which
+  order, and which documents it ends in. It is in docs/plans/<plan>/agenda.yaml.
+
+  Each topic in turn: the role it is about proposes; the others speak after
+  it, each shown what was said before; two roles that disagree argue it out;
+  the moderator says where the topic stands; the deciding role rules; the
+  owners write what was settled into their documents. The next topic starts
+  from those documents.
+
+  Then the planning role lays the plan out in milestones and tickets the
+  first one; the table objects to the list once. The other milestones are
+  planned when the first is reached.
 
   The documents are written by the project's rules (`+layout.RulesDir+`/): a role
   is given the rules that hold for the files it writes, what it wrote is read
@@ -45,8 +52,11 @@ What a plan does:
   after that is in the minutes, and is told to you.
 
   What only you can answer, the council assumes, and says so: a plan never
-  waits for a person. With --ask it puts its questions to you first, a minute
-  or so into the meeting, and argues from your answers.
+  waits for a person. With --ask the questions of the agenda are put to you
+  before the first topic, and the table argues from your answers.
+
+  To change the agenda, stop the plan, edit agenda.yaml, and go on with
+  --resume: the topics that were held stay as they were.
 
   A plan ends with a proposal: docs/plans/<plan>/tickets.yaml. Read it, change
   what you want changed, then create the issues:
@@ -56,7 +66,7 @@ What a plan does:
   Nothing is created on GitHub before that.
 
 Options:
-  --ask          Answer the council's questions before it argues (it waits for you)
+  --ask          Answer the questions of the agenda before the first topic (it waits for you)
   --brief-file   Read the brief from a file
   --resume       Go on with a plan that stopped; its name is its folder in docs/plans/
   --roster       The roster to use (default: `+layout.RosterFile+`)
@@ -204,13 +214,21 @@ func cmdPlan(args []string) int {
 		return 1
 	}
 
-	success("Plan %s: %d decisions, %d documents written, %d tickets proposed (%d model calls)\n", plan.ID, len(plan.Decisions),
-		writtenDocuments(plan), len(plan.Tickets), plan.Calls)
+	success("Plan %s: %d topics, %d decisions, %d documents written, %d milestones, %d tickets proposed for the first (%d model calls)\n", plan.ID,
+		len(plan.Topics), len(plan.Decisions), writtenDocuments(plan), len(plan.Milestones), len(plan.Tickets), plan.Calls)
 	fmt.Println("")
-	fmt.Printf("  Minutes:    %s/minutes.md\n", plan.Dir())
+	fmt.Printf("  Agenda:     %s/%s\n", plan.Dir(), council.AgendaFile)
+	fmt.Printf("  Minutes:    %s/minutes.md, and one file per topic in %s/topics/\n", plan.Dir(), plan.Dir())
 	fmt.Printf("  Decisions:  %s\n", council.DecisionsPath)
 	fmt.Printf("  Work list:  %s/%s\n", plan.Dir(), council.WorkListFile)
 	fmt.Println("")
+	if len(plan.Milestones) > 0 {
+		fmt.Println("Milestones (only the first is ticketed):")
+		for _, milestone := range plan.Milestones {
+			fmt.Printf("  %-4s %s\n", milestone.Key, oneLine(milestone.Title))
+		}
+		fmt.Println("")
+	}
 	for _, doc := range plan.Documents {
 		// A document its owner could not write, not one a role had no right to.
 		if owner := roster.Role(doc.Owner); doc.Refused != "" && owner != nil && owner.OwnsDocument(doc.Path) {
@@ -250,15 +268,16 @@ func cmdPlan(args []string) int {
 }
 
 // writtenDocuments counts the documents the plan wrote: not the ones left as
-// they were, and not the ones that were refused.
+// they were, and not the ones that were refused. A document two topics wrote
+// is one document.
 func writtenDocuments(plan *council.Plan) int {
-	n := 0
+	written := map[string]bool{}
 	for _, doc := range plan.Documents {
 		if doc.Refused == "" && !doc.Unchanged {
-			n++
+			written[doc.Path] = true
 		}
 	}
-	return n
+	return len(written)
 }
 
 func oneLine(text string) string {

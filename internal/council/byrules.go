@@ -337,15 +337,15 @@ func findingsText(findings []RuleFinding) string {
 	return b.String()
 }
 
-// revisionPrompt asks a role to put right what the check of its documents
-// found. named are the documents the findings are about: the role answers for
-// each of them.
-func (p *planner) revisionPrompt(role *Role, plan *Plan, book rulebook, findings []RuleFinding) string {
+// revisionPrompt asks a role to put right what the check of its documents of
+// a topic found. asked are its documents of the topic.
+func (p *planner) revisionPrompt(role *Role, plan *Plan, r *TopicRecord, asked []string, book rulebook, findings []RuleFinding) string {
 	var b strings.Builder
 	b.WriteString(p.frame(role))
-	b.WriteString(p.standing(role))
-	b.WriteString("\nThe meeting is over. What was decided:\n")
-	b.WriteString(decisionsText(plan))
+	b.WriteString(topicHead(plan, r))
+	b.WriteString("\nYour documents of this topic as they stand:\n" + p.asTheyStand(asked))
+	b.WriteString("\nWhat this meeting has decided, up to and with this topic:\n")
+	b.WriteString(throughTopic(plan, r))
 	b.WriteString("\nThe project's rules that hold for the files you write (" + layout.RulesDir + "/):\n\n" + book.text() + p.facts(role, plan))
 	b.WriteString("\nYour documents were read against these rules. What the check found:\n" + findingsText(findings))
 	b.WriteString(`

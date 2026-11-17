@@ -60,10 +60,12 @@ func TestDefaultRosters(t *testing.T) {
 	}
 }
 
-// The engineering documents a first roster names are kept with the project's
+// The engineering documents of a first roster are kept with the project's
 // repos, where the rules a project starts with say they are
-// (layout.RepoDocs): in the repo's own docs/, or in docs/engineering/ when the
-// repo is the whole repository. Product and design documents stay under docs/.
+// (layout.RepoDocs): the folder docs/ of each repo, or docs/engineering/ when
+// the repo is the whole repository. Product and design documents stay under
+// docs/. Every role owns folders, so that a topic can open the document it
+// needs.
 func TestDefaultRosters_EngineeringDocumentsAreKeptWithTheRepos(t *testing.T) {
 	owns := func(preset string, repos []Repo, role string) []string {
 		t.Helper()
@@ -81,35 +83,35 @@ func TestDefaultRosters_EngineeringDocumentsAreKeptWithTheRepos(t *testing.T) {
 		repos              []Repo
 		want               []string
 	}{
-		{"the game studio", "godot-go", "tech-lead", gameRepo,
-			[]string{"backend/docs/architecture.md", "frontend/docs/architecture.md", "backend/docs/protocol.md"}},
+		{"the game studio", "godot-go", "tech-lead", gameRepo, []string{"backend/docs/", "frontend/docs/"}},
 		{"the game studio, with the client first and other directories", "godot-go", "tech-lead",
 			[]Repo{{Name: "client", Language: "godot", Path: "client"}, {Name: "server", Language: "golang", Path: "./apps/server/"}},
-			[]string{"client/docs/architecture.md", "apps/server/docs/architecture.md", "apps/server/docs/protocol.md"}},
-		{"the game studio without a Go repo: the protocol goes with the first repo", "godot-go", "tech-lead",
-			[]Repo{{Name: "client", Language: "godot", Path: "client/"}, {Name: "tools", Language: "python", Path: "tools/"}},
-			[]string{"client/docs/architecture.md", "tools/docs/architecture.md", "client/docs/protocol.md"}},
-		{"one repo that is the whole repository", "generic", "architect", oneRepo, []string{"docs/engineering/architecture.md"}},
+			[]string{"client/docs/", "apps/server/docs/"}},
+		{"one repo that is the whole repository", "generic", "architect", oneRepo, []string{"docs/engineering/"}},
 		{"several repos", "generic", "architect",
 			[]Repo{{Name: "api", Language: "python", Path: "api/"}, {Name: "web", Language: "react", Path: "web/"}},
-			[]string{"api/docs/architecture.md", "web/docs/architecture.md"}},
-		{"no repo named: the whole repository", "generic", "architect", nil, []string{"docs/engineering/architecture.md"}},
-		{"two repos in one directory have one document", "generic", "architect",
-			[]Repo{{Name: "a", Path: "./"}, {Name: "b", Path: "."}}, []string{"docs/engineering/architecture.md"}},
+			[]string{"api/docs/", "web/docs/"}},
+		{"no repo named: the whole repository", "generic", "architect", nil, []string{"docs/engineering/"}},
+		{"two repos in one directory have one folder", "generic", "architect",
+			[]Repo{{Name: "a", Path: "./"}, {Name: "b", Path: "."}}, []string{"docs/engineering/"}},
 		{"a directory YAML would not read as it is written", "generic", "architect",
-			[]Repo{{Name: "api", Path: "my api/"}, {Name: "n", Path: "#1/"}}, []string{"my api/docs/architecture.md", "#1/docs/architecture.md"}},
+			[]Repo{{Name: "api", Path: "my api/"}, {Name: "n", Path: "#1/"}}, []string{"my api/docs/", "#1/docs/"}},
 	}
 	for _, tt := range tests {
 		if got := owns(tt.preset, tt.repos, tt.role); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%s: %s owns %v, want %v", tt.name, tt.role, got, tt.want)
 		}
 	}
-	// The others own what they owned: nothing of theirs moves with the repos.
-	if got := owns("godot-go", gameRepo, "game-designer"); !reflect.DeepEqual(got, []string{"docs/design/game-design.md"}) {
-		t.Errorf("the game designer owns %v", got)
-	}
-	if got := owns("generic", gameRepo, "skeptic"); !reflect.DeepEqual(got, []string{"docs/qa/risks.md", "docs/qa/test-strategy.md"}) {
-		t.Errorf("the skeptic owns %v", got)
+	// The others own folders under docs/: nothing of theirs moves with the repos.
+	for preset, want := range map[string]map[string][]string{
+		"godot-go": {"producer": {"docs/product/"}, "game-designer": {"docs/design/"}, "numerical-designer": {"docs/balance/"}, "qa": {"docs/qa/"}},
+		"generic":  {"product-owner": {"docs/product/"}, "user-advocate": {"docs/ux/"}, "skeptic": {"docs/qa/"}},
+	} {
+		for role, folders := range want {
+			if got := owns(preset, gameRepo, role); !reflect.DeepEqual(got, folders) {
+				t.Errorf("%s: %s owns %v, want %v", preset, role, got, folders)
+			}
+		}
 	}
 
 	// A roster is not written for repos it could not hold a meeting with: a
@@ -141,7 +143,7 @@ roles:
 	if err != nil {
 		t.Fatalf("ParseRoster: %v", err)
 	}
-	if want := (Limits{Disputes: 5, DisputeRounds: 2, Calls: 80, Parallel: 3, TimeoutSeconds: 600}); roster.Limits != want {
+	if want := (Limits{Topics: 8, Disputes: 2, DisputeRounds: 2, Calls: 200, Parallel: 3, TimeoutSeconds: 600}); roster.Limits != want {
 		t.Errorf("limits = %+v, want %+v", roster.Limits, want)
 	}
 	if a := roster.Role("a"); a.Model != "opus" || a.Title != "a" {
@@ -182,7 +184,23 @@ func TestParseRoster_RefusesWhatCannotHoldAMeeting(t *testing.T) {
 		{"a path with a colon", owning("'docs/a.md:stream.md'"), "write the path plainly"},
 		{"a path with backslashes", owning(`'docs\a.md'`), "write the path plainly"},
 		{"a path with a dot in front", owning("./docs/a.md"), "write the path plainly"},
-		{"a path with a slash at its end", owning("docs/a.md/"), "write the path plainly"},
+		{"a folder written with backslashes", owning(`'docs\design/'`), "write the path plainly, from the project's root, with forward slashes and a slash at its end"},
+		{"a folder written with backslashes only", owning(`'docs\design\'`), "write the path plainly, from the project's root and with forward slashes"},
+		{"a folder above the project", owning("../docs/"), "folder \"../docs/\": write the path plainly"},
+		{"the root as a folder", owning("./"), "folder \"./\": write the path plainly"},
+		{"a folder written twice over", owning("docs//design/"), "folder \"docs//design/\": write the path plainly"},
+		{"a folder a tool keeps", owning(".claude/rules/"), "folder \".claude/rules/\" is in .claude, which a tool keeps for itself"},
+		{"the folder of the council's own files", owning("docs/"), "holds the council's own files (docs/decisions.md, docs/README.md, docs/plans/): own a folder inside it"},
+		{"the folder of the council's own files, in other letters", owning("Docs/"), "holds the council's own files"},
+		{"a folder of the plans", owning("docs/plans/"), "is under docs/plans/, where the council keeps its plans"},
+		{"a folder in a plan", owning("docs/plans/x/"), "is under docs/plans/, where the council keeps its plans"},
+		{"a folder with two owners", strings.ReplaceAll(two, "stance: s}", "stance: s, owns: [docs/design/]}"), `docs/design/ has two owners, "a" and "b"`},
+		{"a document in another role's folder", strings.Replace(owning("docs/design/"), "plans: true, stance: s}", "plans: true, stance: s, owns: [docs/design/economy.md]}", 1), `docs/design/economy.md is in docs/design/, which "a" owns; a document has one owner`},
+		{"a folder around another role's document", strings.Replace(owning("docs/design/economy.md"), "plans: true, stance: s}", "plans: true, stance: s, owns: [docs/]}", 1), "holds the council's own files"},
+		{"a folder in another role's folder", strings.Replace(owning("docs/design/"), "plans: true, stance: s}", "plans: true, stance: s, owns: [Docs/Design/numbers/]}", 1), `Docs/Design/numbers/ is in docs/design/, which "a" owns`},
+		{"a folder around another role's folder", strings.Replace(owning("backend/docs/api/"), "plans: true, stance: s}", "plans: true, stance: s, owns: [backend/]}", 1), `backend/docs/api/ is in backend/, which "b" owns`},
+		{"a document in a role's own folder", owning("docs/design/, docs/design/game.md"), `role "a" owns docs/design/game.md twice: it is in docs/design/`},
+		{"a folder in a role's own folder", owning("docs/design/game.md, docs/"), "holds the council's own files"},
 		{"no path", owning("''"), "write the path plainly"},
 		{"the decision log", owning("docs/decisions.md"), "kept by the council itself"},
 		{"the decision log, in other letters", owning("Docs/Decisions.MD"), "kept by the council itself"},
@@ -221,12 +239,56 @@ func TestParseRoster_RefusesWhatCannotHoldAMeeting(t *testing.T) {
 	}
 
 	// A document is a Markdown file of the project, wherever the project keeps
-	// it: with the product documents, with a repo, or in the root.
+	// it: with the product documents, with a repo, or in the root; and a
+	// folder is one of such files.
 	for _, doc := range []string{"docs/design/game-design.md", "docs/engineering/architecture.md", "backend/docs/architecture.md",
 		"apps/server/docs/research/storage.md", "backend/internal/match/README.md", "README.md", "docs/Design/UPPER.MD",
-		"docs/claude.md.notes.md", "docs/my agents.md", "'docs/設計/遊戲.md'", "'my api/docs/a b.md'"} {
+		"docs/claude.md.notes.md", "docs/my agents.md", "'docs/設計/遊戲.md'", "'my api/docs/a b.md'",
+		"docs/design/", "backend/docs/", "backend/", "docs/a.md/", "'docs/設計/'", "docs/design/, docs/qa/", "docs/plansx/", "documents/"} {
 		if _, err := ParseRoster([]byte(owning(doc))); err != nil {
 			t.Errorf("a role cannot own %s: %v", doc, err)
+		}
+	}
+}
+
+// A role owns a document the roster names, or one in a folder it names, at
+// any depth; nobody owns what cannot be a document.
+func TestRoleOwnsDocument(t *testing.T) {
+	role := &Role{ID: "a", Owns: []string{"docs/design/", "docs/qa/risks.md", "backend/docs/"}}
+	for doc, want := range map[string]bool{
+		"docs/design/game.md":               true,
+		"docs/design/systems/combat/hit.md": true,
+		"docs/qa/risks.md":                  true,
+		"backend/docs/architecture.md":      true,
+		"docs/qa/tests.md":                  false,
+		"docs/designs/game.md":              false,
+		"docs/design":                       false,
+		"docs/design/":                      false,
+		"docs/design/game.txt":              false,
+		"docs/design/CLAUDE.md":             false,
+		"docs/design/.draft.md":             false,
+		"backend/docs/../main.md":           false,
+		"Docs/Design/game.md":               false,
+		"frontend/docs/architecture.md":     false,
+	} {
+		if got := role.OwnsDocument(doc); got != want {
+			t.Errorf("OwnsDocument(%q) = %v, want %v", doc, got, want)
+		}
+	}
+	if got, want := role.Files(), []string{"docs/qa/risks.md"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Files = %v, want %v", got, want)
+	}
+	if got, want := role.Folders(), []string{"docs/design/", "backend/docs/"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Folders = %v, want %v", got, want)
+	}
+	roster := mustRoster(t, "roles:\n  - {id: a, decides: true, stance: s, owns: [docs/design/]}\n  - {id: b, plans: true, stance: s, owns: [docs/qa/risks.md]}\n")
+	for doc, want := range map[string]string{"docs/design/x.md": "a", "docs/qa/risks.md": "b", "docs/qa/x.md": "", "docs/decisions.md": ""} {
+		got := ""
+		if owner := roster.Owner(doc); owner != nil {
+			got = owner.ID
+		}
+		if got != want {
+			t.Errorf("Owner(%q) = %q, want %q", doc, got, want)
 		}
 	}
 }

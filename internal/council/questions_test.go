@@ -8,37 +8,31 @@ import (
 	"testing"
 )
 
-// curious is the agreeable table whose roles each have a question for the
-// owner of the project, two of them the same one in other words.
+// curious is the agreeable table whose agenda has three questions for the
+// owner of the project.
 func curious(roster *Roster) func(c call) (string, error) {
 	base := agreeable(roster)
-	asks := map[string]string{
-		"owner":    "Who calls the endpoint?",
-		"designer": "Does a person ever read the answer?",
-		"builder":  "What calls this endpoint, and how often?",
-		"skeptic":  "May the endpoint be reached from outside?",
-	}
 	return func(c call) (string, error) {
-		switch c.Step {
-		case "position":
-			return block(`{"summary": "` + c.Role + ` holds its line.", "proposals": ["` + c.Role + ` proposes"], "concerns": [], "questions": ["` + asks[c.Role] + `"]}`), nil
-		case "questions":
-			return block(`{"questions": ["Who calls the endpoint, and how often?", "Does a person ever read the answer?", " ", "May the endpoint be reached from outside?"]}`), nil
+		if c.Step == "agenda" {
+			return block(strings.Replace(agendaFor(roster), `"questions": []`,
+				`"questions": ["Who calls the endpoint, and how often?", "Does a person ever read the answer?", " ", "May the endpoint be reached from outside?"]`, 1)), nil
 		}
 		return base(c)
 	}
 }
 
-// The table's questions are put to the owner before the roles object to each
-// other. What the owner answers is known to every role from there on; what
-// the owner leaves open is left to the council to assume.
-func TestRun_TheOwnerIsAskedBeforeTheTableArgues(t *testing.T) {
+// The questions of the agenda are put to the owner before the first topic.
+// What the owner answers is known to every role from there on; what the
+// owner leaves open is left to the deciding role to assume.
+func TestRun_TheOwnerIsAskedBeforeTheFirstTopic(t *testing.T) {
 	root := t.TempDir()
 	roster := mustRoster(t, testRoster)
 	model := &table{answer: curious(roster)}
 	var put [][]string
+	var askedAfter int
 	ask := func(ctx context.Context, questions []string) ([]string, error) {
 		put = append(put, questions)
+		askedAfter = len(model.steps())
 		return []string{"  A readiness probe,\nevery ten seconds. ", "", "No."}, nil
 	}
 	var told []string
@@ -49,16 +43,13 @@ func TestRun_TheOwnerIsAskedBeforeTheTableArgues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// One list, made by the moderator from what four roles asked.
 	wantQuestions := []string{"Who calls the endpoint, and how often?", "Does a person ever read the answer?", "May the endpoint be reached from outside?"}
 	if len(put) != 1 || !reflect.DeepEqual(put[0], wantQuestions) {
 		t.Fatalf("the owner was asked %v, want once: %v", put, wantQuestions)
 	}
-	moderator := model.promptOf("moderator", "questions")
-	for _, want := range []string{"You have no opinion on the subject", "  - owner: Who calls the endpoint?\n", "  - builder: What calls this endpoint, and how often?\n", "At most 7 questions."} {
-		if !strings.Contains(moderator, want) {
-			t.Errorf("the moderator's question should say %q:\n%s", want, moderator)
-		}
+	// Asked after the agenda was set, before anybody spoke to a topic.
+	if askedAfter != 1 {
+		t.Errorf("the owner was asked after %d calls, want right after the agenda", askedAfter)
 	}
 	want := []OwnerAnswer{
 		{Question: "Who calls the endpoint, and how often?", Answer: "A readiness probe,\nevery ten seconds."},
@@ -68,28 +59,18 @@ func TestRun_TheOwnerIsAskedBeforeTheTableArgues(t *testing.T) {
 	if !reflect.DeepEqual(plan.Answers, want) {
 		t.Errorf("answers = %+v\nwant %+v", plan.Answers, want)
 	}
-
-	// The owner was asked after the positions and before anybody objected.
-	steps := model.steps()
-	at := func(step string) int {
-		for i, s := range steps {
-			if s == step {
-				return i
-			}
-		}
-		return -1
-	}
-	if q := at("moderator questions"); q < 4 || q > at("owner objections") || q > at("skeptic objections") {
-		t.Errorf("the questions were put at call %d: %v", q, steps)
+	// The agenda keeps the questions, for whoever goes on with the plan.
+	if agenda, err := LoadAgenda(root, plan.ID); err != nil || !reflect.DeepEqual(agenda.Questions, wantQuestions) {
+		t.Errorf("the agenda on disk has the questions %v, %v", agenda, err)
 	}
 
-	// Every role is told what the owner said, from the objections on, and so
-	// is the moderator who sums up. What was left open is not passed off as
-	// an answer.
-	said := "The owner of the project was asked by this table, and answered. This holds like the brief:\n" +
+	// Every role is told what the owner said, and so is the moderator. What
+	// was left open is not passed off as an answer: the deciding role is told
+	// it is open.
+	said := "The owner of the project was asked before the meeting, and answered. This holds like the brief:\n" +
 		"- Asked: Who calls the endpoint, and how often?\n  The owner: A readiness probe, every ten seconds.\n" +
 		"- Asked: May the endpoint be reached from outside?\n  The owner: No.\n"
-	for _, c := range []struct{ role, step string }{{"skeptic", "objections"}, {"moderator", "summary"}, {"owner", "decide"}, {"designer", "documents"}, {"builder", "worklist"}, {"skeptic", "review"}} {
+	for _, c := range []struct{ role, step string }{{"owner", "propose"}, {"skeptic", "speak"}, {"moderator", "summary"}, {"owner", "decide"}, {"designer", "documents"}, {"builder", "worklist"}, {"skeptic", "review"}} {
 		prompt := model.promptOf(c.role, c.step)
 		if !strings.Contains(prompt, said) {
 			t.Errorf("%s %s is not told what the owner said:\n%s", c.role, c.step, prompt)
@@ -98,8 +79,9 @@ func TestRun_TheOwnerIsAskedBeforeTheTableArgues(t *testing.T) {
 			t.Errorf("%s %s is told of an answer the owner did not give", c.role, c.step)
 		}
 	}
-	if position := model.promptOf("skeptic", "position"); strings.Contains(position, "The owner of the project was asked") {
-		t.Error("a role was told the owner's answers before the owner was asked")
+	if decide := model.promptOf("owner", "decide"); !strings.Contains(decide, "Questions of the agenda the owner of the project has not answered:\n  - Does a person ever read the answer?\n") ||
+		strings.Contains(decide, "  - Who calls the endpoint, and how often?\n") {
+		t.Errorf("the deciding role is not told which question is open:\n%s", decide)
 	}
 
 	minutes := readFile(t, root, plan.Dir()+"/minutes.md")
@@ -108,9 +90,6 @@ func TestRun_TheOwnerIsAskedBeforeTheTableArgues(t *testing.T) {
 		if !strings.Contains(minutes, want) {
 			t.Errorf("the minutes should say %q:\n%s", want, minutes)
 		}
-	}
-	if strings.Index(minutes, "## What the owner was asked") > strings.Index(minutes, "## Documents") || strings.Index(minutes, "## What the owner was asked") < strings.Index(minutes, "## Positions") {
-		t.Error("the owner's answers are not between the positions and what followed")
 	}
 	progress := strings.Join(told, "\n")
 	for _, want := range []string{"Questions: 3 for the owner of the project", "  2 answered, 1 left to the council to assume"} {
@@ -139,8 +118,8 @@ func TestRun_TheOwnerIsAskedBeforeTheTableArgues(t *testing.T) {
 	}
 }
 
-// With nobody to ask, the meeting does not wait and spends no call on a list
-// of questions: the deciding role says what the plan assumes.
+// With nobody to ask, the meeting does not wait: the questions stay on the
+// agenda, and the deciding role is told they are open.
 func TestRun_WithNobodyToAskTheMeetingDoesNotWait(t *testing.T) {
 	root := t.TempDir()
 	roster := mustRoster(t, testRoster)
@@ -151,21 +130,25 @@ func TestRun_WithNobodyToAskTheMeetingDoesNotWait(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got := model.count("moderator", "questions"); got != 0 || len(plan.Answers) != 0 {
-		t.Errorf("without anybody to ask: %d calls to make the list, answers %+v", got, plan.Answers)
+	if len(plan.Answers) != 0 {
+		t.Errorf("without anybody to ask: answers %+v", plan.Answers)
 	}
 	if minutes := readFile(t, root, plan.Dir()+"/minutes.md"); strings.Contains(minutes, "## What the owner was asked") {
 		t.Errorf("the minutes say the owner was asked:\n%s", minutes)
 	}
-	// What the roles asked still reaches the moderator and the deciding role.
-	if summary := model.promptOf("moderator", "summary"); !strings.Contains(summary, "  - skeptic: May the endpoint be reached from outside?\n") {
-		t.Errorf("the moderator is not shown what the roles asked:\n%s", summary)
+	if decide := model.promptOf("owner", "decide"); !strings.Contains(decide, "Questions of the agenda the owner of the project has not answered:\n  - Who calls the endpoint, and how often?\n  - Does a person ever read the answer?\n  - May the endpoint be reached from outside?\n") {
+		t.Errorf("the deciding role is not told the open questions:\n%s", decide)
+	}
+	for _, c := range model.calls {
+		if strings.Contains(c.Prompt, "The owner of the project was asked before the meeting") {
+			t.Errorf("%s %s is told the owner answered, and nobody was asked", c.Role, c.Step)
+		}
 	}
 }
 
-// When the owner is asked: not at all without a question, a few questions as
-// they were asked, never more than seven at once; an owner who cannot be
-// asked stops the meeting there.
+// When the owner is asked: not at all without a question; an agenda with too
+// many questions is asked for again; an owner who cannot be asked stops the
+// meeting there, and going on asks.
 func TestRun_PuttingTheQuestions(t *testing.T) {
 	roster := mustRoster(t, testRoster)
 	asked := 0
@@ -176,88 +159,60 @@ func TestRun_PuttingTheQuestions(t *testing.T) {
 		return nil, nil
 	}
 
-	// No role has a question: the owner is not disturbed.
+	// The agenda has no question: the owner is not disturbed.
 	model := &table{answer: agreeable(roster)}
 	if _, err := Run(context.Background(), Options{Root: t.TempDir(), Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if asked != 0 || model.count("moderator", "questions") != 0 {
+	if asked != 0 {
 		t.Errorf("with no question the owner was asked %d times", asked)
 	}
 
-	// Two roles ask: their questions are put as they were asked, and an owner
-	// who answers none leaves all of them to the council.
-	base := agreeable(roster)
-	model = &table{answer: func(c call) (string, error) {
-		if c.Step == "position" && (c.Role == "designer" || c.Role == "skeptic") {
-			return block(`{"summary": "` + c.Role + ` holds its line.", "proposals": [], "concerns": [], "questions": ["What does ` + c.Role + ` need to know?", ""]}`), nil
-		}
-		return base(c)
-	}}
-	root := t.TempDir()
-	plan, err := Run(context.Background(), Options{Root: root, Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask})
+	// An owner who answers none leaves all of them to the council.
+	model = &table{answer: curious(roster)}
+	plan, err := Run(context.Background(), Options{Root: t.TempDir(), Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if want := []string{"What does designer need to know?", "What does skeptic need to know?"}; asked != 1 || !reflect.DeepEqual(put, want) {
-		t.Errorf("the owner was asked %d times: %v, want once: %v", asked, put, want)
-	}
-	if got := model.count("moderator", "questions"); got != 0 {
-		t.Errorf("the moderator was asked %d times to make a list of two questions", got)
-	}
-	if len(plan.Answers) != 2 || plan.Answers[0].Answer != "" || plan.Answers[1].Answer != "" {
-		t.Errorf("answers = %+v, want two questions left open", plan.Answers)
+	if asked != 1 || len(put) != 3 || len(plan.Answers) != 3 || plan.Answers[0].Answer != "" {
+		t.Errorf("asked %d times %v; answers %+v", asked, put, plan.Answers)
 	}
 	if prompt := model.promptOf("owner", "decide"); strings.Contains(prompt, "The owner of the project was asked") {
 		t.Errorf("the deciding role is told the owner answered, and the owner answered nothing:\n%s", prompt)
 	}
 
-	// Three roles ask: still few enough to be put as they were asked.
+	// More questions than are put at once: the agenda is asked for again.
+	many := `"questions": ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8"]`
+	base := agreeable(roster)
+	agendas := 0
 	model = &table{answer: func(c call) (string, error) {
-		if c.Step == "position" && c.Role != "skeptic" {
-			return block(`{"summary": "` + c.Role + ` holds its line.", "proposals": [], "concerns": [], "questions": ["What does ` + c.Role + ` need to know?"]}`), nil
+		if c.Step == "agenda" {
+			agendas++
+			if agendas == 1 {
+				return block(strings.Replace(agendaFor(roster), `"questions": []`, many, 1)), nil
+			}
 		}
 		return base(c)
 	}}
-	asked = 0
 	if _, err := Run(context.Background(), Options{Root: t.TempDir(), Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if want := []string{"What does owner need to know?", "What does designer need to know?", "What does builder need to know?"}; asked != 1 || !reflect.DeepEqual(put, want) {
-		t.Errorf("the owner was asked %d times: %v, want once: %v", asked, put, want)
-	}
-	if got := model.count("moderator", "questions"); got != 0 {
-		t.Errorf("the moderator was asked %d times to make a list of three questions", got)
-	}
-
-	// More questions than are put at once: the first seven.
-	many := `"q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9"`
-	curiousTable := curious(roster)
-	model = &table{answer: func(c call) (string, error) {
-		if c.Step == "questions" {
-			return block(`{"questions": [` + many + `]}`), nil
-		}
-		return curiousTable(c)
-	}}
-	if _, err := Run(context.Background(), Options{Root: t.TempDir(), Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask}); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(put) != 7 || put[6] != "q7" {
-		t.Errorf("the owner was put %d questions: %v, want the first seven", len(put), put)
+	if again := model.promptOf("moderator", "agenda"); agendas != 2 || !strings.Contains(again, "the agenda has 8 questions for the owner; at most 7, the ones the plan turns on") {
+		t.Errorf("an agenda of eight questions was asked for %d times:\n%s", agendas, again[max(0, len(again)-300):])
 	}
 
 	// An owner who cannot be asked stops the meeting there, and going on asks.
 	model = &table{answer: curious(roster)}
-	root = t.TempDir()
+	root := t.TempDir()
 	failing := func(ctx context.Context, questions []string) ([]string, error) {
 		return nil, errors.New("the terminal is gone")
 	}
 	stopped, err := Run(context.Background(), Options{Root: root, Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: failing})
-	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at the questions: the terminal is gone") {
+	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at the owner's questions: the terminal is gone") {
 		t.Fatalf("err = %v", err)
 	}
-	if got := model.count("owner", "objections"); got != 0 {
-		t.Errorf("the table went on to object although the owner could not be asked")
+	if got := model.steps(); len(got) != 1 {
+		t.Errorf("the meeting went on although the owner could not be asked: %v", got)
 	}
 	asked = 0
 	if _, err := Run(context.Background(), Options{Root: root, ID: stopped.ID, Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask}); err != nil {
@@ -266,37 +221,20 @@ func TestRun_PuttingTheQuestions(t *testing.T) {
 	if asked != 1 {
 		t.Errorf("going on asked the owner %d times, want once", asked)
 	}
-	if got := model.count("moderator", "questions"); got != 1 {
-		t.Errorf("the moderator made the list %d times, want once: it is kept", got)
-	}
-	// A list with nothing in it is asked for again.
-	empties := 0
-	model = &table{answer: func(c call) (string, error) {
-		if c.Step == "questions" {
-			empties++
-			if empties == 1 {
-				return block(`{"questions": [" "]}`), nil
-			}
-		}
-		return curiousTable(c)
-	}}
-	if _, err := Run(context.Background(), Options{Root: t.TempDir(), Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask}); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if empties != 2 {
-		t.Errorf("a list without a question was asked for %d times, want twice", empties)
+	if got := model.count("moderator", "agenda"); got != 1 {
+		t.Errorf("the agenda was set %d times, want once: it is kept", got)
 	}
 }
 
-// What the owner answered is kept with the plan: a meeting that stops after
-// the questions and is gone on with tells the roles it still has to ask.
+// What the owner answered is kept with the plan: a meeting that stops in a
+// topic and is gone on with tells the roles it still has to ask.
 func TestRun_TheOwnersAnswersOutlastAStop(t *testing.T) {
 	root := t.TempDir()
 	roster := mustRoster(t, testRoster)
 	base := curious(roster)
 	broken := true
 	model := &table{answer: func(c call) (string, error) {
-		if broken && c.Step == "decide" {
+		if broken && c.Step == "decide" && c.Topic == 2 {
 			return "I cannot decide.", nil
 		}
 		return base(c)
@@ -306,8 +244,8 @@ func TestRun_TheOwnersAnswersOutlastAStop(t *testing.T) {
 	}
 
 	plan, err := Run(context.Background(), Options{Root: root, Brief: "Add a health endpoint.", Roster: roster, Model: model, Repos: testRepos, Now: fixedNow, Ask: ask})
-	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at the decisions") {
-		t.Fatalf("err = %v, want the meeting stopped at the decisions", err)
+	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at topic 2 (build)") {
+		t.Fatalf("err = %v, want the meeting stopped at the second topic", err)
 	}
 
 	// Gone on with, and nobody to ask this time.
@@ -320,13 +258,10 @@ func TestRun_TheOwnersAnswersOutlastAStop(t *testing.T) {
 	if len(resumed.Answers) != 3 || resumed.Answers[0].Answer != "A readiness probe." {
 		t.Errorf("gone on with, the answers are %+v", resumed.Answers)
 	}
-	if got := model.count("moderator", "questions"); got != 1 {
-		t.Errorf("the list of questions was made %d times, want once", got)
-	}
 	const said = "- Asked: Who calls the endpoint, and how often?\n  The owner: A readiness probe.\n"
 	told := 0
 	for _, c := range model.calls[before:] {
-		if !strings.Contains(c.Prompt, said) {
+		if !strings.Contains(c.Prompt, said) && c.Role != "moderator" {
 			t.Errorf("%s %s, asked after going on, is not told what the owner said", c.Role, c.Step)
 		}
 		told++

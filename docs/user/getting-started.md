@@ -65,10 +65,11 @@ awkit doctor
 awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 ```
 
-議會（`.ai/roster.yaml` 裡的角色）會辯論這份需求，寫下文件與決策，最後提出一份票券清單：
+議會（`.ai/roster.yaml` 裡的角色）先排議程，再一個議題一個議題討論：每個議題由一個角色提方案、其他角色依序發言、有分歧就對辯、決策角色裁定，擁有者把結論寫進文件。最後排出里程碑，並為第一個里程碑提出票券：
 
-- `docs/plans/<plan>/tickets.yaml`：票券提案。**這是你要看的東西**，可以直接改。
-- `docs/plans/<plan>/minutes.md`、`docs/decisions.md`：會議紀錄、決策。
+- `docs/plans/<plan>/tickets.yaml`：里程碑與第一個里程碑的票券提案。**這是你要看的東西**，可以直接改。
+- `docs/plans/<plan>/agenda.yaml`：議程。想改議題或發言的人，停下來改它，再 `awkit plan --resume <plan>`。
+- `docs/plans/<plan>/minutes.md`、`docs/plans/<plan>/topics/`、`docs/decisions.md`：會議紀錄（總表與逐議題）、決策。
 - 各角色的文件：產品與設計在 `docs/<area>/`，各 repo 的工程文件在那個 repo 的 `docs/`（位置寫在 `.ai/roster.yaml`）。它們照 `.claude/rules/` 的規則寫；寫完會對照規則檢查一次，仍然不一致的地方會在結束時列出來。
 
 想在規劃途中被問問題，用 `awkit plan --ask "…"`。

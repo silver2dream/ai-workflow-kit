@@ -81,7 +81,7 @@ A run ends when no ticket is left, or when something needs you: a Worker that fa
 awkit plan "A daily login reward: seven days, the reward grows, a missed day starts over"
 ```
 
-The roles of `.ai/roster.yaml` argue the brief out. Each one states where it stands; they object to each other; the objections that matter most go back and forth between the two roles concerned; a moderator who takes no side says where things stand; the deciding role rules on what is still disputed. Then every role writes the documents it owns, and the planning role draws up the tickets, which the table gets to object to once.
+A moderator who takes no side sets the agenda: the topics the roles of `.ai/roster.yaml` take up one after another, and for each who speaks, in which order, and which documents it ends in. Each topic in turn: the role it is about proposes; the others speak after it, each shown what was said before; two roles that disagree argue it out; the moderator says where it stands; the deciding role rules; the owners write what was settled into their documents, which the next topic starts from. Then the planning role lays the plan out in milestones and tickets the first one; the table objects to the list once.
 
 The order of play is in code, not in a prompt: awkit asks each role in turn, counts the rounds and the model calls, and is the only one that writes files, so a role cannot write a document another role owns.
 
@@ -89,16 +89,17 @@ The documents are written by your project's rules, not by a format of awkit's. E
 
 | What a plan leaves | |
 |---|---|
-| `docs/plans/<plan>/minutes.md` | who said what: positions, objections, each dispute and how it ended |
+| `docs/plans/<plan>/agenda.yaml` | the topics, in order: what each settles, who speaks, which documents it ends in; yours to change before the plan goes on |
+| `docs/plans/<plan>/minutes.md`, `topics/*.md` | who said what, topic by topic: proposals, objections, each dispute and how it ended |
 | `docs/decisions.md` | the decisions, each under a name that stays (`D7`), with who held otherwise, and what the plan assumes (`A3`); append-only |
 | `docs/<area>/*.md`, `<repo>/docs/*.md` | the documents, each written by the one role that owns it: product and design under `docs/`, the engineering documents of a repo with that repo |
-| `docs/plans/<plan>/tickets.yaml` | the proposed tickets, in working order |
+| `docs/plans/<plan>/tickets.yaml` | the milestones, and the proposed tickets of the first one, in working order |
 
 Nothing is on GitHub yet. Read the work list, change what you want changed, then `awkit plan approve <plan>`.
 
 - **What only you can answer.** A plan does not wait for a person: where the roles need an answer only you have, the deciding role states what the plan assumes, and the end of the plan lists the assumptions. To be asked instead, start with `awkit plan --ask "…"`: the council puts at most seven questions to you and argues from your answers.
 - **The next plan builds on this one.** Every role reads the decisions on record and its own documents as they stand, and the planning role is shown what earlier plans ticketed.
-- **The roster is yours to change:** the roles, what each stands for, the documents each owns, the model that plays it, how many model calls a plan may make. A plan that stopped half way goes on with `awkit plan --resume <plan>`.
+- **The roster is yours to change:** the roles, what each stands for, the folders and documents each owns, the model that plays it, how many topics and model calls a plan may have. A plan that stopped half way goes on with `awkit plan --resume <plan>`, from its agenda as it stands.
 
 ## Tickets
 

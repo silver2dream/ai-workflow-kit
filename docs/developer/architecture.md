@@ -22,7 +22,8 @@
 
 ```
 awkit plan "…"
-  └─ council.Run：立場 → 提問 → 異議 → 對辯 → 主持人整理 → 裁定 → 文件 → 票券清單
+  └─ council.Run：主持人排議程（agenda.yaml）→ 問擁有者（--ask）→ 逐議題 → 里程碑與第一個里程碑的票
+       每個議題：主講提方案 → 其他角色依序發言、提異議 → 對辯 → 主持人整理 → 裁定（寫進 decisions.md）→ 擁有者寫文件
        文件：每個角色照對它的檔案生效的規則寫（internal/rules）→ 對照規則檢查 → 擁有者修一次 → 讀者回答哪幾點還在
        寫出各角色的文件、docs/decisions.md、docs/plans/<plan>/{minutes.md,tickets.yaml}
 awkit plan approve <plan>
