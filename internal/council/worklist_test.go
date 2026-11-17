@@ -3,6 +3,7 @@ package council
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -122,6 +123,27 @@ func TestCheckTickets(t *testing.T) {
 
 // Every ticket comes after the ones it depends on; where nothing forces an
 // order, the list's own order is kept.
+// A plan is laid out in at least one milestone and at most maxMilestones:
+// what does not fit is left for a later plan.
+func TestCheckMilestones_HowMany(t *testing.T) {
+	milestones := func(n int) []Milestone {
+		var out []Milestone
+		for i := 1; i <= n; i++ {
+			out = append(out, Milestone{Key: fmt.Sprintf("m%d", i), Title: "t", Goal: "g", DoneWhen: []string{"seen"}})
+		}
+		return out
+	}
+	if err := checkMilestones(milestones(maxMilestones)); err != nil {
+		t.Errorf("%d milestones: %v", maxMilestones, err)
+	}
+	if err := checkMilestones(milestones(maxMilestones + 1)); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the plan has %d milestones; at most %d", maxMilestones+1, maxMilestones)) {
+		t.Errorf("%d milestones: %v", maxMilestones+1, err)
+	}
+	if err := checkMilestones(nil); err == nil || !strings.Contains(err.Error(), "the plan has no milestone") {
+		t.Errorf("no milestone: %v", err)
+	}
+}
+
 func TestWorkOrder(t *testing.T) {
 	tickets := []Ticket{goodTicket("d", "b", "c"), goodTicket("a"), goodTicket("c", "a"), goodTicket("b"), goodTicket("e")}
 

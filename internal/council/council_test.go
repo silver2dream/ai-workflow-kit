@@ -943,6 +943,39 @@ func TestRun_StopsWhenTheCallsAreUsedUp(t *testing.T) {
 	}
 }
 
+// A plan that goes on counts the calls the topics it has still to hold need,
+// not the ones held in an earlier run: a roster with just enough calls left
+// for the rest holds it.
+func TestRun_GoingOnCountsOnlyWhatIsLeft(t *testing.T) {
+	root := t.TempDir()
+	roster := mustRoster(t, testRoster)
+	base := agreeable(roster)
+	broken := true
+	model := &table{answer: func(c call) (string, error) {
+		if broken && c.Step == "propose" && c.Topic == 2 {
+			return "", errors.New("claude failed: exit status 1")
+		}
+		return base(c)
+	}}
+	plan, err := runPlan(t, root, roster, model, "Add a health endpoint.")
+	if err == nil || !plan.Topics[0].Held || plan.Topics[1].Held {
+		t.Fatalf("the first run: err %v; want it stopped at the second topic, the first one held", err)
+	}
+
+	// Topic 2: the lead, two speakers, the summary, the decision and one
+	// owner; the work list and three looks at it: 10. Topic 1 is held.
+	broken = false
+	tight := mustRoster(t, strings.Replace(testRoster, "calls: 60", "calls: 10", 1))
+	model = &table{answer: agreeable(tight)}
+	resumed, err := Run(context.Background(), Options{Root: root, ID: plan.ID, Roster: tight, Model: model, Repos: testRepos, Now: fixedNow})
+	if err != nil {
+		t.Fatalf("going on with the calls the rest needs: %v", err)
+	}
+	if !resumed.Topics[1].Held || len(resumed.Tickets) == 0 || resumed.Calls != 10 {
+		t.Errorf("going on: topic 2 held %v, %d tickets, %d calls; want it held in 10 calls", resumed.Topics[1].Held, len(resumed.Tickets), resumed.Calls)
+	}
+}
+
 // A model that fails stops the meeting with the topic and the step it failed at.
 func TestRun_AModelFailureStopsTheMeeting(t *testing.T) {
 	roster := mustRoster(t, testRoster)
