@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/rules"
 )
 
 // A project that keeps game data: Luban's configuration, a text table that is
@@ -430,6 +432,52 @@ roles:
 	}
 	if prompt := model.promptOf("numbers", "redata"); !strings.Contains(prompt, "===== gamedata/Datas/text/world.csv") {
 		t.Errorf("the role that owns the text tables is not given them:\n%s", prompt)
+	}
+}
+
+// A table written with its schema, though the topic did not name it, is read
+// against the rules with the others, and the role is shown it and answers for
+// it when it is to put right what was found.
+func TestRun_GameDataATableWrittenWithItsSchemaIsAnsweredFor(t *testing.T) {
+	root := gameProject(t)
+	roster := mustRoster(t, gameRoster)
+	base := agreeable(roster)
+	schema := strings.Replace(racketSchema, "</module>", `	<bean name="Grip" comment="the grips">
+		<var name="id" type="string" group="c,s" comment="code"/>
+	</bean>
+	<table name="TbGrip" value="Grip" input="grip.csv" mode="map" group="c,s"/>
+</module>`, 1)
+	model := &table{answer: func(c call) (string, error) {
+		switch {
+		case c.Step == "agenda":
+			return block(gameAgenda), nil
+		case c.Step == "documents" && c.Role == "numbers":
+			return dataFile("gamedata/Defines/racket.xml", schema) + dataFile("gamedata/Datas/racket.csv", "##var,id,name,power\n,wood,ui.title.start,10") +
+				dataFile("gamedata/Datas/grip.csv", "##var,id\n,small") + docs("numbers", "docs/balance/rackets.md"), nil
+		case c.Step == "documents" && c.Role == "writer":
+			return "<<<UNCHANGED gamedata/Datas/text/world.csv>>>\n", nil
+		case c.Step == "rulecheck":
+			return block(`{"findings": [{"document": "gamedata/Datas/grip.csv", "rule": "data.md", "point": "It has no ## row.", "fix": "Add one."}]}`), nil
+		case c.Step == "redocuments":
+			return dataFile("gamedata/Datas/grip.csv", "##var,id\n##,code\n,small"), nil
+		case c.Step == "recheck":
+			return block(`{"stands": []}`), nil
+		}
+		return base(c)
+	}}
+	data := rules.Parse(".claude/rules/data.md", []byte("---\npaths: [\"gamedata/**\"]\n---\n\n# Data\n\nA table has a ## row.\n"))
+	if _, err := runWithRules(t, root, roster, model, []rules.Rule{data}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	prompt := model.promptOf("numbers", "redocuments")
+	if !strings.Contains(prompt, "===== gamedata/Datas/grip.csv\n##var,id\n,small") {
+		t.Errorf("the role is not shown the table it is to put right:\n%s", prompt)
+	}
+	if n := model.count("numbers", "redocuments"); n != 1 {
+		t.Errorf("the role was asked %d times to put it right, want once", n)
+	}
+	if got := readFile(t, root, "gamedata/Datas/grip.csv"); !strings.Contains(got, "##,code") {
+		t.Errorf("the table was not put right:\n%s", got)
 	}
 }
 

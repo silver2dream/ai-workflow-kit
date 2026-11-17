@@ -272,6 +272,7 @@ func TestCheck_WhatIsWrongIsFound(t *testing.T) {
 		{"a text key the text tables lack", "gamedata/Datas/grade.csv", ",steel,grade.steel.name,40", ",steel,grade.iron.name,40", MissingKey + "grade.iron.name"},
 		{"a blank text key", "gamedata/Datas/grade.csv", ",steel,grade.steel.name,40", ",steel,,40", "holds no text key"},
 		{"a blank text key that may have none", "gamedata/Datas/grade.csv", "60,,null,", "60,,,", "title holds no text key"},
+		{"a text key that is no key", "gamedata/Datas/grade.csv", ",steel,grade.steel.name,40", ",steel,steel,40", `name holds "steel", which is not a text key (lower case parts joined by dots, such as char.swift.name): if name holds no text key, its comment does not say 文字鍵`},
 		{"a key of one part", "gamedata/Datas/text/world.csv", "ui.title.quit,", "quit,", `the key "quit" is not a key`},
 		{"a basis of the source language", "gamedata/Datas/text/world.csv", "_en_依據,_上限\n", "_en_依據,_上限,_zh_TW_依據\n", "has the column _zh_TW_依據, and zh_TW is the language the text is written in"},
 		{"a key that is not one", "gamedata/Datas/text/world.csv", "ui.title.quit,", "UI.Quit,", `the key "UI.Quit" is not a key`},
@@ -336,10 +337,23 @@ func TestCheck_WhatIsAllowedIsNotFound(t *testing.T) {
 		"   \n" +
 		"ui.title.beast,乳齒象,,Mastodon of Todoroki,乳齒象,\n" +
 		"ui.title.pair,{a}與{b},,{b} and {a},{a}與{b},\n")}
-	project["gamedata/Defines/world.xml"] = &fstest.MapFile{Data: []byte(strings.Replace(testSchema, `input="grade.csv"`, `input="grades@grade.csv"`, 1))}
+	// The field rows are found by holds a code, whatever its comment says of
+	// text keys.
+	schema := strings.Replace(testSchema, `input="grade.csv"`, `input="grades@grade.csv"`, 1)
+	schema = strings.Replace(schema, `comment="the grade's code"`, `comment="the grade's code; its name is the 文字鍵 grade.&lt;id&gt;.name"`, 1)
+	project["gamedata/Defines/world.xml"] = &fstest.MapFile{Data: []byte(schema)}
 	_, findings := check(t, project)
 	for _, f := range findings {
 		t.Errorf("found: %s", f)
+	}
+	// So is a field the table names as its index.
+	project = testProject()
+	schema = strings.Replace(testSchema, `<var name="id" type="string" group="c,s" comment="the grade's code"/>`, `<var name="id" type="string" group="c,s" comment="文字鍵 of nothing: the code"/>`, 1)
+	project["gamedata/Defines/world.xml"] = &fstest.MapFile{Data: []byte(strings.Replace(schema, `mode="map" group="c,s"/>
+	<table name="TbRule"`, `mode="list" index="id+power" group="c,s"/>
+	<table name="TbRule"`, 1))}
+	if _, findings = check(t, project); len(findings) != 0 {
+		t.Errorf("an index field taken for a text key:\n%s", listFindings(findings))
 	}
 	// Without groups in luban.conf, c and s are the groups.
 	project = testProject()
@@ -434,6 +448,8 @@ func TestCopyReview(t *testing.T) {
 func TestDataReview(t *testing.T) {
 	project := testProject()
 	project["gamedata/Datas/grade.csv"] = &fstest.MapFile{Data: []byte(strings.Replace(testGrades, ",wood,grade.wood.name,10,", ",wood,grade.wood.name,,", 1))}
+	// The code a row is found by is shown as it is, whatever its comment says.
+	project["gamedata/Defines/world.xml"] = &fstest.MapFile{Data: []byte(strings.Replace(testSchema, `comment="the grade's code"`, `comment="the grade's code, for the 文字鍵 of its name"`, 1))}
 	d, findings := check(t, project)
 	page := d.DataReview([]string{"gamedata/Datas/grade.csv", "gamedata/Datas/rule.csv"}, findings)
 	for _, want := range []string{

@@ -136,6 +136,13 @@ func (p *planner) write(ctx context.Context, plan *Plan, r *TopicRecord, at *sea
 		return err
 	}
 	at.written = append(at.written, written...)
+	// A table a schema defines, written with it though the topic did not name
+	// it, is the role's to answer for from here on, like the others.
+	for _, doc := range writtenBy(written) {
+		if !contains(at.asked, doc) {
+			at.asked = append(at.asked, doc)
+		}
+	}
 
 	// Only what this meeting wrote is read against the rules: a document its
 	// owner left as it was is not this meeting's.
