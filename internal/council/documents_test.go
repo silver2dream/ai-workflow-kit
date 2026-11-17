@@ -54,7 +54,7 @@ func TestRun_DocumentsThatAreAlreadyThere(t *testing.T) {
 	// A role is shown its document whole before it writes, and is told it may
 	// leave it; a role with nothing written yet is not offered that.
 	skeptic := model.promptOf("skeptic", "documents")
-	for _, want := range []string{"Your documents as they stand:\n===== docs/qa/risks.md\n# Risks\n\nThe database can be down.\n", "keep the rest as it is, word for word", "<<<UNCHANGED path/of/the/document.md>>>"} {
+	for _, want := range []string{"Your documents of this topic as they stand:\n===== docs/qa/risks.md\n# Risks\n\nThe database can be down.\n", "keep the rest as it is, word for word", "<<<UNCHANGED path/of/the/document.md>>>"} {
 		if !strings.Contains(skeptic, want) {
 			t.Errorf("the skeptic's question should say %q:\n%s", want, skeptic)
 		}
@@ -132,14 +132,17 @@ func TestRun_ADocumentTooLongToRewriteStays(t *testing.T) {
 		t.Errorf("the minutes do not say that a document was left:\n%s", minutes)
 	}
 
-	// The role is told so, is not asked for it, and sees its beginning, cut at
-	// a line; the planning role sees it cut too.
+	// The role is told so and is not asked for it; the roles of the topic
+	// read its beginning, cut at a line; the planning role sees it cut too.
 	asked := model.promptOf("skeptic", "documents")
-	for _, want := range []string{"write the documents you own, as they read after this meeting:\n- docs/qa/tests.md\n(docs/qa/risks.md is too long to be rewritten here. It stays as it is: do not hand it in.)\n",
-		"===== docs/qa/risks.md (only its beginning: it is too long to be shown whole)\n# 風險\n"} {
+	for _, want := range []string{"Your task now: write your documents of this topic, as they read after it:\n- docs/qa/tests.md\n(docs/qa/risks.md is too long to be rewritten here. It stays as it is: do not hand it in.)\n",
+		"Your documents of this topic as they stand:\n- docs/qa/tests.md: not written yet\n"} {
 		if !strings.Contains(asked, want) {
 			t.Errorf("the skeptic's question should say %q:\n%s", want, asked[:min(len(asked), 3000)])
 		}
+	}
+	if speak := model.promptIn(1, "skeptic", "speak"); !strings.Contains(speak, "===== docs/qa/risks.md (skeptic's)\n# 風險\n") || !strings.Contains(speak, "健康檢查要能分辨。\n(cut here; the file has the rest)\n") {
+		t.Error("the roles of the topic are not shown the long document cut at a line")
 	}
 	worklist := model.promptOf("builder", "worklist")
 	if !strings.Contains(worklist, "健康檢查要能分辨。\n(cut here; the file has the rest)\n") {
@@ -152,7 +155,7 @@ func TestRun_ADocumentTooLongToRewriteStays(t *testing.T) {
 	if review := model.promptOf("designer", "review"); !strings.Contains(review, "- docs/qa/risks.md (owner: skeptic; not written by this meeting)\n- docs/qa/tests.md (owner: skeptic; written in this meeting)\n") {
 		t.Errorf("those who look at the work list are not told which document was left:\n%s", review)
 	}
-	for name, prompt := range map[string]string{"documents": asked, "position": model.promptOf("skeptic", "position"), "work list": worklist} {
+	for name, prompt := range map[string]string{"documents": asked, "speech": model.promptOf("skeptic", "speak"), "work list": worklist} {
 		if !utf8.ValidString(prompt) {
 			t.Errorf("the %s question is not valid UTF-8: a document was cut inside a character", name)
 		}
@@ -186,7 +189,7 @@ func TestRun_AFileThatCannotBeWrittenIsNotTheRolesFault(t *testing.T) {
 
 	plan, err := runPlan(t, root, roster, model, "Add a health endpoint.")
 
-	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at the documents: documents builder: ") {
+	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at topic 2 (build): topic build documents builder: ") {
 		t.Fatalf("err = %v, want the meeting stopped at the builder's documents", err)
 	}
 	if strings.Contains(err.Error(), "could not be used") {

@@ -531,8 +531,8 @@ func TestInstall_Roster(t *testing.T) {
 		engineer string
 		owns     []string
 	}{
-		"generic":  {"architect", []string{"docs/engineering/architecture.md"}},
-		"godot-go": {"tech-lead", []string{"backend/docs/architecture.md", "frontend/docs/architecture.md", "backend/docs/protocol.md"}},
+		"generic":  {"architect", []string{"docs/engineering/"}},
+		"godot-go": {"tech-lead", []string{"backend/docs/", "frontend/docs/"}},
 	} {
 		dir := t.TempDir()
 		if _, err := Install(createMinimalMockFS(), dir, Options{Preset: preset, NoGenerate: true}); err != nil {
@@ -551,9 +551,11 @@ func TestInstall_Roster(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", preset, err)
 		}
-		for _, doc := range want.owns {
-			if strings.HasSuffix(doc, "/architecture.md") && !strings.Contains(string(governance), "| `"+doc+"` |") {
-				t.Errorf("%s: the roster names %s, and the rule about where documents are kept does not", preset, doc)
+		// The folder of each repo's engineering documents is where the rule
+		// about documents says the authority on that repo is.
+		for _, folder := range want.owns {
+			if !strings.Contains(string(governance), "| `"+folder+"architecture.md` |") {
+				t.Errorf("%s: the roster names %s, and the rule about where documents are kept does not keep the repo's architecture there", preset, folder)
 			}
 		}
 		// The same goes for the documents about quality, which are about no
@@ -616,7 +618,7 @@ func TestInstall_Roster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the roster of the project that kept its configuration: %v", err)
 	}
-	if want := []string{"apps/server/docs/architecture.md", "client/docs/architecture.md", "apps/server/docs/protocol.md"}; !reflect.DeepEqual(roster.Role("tech-lead").Owns, want) {
+	if want := []string{"apps/server/docs/", "client/docs/"}; !reflect.DeepEqual(roster.Role("tech-lead").Owns, want) {
 		t.Errorf("the tech lead owns %v, want %v", roster.Role("tech-lead").Owns, want)
 	}
 

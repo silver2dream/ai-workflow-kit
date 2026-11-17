@@ -240,15 +240,16 @@ hooks:
 
 ## 名冊：`.ai/roster.yaml`
 
-`awkit plan` 開會時坐在桌邊的角色。`awkit init` 依 preset 與專案的 repo 寫下第一份：工程文件跟著各 repo 放（`<repo>/docs/`；整個 repository 就是一個 repo 時放 `docs/engineering/`），和專案起始的規則說的位置一致。這個檔案是你的，升級不會動它。名冊裡未知的鍵是錯誤，`awkit validate` 會檢查。
+`awkit plan` 開會時坐在桌邊的角色。`awkit init` 依 preset 與專案的 repo 寫下第一份：每個角色負責一個資料夾，工程的資料夾跟著各 repo（`<repo>/docs/`；整個 repository 就是一個 repo 時是 `docs/engineering/`），和專案起始的規則說的位置一致。這個檔案是你的，升級不會動它。名冊裡未知的鍵是錯誤，`awkit validate` 會檢查。
 
 ```yaml
 language: ""           # 議會用什麼語言寫；空的時候跟需求的語言走
 model: sonnet          # 沒有自己指定模型的角色用這個
 limits:
-  disputes: 5          # 最多辯幾個爭點；其餘直接交給決策角色
+  topics: 8            # 議程最多幾個議題
+  disputes: 2          # 一個議題最多辯幾個爭點；其餘直接交給決策角色
   dispute_rounds: 2    # 每個爭點來回幾次
-  calls: 80            # 一次規劃最多幾次模型呼叫
+  calls: 200           # 一次規劃最多幾次模型呼叫
   parallel: 3          # 同時幾個呼叫
   timeout_seconds: 600 # 每次呼叫的時間上限
 roles:
@@ -259,7 +260,7 @@ roles:
       你為「做得完、值得做」負責：範圍、時程、砍什麼。
       反對不在核心循環裡的功能，也反對「順便做一下」。
     owns:
-      - docs/product/vision.md
+      - docs/product/
   - id: tech-lead
     title: Tech Lead
     plans: true        # 由這個角色擬票券清單（恰好一個）
@@ -267,8 +268,8 @@ roles:
       你為「做得出來、維護得動」負責。反對沒有驗收條件的需求，
       也反對還沒量過就說做不到。
     owns:
-      - backend/docs/architecture.md
-      - frontend/docs/architecture.md
+      - backend/docs/
+      - frontend/docs/
 ```
 
 | 角色的鍵 | 說明 |
@@ -276,11 +277,22 @@ roles:
 | `id` | 必填。小寫字母、數字與連字號。出現在會議紀錄與其他角色的發言裡 |
 | `title` | 介紹這個角色時用的稱呼；沒寫就用 `id` |
 | `stance` | 必填。這個角色主張什麼、反對什麼。立場要寫得會互相衝突：一桌人都點頭的規劃沒有被檢驗過 |
-| `owns` | 這個角色擁有的文件：Markdown 檔，路徑從專案根目錄寫起（`docs/design/game-design.md`、`backend/docs/architecture.md`）。一份文件只能有一個擁有者，而且只有擁有者會寫它。不能是議會自己維護的檔案（`docs/decisions.md`、`docs/README.md`、`docs/plans/`）、給 agent 的指示（`CLAUDE.md`、`AGENTS.md`），或以 `.` 開頭的目錄裡的檔案（`.claude/`、`.ai/`、`.github/`） |
+| `owns` | 這個角色擁有的文件，路徑從專案根目錄寫起：一個資料夾（結尾加 `/`，例如 `docs/design/`、`backend/docs/`），角色在裡面寫、也可以開新的 Markdown 檔；或一份檔案（`docs/qa/risks.md`）。一份文件只能有一個擁有者，而且只有擁有者會寫它：兩個角色的資料夾不能重疊。不能是議會自己維護的檔案（`docs/decisions.md`、`docs/README.md`、`docs/plans/`，所以 `docs/` 整個不能當資料夾）、給 agent 的指示（`CLAUDE.md`、`AGENTS.md`），或以 `.` 開頭的目錄（`.claude/`、`.ai/`、`.github/`） |
 | `model` | 扮演這個角色的模型；沒寫就用名冊的 `model` |
 | `decides`、`plans` | 各恰好一個角色為 `true`，可以是同一個角色 |
 
 至少要有兩個角色。
+
+### 會議怎麼開
+
+1. **議程**：主持人（用名冊的 `model`，不選邊）讀需求、名冊與現有的文件，排出議程，存在 `docs/plans/<plan>/agenda.yaml`。每個議題寫明：要回答什麼（`question`）、誰主講（`lead`）、誰依序發言（`speakers`）、先讀哪些文件（`reads`）、結束時寫進哪些文件（`writes`）。寫文件的角色一定在發言名單裡。
+2. **只有你答得出來的問題**：議程也列出這些問題。用 `awkit plan --ask` 時，第一個議題開始前會問你；沒問的話，決策角色在用到時寫下假設。
+3. **逐議題**：主講者先讀文件、提出方案；其他角色照順序發言，每個人都看得到前面的人說了什麼，看到不能接受的就提出異議；兩個角色有分歧時直接對辯（`dispute_rounds` 回合）；主持人整理；決策角色裁定，寫進 `docs/decisions.md`；擁有者把結論寫進 `writes` 裡自己的文件（照下一節的規則）。下一個議題從這些文件開始。
+4. **工作清單**：規劃角色把整個計畫排成里程碑（每個都是看得到在運作的東西），只為第一個里程碑擬票；其他角色可以反對一次。其餘里程碑等第一個做完再規劃。
+
+議程是你的：想改議題、順序或發言的人，停下來改 `agenda.yaml`，再用 `awkit plan --resume <plan>` 接續。已經開過的議題維持原樣；要重開一個議題，給它新的 `id`。議程需要的呼叫次數超過 `limits.calls` 時，第一個議題開始前就會停下來告訴你。
+
+會議紀錄：`docs/plans/<plan>/minutes.md` 是總表（議程、問答、決策、文件、里程碑、票），每個議題另有一份 `docs/plans/<plan>/topics/<編號>-<id>.md`（誰說了什麼、對辯、主持人的整理、裁定、寫了哪些文件）。
 
 ### 文件照專案的規則寫
 

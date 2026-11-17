@@ -26,22 +26,19 @@ func TestFenced(t *testing.T) {
 	}
 }
 
-// crowded is the agreeable table where every role objects: more objections
-// than the roster argues out, so that the moderator has to pick.
+// crowded is the agreeable table where both speakers of the first topic
+// object: more objections than the roster argues out, so that the moderator
+// has to pick.
 func crowded(roster *Roster) func(c call) (string, error) {
 	base := agreeable(roster)
 	return func(c call) (string, error) {
-		switch c.Step {
-		case "objections":
-			to := "owner"
-			if c.Role == "owner" {
-				to = "builder"
-			}
-			return block(fmt.Sprintf(`{"objections": [{"to": "%s", "point": "%s objects", "why": "w", "wants": "x"}]}`, to, c.Role)), nil
-		case "pick":
+		switch {
+		case c.Step == "speak" && c.Topic == 1:
+			return block(fmt.Sprintf(`{"says": "No.", "objections": [{"to": "owner", "point": "%s objects", "why": "w", "wants": "x"}, {"to": "owner", "point": "%s objects again", "why": "w", "wants": "x"}]}`, c.Role, c.Role)), nil
+		case c.Step == "pick":
 			return block(`{"disputes": [{"topic": "one", "challenger": "skeptic", "defender": "owner", "point": "skeptic objects", "wants": "x"},
-				{"topic": "two", "challenger": "owner", "defender": "builder", "point": "owner objects", "wants": "x"}]}`), nil
-		case "defence":
+				{"topic": "two", "challenger": "designer", "defender": "owner", "point": "designer objects", "wants": "x"}]}`), nil
+		case c.Step == "defence":
 			return block(`{"stance": "concede", "reply": "Right.", "position": "Changed."}`), nil
 		}
 		return base(c)
@@ -58,17 +55,16 @@ func TestRun_MoreAnswersThatCannotBeUsed(t *testing.T) {
 		role, step, bad string
 		wantTold        string
 	}{
-		{"an objection without a point", agreeable(roster), "skeptic", "objections", block(`{"objections": [{"to": "owner", "point": " "}]}`), "an objection has no point"},
-		{"a decision that decides nothing", agreeable(roster), "owner", "decide", block(`{"decisions": [{"title": "t", "decision": " ", "rationale": "r"}]}`), "a decision does not say what is decided"},
-		{"an empty document", agreeable(roster), "builder", "documents", "<<<DOCUMENT docs/tech/architecture.md>>>\n \n<<<END>>>\n", "docs/tech/architecture.md is empty"},
 		{"a stance that is none of the three", disputing(roster), "builder", "defence", block(`{"stance": "maybe", "reply": "Perhaps.", "position": "p"}`), `stance is "maybe"; it is one of concede, revise, hold`},
 		{"a defence without a reply", disputing(roster), "builder", "defence", block(`{"stance": "hold", "reply": " "}`), "the answer has no reply"},
 		{"a reply without a reply", disputing(roster), "designer", "reply", block(`{"accepts": false, "reply": ""}`), "the answer has no reply"},
 		{"no dispute picked", crowded(roster), "moderator", "pick", block(`{"disputes": []}`), "no dispute was picked, and there are objections"},
-		{"a dispute with a role that is not at the table", crowded(roster), "moderator", "pick", block(`{"disputes": [{"topic": "x", "challenger": "cfo", "defender": "owner", "point": "p"}]}`), `the dispute "x" is not between two roles at the table (the roles are: owner, designer, builder, skeptic)`},
-		{"a dispute against a role that is not at the table", crowded(roster), "moderator", "pick", block(`{"disputes": [{"topic": "x", "challenger": "owner", "defender": "cfo", "point": "p"}]}`), `the dispute "x" is not between two roles at the table`},
-		{"a dispute of a role with itself", crowded(roster), "moderator", "pick", block(`{"disputes": [{"topic": "x", "challenger": "owner", "defender": "owner", "point": "p"}]}`), `the dispute "x" is not between two roles at the table`},
+		{"a dispute with a role that is not at the topic", crowded(roster), "moderator", "pick", block(`{"disputes": [{"topic": "x", "challenger": "builder", "defender": "owner", "point": "p"}]}`), `the dispute "x" is not between two roles of this topic (they are: owner, designer, skeptic)`},
+		{"a dispute against a role that is not at the table", crowded(roster), "moderator", "pick", block(`{"disputes": [{"topic": "x", "challenger": "owner", "defender": "cfo", "point": "p"}]}`), `the dispute "x" is not between two roles of this topic`},
+		{"a dispute of a role with itself", crowded(roster), "moderator", "pick", block(`{"disputes": [{"topic": "x", "challenger": "owner", "defender": "owner", "point": "p"}]}`), `the dispute "x" is not between two roles of this topic`},
 		{"a dispute without a point", crowded(roster), "moderator", "pick", block(`{"disputes": [{"topic": "x", "challenger": "skeptic", "defender": "owner", "point": " "}]}`), `the dispute "x" has no point`},
+		{"a review naming nothing of the list", agreeable(roster), "skeptic", "review", block(`{"objections": [{"ticket": "m9", "point": "p"}]}`), `an objection names "m9", which is neither a ticket nor a milestone of the list`},
+		{"a review without a point", agreeable(roster), "skeptic", "review", block(`{"objections": [{"ticket": "t1", "point": " "}]}`), "an objection has no point"},
 	}
 	for _, tt := range tests {
 		asked := 0
@@ -100,33 +96,37 @@ func TestRun_MoreAnswersThatCannotBeUsed(t *testing.T) {
 	}
 }
 
-// Every piece of a step runs, also after one of them failed: what can be
-// settled is settled and remembered, and going on asks only for what failed.
+// Every piece of a step that runs side by side runs, also after one of them
+// failed: what can be settled is settled and remembered, and going on asks
+// only for what failed.
 func TestRun_OneFailureDoesNotStopTheOthers(t *testing.T) {
 	root := t.TempDir()
-	// One call at a time, so that the roles are asked in the order of the roster.
+	// One call at a time, so that the owners are asked in the order of the roster.
 	roster := mustRoster(t, strings.Replace(testRoster, "parallel: 2", "parallel: 1", 1))
 	base := agreeable(roster)
 	broken := true
 	model := &table{answer: func(c call) (string, error) {
-		if broken && c.Step == "position" && c.Role == "owner" {
-			return "I have no position.", nil
+		if broken && c.Step == "documents" && c.Role == "owner" {
+			return "I have nothing to write.", nil
 		}
 		return base(c)
 	}}
 
 	plan, err := runPlan(t, root, roster, model, "Add a health endpoint.")
 
-	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at the positions") {
-		t.Fatalf("err = %v, want the meeting stopped at the positions", err)
+	if err == nil || !strings.Contains(err.Error(), "the meeting stopped at topic 1 (scope): topic scope documents owner: ") {
+		t.Fatalf("err = %v, want the meeting stopped at the owner's documents", err)
 	}
-	if got := model.count("owner", "position"); got != 2 {
+	if got := model.count("owner", "documents"); got != 2 {
 		t.Errorf("the role whose answer could not be used was asked %d times, want twice", got)
 	}
-	for _, role := range []string{"designer", "builder", "skeptic"} {
-		if got := model.count(role, "position"); got != 1 {
-			t.Errorf("%s was asked for its position %d times after the first role failed, want once", role, got)
+	for _, role := range []string{"designer", "skeptic"} {
+		if got := model.count(role, "documents"); got != 1 {
+			t.Errorf("%s was asked for its documents %d times after the first role failed, want once", role, got)
 		}
+	}
+	if !exists(root, "docs/qa/risks.md") || exists(root, "docs/product/requirements.md") {
+		t.Error("what the others wrote is not there, or what failed is")
 	}
 
 	broken = false
@@ -134,14 +134,14 @@ func TestRun_OneFailureDoesNotStopTheOthers(t *testing.T) {
 	if _, err := Run(context.Background(), Options{Root: root, ID: plan.ID, Roster: roster, Model: model, Repos: testRepos, Now: fixedNow}); err != nil {
 		t.Fatalf("going on: %v", err)
 	}
-	var positions []string
+	var documents []string
 	for _, step := range model.steps()[before:] {
-		if strings.HasSuffix(step, " position") {
-			positions = append(positions, step)
+		if strings.HasSuffix(step, " documents") {
+			documents = append(documents, step)
 		}
 	}
-	if !reflect.DeepEqual(positions, []string{"owner position"}) {
-		t.Errorf("going on asked for the positions %v, want only the one that failed", positions)
+	if !reflect.DeepEqual(documents, []string{"owner documents", "builder documents"}) {
+		t.Errorf("going on asked for the documents %v, want the one that failed and the second topic's", documents)
 	}
 }
 
@@ -162,49 +162,18 @@ func TestRun_AFailedCallIsOnRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("the meeting went on after a call failed")
 	}
-	records, _ := filepath.Glob(filepath.Join(root, ".ai", "state", "council", plan.ID, "calls", "*-moderator-sums-up.md"))
+	records, _ := filepath.Glob(filepath.Join(root, ".ai", "state", "council", plan.ID, "calls", "*-topic-scope-moderator-sums-up.md"))
 	if len(records) != 1 {
 		t.Fatalf("%d records of the call that failed, want one", len(records))
 	}
 	record := readFile(t, filepath.Dir(records[0]), filepath.Base(records[0]))
-	for _, want := range []string{"# moderator sums up (sonnet)", "## prompt\n\nYou moderate a planning meeting", "## error\n\nclaude failed: exit status 1\n"} {
+	for _, want := range []string{"# topic scope moderator sums up (sonnet)", "## prompt\n\nYou moderate a planning meeting", "## error\n\nclaude failed: exit status 1\n"} {
 		if !strings.Contains(record, want) {
 			t.Errorf("the record should have %q:\n%s", want, record)
 		}
 	}
 	if all, _ := filepath.Glob(filepath.Join(root, ".ai", "state", "council", plan.ID, "calls", "*.md")); len(all) != plan.Calls {
 		t.Errorf("%d calls on record, %d made", len(all), plan.Calls)
-	}
-}
-
-// A role is shown the others' positions without its own among them, which it
-// is reminded of apart; the moderator, who has none, is shown them all.
-func TestPrompts_TheOthersPositions(t *testing.T) {
-	roster := mustRoster(t, testRoster)
-	model := &table{answer: agreeable(roster)}
-	if _, err := runPlan(t, t.TempDir(), roster, model, "Add a health endpoint."); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	objections := model.promptOf("skeptic", "objections")
-	at := strings.Index(objections, "What the others hold:")
-	if at < 0 {
-		t.Fatalf("the question does not show what the others hold:\n%s", objections)
-	}
-	own, others := objections[:at], objections[at:]
-	if !strings.Contains(own, "Your own position:\nskeptic holds its line.\nYou proposed:\n  - skeptic proposes\n") {
-		t.Errorf("the role is not reminded of its own position:\n%s", own)
-	}
-	for _, want := range []string{"## owner (Product Owner)\nowner holds its line.\nProposes:\n  - owner proposes\nWorried about:\n  - owner worries\n", "## designer (Designer)", "## builder (Builder)"} {
-		if !strings.Contains(others, want) {
-			t.Errorf("the others' positions should have %q:\n%s", want, others)
-		}
-	}
-	if strings.Contains(others, "## skeptic (Skeptic)") {
-		t.Errorf("the role's own position is among the others':\n%s", others)
-	}
-	if summary := model.promptOf("moderator", "summary"); !strings.Contains(summary, "## skeptic (Skeptic)") || !strings.Contains(summary, "## owner (Product Owner)") {
-		t.Errorf("the moderator is not shown every position:\n%s", summary)
 	}
 }
 
@@ -216,16 +185,7 @@ func TestRun_WhoPlaysWhom(t *testing.T) {
 	played := map[string]string{}
 	base := agreeable(roster)
 	model := modelFunc(func(ctx context.Context, name, prompt string) (string, error) {
-		c := call{Role: "moderator", Prompt: prompt}
-		if match := promptRole.FindStringSubmatch(prompt); match != nil {
-			c.Role = match[1]
-		}
-		for _, known := range promptStep {
-			if strings.Contains(prompt, known.marker) {
-				c.Step = known.step
-				break
-			}
-		}
+		c := readCall(prompt)
 		mu <- struct{}{}
 		played[c.Role] = name
 		<-mu

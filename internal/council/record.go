@@ -14,7 +14,8 @@ import (
 )
 
 // What a meeting leaves on disk besides the roles' own documents: its minutes,
-// its decisions in the decision log, and the index of the documents.
+// one file for the meeting and one for each topic, its decisions in the
+// decision log, and the index of the documents.
 
 func mdBullets(b *strings.Builder, items []string) {
 	if len(items) == 0 {
@@ -26,9 +27,28 @@ func mdBullets(b *strings.Builder, items []string) {
 	}
 }
 
-// writeMinutes writes the record of the meeting: who said what. It is written
-// from the roles' answers as they came, also when the meeting stopped early.
+// topicFile names the minutes of a topic, relative to the plan's folder.
+func topicFile(r *TopicRecord) string {
+	return fmt.Sprintf("topics/%02d-%s.md", r.Number, r.Topic.ID)
+}
+
+// started reports whether anything of a topic was said.
+func (r *TopicRecord) started() bool {
+	return r.Proposal != nil
+}
+
+// writeMinutes writes the record of the meeting: the minutes of the meeting,
+// and of every topic that was taken up. It is written from the roles' answers
+// as they came, also when the meeting stopped early.
 func (p *planner) writeMinutes(plan *Plan, stopped error) error {
+	for i := range plan.Topics {
+		if plan.Topics[i].started() {
+			if err := p.writeTopicMinutes(plan, &plan.Topics[i]); err != nil {
+				return err
+			}
+		}
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Plan %s: minutes\n\n", plan.ID)
 	b.WriteString("> The record of the council's meeting, written by awkit from what the roles answered. Nobody edits it; what holds now is in the documents and in `docs/decisions.md`.\n\n")
@@ -47,32 +67,40 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 		seats = append(seats, seat)
 	}
 	fmt.Fprintf(&b, "- At the table: %s\n", strings.Join(seats, ", "))
-	if stopped != nil {
+	switch {
+	case stopped != nil:
 		fmt.Fprintf(&b, "- Status: **not finished**. %s. Go on with `awkit plan --resume %s`.\n", oneLine(stopped.Error()), plan.ID)
-	} else {
+	case len(plan.Tickets) > 0:
 		fmt.Fprintf(&b, "- Status: finished. %d tickets proposed in `%s/%s`; none is on GitHub until `awkit plan approve %s`.\n",
 			len(plan.Tickets), plan.Dir(), WorkListFile, plan.ID)
+	default:
+		b.WriteString("- Status: under way.\n")
 	}
 
 	b.WriteString("\n## Brief\n\n" + strings.TrimSpace(plan.Brief) + "\n")
 
-	if len(plan.Positions) > 0 {
-		b.WriteString("\n## Positions\n")
-		for _, position := range plan.Positions {
-			role := p.roster.Role(position.Role)
-			fmt.Fprintf(&b, "\n### %s (%s)\n\n%s\n\nProposes:\n", role.ID, role.Title, strings.TrimSpace(position.Summary))
-			mdBullets(&b, position.Proposals)
-			b.WriteString("\nWorried about:\n")
-			mdBullets(&b, position.Concerns)
-			if len(nonEmpty(position.Questions)) > 0 {
-				b.WriteString("\nAsks the owner:\n")
-				mdBullets(&b, position.Questions)
+	if plan.Agenda != nil {
+		fmt.Fprintf(&b, "\n## Agenda\n\nSet by the moderator, in `%s/%s`.\n\n| # | Topic | Lead | Speakers | Ends in | |\n|---|---|---|---|---|---|\n", plan.Dir(), AgendaFile)
+		for i := range plan.Topics {
+			r := &plan.Topics[i]
+			title := strings.ReplaceAll(oneLine(r.Topic.Title), "|", "/")
+			if r.started() {
+				title = "[" + title + "](" + topicFile(r) + ")"
 			}
+			state := "not taken up"
+			switch {
+			case r.Held:
+				state = "held"
+			case r.started():
+				state = "**stopped**"
+			}
+			fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s |\n", r.Number, title, r.Topic.Lead, strings.Join(r.Topic.Speakers, ", "),
+				strings.Join(quoted(r.Topic.Writes), ", "), state)
 		}
 	}
 
 	if len(plan.Answers) > 0 {
-		b.WriteString("\n## What the owner was asked\n\nThe table's questions, put to the owner of the project before the roles objected to each other.\n\n")
+		b.WriteString("\n## What the owner was asked\n\nThe questions of the agenda, put to the owner of the project before the first topic.\n\n")
 		for _, answer := range plan.Answers {
 			said := "(left open: the council assumes)"
 			if answer.Answer != "" {
@@ -82,83 +110,40 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 		}
 	}
 
-	if len(plan.Objections) > 0 {
-		b.WriteString("\n## Objections\n\n")
-		for _, objection := range plan.Objections {
-			fmt.Fprintf(&b, "- **%s to %s**: %s\n  - Why: %s\n  - Wants: %s\n", objection.From, objection.To,
-				oneLine(objection.Point), oneLine(objection.Why), oneLine(objection.Wants))
-		}
-	}
-
-	if len(plan.Disputes) > 0 {
-		b.WriteString("\n## Disputes\n")
-		for i := range plan.Disputes {
-			dispute := &plan.Disputes[i]
-			state := "not settled"
-			if dispute.Settled {
-				state = "settled"
-			}
-			fmt.Fprintf(&b, "\n### %d. %s\n\n%s against %s: **%s**\n\nObjection: %s\n\n", i+1, oneLine(dispute.Topic),
-				dispute.Challenger, dispute.Defender, state, oneLine(dispute.Point))
-			for round, exchange := range dispute.Exchanges {
-				fmt.Fprintf(&b, "- Round %d, %s (%s): %s\n", round+1, dispute.Defender, exchange.Stance, oneLine(exchange.Reply))
-				if strings.TrimSpace(exchange.Position) != "" {
-					fmt.Fprintf(&b, "  - Proposal now: %s\n", oneLine(exchange.Position))
-				}
-				if exchange.Answered {
-					verdict := "does not accept"
-					if exchange.Accepts {
-						verdict = "accepts"
-					}
-					fmt.Fprintf(&b, "  - %s %s: %s\n", dispute.Challenger, verdict, oneLine(exchange.Answer))
-					if !exchange.Accepts && strings.TrimSpace(exchange.StillWants) != "" {
-						fmt.Fprintf(&b, "  - Still wants: %s\n", oneLine(exchange.StillWants))
-					}
-				}
-			}
-			if dispute.Outcome != "" {
-				fmt.Fprintf(&b, "\nOutcome: %s\n", dispute.Outcome)
-			}
-		}
-		if dropped := plan.undisputed(); len(dropped) > 0 {
-			b.WriteString("\nObjections that were not argued out:\n")
-			mdBullets(&b, dropped)
-		}
-	}
-
-	if len(plan.Summary.Consensus)+len(plan.Summary.Open)+len(plan.Summary.Questions) > 0 {
-		b.WriteString("\n## Where the meeting stood\n\nBy the moderator, who takes no side.\n\nAgreed:\n")
-		mdBullets(&b, plan.Summary.Consensus)
-		b.WriteString("\nStill disputed:\n")
-		mdBullets(&b, plan.Summary.Open)
-		b.WriteString("\nFor the owner to answer:\n")
-		mdBullets(&b, plan.Summary.Questions)
-	}
-
 	if len(plan.Decisions) > 0 {
-		fmt.Fprintf(&b, "\n## Decisions\n\nBy %s. They are on record in `%s`.\n\n", p.roster.Decider().ID, DecisionsPath)
-		writeDecisions(&b, plan.Decisions, plan.Assumptions)
+		fmt.Fprintf(&b, "\n## Decisions\n\nBy %s, a topic at a time. They are on record in `%s`.\n", p.roster.Decider().ID, DecisionsPath)
+		for i := range plan.Topics {
+			r := &plan.Topics[i]
+			if len(r.Decisions)+len(r.Assumptions) == 0 {
+				continue
+			}
+			fmt.Fprintf(&b, "\n### %d. %s\n\n", r.Number, oneLine(r.Topic.Title))
+			writeDecisions(&b, r.Decisions, r.Assumptions)
+		}
 	}
 
 	if len(plan.Documents) > 0 {
 		b.WriteString("\n## Documents\n\n")
-		for _, doc := range plan.Documents {
-			switch {
-			case doc.Refused != "" && p.roster.Role(doc.Owner).OwnsDocument(doc.Path):
-				fmt.Fprintf(&b, "- `%s` (%s): **not written**, %s\n", doc.Path, doc.Owner, doc.Refused)
-			case doc.Refused != "":
-				fmt.Fprintf(&b, "- `%s` handed in by %s: **not written**, %s\n", doc.Path, doc.Owner, doc.Refused)
-			case doc.Unchanged:
-				fmt.Fprintf(&b, "- `%s` (%s): left as it was\n", doc.Path, doc.Owner)
-			default:
-				fmt.Fprintf(&b, "- `%s` (%s)\n", doc.Path, doc.Owner)
+		writeDocuments(&b, p.roster, plan.Documents)
+		writeRuleChecks(&b, plan.Rules, plan.RulesLeft, plan.RuleChecks)
+	}
+
+	if len(plan.Milestones) > 0 {
+		fmt.Fprintf(&b, "\n## Milestones\n\nLaid out by %s. Only the first is ticketed; the others are planned when it is reached.\n\n", p.roster.Planner().ID)
+		for i, milestone := range plan.Milestones {
+			ticketed := ""
+			if i == 0 {
+				ticketed = " (ticketed)"
+			}
+			fmt.Fprintf(&b, "- **%s %s**%s: %s\n", milestone.Key, oneLine(milestone.Title), ticketed, oneLine(milestone.Goal))
+			for _, check := range milestone.DoneWhen {
+				fmt.Fprintf(&b, "  - [ ] %s\n", oneLine(check))
 			}
 		}
-		writeRuleChecks(&b, plan)
 	}
 
 	if len(plan.Tickets) > 0 {
-		fmt.Fprintf(&b, "\n## Work list\n\nProposed by %s, in `%s/%s`.\n\n| Key | Ticket | Repo | After |\n|---|---|---|---|\n",
+		fmt.Fprintf(&b, "\n## Work list\n\nThe tickets of the first milestone, proposed by %s, in `%s/%s`.\n\n| Key | Ticket | Repo | After |\n|---|---|---|---|\n",
 			p.roster.Planner().ID, plan.Dir(), WorkListFile)
 		for _, ticket := range plan.Tickets {
 			after := "-"
@@ -189,28 +174,146 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 	return p.writeFile(plan.Dir()+"/minutes.md", b.String())
 }
 
+func quoted(files []string) []string {
+	out := make([]string, len(files))
+	for i, file := range files {
+		out[i] = "`" + file + "`"
+	}
+	return out
+}
+
+// writeSpeech writes what one role said to a topic.
+func writeSpeech(b *strings.Builder, speech *Speech) {
+	b.WriteString(strings.TrimSpace(speech.Says) + "\n")
+	if items := nonEmpty(speech.Proposals); len(items) > 0 {
+		b.WriteString("\nProposes:\n")
+		mdBullets(b, items)
+	}
+	if items := nonEmpty(speech.Concerns); len(items) > 0 {
+		b.WriteString("\nWorried about:\n")
+		mdBullets(b, items)
+	}
+	if len(speech.Objections) > 0 {
+		b.WriteString("\nObjects:\n")
+		for _, objection := range speech.Objections {
+			fmt.Fprintf(b, "- **to %s**: %s\n  - Why: %s\n  - Wants: %s\n", objection.To, oneLine(objection.Point), oneLine(objection.Why), oneLine(objection.Wants))
+		}
+	}
+}
+
+// writeTopicMinutes writes the record of one topic: who said what, how the
+// disputes went, where it stood, what was decided, what was written.
+func (p *planner) writeTopicMinutes(plan *Plan, r *TopicRecord) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Plan %s, topic %d: %s\n\n", plan.ID, r.Number, oneLine(r.Topic.Title))
+	b.WriteString("> Part of the [minutes](../minutes.md) of the meeting, written by awkit from what the roles answered.\n\n")
+	fmt.Fprintf(&b, "- It settles: %s\n- Lead: %s\n- Speaking after, in order: %s\n", oneLine(r.Topic.Question), r.Topic.Lead, strings.Join(r.Topic.Speakers, ", "))
+	if len(r.Topic.Reads) > 0 {
+		fmt.Fprintf(&b, "- Read first: %s\n", strings.Join(quoted(r.Topic.Reads), ", "))
+	}
+	fmt.Fprintf(&b, "- Ends in: %s\n", strings.Join(quoted(r.Topic.Writes), ", "))
+
+	if r.Proposal != nil {
+		role := p.roster.Role(r.Proposal.Role)
+		fmt.Fprintf(&b, "\n## %s (%s) proposes\n\n", role.ID, role.Title)
+		writeSpeech(&b, r.Proposal)
+	}
+	for i := range r.Speeches {
+		role := p.roster.Role(r.Speeches[i].Role)
+		fmt.Fprintf(&b, "\n## %s (%s)\n\n", role.ID, role.Title)
+		writeSpeech(&b, &r.Speeches[i])
+	}
+
+	if len(r.Disputes) > 0 {
+		b.WriteString("\n## Disputes\n")
+		for i := range r.Disputes {
+			dispute := &r.Disputes[i]
+			state := "not settled"
+			if dispute.Settled {
+				state = "settled"
+			}
+			fmt.Fprintf(&b, "\n### %d. %s\n\n%s against %s: **%s**\n\nObjection: %s\n\n", i+1, oneLine(dispute.Topic),
+				dispute.Challenger, dispute.Defender, state, oneLine(dispute.Point))
+			for round, exchange := range dispute.Exchanges {
+				fmt.Fprintf(&b, "- Round %d, %s (%s): %s\n", round+1, dispute.Defender, exchange.Stance, oneLine(exchange.Reply))
+				if strings.TrimSpace(exchange.Position) != "" {
+					fmt.Fprintf(&b, "  - Proposal now: %s\n", oneLine(exchange.Position))
+				}
+				if exchange.Answered {
+					verdict := "does not accept"
+					if exchange.Accepts {
+						verdict = "accepts"
+					}
+					fmt.Fprintf(&b, "  - %s %s: %s\n", dispute.Challenger, verdict, oneLine(exchange.Answer))
+					if !exchange.Accepts && strings.TrimSpace(exchange.StillWants) != "" {
+						fmt.Fprintf(&b, "  - Still wants: %s\n", oneLine(exchange.StillWants))
+					}
+				}
+			}
+			if dispute.Outcome != "" {
+				fmt.Fprintf(&b, "\nOutcome: %s\n", dispute.Outcome)
+			}
+		}
+		if dropped := r.undisputed(); len(dropped) > 0 {
+			b.WriteString("\nObjections that were not argued out:\n")
+			mdBullets(&b, dropped)
+		}
+	}
+
+	if len(r.Summary.Consensus)+len(r.Summary.Open)+len(r.Summary.Questions) > 0 {
+		b.WriteString("\n## Where it stood\n\nBy the moderator, who takes no side.\n\nAgreed:\n")
+		mdBullets(&b, r.Summary.Consensus)
+		b.WriteString("\nStill disputed:\n")
+		mdBullets(&b, r.Summary.Open)
+		b.WriteString("\nFor the owner to answer:\n")
+		mdBullets(&b, r.Summary.Questions)
+	}
+
+	if len(r.Decisions) > 0 {
+		fmt.Fprintf(&b, "\n## Decisions\n\nBy %s. They are on record in `%s`.\n\n", p.roster.Decider().ID, DecisionsPath)
+		writeDecisions(&b, r.Decisions, r.Assumptions)
+	}
+
+	if len(r.Documents) > 0 {
+		b.WriteString("\n## Documents\n\n")
+		writeDocuments(&b, p.roster, r.Documents)
+		writeRuleChecks(&b, r.Rules, r.RulesLeft, r.RuleChecks)
+	}
+	return p.writeFile(plan.Dir()+"/"+topicFile(r), b.String())
+}
+
+// writeDocuments says what became of documents.
+func writeDocuments(b *strings.Builder, roster *Roster, documents []WrittenDocument) {
+	for _, doc := range documents {
+		owner := roster.Role(doc.Owner)
+		switch {
+		case doc.Refused != "" && owner != nil && owner.OwnsDocument(doc.Path):
+			fmt.Fprintf(b, "- `%s` (%s): **not written**, %s\n", doc.Path, doc.Owner, doc.Refused)
+		case doc.Refused != "":
+			fmt.Fprintf(b, "- `%s` handed in by %s: **not written**, %s\n", doc.Path, doc.Owner, doc.Refused)
+		case doc.Unchanged:
+			fmt.Fprintf(b, "- `%s` (%s): left as it was\n", doc.Path, doc.Owner)
+		default:
+			fmt.Fprintf(b, "- `%s` (%s)\n", doc.Path, doc.Owner)
+		}
+	}
+}
+
 // writeRuleChecks puts on record which rules of the project the documents were
 // written by, and what reading them against those rules came to: what was
 // found, and what still stands for the person who approves the plan.
-func writeRuleChecks(b *strings.Builder, plan *Plan) {
-	if len(plan.Rules)+len(plan.RulesLeft) == 0 {
+func writeRuleChecks(b *strings.Builder, ruleFiles, left []string, checks []RuleCheck) {
+	if len(ruleFiles)+len(left) == 0 {
 		return
 	}
-	quoted := func(files []string) string {
-		out := make([]string, len(files))
-		for i, file := range files {
-			out[i] = "`" + file + "`"
-		}
-		return strings.Join(out, ", ")
-	}
 	b.WriteString("\n### By the project's rules\n")
-	if len(plan.Rules) > 0 {
-		fmt.Fprintf(b, "\nEach role was given the rules that hold for the files it writes: %s. What it wrote in this meeting was read against them by a reader who takes no side, and the owner put right what was found, once.\n", quoted(plan.Rules))
+	if len(ruleFiles) > 0 {
+		fmt.Fprintf(b, "\nEach role was given the rules that hold for the files it writes: %s. What it wrote in this meeting was read against them by a reader who takes no side, and the owner put right what was found, once.\n", strings.Join(quoted(ruleFiles), ", "))
 	}
-	if len(plan.RulesLeft) > 0 {
-		fmt.Fprintf(b, "\nNot passed on, because the rules together are longer than one question carries: %s. Nothing was read against them.\n", quoted(plan.RulesLeft))
+	if len(left) > 0 {
+		fmt.Fprintf(b, "\nNot passed on, because the rules together are longer than one question carries: %s. Nothing was read against them.\n", strings.Join(quoted(left), ", "))
 	}
-	if len(plan.RuleChecks) == 0 {
+	if len(checks) == 0 {
 		return
 	}
 	b.WriteString("\n")
@@ -220,7 +323,7 @@ func writeRuleChecks(b *strings.Builder, plan *Plan) {
 			fmt.Fprintf(b, "    - To put right: %s\n", oneLine(found.Fix))
 		}
 	}
-	for _, check := range plan.RuleChecks {
+	for _, check := range checks {
 		switch {
 		case len(check.Found) == 0 && check.Settled:
 			fmt.Fprintf(b, "- %s: nothing at odds with the rules\n", check.Owner)
@@ -278,6 +381,10 @@ func planMarker(id string) string {
 	return "<!-- plan: " + id + " -->"
 }
 
+func topicMarker(plan, topic string) string {
+	return "<!-- plan: " + plan + " topic: " + topic + " -->"
+}
+
 var (
 	decisionName   = regexp.MustCompile(`(?m)^- \*\*D([0-9]+)\b`)
 	assumptionName = regexp.MustCompile(`(?m)^- \*\*A([0-9]+)\b`)
@@ -294,45 +401,49 @@ func lastNumber(pattern *regexp.Regexp, text string) int {
 	return last
 }
 
-// number names the plan's decisions and assumptions: each counts on from the
-// last one on record before the plan, so that going on with a plan gives them
-// the names they have in the log.
-func (p *planner) number(plan *Plan) {
+// number names the decisions and assumptions of a topic: each counts on from
+// the last one on record before the topic, so that going on with a plan gives
+// them the names they have in the log.
+func (p *planner) number(plan *Plan, r *TopicRecord) {
 	before := p.read(DecisionsPath)
-	if at := strings.Index(before, planMarker(plan.ID)); at >= 0 {
+	if at := strings.Index(before, topicMarker(plan.ID, r.Topic.ID)); at >= 0 {
 		before = before[:at]
 	}
 	decision, assumption := lastNumber(decisionName, before), lastNumber(assumptionName, before)
-	for i := range plan.Decisions {
-		plan.Decisions[i].ID = fmt.Sprintf("D%d", decision+i+1)
+	for i := range r.Decisions {
+		r.Decisions[i].ID = fmt.Sprintf("D%d", decision+i+1)
 	}
-	for i := range plan.Assumptions {
-		plan.Assumptions[i].ID = fmt.Sprintf("A%d", assumption+i+1)
+	for i := range r.Assumptions {
+		r.Assumptions[i].ID = fmt.Sprintf("A%d", assumption+i+1)
 	}
 }
 
-// recordDecisions appends the plan's decisions to the decision log. A plan's
-// decisions go in once: going on with a plan does not record them again.
-func (p *planner) recordDecisions(plan *Plan) error {
+// recordDecisions appends the decisions of a topic to the decision log, under
+// the plan's heading. A topic's decisions go in once: going on with a plan
+// does not record them again.
+func (p *planner) recordDecisions(plan *Plan, r *TopicRecord) error {
 	file := filepath.Join(p.root, filepath.FromSlash(DecisionsPath))
 	existing, err := os.ReadFile(file)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	marker := planMarker(plan.ID)
-	if strings.Contains(string(existing), marker) {
+	log := string(existing)
+	if strings.Contains(log, topicMarker(plan.ID, r.Topic.ID)) {
 		return nil
 	}
 
 	var b strings.Builder
-	if len(existing) == 0 {
+	if strings.TrimSpace(log) == "" {
 		b.WriteString(decisionsHeader)
 	} else {
-		b.WriteString(strings.TrimRight(string(existing), "\n") + "\n")
+		b.WriteString(strings.TrimRight(log, "\n") + "\n")
 	}
-	fmt.Fprintf(&b, "\n## %s, plan %s\n\n%s\n\n", p.today(), plan.ID, marker)
-	fmt.Fprintf(&b, "Decided by %s. At the table: %s. Minutes: `%s/minutes.md`.\n\n", p.roster.Decider().ID, strings.Join(p.roster.IDs(), ", "), plan.Dir())
-	writeDecisions(&b, plan.Decisions, plan.Assumptions)
+	if !strings.Contains(log, planMarker(plan.ID)) {
+		fmt.Fprintf(&b, "\n## %s, plan %s\n\n%s\n\n", p.today(), plan.ID, planMarker(plan.ID))
+		fmt.Fprintf(&b, "Decided by %s, a topic at a time. At the table: %s. Minutes: `%s/minutes.md`.\n", p.roster.Decider().ID, strings.Join(p.roster.IDs(), ", "), plan.Dir())
+	}
+	fmt.Fprintf(&b, "\n### %s\n\n%s\n\n", oneLine(r.Topic.Title), topicMarker(plan.ID, r.Topic.ID))
+	writeDecisions(&b, r.Decisions, r.Assumptions)
 	return p.writeFile(DecisionsPath, b.String())
 }
 
@@ -382,13 +493,29 @@ func writeIndex(root string, roster *Roster) error {
 	p := &planner{root: root, roster: roster}
 	var b strings.Builder
 	b.WriteString(indexOpen + "\n\n## Documents\n\nEach document has one owner: the role that writes it when the council plans (`" + layout.RosterFile + "`). How far a document is, and when it was last checked, it says itself: this index only points to it.\n\n| Document | Owner |\n|---|---|\n")
-	for _, role := range p.roster.Roles {
-		for _, doc := range role.Owns {
-			if strings.TrimSpace(p.read(doc)) == "" {
-				fmt.Fprintf(&b, "| %s (not written yet) | %s |\n", strings.ReplaceAll(doc, "|", "\\|"), role.ID)
+	escape := func(text string) string { return strings.ReplaceAll(text, "|", "\\|") }
+	for i := range p.roster.Roles {
+		role := &p.roster.Roles[i]
+		docs := p.documentsOf(role)
+		for _, doc := range docs {
+			if !p.exists(doc) {
+				fmt.Fprintf(&b, "| %s (not written yet) | %s |\n", escape(doc), role.ID)
 				continue
 			}
 			fmt.Fprintf(&b, "| %s | %s |\n", indexLink(doc, doc), role.ID)
+		}
+		// A folder nothing is written in yet is named, so that it is known
+		// whose it is.
+		for _, folder := range role.Folders() {
+			empty := true
+			for _, doc := range docs {
+				if strings.HasPrefix(doc, folder) && p.exists(doc) {
+					empty = false
+				}
+			}
+			if empty {
+				fmt.Fprintf(&b, "| %s (nothing written yet) | %s |\n", escape(folder), role.ID)
+			}
 		}
 	}
 	fmt.Fprintf(&b, "| %s | the deciding role, through `awkit plan`; it only grows |\n", indexLink(DecisionsPath, DecisionsPath))

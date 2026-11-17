@@ -2,11 +2,12 @@
 # decisions and a list of tickets. Change it to fit the project: the roles,
 # what each stands for, the documents each owns.
 #
-# A role owns documents: Markdown files that only it writes. Where a document
-# is kept is the project's to say, in its rules (.claude/rules/): product and
-# design under docs/, the engineering documents of a repo with that repo. The
-# council is given the rules that hold for the files it writes, and what it
-# wrote is checked against them.
+# A role owns documents that only it writes: a folder (with a slash at its
+# end), in which it writes and opens Markdown files as the topics of a plan
+# need, or a single file. Where a document is kept is the project's to say, in
+# its rules (.claude/rules/): product and design under docs/, the engineering
+# documents of a repo with that repo. The council is given the rules that hold
+# for the files it writes, and what it wrote is checked against them.
 #
 # The stances are written to disagree. A table where everyone nods produces a
 # plan nobody tested.
@@ -17,9 +18,10 @@
 model: sonnet
 
 limits:
-  disputes: 5          # disputed points that are argued out
+  topics: 8            # topics an agenda may have
+  disputes: 2          # disputed points of a topic that are argued out
   dispute_rounds: 2    # times a disputed point goes back and forth
-  calls: 80            # upper bound on model calls for one plan
+  calls: 200           # upper bound on model calls for one plan
   parallel: 3          # calls made at the same time
   timeout_seconds: 600 # per call
 
@@ -35,7 +37,7 @@ roles:
       it later". When the table cannot agree, you decide, and you say what the
       decision costs.
     owns:
-      - docs/product/requirements.md
+      - docs/product/
 
   - id: user-advocate
     title: User Advocate
@@ -46,7 +48,7 @@ roles:
       anything that is convenient to build and awkward to use, and on
       requirements that describe the system instead of the person.
     owns:
-      - docs/product/user-journeys.md
+      - docs/ux/
 
   - id: architect
     title: Architect
@@ -60,7 +62,7 @@ roles:
       finished before anything works, and on dependencies nobody justified.
     owns:
 {{- range .Docs}}
-      - {{file . "architecture.md"}}
+      - {{file . ""}}
 {{- end}}
 
   - id: skeptic
@@ -73,5 +75,4 @@ roles:
       You do not propose features. You push back on any plan whose author
       cannot say how they would find out that it is broken.
     owns:
-      - docs/qa/risks.md
-      - docs/qa/test-strategy.md
+      - docs/qa/

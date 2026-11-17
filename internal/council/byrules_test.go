@@ -219,8 +219,8 @@ func TestRun_DocumentsAreWrittenByTheProjectsRules(t *testing.T) {
 		t.Fatalf("%d checks on record, want four", len(plan.RuleChecks))
 	}
 	for i, check := range plan.RuleChecks {
-		if check.Owner != roster.IDs()[i] || !check.Settled || check.Found != nil || check.Open != nil {
-			t.Errorf("check %d = %+v", i, check)
+		if want := []string{"owner", "designer", "skeptic", "builder"}[i]; check.Owner != want || !check.Settled || check.Found != nil || check.Open != nil {
+			t.Errorf("check %d = %+v, want %s's, with nothing found", i, check, want)
 		}
 	}
 	if open := plan.OpenFindings(); open != nil {
@@ -228,7 +228,7 @@ func TestRun_DocumentsAreWrittenByTheProjectsRules(t *testing.T) {
 	}
 	minutes := readFile(t, root, plan.Dir()+"/minutes.md")
 	for _, want := range []string{"- `backend/docs/architecture.md` (builder)\n",
-		"### By the project's rules\n\nEach role was given the rules that hold for the files it writes: `.claude/rules/agents.md`, `.claude/rules/backend.md`, `.claude/rules/docs.md`. What it wrote in this meeting was read against them by a reader who takes no side, and the owner put right what was found, once.\n\n- owner: nothing at odds with the rules\n- designer: nothing at odds with the rules\n- builder: nothing at odds with the rules\n- skeptic: nothing at odds with the rules\n"} {
+		"### By the project's rules\n\nEach role was given the rules that hold for the files it writes: `.claude/rules/agents.md`, `.claude/rules/backend.md`, `.claude/rules/docs.md`. What it wrote in this meeting was read against them by a reader who takes no side, and the owner put right what was found, once.\n\n- owner: nothing at odds with the rules\n- designer: nothing at odds with the rules\n- skeptic: nothing at odds with the rules\n- builder: nothing at odds with the rules\n"} {
 		if !strings.Contains(minutes, want) {
 			t.Errorf("the minutes should say %q:\n%s", want, minutes)
 		}
@@ -268,8 +268,9 @@ func TestRun_WhatTheCheckFindsIsPutRightOnce(t *testing.T) {
 	}
 	asked := model.promptOf("builder", "redocuments")
 	for _, want := range []string{
-		"Your documents as they stand:\n===== backend/docs/architecture.md\n# backend/docs/architecture.md\n\nOwner: builder.\n\nWritten by builder.\n",
-		"The meeting is over. What was decided:\nD1. scope: Build the health endpoint only.",
+		"The topic now, 2 of 2: How it is built",
+		"Your documents of this topic as they stand:\n===== backend/docs/architecture.md\n# backend/docs/architecture.md\n\nOwner: builder.\n\nWritten by builder.\n",
+		"What this meeting has decided, up to and with this topic:\nD1. scope: Build the health endpoint only.\n   Why: It is the smallest thing worth shipping.\nD2. stack: One Go handler.",
 		"The project's rules that hold for the files you write (.claude/rules/):\n\n<rule file=\".claude/rules/agents.md\"",
 		"<rule file=\".claude/rules/docs.md\" about=\"the files that match docs/**, **/docs/**\">",
 		"- their owner: builder (Builder)\n- today's date: 2026-11-14\n",
@@ -327,15 +328,20 @@ func TestRun_WhatTheCheckFindsIsPutRightOnce(t *testing.T) {
 		}
 	}
 	minutes := readFile(t, root, plan.Dir()+"/minutes.md")
-	if want := "- builder: 1 point(s) found and put right\n  - Found: `backend/docs/architecture.md` against `.claude/rules/docs.md`: Reading 1: it has no **Status** line.\n    - To put right: Add the line under the title.\n- skeptic: nothing at odds with the rules\n"; !strings.Contains(minutes, want) {
+	if want := "- skeptic: nothing at odds with the rules\n- builder: 1 point(s) found and put right\n  - Found: `backend/docs/architecture.md` against `.claude/rules/docs.md`: Reading 1: it has no **Status** line.\n    - To put right: Add the line under the title.\n"; !strings.Contains(minutes, want) {
 		t.Errorf("the minutes should say %q:\n%s", want, minutes)
+	}
+	// The topic's own minutes say so too.
+	if topic := readFile(t, root, plan.Dir()+"/topics/02-build.md"); !strings.Contains(topic, "### By the project's rules") || !strings.Contains(topic, "- builder: 1 point(s) found and put right\n") {
+		t.Errorf("the minutes of the topic do not say what the reading came to:\n%s", topic)
 	}
 	if strings.Contains(minutes, "Still stands") {
 		t.Errorf("the minutes say something still stands:\n%s", minutes)
 	}
 	progress := strings.Join(told, "\n")
-	for _, want := range []string{"Documents: 4 roles write what they own, by 3 rule(s) of the project", "  builder: 1 point(s) at odds with the rules; builder puts them right",
-		"  rules check builder (", "  documents revised builder (", "  rules recheck builder ("} {
+	for _, want := range []string{"  documents: docs/product/requirements.md, docs/product/journeys.md, docs/qa/risks.md, by 2 rule(s) of the project",
+		"  documents: backend/docs/architecture.md, by 3 rule(s) of the project", "  builder: 1 point(s) at odds with the rules; builder puts them right",
+		"  topic build rules check builder (", "  topic build documents revised builder (", "  topic build rules recheck builder ("} {
 		if !strings.Contains(progress, want) {
 			t.Errorf("whoever watches should be told %q:\n%s", want, progress)
 		}
@@ -667,7 +673,7 @@ func TestRun_OnlyWhatTheMeetingWroteIsRead(t *testing.T) {
 	for _, check := range plan.RuleChecks {
 		owners = append(owners, check.Owner)
 	}
-	if want := []string{"owner", "builder", "skeptic"}; !reflect.DeepEqual(owners, want) {
+	if want := []string{"owner", "skeptic", "builder"}; !reflect.DeepEqual(owners, want) {
 		t.Errorf("checks on record for %v, want %v", owners, want)
 	}
 	// The rules are passed on to a role all the same: it decides what to leave.
@@ -843,7 +849,7 @@ func TestRun_StoppedWhileTheDocumentsWereRead(t *testing.T) {
 
 		plan, err := runWithRules(t, root, roster, model, projectRules())
 
-		if err == nil || !strings.Contains(err.Error(), "the meeting stopped at the documents: rules check builder: claude failed") {
+		if err == nil || !strings.Contains(err.Error(), "the meeting stopped at topic 2 (build): topic build rules check builder: claude failed") {
 			t.Fatalf("err = %v, want the meeting stopped at the reading of the builder's documents", err)
 		}
 		// What was written is on record, with how far the reading got.
@@ -879,7 +885,7 @@ func TestRun_StoppedWhileTheDocumentsWereRead(t *testing.T) {
 		if got := len(model.checksOf(roster.Role("owner"))); got != 1 {
 			t.Errorf("the owner's documents were read %d times over both runs, want once", got)
 		}
-		if len(again.RuleChecks) != 4 || !again.RuleChecks[2].Settled {
+		if len(again.RuleChecks) != 4 || again.RuleChecks[3].Owner != "builder" || !again.RuleChecks[3].Settled {
 			t.Errorf("checks after going on: %+v", again.RuleChecks)
 		}
 	})
@@ -897,7 +903,7 @@ func TestRun_StoppedWhileTheDocumentsWereRead(t *testing.T) {
 
 		plan, err := runWithRules(t, root, roster, model, projectRules())
 
-		if err == nil || !strings.Contains(err.Error(), "the meeting stopped at the documents: documents revised builder: claude failed") {
+		if err == nil || !strings.Contains(err.Error(), "the meeting stopped at topic 2 (build): topic build documents revised builder: claude failed") {
 			t.Fatalf("err = %v, want the meeting stopped at the builder's revision", err)
 		}
 		minutes := readFile(t, root, plan.Dir()+"/minutes.md")
@@ -924,7 +930,7 @@ func TestRun_StoppedWhileTheDocumentsWereRead(t *testing.T) {
 		if got := readFile(t, root, "backend/docs/architecture.md"); !strings.Contains(got, "Revised by builder.") {
 			t.Errorf("the revision was not written when the plan was gone on with:\n%s", got)
 		}
-		if check := again.RuleChecks[2]; !check.Settled || len(check.Found) != 1 || len(check.Open) != 0 {
+		if check := again.RuleChecks[3]; check.Owner != "builder" || !check.Settled || len(check.Found) != 1 || len(check.Open) != 0 {
 			t.Errorf("the builder's check after going on: %+v", check)
 		}
 	})
@@ -949,12 +955,22 @@ func TestRun_ReadingsCountAgainstTheCalls(t *testing.T) {
 		t.Errorf("%d calls with rules, %d without; want six more", with.Calls, without.Calls)
 	}
 
-	// A plan out of calls stops like anywhere else, and says where.
-	tight := mustRoster(t, strings.Replace(repoRoster, "calls: 60", fmt.Sprintf("calls: %d", without.Calls-4), 1))
+	// The readings are counted in what an agenda needs: a roster whose calls
+	// carry the meeting without them, and not with them, is told so before
+	// the first topic.
+	tight := mustRoster(t, strings.Replace(repoRoster, "calls: 60", fmt.Sprintf("calls: %d", without.Calls), 1))
 	model = &table{answer: following(tight)}
 	_, err = runWithRules(t, t.TempDir(), tight, model, projectRules())
-	if !errors.Is(err, ErrBudget) || !strings.Contains(err.Error(), "the meeting stopped at the documents") {
-		t.Errorf("err = %v, want the plan out of calls at the documents", err)
+	if err == nil || !strings.Contains(err.Error(), "the agenda needs at least 22 more model calls and the roster allows 18 more") {
+		t.Errorf("err = %v, want the agenda said to need the readings too", err)
+	}
+	// One that carries the agenda and not the revision the readings call for
+	// stops where it ran out.
+	tight = mustRoster(t, strings.Replace(repoRoster, "calls: 60", fmt.Sprintf("calls: %d", without.Calls+5), 1))
+	model = &table{answer: checked(tight, 1, revised)}
+	_, err = runWithRules(t, t.TempDir(), tight, model, projectRules())
+	if !errors.Is(err, ErrBudget) || !strings.Contains(err.Error(), "the meeting stopped at") {
+		t.Errorf("err = %v, want the plan out of calls", err)
 	}
 }
 
@@ -1033,16 +1049,7 @@ func TestRuleCheckPrompt(t *testing.T) {
 	played := map[string]string{}
 	base := checked(strong, 1, revised)
 	asking := modelFunc(func(ctx context.Context, name, prompt string) (string, error) {
-		c := call{Role: "moderator", Prompt: prompt}
-		if match := promptRole.FindStringSubmatch(prompt); match != nil {
-			c.Role = match[1]
-		}
-		for _, known := range promptStep {
-			if strings.Contains(prompt, known.marker) {
-				c.Step = known.step
-				break
-			}
-		}
+		c := readCall(prompt)
 		// The builder is played by a model of its own: who reads its documents,
 		// and who puts them right.
 		if c.Step == "redocuments" || c.Step == "rulecheck" && strings.Contains(prompt, "the Builder (builder).") {
@@ -1286,20 +1293,24 @@ func TestPrompts_TheDocumentMap(t *testing.T) {
 	if _, err := runWithRules(t, t.TempDir(), roster, model, projectRules()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	const head = "The project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or adds one:\n"
-	// A role with documents, in every question it is asked.
-	for _, step := range []string{"position", "objections", "documents", "worklist"} {
-		if prompt := model.promptOf("builder", step); !strings.Contains(prompt, head+"- docs/product/requirements.md (owner)\n- backend/docs/architecture.md (you)\n- docs/qa/risks.md (skeptic)\nYou write the ones that are yours, and no other.\n") {
+	const head = "The project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or gives one to another role:\n"
+	// A role with documents, in every question it is asked; what is not
+	// written yet is said to be so.
+	if prompt := model.promptIn(1, "skeptic", "speak"); !strings.Contains(prompt, head+"- docs/product/requirements.md (owner, not written yet)\n- backend/docs/architecture.md (builder, not written yet)\n- docs/qa/risks.md (you, not written yet)\nYou write the ones that are yours, and no other.\n") {
+		t.Errorf("the first topic does not show the documents and whose they are:\n%s", prompt[:min(len(prompt), 2500)])
+	}
+	for _, step := range []string{"propose", "documents", "worklist"} {
+		if prompt := model.promptOf("builder", step); !strings.Contains(prompt, head+"- docs/product/requirements.md (owner)\n- backend/docs/architecture.md (you") {
 			t.Errorf("builder %s: the question does not show the documents and whose they are:\n%s", step, prompt[:min(len(prompt), 2500)])
 		}
 	}
 	// A role without one is told so.
-	if prompt := model.promptOf("designer", "position"); !strings.Contains(prompt, "- docs/qa/risks.md (skeptic)\nYou own none of them: you write no document.\n") || strings.Contains(prompt, "(you)") {
+	if prompt := model.promptOf("designer", "speak"); !strings.Contains(prompt, "You own none of them: you write no document.\n") || strings.Contains(prompt, "(you") {
 		t.Errorf("a role that owns no document:\n%s", prompt[:min(len(prompt), 2500)])
 	}
 	// The deciding role is told that where the documents are is not decided here.
 	decide := model.promptOf("owner", "decide")
-	for _, want := range []string{head + "- docs/product/requirements.md (you)\n",
+	for _, want := range []string{head + "- docs/product/requirements.md (you",
 		"A decision says what is built, or how. Which documents there are, where each is kept and who writes it is not one: the list above says, and the documents are written there whatever is decided."} {
 		if !strings.Contains(decide, want) {
 			t.Errorf("the deciding role should be told %q:\n%s", want, decide)

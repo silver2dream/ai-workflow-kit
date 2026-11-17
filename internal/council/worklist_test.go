@@ -442,7 +442,7 @@ func TestRun_KeepsTheIssuesOfAnApprovedList(t *testing.T) {
 	base := agreeable(roster)
 	model.answer = func(c call) (string, error) {
 		if c.Step == "worklist" {
-			return block(strings.Replace(goodTickets, `], "later"`, `, {"key": "t3", "title": "[test] check the endpoint", "repo": "backend", "summary": "A check.", "scope": ["a test"], "acceptance": ["the check passes"], "testing": [], "depends_on": ["t2"]}], "later"`, 1)), nil
+			return block(strings.Replace(goodWork, `], "later"`, `, {"key": "t3", "title": "[test] check the endpoint", "repo": "backend", "summary": "A check.", "scope": ["a test"], "acceptance": ["the check passes"], "testing": [], "depends_on": ["t2"]}], "later"`, 1)), nil
 		}
 		return base(c)
 	}
@@ -554,7 +554,7 @@ func TestRun_BuildsOnTheTicketsOfEarlierPlans(t *testing.T) {
 	base := agreeable(roster)
 	second := &table{answer: func(c call) (string, error) {
 		if c.Step == "worklist" {
-			return block(`{"tickets": [{"key": "v1", "title": "[feat] serve the version", "repo": "backend", "summary": "GET /version.", "scope": ["handler"], "acceptance": ["GET /version answers 200"], "testing": [], "depends_on": ["#42"]}], "later": []}`), nil
+			return block(`{"milestones": [{"key": "m1", "title": "The version is served", "goal": "g", "done_when": ["GET /version answers 200"]}], "tickets": [{"key": "v1", "title": "[feat] serve the version", "repo": "backend", "summary": "GET /version.", "scope": ["handler"], "acceptance": ["GET /version answers 200"], "testing": [], "depends_on": ["#42"]}], "later": []}`), nil
 		}
 		return base(c)
 	}}
@@ -703,7 +703,7 @@ func TestRun_ADraftAskedAnewIsWritten(t *testing.T) {
 	repos := []Repo{{Name: "root", Path: "./"}, {Name: "api", Language: "go", Path: "api/"}}
 	model.answer = func(c call) (string, error) {
 		if c.Step == "worklist" {
-			return block(strings.ReplaceAll(goodTickets, `"repo": "backend"`, `"repo": "api"`)), nil
+			return block(strings.ReplaceAll(goodWork, `"repo": "backend"`, `"repo": "api"`)), nil
 		}
 		return base(c)
 	}

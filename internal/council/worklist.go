@@ -35,10 +35,57 @@ type Ticket struct {
 	Issue int `json:"-" yaml:"issue,omitempty"`
 }
 
+// Milestone is a step a plan is built in: something a person can see working
+// once it is reached.
+type Milestone struct {
+	Key      string   `json:"key" yaml:"key"`
+	Title    string   `json:"title" yaml:"title"`
+	Goal     string   `json:"goal" yaml:"goal"`
+	DoneWhen []string `json:"done_when" yaml:"done_when"`
+}
+
+// maxMilestones bounds the milestones of a plan.
+const maxMilestones = 6
+
+var milestoneKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+// checkMilestones checks that a plan is laid out in milestones a person can
+// check: at least one, each with a key of its own, a title, a goal and how it
+// is seen to be reached.
+func checkMilestones(milestones []Milestone) error {
+	if len(milestones) == 0 {
+		return errors.New("the plan has no milestone: lay it out in milestones, and ticket the first")
+	}
+	if len(milestones) > maxMilestones {
+		return fmt.Errorf("the plan has %d milestones; at most %d (leave the rest for a later plan, in later)", len(milestones), maxMilestones)
+	}
+	keys := map[string]bool{}
+	for i, milestone := range milestones {
+		key := strings.TrimSpace(milestone.Key)
+		switch {
+		case !milestoneKey.MatchString(key):
+			return fmt.Errorf("milestone %d: the key %q is not letters, digits, - and _", i+1, milestone.Key)
+		case keys[key]:
+			return fmt.Errorf("two milestones have the key %q", key)
+		case strings.TrimSpace(milestone.Title) == "":
+			return fmt.Errorf("milestone %s has no title", key)
+		case strings.TrimSpace(milestone.Goal) == "":
+			return fmt.Errorf("milestone %s has no goal", key)
+		case len(nonEmpty(milestone.DoneWhen)) == 0:
+			return fmt.Errorf("milestone %s does not say how it is seen to be reached: done_when is empty", key)
+		}
+		keys[key] = true
+	}
+	return nil
+}
+
 // WorkList is the file a plan ends with: docs/plans/<id>/tickets.yaml.
 type WorkList struct {
-	Plan    string   `yaml:"plan"`
-	Tickets []Ticket `yaml:"tickets"`
+	Plan string `yaml:"plan"`
+	// Milestones are the steps the plan is built in; the tickets are those of
+	// the first.
+	Milestones []Milestone `yaml:"milestones,omitempty"`
+	Tickets    []Ticket    `yaml:"tickets"`
 	// Later is what the list leaves for another plan.
 	Later []string `yaml:"later,omitempty"`
 }
@@ -252,18 +299,25 @@ func workOrder(tickets []Ticket) ([]Ticket, error) {
 	return ordered, nil
 }
 
-// worklist asks the planning role for the tickets, lets the table object to
-// the list once, and has the planning role take the objections in.
+// worklist asks the planning role for the milestones and the tickets of the
+// first, lets the table object to the list once, and has the planning role
+// take the objections in.
 func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	planner := p.roster.Planner()
-	p.session.say("Work list: %s draws up the tickets", planner.ID)
+	p.session.say("Work list: %s lays out the milestones and tickets the first", planner.ID)
 	type list struct {
-		Tickets []Ticket `json:"tickets"`
-		Later   []string `json:"later"`
-		Kept    []string `json:"kept"`
+		Milestones []Milestone `json:"milestones"`
+		Tickets    []Ticket    `json:"tickets"`
+		Later      []string    `json:"later"`
+		Kept       []string    `json:"kept"`
 	}
 	other := earlierIn(p.root)
-	check := func(got *list) error { return checkTickets(got.Tickets, p.repos, p.maxTickets, other) }
+	check := func(got *list) error {
+		if err := checkMilestones(got.Milestones); err != nil {
+			return err
+		}
+		return checkTickets(got.Tickets, p.repos, p.maxTickets, other)
+	}
 
 	draftStep, revisedStep := "work list "+planner.ID, "work list revised "+planner.ID
 	draft, err := settleJSON(ctx, p.session, draftStep, planner.Model, p.worklistPrompt(planner, plan), check)
@@ -286,15 +340,18 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	for _, ticket := range draft.Tickets {
 		keys[ticket.Key] = true
 	}
+	for _, milestone := range draft.Milestones {
+		keys[strings.TrimSpace(milestone.Key)] = true
+	}
 	perRole := make([][]ListObjection, len(reviewers))
 	err = p.session.each(len(reviewers), func(i int) error {
 		role := reviewers[i]
-		got, err := settleJSON(ctx, p.session, "work list review "+role.ID, role.Model, p.worklistReviewPrompt(role, plan, draft.Tickets), func(got *review) error {
+		got, err := settleJSON(ctx, p.session, "work list review "+role.ID, role.Model, p.worklistReviewPrompt(role, plan, draft.Milestones, draft.Tickets), func(got *review) error {
 			for _, objection := range got.Objections {
 				// One objection may be about several tickets: "t5, t7".
 				for _, named := range strings.Split(objection.Ticket, ",") {
 					if !keys[strings.TrimSpace(named)] {
-						return fmt.Errorf("an objection names the ticket %q, which is not in the list", strings.TrimSpace(named))
+						return fmt.Errorf("an objection names %q, which is neither a ticket nor a milestone of the list", strings.TrimSpace(named))
 					}
 				}
 				if strings.TrimSpace(objection.Point) == "" {
@@ -334,7 +391,7 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	if len(plan.ListObjections) > 0 {
 		p.session.say("  %d objections to the list; %s revises it", len(plan.ListObjections), planner.ID)
 		final, err = settleJSON(ctx, p.session, revisedStep, planner.Model,
-			p.worklistRevisionPrompt(planner, plan, draft.Tickets, plan.ListObjections), check)
+			p.worklistRevisionPrompt(planner, plan, draft.Milestones, draft.Tickets, plan.ListObjections), check)
 		if err != nil {
 			return err
 		}
@@ -350,7 +407,12 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 		ordered[i].Scope, ordered[i].Acceptance = nonEmpty(ordered[i].Scope), nonEmpty(ordered[i].Acceptance)
 		ordered[i].Testing, ordered[i].Reads = nonEmpty(ordered[i].Testing), nonEmpty(ordered[i].Reads)
 	}
-	plan.Tickets, plan.Later, plan.Kept = ordered, nonEmpty(final.Later), nonEmpty(final.Kept)
+	milestones := make([]Milestone, len(final.Milestones))
+	for i, milestone := range final.Milestones {
+		milestones[i] = Milestone{Key: strings.TrimSpace(milestone.Key), Title: strings.TrimSpace(milestone.Title),
+			Goal: strings.TrimSpace(milestone.Goal), DoneWhen: nonEmpty(milestone.DoneWhen)}
+	}
+	plan.Milestones, plan.Tickets, plan.Later, plan.Kept = milestones, ordered, nonEmpty(final.Later), nonEmpty(final.Kept)
 
 	existing, err := LoadWorkList(p.root, plan.ID)
 	switch {
@@ -361,7 +423,7 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	case !asked:
 		// The table said nothing new in this run, and the list that is there
 		// is the person's to change: it stays as they left it.
-		plan.Tickets, plan.Later = existing.Tickets, existing.Later
+		plan.Milestones, plan.Tickets, plan.Later = existing.Milestones, existing.Tickets, existing.Later
 		p.session.say("  the work list stays as it is: %d tickets", len(plan.Tickets))
 		return nil
 	default:
@@ -375,8 +437,8 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 			plan.Tickets[i].Issue = issues[plan.Tickets[i].Key]
 		}
 	}
-	p.session.say("  %d tickets proposed", len(plan.Tickets))
-	return SaveWorkList(p.root, &WorkList{Plan: plan.ID, Tickets: plan.Tickets, Later: plan.Later})
+	p.session.say("  %d milestones; %d tickets proposed for the first", len(plan.Milestones), len(plan.Tickets))
+	return SaveWorkList(p.root, &WorkList{Plan: plan.ID, Milestones: plan.Milestones, Tickets: plan.Tickets, Later: plan.Later})
 }
 
 // Open names the plans of a project whose work list still has tickets that
@@ -437,6 +499,9 @@ func (p *planner) earlierTickets(current string) string {
 }
 
 const workListHeader = `# The work list the council proposes. Nothing here is on GitHub yet.
+#
+# The plan is laid out in milestones; the tickets are those of the first.
+# The other milestones are planned when the first is reached.
 #
 # Read it, change what you want changed (titles, scope, order, depends_on;
 # delete a ticket you do not want), then create the issues:
