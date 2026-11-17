@@ -237,10 +237,24 @@ func TestRun_DocumentsAreWrittenByTheProjectsRules(t *testing.T) {
 	if index := readFile(t, root, "docs/README.md"); !strings.Contains(index, "| [backend/docs/architecture.md](../backend/docs/architecture.md) | builder |\n") {
 		t.Errorf("the index does not lead to the document kept with the repo:\n%s", index)
 	}
-	// A role writes first and is read after.
-	steps := strings.Join(model.steps(), "\n")
-	if strings.Index(steps, "moderator rulecheck") < strings.Index(steps, "owner documents") {
-		t.Errorf("a document was read before the first was written:\n%s", steps)
+	// A role writes first and is read after. The roles of a topic write at
+	// the same time, each read as soon as it is done: at no point has the
+	// reader been asked more often than a role wrote.
+	written, read := 0, 0
+	for _, step := range model.steps() {
+		switch {
+		case strings.HasSuffix(step, " documents"):
+			written++
+		case step == "moderator rulecheck":
+			read++
+		}
+		if read > written {
+			t.Errorf("a document was read before it was written:\n%s", strings.Join(model.steps(), "\n"))
+			break
+		}
+	}
+	if read == 0 {
+		t.Errorf("nothing was read against the rules:\n%s", strings.Join(model.steps(), "\n"))
 	}
 }
 
