@@ -273,12 +273,14 @@ func (r *Roster) Validate() error {
 			claims = append(claims, claim{entry, role.ID})
 		}
 	}
+	// What is named inside a role's folder is another role's: a role that
+	// names something inside its own folder was refused above.
 	for i := range r.Roles {
 		role := &r.Roles[i]
 		role.inner = nil
 		for _, folder := range role.Folders() {
 			for _, other := range claims {
-				if other.role != role.ID && inFolder(other.entry, folder) {
+				if inFolder(other.entry, folder) {
 					role.inner = append(role.inner, other.entry)
 				}
 			}

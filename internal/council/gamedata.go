@@ -182,8 +182,8 @@ func missingKeys(findings []gamedata.Finding) []gamedata.Finding {
 	return keys
 }
 
-// keysFor tells the seats that write the text which keys the tables written
-// so far hold and the text tables lack.
+// keysFor tells the seats that write the text (the second wave: waves) which
+// keys the tables written so far hold and the text tables lack.
 func (p *planner) keysFor(wave []*seat, written []string) error {
 	if len(written) == 0 {
 		return nil
@@ -193,11 +193,8 @@ func (p *planner) keysFor(wave []*seat, written []string) error {
 		return err
 	}
 	keys := missingKeys(findings)
-	owner := p.textOwner()
 	for _, at := range wave {
-		if owner != nil && at.role.ID == owner.ID {
-			at.keys, at.tables = keys, written
-		}
+		at.keys, at.tables = keys, written
 	}
 	return nil
 }

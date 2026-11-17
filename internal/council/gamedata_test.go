@@ -294,6 +294,145 @@ func TestRun_GameDataATableTheTopicDidNotName(t *testing.T) {
 	}
 }
 
+// A topic answers for the game data it touched: the files of a table whose
+// schema or data it wrote, and, when it rewrote a text table, every key a
+// table holds that the text tables now lack. What is wrong elsewhere is not
+// its to put right. A topic that wrote no game data has none checked.
+func TestRun_GameDataATopicAnswersFor(t *testing.T) {
+	root := gameProject(t)
+	schema := func(bean, table, input string) string {
+		return fmt.Sprintf(`<module name="">
+	<bean name="%s" comment="c">
+		<var name="id" type="string" group="c,s" comment="code"/>
+		<var name="name" type="string" group="c,s" comment="文字鍵 of its name"/>
+		<var name="power" type="int" group="c,s" comment="how much"/>
+	</bean>
+	<table name="%s" value="%s" input="%s" mode="map" group="c,s"/>
+</module>`, bean, table, bean, input)
+	}
+	racketXML := schema("Racket", "TbRacket", "racket.csv")
+	putFile(t, root, "gamedata/Defines/racket.xml", racketXML)
+	putFile(t, root, "gamedata/Datas/racket.csv", "##var,id,name,power\n,wood,racket.wood.name,\n")
+	putFile(t, root, "gamedata/Defines/ball.xml", schema("Ball", "TbBall", "ball.csv"))
+	putFile(t, root, "gamedata/Datas/ball.csv", "##var,id,name,power\n,soft,ball.soft.name,3\n")
+	putFile(t, root, "gamedata/Defines/court.xml", schema("Court", "TbCourt", "court.csv"))
+	putFile(t, root, "gamedata/Datas/court.csv", "##var,id,name,power\n,clay,ui.title.start,\n")
+	text := strings.TrimSuffix(worldText, "\n") + "\nracket.wood.name,木拍,,Wood,木拍,\nball.soft.name,軟球,,Soft ball,軟球,\n"
+	putFile(t, root, "gamedata/Datas/text/world.csv", text)
+
+	roster := mustRoster(t, gameRoster)
+	base := agreeable(roster)
+	agenda := `{"topics": [
+  {"id": "rackets", "title": "The rackets", "question": "Which rackets?", "lead": "numbers", "speakers": ["writer", "owner"], "reads": [],
+   "writes": ["gamedata/Defines/racket.xml", "gamedata/Datas/text/world.csv"]},
+  {"id": "vision", "title": "The vision", "question": "What is it?", "lead": "owner", "speakers": ["numbers"], "reads": [],
+   "writes": ["docs/product/vision.md"]}
+], "questions": []}`
+	withoutBall := strings.Replace(text, "ball.soft.name,軟球,,Soft ball,軟球,\n", "", 1)
+	model := &table{answer: func(c call) (string, error) {
+		switch {
+		case c.Step == "agenda":
+			return block(agenda), nil
+		case c.Step == "documents" && c.Role == "numbers":
+			return dataFile("gamedata/Defines/racket.xml", racketXML), nil
+		case c.Step == "documents" && c.Role == "writer":
+			// The text of the balls is dropped.
+			return dataFile("gamedata/Datas/text/world.csv", withoutBall), nil
+		case c.Step == "redata" && c.Role == "numbers":
+			return dataFile("gamedata/Datas/racket.csv", "##var,id,name,power\n,wood,racket.wood.name,10"), nil
+		case c.Step == "redata" && c.Role == "writer":
+			return dataFile("gamedata/Datas/text/world.csv", text), nil
+		case c.Step == "documents":
+			return docs(c.Role, "docs/product/vision.md"), nil
+		}
+		return base(c)
+	}}
+
+	plan, err := runPlan(t, root, roster, model, "A tennis game.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	check := plan.Topics[0].DataCheck
+	if check == nil {
+		t.Fatal("the topic's game data was not checked")
+	}
+	var found []string
+	for _, f := range check.Found {
+		found = append(found, f.String())
+	}
+	got := strings.Join(found, "\n")
+	for _, want := range []string{
+		"gamedata/Datas/racket.csv:2: power is blank",
+		"gamedata/Datas/ball.csv:2: name holds ball.soft.name, and the text tables have no key ball.soft.name",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the check of the topic did not find %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "court.csv") || len(check.Found) != 2 {
+		t.Errorf("the topic answers for what it did not touch:\n%s", got)
+	}
+	if len(check.Open) != 0 || len(plan.DataOpen) != 0 {
+		t.Errorf("still found: %v, %v", check.Open, plan.DataOpen)
+	}
+	// The second topic wrote no game data: nothing of it is checked.
+	if plan.Topics[1].DataCheck != nil {
+		t.Errorf("a topic that wrote no game data has a check: %+v", plan.Topics[1].DataCheck)
+	}
+	if topic := readFile(t, root, plan.Dir()+"/topics/02-vision.md"); strings.Contains(topic, "The check of the game data") {
+		t.Errorf("the minutes of a topic without game data speak of its check:\n%s", topic)
+	}
+}
+
+// Where no role writes the text tables apart, the role that owns them puts a
+// missing key right in them, and need not answer for the table that holds it.
+func TestRun_GameDataWithoutAWriter(t *testing.T) {
+	root := gameProject(t)
+	roster := mustRoster(t, `
+limits:
+  calls: 60
+  parallel: 1
+roles:
+  - id: owner
+    title: Product Owner
+    decides: true
+    stance: You answer for what is built.
+    owns: [docs/product/]
+  - id: numbers
+    title: Numerical Designer
+    plans: true
+    stance: You answer for the numbers and the words.
+    owns: [gamedata/Defines/, gamedata/Datas/]
+`)
+	base := agreeable(roster)
+	agenda := `{"topics": [
+  {"id": "rackets", "title": "The rackets", "question": "Which rackets?", "lead": "numbers", "speakers": ["owner"], "reads": [],
+   "writes": ["gamedata/Defines/racket.xml", "gamedata/Datas/racket.csv"]}
+], "questions": []}`
+	model := &table{answer: func(c call) (string, error) {
+		switch {
+		case c.Step == "agenda":
+			return block(agenda), nil
+		case c.Step == "documents":
+			return dataFile("gamedata/Defines/racket.xml", racketSchema) + dataFile("gamedata/Datas/racket.csv", "##var,id,name,power\n,wood,racket.wood.name,10"), nil
+		case c.Step == "redata":
+			// The key is written in the text table; the table is not answered for.
+			return dataFile("gamedata/Datas/text/world.csv", strings.TrimSuffix(worldText, "\n")+"\nracket.wood.name,木拍,,Wood,木拍,"), nil
+		}
+		return base(c)
+	}}
+	plan, err := runPlan(t, root, roster, model, "A tennis game.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if check := plan.Topics[0].DataCheck; check == nil || len(check.Found) != 1 || len(check.Open) != 0 {
+		t.Errorf("the check of the game data: %+v", check)
+	}
+	if prompt := model.promptOf("numbers", "redata"); !strings.Contains(prompt, "===== gamedata/Datas/text/world.csv") {
+		t.Errorf("the role that owns the text tables is not given them:\n%s", prompt)
+	}
+}
+
 // What the owners leave is on record, and the plan says so.
 func TestRun_GameDataLeftAsItWasFound(t *testing.T) {
 	root := gameProject(t)

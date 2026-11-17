@@ -495,10 +495,13 @@ func (d *Data) readText(root fs.FS, file string) *TextFile {
 	}
 	for _, column := range records[0] {
 		column = strings.TrimSpace(column)
-		if language, ok := basisOf(column); ok && !contains(text.Languages, language) {
-			if language == "" {
+		if language, ok := basisOf(column); ok && (language == text.Source() || !contains(text.Languages, language)) {
+			switch {
+			case language != "" && language == text.Source():
+				d.problem(file, lines[0], "has the column %s, and %s is the language the text is written in: it is not translated from another", column, language)
+			case language == "":
 				d.problem(file, lines[0], "has the column %s, which names no language: the basis of a translation is _<language>_依據 (_en_依據), the text in the source language it was translated from", column)
-			} else {
+			default:
 				d.problem(file, lines[0], "has the column %s, the basis of %s, and no column of %s", column, language, language)
 			}
 		}

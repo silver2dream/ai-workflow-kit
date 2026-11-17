@@ -1,6 +1,7 @@
 package gamedata
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -37,6 +38,9 @@ const testSchema = `<!-- the grades, and the rules of a match -->
 		<var name="bonus" type="int?" group="c,s" comment="what it adds, when it adds anything"/>
 		<var name="tags" type="(list#sep=|),string" group="c,s" comment="what it is known for"/>
 		<var name="drop_weight" type="int" group="s" comment="how often it drops"/>
+		<var name="nickname" type="string" group="c,s" comment="what players call it, when they call it anything"/>
+		<var name="title" type="string?" group="c,s" comment="文字鍵 of its title, when it has one"/>
+		<var name="lines" type="(list#sep=|),string" group="c,s" comment="文字鍵 of what it says"/>
 	</bean>
 	<bean name="Rule" comment="the rules of a match">
 		<var name="sets" type="int" group="s" comment="sets to win"/>
@@ -54,10 +58,11 @@ const testSchema = `<!-- the grades, and the rules of a match -->
 </module>
 `
 
-const testGrades = "##var,id,name,power,bonus,tags,drop_weight\n" +
-	"##,code,name (text key),power,bonus,tags,drop weight\n" +
-	",wood,grade.wood.name,10,null,,60\n" +
-	",steel,grade.steel.name,40,5,fast|loud,30\n"
+const testGrades = "##var,id,name,power,bonus,tags,drop_weight,nickname,title,lines\n" +
+	"##type,string,string,int,int?,list,int,string,string?,list\n" +
+	"##,code,name (text key),power,bonus,tags,drop weight,nickname,title,lines\n" +
+	",wood,grade.wood.name,10,null,,60,,null,grade.wood.name|grade.steel.name\n" +
+	",steel,grade.steel.name,40,5,fast|loud,30,Steely,grade.steel.name,\n"
 
 const testRule = "##var,sets,tiebreak\n##,sets to win,tiebreak\n,2,true\n"
 
@@ -138,19 +143,19 @@ func TestFind(t *testing.T) {
 }
 
 func TestReadLayout_Refuses(t *testing.T) {
-	for name, conf := range map[string]string{
-		"not json":            "{",
-		"no dataDir":          `{"schemaFiles":[{"fileName":"Defines"}]}`,
-		"no schema":           `{"dataDir":"Datas"}`,
-		"data outside":        `{"dataDir":"../Datas","schemaFiles":[{"fileName":"Defines"}]}`,
-		"schema outside":      `{"dataDir":"Datas","schemaFiles":[{"fileName":"../../Defines"}]}`,
-		"data the folder":     `{"dataDir":".","schemaFiles":[{"fileName":"Defines"}]}`,
-		"an absolute path":    `{"dataDir":"/Datas","schemaFiles":[{"fileName":"Defines"}]}`,
-		"a path with a drive": `{"dataDir":"C:/Datas","schemaFiles":[{"fileName":"Defines"}]}`,
+	for name, c := range map[string]struct{ conf, says string }{
+		"not json":            {"{", "gamedata/luban.conf: unexpected end of JSON input"},
+		"no dataDir":          {`{"schemaFiles":[{"fileName":"Defines"}]}`, "names no dataDir"},
+		"no schema":           {`{"dataDir":"Datas"}`, "names no schemaFiles"},
+		"data outside":        {`{"dataDir":"../Datas","schemaFiles":[{"fileName":"Defines"}]}`, `dataDir: "../Datas" is not a path inside gamedata/`},
+		"schema outside":      {`{"dataDir":"Datas","schemaFiles":[{"fileName":"../../Defines"}]}`, `schemaFiles: "../../Defines" is not a path inside`},
+		"data the folder":     {`{"dataDir":".","schemaFiles":[{"fileName":"Defines"}]}`, `dataDir: "." is not a path inside`},
+		"an absolute path":    {`{"dataDir":"/Datas","schemaFiles":[{"fileName":"Defines"}]}`, `dataDir: "/Datas" is not a path inside`},
+		"a path with a drive": {`{"dataDir":"C:/Datas","schemaFiles":[{"fileName":"Defines"}]}`, `dataDir: "C:/Datas" is not a path inside`},
 	} {
-		project := fstest.MapFS{"gamedata/luban.conf": {Data: []byte(conf)}}
-		if _, err := Find(project); err == nil {
-			t.Errorf("%s: read as a layout", name)
+		project := fstest.MapFS{"gamedata/luban.conf": {Data: []byte(c.conf)}}
+		if _, err := Find(project); err == nil || !strings.Contains(err.Error(), c.says) {
+			t.Errorf("%s: err = %v, want it to say %q", name, err, c.says)
 		}
 	}
 	// A schema file, not a folder.
@@ -183,9 +188,52 @@ func TestCheck_TheDataAsItHasToBe(t *testing.T) {
 	if got, ok := d.SourceText("grade.steel.name"); !ok || got != "鋼拍" {
 		t.Errorf("SourceText: %q, %v", got, ok)
 	}
+	// The ##type row is not a row of data; the lines are the file's.
 	grades := d.Tables[0].Sheets[0]
-	if grades.Rows[1].Line != 4 || grades.Cell(grades.Rows[1], "power") != "40" || grades.Notes[1] != "name (text key)" {
+	if len(grades.Rows) != 2 || grades.Rows[1].Line != 5 || grades.Cell(grades.Rows[1], "power") != "40" || grades.Notes[1] != "name (text key)" {
 		t.Errorf("a sheet: %+v", grades)
+	}
+}
+
+// A line of a finding is the line of the file, also after a cell that holds
+// a line break.
+func TestCheck_TheLineIsTheFilesLine(t *testing.T) {
+	project := testProject()
+	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte(testText + "ui.title.help,\"一\n二\",,\"One\nTwo\",\"一\n二\",\nUI.Bad,壞,,Bad,壞,\n")}
+	_, findings := check(t, project)
+	if len(findings) != 1 || findings[0].Line != 10 || findings[0].Key != "UI.Bad" {
+		t.Errorf("findings:\n%s", listFindings(findings))
+	}
+}
+
+// A schema file is one <module>.
+func TestCheck_ASchemaThatIsNoModule(t *testing.T) {
+	project := testProject()
+	project["gamedata/Defines/world.xml"] = &fstest.MapFile{Data: []byte("<schema><bean name=\"Grade\"/></schema>\n")}
+	_, findings := check(t, project)
+	found := false
+	for _, f := range findings {
+		found = found || strings.Contains(f.String(), "gamedata/Defines/world.xml: starts with <schema>; a schema file is one <module>")
+	}
+	if !found {
+		t.Errorf("findings:\n%s", listFindings(findings))
+	}
+}
+
+// The findings are in the order of the files and the lines, whichever check
+// found them.
+func TestCheck_TheFindingsAreInTheOrderOfTheFiles(t *testing.T) {
+	project := testProject()
+	project["gamedata/Defines/world.xml"] = &fstest.MapFile{Data: []byte(strings.Replace(testSchema, `mode="one" group="s"`, `mode="one"`, 1))}
+	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte(strings.Replace(testText, "grade.steel.name,鋼拍,,Steel,鋼拍,12\n", "grade.steel.name,鋼拍,,,鋼拍,12\n", 1))}
+	project["gamedata/Datas/grade.csv"] = &fstest.MapFile{Data: []byte(strings.Replace(testGrades, ",wood,grade.wood.name,10,", ",wood,grade.wood.name,,", 1))}
+	_, findings := check(t, project)
+	var files []string
+	for _, f := range findings {
+		files = append(files, fmt.Sprintf("%s:%d", f.File, f.Line))
+	}
+	if want := "gamedata/Datas/grade.csv:4,gamedata/Datas/text/world.csv:3,gamedata/Defines/world.xml:0"; strings.Join(files, ",") != want {
+		t.Errorf("the order of the findings: %v, want %s", files, want)
 	}
 }
 
@@ -202,7 +250,7 @@ func TestCheck_WhatIsWrongIsFound(t *testing.T) {
 		{"a blank truth value", "gamedata/Datas/rule.csv", ",2,true", ",2,", "tiebreak is blank"},
 		{"a blank number that may have none", "gamedata/Datas/grade.csv", "10,null,", "10,,", "bonus is blank"},
 		{"a column the schema does not have", "gamedata/Datas/grade.csv", "##var,id,", "##var,colour,id,", "it has colour"},
-		{"a field without a column", "gamedata/Datas/grade.csv", ",drop_weight\n", "\n", "it lacks drop_weight"},
+		{"a field without a column", "gamedata/Datas/grade.csv", "##var,id,name,power,bonus,tags,drop_weight,", "##var,id,name,power,bonus,tags,", "it lacks drop_weight"},
 		{"no ##var row", "gamedata/Datas/smash.csv", "##var,id,height\n", "", "has no ##var row"},
 		{"a second ##var row", "gamedata/Datas/smash.csv", ",high,3\n", "##var,id,height\n,high,3\n", "a second ##var row"},
 		{"more cells than fields", "gamedata/Datas/smash.csv", ",high,3\n", ",high,3,9\n", "has 3 cells"},
@@ -219,8 +267,11 @@ func TestCheck_WhatIsWrongIsFound(t *testing.T) {
 		{"two tables of one name", "gamedata/Defines/world.xml", `<table name="TbRule"`, `<table name="TbGrade"`, "defines the table TbGrade"},
 		{"a schema that is not XML", "gamedata/Defines/world.xml", "</module>", "", "is not a schema Luban can read"},
 		{"a schema that is not a module", "gamedata/Defines/world.xml", "<module name=\"\">", "<modules>", "is not a schema"},
-		{"a text key the text tables lack", "gamedata/Datas/grade.csv", "grade.steel.name", "grade.iron.name", MissingKey + "grade.iron.name"},
-		{"a blank text key", "gamedata/Datas/grade.csv", "grade.steel.name", "", "holds no text key"},
+		{"a text key the text tables lack", "gamedata/Datas/grade.csv", ",steel,grade.steel.name,40", ",steel,grade.iron.name,40", MissingKey + "grade.iron.name"},
+		{"a blank text key", "gamedata/Datas/grade.csv", ",steel,grade.steel.name,40", ",steel,,40", "holds no text key"},
+		{"a blank text key that may have none", "gamedata/Datas/grade.csv", "60,,null,", "60,,,", "title holds no text key"},
+		{"a key of one part", "gamedata/Datas/text/world.csv", "ui.title.quit,", "quit,", `the key "quit" is not a key`},
+		{"a basis of the source language", "gamedata/Datas/text/world.csv", "_en_依據,_上限\n", "_en_依據,_上限,_zh_TW_依據\n", "has the column _zh_TW_依據, and zh_TW is the language the text is written in"},
 		{"a key that is not one", "gamedata/Datas/text/world.csv", "ui.title.quit,", "UI.Quit,", `the key "UI.Quit" is not a key`},
 		{"no source text", "gamedata/Datas/text/world.csv", "grade.wood.name,木拍,", "grade.wood.name,,", "has no zh_TW text"},
 		{"no translation", "gamedata/Datas/text/world.csv", ",Wood,", ",,", "grade.wood.name has no en text"},
@@ -277,11 +328,22 @@ func listFindings(findings []Finding) string {
 func TestCheck_WhatIsAllowedIsNotFound(t *testing.T) {
 	project := testProject()
 	project["gamedata/Datas/grade.csv"] = &fstest.MapFile{Data: []byte(strings.Replace(testGrades, ",steel,grade.steel.name,40,5,fast|loud,30", ",steel,grade.steel.name,40,null,,30", 1))}
-	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte(testText + "ui.title.line,一[br]二,,One[br]Two,一[br]二,\n" +
-		"ui.title.beast,乳齒象,,Mastodon of Todoroki,乳齒象,\n")}
+	// Text tables written with a BOM, with a line of spaces, placeholders in
+	// another order; a table that reads a sheet of a file.
+	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte("\xef\xbb\xbf" + testText + "ui.title.line,一[br]二,,One[br]Two,一[br]二,\n" +
+		"   \n" +
+		"ui.title.beast,乳齒象,,Mastodon of Todoroki,乳齒象,\n" +
+		"ui.title.pair,{a}與{b},,{b} and {a},{a}與{b},\n")}
+	project["gamedata/Defines/world.xml"] = &fstest.MapFile{Data: []byte(strings.Replace(testSchema, `input="grade.csv"`, `input="grades@grade.csv"`, 1))}
 	_, findings := check(t, project)
 	for _, f := range findings {
 		t.Errorf("found: %s", f)
+	}
+	// Without groups in luban.conf, c and s are the groups.
+	project = testProject()
+	project["gamedata/luban.conf"] = &fstest.MapFile{Data: []byte(`{"schemaFiles":[{"fileName":"Defines"}],"dataDir":"Datas"}`)}
+	if _, findings = check(t, project); len(findings) != 0 {
+		t.Errorf("without groups in luban.conf:\n%s", listFindings(findings))
 	}
 	// Languages written with their country or script are languages; a basis
 	// written in English is a basis.
@@ -295,6 +357,12 @@ func TestCheck_WhatIsAllowedIsNotFound(t *testing.T) {
 	}
 	if text := d.Texts[0]; strings.Join(text.Languages, ",") != "zh_TW,pt-BR,en" || strings.Join(text.Translated, ",") != "en" || text.Rows[0].Limit != 9 {
 		t.Errorf("a table with English notes: %v, translated %v, limit %d", text.Languages, text.Translated, text.Rows[0].Limit)
+	}
+	// A basis of the source language does not make it translated.
+	project = testProject()
+	project["gamedata/Datas/text/world.csv"] = &fstest.MapFile{Data: []byte("key,zh_TW,en,_zh_TW_依據,_en_依據\nui.title.go,開始,Start,開始,開始\n")}
+	if d, _ = check(t, project); strings.Join(d.Texts[0].Translated, ",") != "en" {
+		t.Errorf("translated: %v, want en only", d.Texts[0].Translated)
 	}
 }
 
@@ -347,9 +415,10 @@ func TestCopyReview(t *testing.T) {
 		"### grade\n",
 		"### ui.title\n",
 		"| Key | zh_TW | zh_CN | en | Limit | Used in | To look at |",
-		"| `grade.wood.name` | 木拍 |  | Wood | 12 | TbGrade.name (grade.csv:3) |  |",
-		"| `ui.title.help` | a\\|b<br>c |  | A\\|B<br>C |",
-		"the en of ui.title.help is out of date",
+		"| `grade.wood.name` | 木拍 |  | Wood | 12 | TbGrade.name (grade.csv:4) |  |",
+		"| `grade.steel.name` | 鋼拍 |  | Steel | 12 | TbGrade.name (grade.csv:5)<br>TbGrade.title (grade.csv:5) |  |",
+		// What to look at stands in the row of its key.
+		"| `ui.title.help` | a\\|b<br>c |  | A\\|B<br>C |  |  | the en of ui.title.help is out of date",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the copy review lacks %q:\n%s", want, page)
@@ -370,7 +439,7 @@ func TestDataReview(t *testing.T) {
 		"Schema `gamedata/Defines/world.xml` (Grade) · data `gamedata/Datas/grade.csv` · group c,s · mode map",
 		"| `id`<br>code | `name`<br>name (text key) |",
 		"| steel | `grade.steel.name`<br>鋼拍 | 40 | 5 | fast\\|loud | 30 |",
-		"- gamedata/Datas/grade.csv:3: power is blank",
+		"- gamedata/Datas/grade.csv:4: power is blank",
 		"## TbRule",
 		"| Field | What it holds | Type | Group | Value |",
 		"| `tiebreak` | tiebreak | `bool` | s | true |",
