@@ -291,6 +291,14 @@ func (p *planner) sumUp(ctx context.Context, plan *Plan, r *TopicRecord) error {
 	return nil
 }
 
+// maxDecisions and maxAssumptions bound what one topic puts on record. A
+// decision is a choice the documents follow and that could have gone another
+// way; a log of every detail the table agreed on is read by nobody.
+const (
+	maxDecisions   = 8
+	maxAssumptions = 4
+)
+
 // decide asks the deciding role to rule on the topic, and puts the rulings on
 // record at once: the next topic is argued from them.
 func (p *planner) decide(ctx context.Context, plan *Plan, r *TopicRecord) error {
@@ -300,8 +308,13 @@ func (p *planner) decide(ctx context.Context, plan *Plan, r *TopicRecord) error 
 		Assumptions []Assumption `json:"assumptions"`
 	}
 	got, err := settleJSON(ctx, p.session, r.step("decision"), decider.Voice(), p.decisionPrompt(decider, plan, r), func(got *answer) error {
-		if len(got.Decisions) == 0 {
+		switch {
+		case len(got.Decisions) == 0:
 			return errors.New("nothing was decided; a topic ends in at least one decision")
+		case len(got.Decisions) > maxDecisions:
+			return fmt.Errorf("%d decisions; at most %d: merge the ones that go together, and leave to the documents what follows plainly from a ruling", len(got.Decisions), maxDecisions)
+		case len(got.Assumptions) > maxAssumptions:
+			return fmt.Errorf("%d assumptions; at most %d: keep the ones a ruling of this topic rests on", len(got.Assumptions), maxAssumptions)
 		}
 		for _, decision := range got.Decisions {
 			if strings.TrimSpace(decision.Decision) == "" {

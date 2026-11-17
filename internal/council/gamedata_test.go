@@ -126,6 +126,9 @@ func TestRun_GameData(t *testing.T) {
 	if numbers := model.promptOf("numbers", "documents"); strings.Contains(numbers, "this topic wrote before your turn") {
 		t.Errorf("the role that writes the tables is shown tables written before its turn:\n%s", numbers)
 	}
+	if numbers := model.promptOf("numbers", "documents"); !strings.Contains(numbers, "A number the game reads is in a table of the game data: a document names the table and the field (TbMatchRule.window), not the value.") {
+		t.Errorf("a role is not told a document names the table, not the value:\n%s", numbers)
+	}
 
 	// Each finding goes to the owner of its file.
 	if prompt := model.promptOf("numbers", "redata"); !strings.Contains(prompt, "gamedata/Datas/racket.csv:4: power is blank") || strings.Contains(prompt, "racket.steel.name, and the text tables") {

@@ -199,7 +199,7 @@ func (p *planner) reading(docs []string) string {
 			continue
 		}
 		room -= len(shown)
-		owner := "nobody's"
+		owner := "a file of the project"
 		if role := p.roster.Owner(doc); role != nil {
 			owner = role.ID + "'s"
 		}
@@ -467,7 +467,7 @@ func (p *planner) decisionPrompt(role *Role, plan *Plan, r *TopicRecord) string 
 		b.WriteString(bullets(open))
 	}
 	b.WriteString(`
-Your task now: decide this topic. Rule on every point that is still disputed: which way it goes, and why. Then state the other decisions the topic settles, the agreed ones included, briefly. A decision says what is built, or how. Which documents there are, where each is kept and who writes it is not one: the list above says, and the documents are written there whatever is decided. Write each so that it can be checked later. A decision that changes one on record names it (D12) and says what it becomes.
+Your task now: decide this topic. Rule on every point that is still disputed: which way it goes, and why. Then state, briefly, the other choices of this topic the documents have to follow and that could have gone another way. What the table agreed in passing, and what follows plainly from a ruling, is not a decision of its own: the owners write it into their documents from what was said. A decision says what is built, or how. Which documents there are, where each is kept and who writes it is not one: the list above says, and the documents are written there whatever is decided. How the work is cut into tickets, and what a ticket holds, is not one either: the work list is laid out at the end of the meeting, in a form of its own. Write each so that it can be checked later. A decision that changes one on record names it (D12) and says what it becomes. At most ` + fmt.Sprint(maxDecisions) + ` decisions and ` + fmt.Sprint(maxAssumptions) + ` assumptions, the ones that matter most first.
 
 The plan is no larger than the brief. What the brief does not ask for stays out, however much the table said about it, unless what it asks for cannot work without it; where you take such a thing in, the decision says why.
 
@@ -583,8 +583,11 @@ func (p *planner) documentsPrompt(role *Role, plan *Plan, r *TopicRecord, at *se
 		}
 	}
 	b.WriteString(`
-A document is the current truth about its subject, not the minutes of a meeting: no "we discussed", no "it was proposed", no list of the decisions and no account of who objected; docs/decisions.md holds those. Where a decision settles something, the document follows it, also where you held otherwise, and names the decision (D4) where a reader will ask why. What rests on an assumption says so and names it (A2). What another role's document holds, yours links to and does not repeat.
+A document is the current truth about its subject, not the minutes of a meeting: no "we discussed", no "it was proposed", no list of the decisions and no account of who objected; docs/decisions.md holds those. Where a decision settles something, the document follows it, also where you held otherwise, and names the decision (D4) where a reader will ask why. What rests on an assumption says so and names it (A2). What another document defines (a number, a name, a timing, a code, a rule), yours names where it is defined, the document and its section, and does not write it again, not even to explain it: two copies of one fact drift apart.
 `)
+	if p.data != nil {
+		b.WriteString("A number the game reads is in a table of the game data: a document names the table and the field (TbMatchRule.window), not the value.\n")
+	}
 	if data {
 		b.WriteString(gameDataForm)
 	}
@@ -706,7 +709,7 @@ const workShape = `{
 
 // notTickets says what a work list does not hold, to the role that writes it
 // and to the roles that look at it.
-const notTickets = "A ticket is work on the project itself: code, tests, build, configuration. The documents are written: no ticket writes or rewrites one of them. What waits for an answer from the owner of the project is not a ticket either."
+const notTickets = "A ticket is work on the project itself: code, tests, build, configuration. The documents are written: no ticket writes or rewrites one of them. What waits for an answer from the owner of the project is not a ticket either. A ticket holds the fields of the form above and no other: no estimate, no owner, no date; the order of the work is the order of the milestones and of the list, and depends_on."
 
 func (p *planner) ticketRules(earlier bool) string {
 	names := make([]string, len(p.repos))

@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -406,6 +407,40 @@ func checkOwnedEntry(entry string) error {
 		return fmt.Errorf("folder %q holds the council's own files (%s, %s, %s/): own a folder inside it", entry, DecisionsPath, indexPath, PlansDir)
 	}
 	return nil
+}
+
+// readable are the kinds of file of the project a topic may read besides the
+// documents of the table: the text of a configuration or of a contract.
+var readable = map[string]bool{".md": true, ".csv": true, ".xml": true, ".conf": true, ".json": true, ".yaml": true, ".yml": true,
+	".toml": true, ".proto": true, ".txt": true}
+
+// checkReadPath checks that a file of the project no role owns can be read by
+// a topic: named plainly from the project's root, a text file, and not in a
+// directory a tool keeps for itself.
+func checkReadPath(file string) error {
+	plain := path.Clean(file) == file && !strings.ContainsAny(file, `\:`) &&
+		!strings.HasPrefix(file, "/") && file != ".." && !strings.HasPrefix(file, "../")
+	if !plain {
+		return fmt.Errorf("write the path plainly, from the project's root and with forward slashes")
+	}
+	for _, name := range strings.Split(file, "/") {
+		if strings.HasPrefix(name, ".") {
+			return fmt.Errorf("it is in %s, which a tool keeps for itself", name)
+		}
+	}
+	if !readable[strings.ToLower(path.Ext(file))] {
+		return fmt.Errorf("it is not a document of the table, and not a text file a topic reads (a configuration or a contract: %s)", strings.Join(readableKinds(), ", "))
+	}
+	return nil
+}
+
+func readableKinds() []string {
+	kinds := make([]string, 0, len(readable))
+	for kind := range readable {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	return kinds
 }
 
 // isDocument reports whether a file, named in lower case, is of a kind a role
