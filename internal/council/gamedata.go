@@ -62,6 +62,24 @@ func (p *planner) gameDataNote() string {
 		p.data.Dir, p.data.Conf(), schemas, p.data.Data, p.data.Text())
 }
 
+// gameDataTopics tells the moderator which topics end in the game data: the
+// numbers the game reads are written in tables, not in prose, and the words
+// the player reads in text tables. Empty when the project keeps none.
+func (p *planner) gameDataTopics() string {
+	if p.data == nil {
+		return ""
+	}
+	schema := p.data.Dir + "Defines/"
+	for _, s := range p.data.Schemas {
+		if strings.HasSuffix(s, "/") {
+			schema = s
+			break
+		}
+	}
+	return fmt.Sprintf("- A topic that settles numbers the game reads (stats, costs, odds, timings, curves) ends, besides the document that says why, in the tables that hold them: a schema in %s and a table in %s, named for what they hold (%smatch.xml and %smatch_rule.csv, say). A topic that settles words the player reads (names, the words on a screen, messages) ends in a text table in %s. Each is written by the role that owns its folder, which then leads or speaks to the topic.\n",
+		schema, p.data.Data, schema, p.data.Data, p.data.Text())
+}
+
 // isGameData reports whether a file is part of the project's game data.
 func (p *planner) isGameData(file string) bool {
 	return p.data != nil && p.data.Holds(file)

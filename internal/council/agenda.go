@@ -258,16 +258,21 @@ func (p *planner) agendaPrompt() string {
 	if !listed {
 		b.WriteString("  (none written yet)\n")
 	}
+	b.WriteString(p.gameDataNote())
 	if log := p.decisionLog(); log != "" {
 		b.WriteString("\nDecisions already on record (" + DecisionsPath + "):\n" + log)
+	}
+	newFile := "a new Markdown file in a folder of that role"
+	if p.data != nil {
+		newFile = "a new file in a folder of that role (a Markdown document; in the folders of the game data, a schema (.xml) or a table (.csv))"
 	}
 	fmt.Fprintf(&b, `
 Your task: set the agenda.
 - Cut the brief into topics, each one question the table can settle at one sitting. Take them in the order one builds on another: what is made and for whom, and what is left out, first; then what the person using it does; then the numbers; then how it is built; then how it is tested and what can go wrong. A later topic starts from the documents of the earlier ones.
 - At most %d topics. Cover what has to be settled before work on the brief can start; what can wait for a later plan is left out.
 - lead: the role whose documents the topic is mostly about; it proposes. speakers: the other roles whose stance bears on the topic, in the order they speak, each building on the one before: who shapes the thing, then who builds it, then who weighs what it costs, and who looks for how it fails last. Not every role speaks to every topic.
-- writes: the documents the topic ends in. Each is a document of a role that leads or speaks to the topic: a file the table lists as that role's, or a new Markdown file in a folder of that role, named for what it holds. A subject the table splits into several topics can end in several documents.
-- reads: the documents the roles read before they speak: ones written already (listed above), or written by an earlier topic.
+- writes: the documents the topic ends in. Each is a document of a role that leads or speaks to the topic: a file the table lists as that role's, or %s, named for what it holds. A subject the table splits into several topics can end in several documents.
+%s- reads: the documents the roles read before they speak: ones written already (listed above), or written by an earlier topic.
 - questions: what only the owner of the project can answer and the plan turns on, at most %d, each answerable in a sentence or two. The meeting does not wait for the answers: where they are missing, the deciding role says what it assumes.
 
 %s
@@ -277,6 +282,6 @@ Your task: set the agenda.
   ],
   "questions": ["a question for the owner"]
 }
-`, p.roster.Limits.Topics, maxQuestions, jsonOnly)
+`, p.roster.Limits.Topics, newFile, p.gameDataTopics(), maxQuestions, jsonOnly)
 	return b.String()
 }

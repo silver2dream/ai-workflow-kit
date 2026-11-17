@@ -210,6 +210,20 @@ func TestRun_GameData(t *testing.T) {
 	if strings.Contains(speak, "- gamedata/Datas/text/world.csv (numbers)") {
 		t.Errorf("the text table is shown as the numbers':\n%s", speak)
 	}
+
+	// The moderator is told that numbers end in tables and words in text
+	// tables, and that a new file there is a schema or a table.
+	agenda := model.promptOf("moderator", "agenda")
+	for _, want := range []string{
+		"The game data is kept in gamedata/, as Luban reads it",
+		"a new file in a folder of that role (a Markdown document; in the folders of the game data, a schema (.xml) or a table (.csv))",
+		"- A topic that settles numbers the game reads (stats, costs, odds, timings, curves) ends, besides the document that says why, in the tables that hold them: a schema in gamedata/Defines/ and a table in gamedata/Datas/, named for what they hold (gamedata/Defines/match.xml and gamedata/Datas/match_rule.csv, say). A topic that settles words the player reads (names, the words on a screen, messages) ends in a text table in gamedata/Datas/text/.",
+		"- gamedata/Datas/text/world.csv (writer)\n",
+	} {
+		if !strings.Contains(agenda, want) {
+			t.Errorf("the moderator is not told %q:\n%s", want, agenda)
+		}
+	}
 }
 
 // What the owners leave is on record, and the plan says so.
@@ -296,6 +310,9 @@ func TestRun_NoGameData(t *testing.T) {
 	}
 	if prompt := model.promptOf("owner", "speak"); strings.Contains(prompt, "The game data is kept in") {
 		t.Errorf("a project without game data is told of it:\n%s", prompt)
+	}
+	if agenda := model.promptOf("moderator", "agenda"); strings.Contains(agenda, "game data") || !strings.Contains(agenda, "or a new Markdown file in a folder of that role, named for what it holds.") {
+		t.Errorf("the moderator of a project without game data is told of it:\n%s", agenda)
 	}
 	// Both write at once: without game data nothing waits for the tables.
 	if writer := model.promptOf("writer", "documents"); strings.Contains(writer, "this topic wrote before your turn") {
