@@ -119,6 +119,8 @@ func TestFind(t *testing.T) {
 		"gamedata/luban.conf":           false,
 		"docs/balance/grades.csv":       false,
 		"gamedata/Datas/card/a.yml":     false,
+		"docs/levels.xml":               false,
+		"gamedata/Tools/build.xml":      false,
 	} {
 		if layout.Holds(file) != holds {
 			t.Errorf("Holds(%s) = %v", file, !holds)

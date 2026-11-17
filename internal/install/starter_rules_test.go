@@ -182,6 +182,29 @@ func TestStarterRules_NameNothingOfTheProjectTheyCameFrom(t *testing.T) {
 	}
 }
 
+// A game keeps its numbers and text in gamedata/: the rule about documents
+// gives it a row and a route, and the frontend and backend rules send their
+// data there. A project that is not a game is told nothing of it.
+func TestStarterRules_AGameKeepsItsGameData(t *testing.T) {
+	game := presetContext(t, PresetGodotGo)
+	docs := rendered(t, PresetGodotGo, "docs-source-of-truth", game)
+	for _, want := range []string{
+		"| `gamedata/` | 企劃資料（Luban） | 伺服器與客戶端共用的數值表與文字表；欄位的定義在 `gamedata/Defines/`，規矩見 `gamedata.md` |",
+		"遊戲讀的數值與文字 → `gamedata/` 的表（`gamedata.md`）",
+	} {
+		if !strings.Contains(docs, want) {
+			t.Errorf("godot-go/docs-source-of-truth does not say %q:\n%s", want, docs)
+		}
+	}
+	if !strings.Contains(rendered(t, PresetGodotGo, "frontend", game), "企劃數值（傷害、冷卻、價格）走 `gamedata/` 的表（`gamedata.md`）") ||
+		!strings.Contains(rendered(t, PresetGodotGo, "backend", game), "企劃數值（數值、機率、權重）走 `gamedata/` 的表（`gamedata.md`）") {
+		t.Error("the frontend or the backend rule does not send its data to gamedata/")
+	}
+	if generic := rendered(t, PresetGeneric, "docs-source-of-truth", presetContext(t, PresetGeneric)); strings.Contains(generic, "gamedata") {
+		t.Errorf("generic/docs-source-of-truth speaks of game data:\n%s", generic)
+	}
+}
+
 // A rule is loaded when a file it is about is worked on. The rules about code
 // are about the directories of the project's repos; a project whose repo is
 // the whole repository has no such directory, and they hold everywhere. The
