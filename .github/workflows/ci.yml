@@ -9,9 +9,15 @@ on:
 permissions:
   contents: read
 
+# The Linux jobs run on the project's own runner (a VPS, label awk-vps) for
+# pushes and for pull requests from branches of this repository. A pull
+# request from a fork runs on GitHub's machines: code from outside never runs
+# on the project's runner. (A fork can change this file in its pull request,
+# so the repository also requires approval before any outside contributor's
+# workflows run.) The Windows job runs on GitHub's Windows machine.
 jobs:
   awkit_cli:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "linux", "x64", "awk-vps"]') || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -90,7 +96,7 @@ jobs:
   # tested with the commands of the CI workflows generated for it: the Go
   # backend, and the Godot C# frontend with the .NET SDK and NuGet.
   skeleton:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "linux", "x64", "awk-vps"]') || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
