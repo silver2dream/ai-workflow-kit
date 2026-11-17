@@ -277,9 +277,15 @@ At most 8 proposals and 4 concerns.
 // speechPrompt asks a role that speaks to a topic what it says, once it has
 // heard the ones before it.
 func (p *planner) speechPrompt(role *Role, plan *Plan, r *TopicRecord) string {
+	// Who has spoken: an objection is to what was said, not to what a role
+	// that speaks later might say.
+	spoken := []string{r.Topic.Lead}
+	for _, speech := range r.Speeches {
+		spoken = append(spoken, speech.Role)
+	}
 	return p.frame(role) + earlierTopics(plan, r) + decidedSoFar(plan, r) + topicHead(plan, r) + p.topicReading(r) +
 		"\nWhat was said to the topic so far:\n\n" + p.saidText(r) + `
-Your task now: speak to the topic, from where you stand. Say what you would add or change. Object to what you cannot accept in what was said, addressed to the role that said it: a proposal that is wrong, risky, too large, impossible to test, or in conflict with what you stand for. Do not repeat what was said, and do not invent objections: when you can accept it, say so in a line.
+Your task now: speak to the topic, from where you stand. Say what you would add or change. Object to what you cannot accept in what was said, addressed to the role that said it: a proposal that is wrong, risky, too large, impossible to test, or in conflict with what you stand for. Only what was said can be objected to, so an objection is addressed to one of ` + strings.Join(spoken, ", ") + `; what a role that speaks after you might say, you say yourself. Do not repeat what was said, and do not invent objections: when you can accept it, say so in a line.
 
 ` + jsonOnly + `
 {

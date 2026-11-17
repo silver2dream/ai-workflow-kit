@@ -490,6 +490,12 @@ func TestRun_ATopicStartsFromTheOnesBefore(t *testing.T) {
 	if designer := model.promptIn(1, "designer", "speak"); strings.Contains(designer, "## skeptic (Skeptic):") {
 		t.Error("the first speaker is shown what the second said")
 	}
+	// A speaker is told whom it can object to: those who spoke before it.
+	for role, want := range map[string]string{"designer": "an objection is addressed to one of owner;", "skeptic": "an objection is addressed to one of owner, designer;"} {
+		if prompt := model.promptIn(1, role, "speak"); !strings.Contains(prompt, want) {
+			t.Errorf("%s is not told whom it can object to (%q):\n%s", role, want, prompt)
+		}
+	}
 	// The deciding role is shown the whole topic, and what was decided before it.
 	decide := model.promptIn(2, "owner", "decide")
 	for _, want := range []string{"What this meeting has decided so far:\nD1. scope", "## skeptic (Skeptic):\nskeptic agrees.", "Agreed:\n  - build the small thing\n"} {
