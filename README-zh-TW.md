@@ -94,6 +94,9 @@ awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 | `docs/decisions.md` | 決策，各有一個不變的編號（`D7`）與不同意見；以及這次規劃的假設（`A3`）。只增不改 |
 | `docs/<area>/*.md`、`<repo>/docs/*.md` | 文件，每份只由擁有它的角色寫：產品與設計在 `docs/`，各 repo 的工程文件跟著那個 repo |
 | `docs/plans/<plan>/tickets.yaml` | 里程碑，以及第一個里程碑的票券提案，依施工順序 |
+| `gamedata/`、`docs/plans/<plan>/copy.md`、`tables.md` | 遊戲的數值與文案（Luban 的表與文字表），以及給人審的兩頁：文案各語言並排、表的每一欄附說明 |
+
+遊戲的數值與玩家看到的字寫在遊戲資料裡，不寫在文件裡：數值企劃寫表，文案寫文字表。awkit 照規矩檢查寫出來的資料（空白的數字、沒標的 group、文字表缺的鍵、過期的翻譯⋯⋯），找到的交回擁有者修一次；`awkit gamedata check` 隨時都能跑。細節見[設定](docs/user/configuration.md#遊戲資料數值與文案)。
 
 這時 GitHub 上還什麼都沒有。看過工作清單、改掉你想改的，再執行 `awkit plan approve <plan>`。
 
@@ -157,6 +160,7 @@ awkit run --issue 42   # 只做這一張票
 CLAUDE.md, AGENTS.md   告訴 agent 的事，由設定檔產生
 docs/                  議會寫的東西：文件、decisions.md、plans/
 <repo>/docs/           各 repo 的工程文件，也由議會寫
+gamedata/              遊戲的數值與文案，給 Luban 讀（godot-go，加 --scaffold 時）
 .github/workflows/     CI，每個 repo 一個 workflow，由設定檔產生
 ```
 
@@ -170,6 +174,7 @@ CI workflow 會跟著設定檔走，直到你刪掉它開頭那行註解；之�
 | `awkit doctor` | 檢查 run 需要的所有東西，並說缺的怎麼補 |
 | `awkit generate`、`awkit validate` | 改過設定檔之後：重新產生指引與 CI workflow；檢查設定檔 |
 | `awkit plan` | 與議會一起規劃；`awkit plan approve <plan>` 建立票券 |
+| `awkit gamedata` | 檢查遊戲資料（`check`）；印出給人審的文案或表（`review copy`、`review tables`） |
 | `awkit create-task` | 手動補一張票 |
 | `awkit run` | 處理所有開著的票（`--issue N` 只做一張，`--dry-run` 只跑檢查） |
 | `awkit status` | 工作進行到哪裡 |

@@ -35,11 +35,12 @@ var commonRules = []string{
 // one for one; its git rule is the kit's own git rule, which is generated
 // from the configuration. Its rule on architecture is one rule per repo where
 // the preset knows the repos (backend, frontend), and one for the whole
-// repository where it does not (architecture).
+// repository where it does not (architecture). A game keeps its numbers and
+// text in gamedata/, by a rule of their own.
 func TestStarterRules_PerPreset(t *testing.T) {
 	godot := []string{
 		"agents", "audit-checklist", "backend", "coding-style", "design-before-implementation",
-		"docs-source-of-truth", "frontend", "new-system-owner-boundary", "readiness-update-policy",
+		"docs-source-of-truth", "frontend", "gamedata", "new-system-owner-boundary", "readiness-update-policy",
 		"security", "testing",
 	}
 	if got := StarterRules(PresetGodotGo); !reflect.DeepEqual(got, godot) {
@@ -153,23 +154,54 @@ func TestStarterRules_RenderForEveryPreset(t *testing.T) {
 }
 
 // The rules were taken from another project. What was that project's own is
-// not in them: its transport, its libraries, its data tooling, its names.
+// not in them: its transport, its libraries, its names. Its game data is the
+// exception the owner of the kit chose (2026-11-17): a game project keeps
+// its numbers and text in gamedata/, for Luban, as that project does. A
+// project that is not a game is told nothing of it.
 func TestStarterRules_NameNothingOfTheProjectTheyCameFrom(t *testing.T) {
 	its := []string{
-		"Twirp", "twirp", "Nakama", "nakama", "Luban", "Spine", "pgx", "River", "wire.go", "wire_gen", "Wire DI",
+		"Twirp", "twirp", "Nakama", "nakama", "Spine", "pgx", "River", "wire.go", "wire_gen", "Wire DI",
 		"make generate", "make build", "buf ", "immortal", "Cultivation", "cultivation", "修仙", "MatchRPG", "Ollama",
-		"Redis", "aether", "gamedata", "combat/", "Albion", "JWT", "RS256", "liveops",
+		"Redis", "aether", "combat/", "Albion", "JWT", "RS256", "liveops", "gen.py", "I18nBuild",
 	}
+	game := []string{"Luban", "gamedata"}
 	for _, preset := range Presets {
 		ctx := presetContext(t, preset)
+		words := its
+		if preset != PresetGodotGo {
+			words = append(append([]string(nil), its...), game...)
+		}
 		for _, name := range StarterRules(preset) {
 			text := rendered(t, preset, name, ctx)
-			for _, word := range its {
+			for _, word := range words {
 				if strings.Contains(text, word) {
 					t.Errorf("%s/%s names %q, which belongs to the project the rule came from", preset, name, word)
 				}
 			}
 		}
+	}
+}
+
+// A game keeps its numbers and text in gamedata/: the rule about documents
+// gives it a row and a route, and the frontend and backend rules send their
+// data there. A project that is not a game is told nothing of it.
+func TestStarterRules_AGameKeepsItsGameData(t *testing.T) {
+	game := presetContext(t, PresetGodotGo)
+	docs := rendered(t, PresetGodotGo, "docs-source-of-truth", game)
+	for _, want := range []string{
+		"| `gamedata/` | 企劃資料（Luban） | 伺服器與客戶端共用的數值表與文字表；欄位的定義在 `gamedata/Defines/`，規矩見 `gamedata.md` |",
+		"遊戲讀的數值與文字 → `gamedata/` 的表（`gamedata.md`）",
+	} {
+		if !strings.Contains(docs, want) {
+			t.Errorf("godot-go/docs-source-of-truth does not say %q:\n%s", want, docs)
+		}
+	}
+	if !strings.Contains(rendered(t, PresetGodotGo, "frontend", game), "企劃數值（傷害、冷卻、價格）走 `gamedata/` 的表（`gamedata.md`）") ||
+		!strings.Contains(rendered(t, PresetGodotGo, "backend", game), "企劃數值（數值、機率、權重）走 `gamedata/` 的表（`gamedata.md`）") {
+		t.Error("the frontend or the backend rule does not send its data to gamedata/")
+	}
+	if generic := rendered(t, PresetGeneric, "docs-source-of-truth", presetContext(t, PresetGeneric)); strings.Contains(generic, "gamedata") {
+		t.Errorf("generic/docs-source-of-truth speaks of game data:\n%s", generic)
 	}
 }
 
@@ -191,6 +223,7 @@ func TestStarterRules_AreAboutTheRightFiles(t *testing.T) {
 		"docs-source-of-truth": {docs, docs},
 		"backend":              {{"backend/**"}, nil},
 		"frontend":             {{"frontend/**"}, nil},
+		"gamedata":             {{"gamedata/**"}, nil},
 	}
 	for _, name := range code {
 		want[name] = [2][]string{{"backend/**", "frontend/**"}, nil}

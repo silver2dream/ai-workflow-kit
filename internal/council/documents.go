@@ -3,8 +3,11 @@ package council
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/gamedata"
 )
 
 // seat is one role's turn at the documents of a topic: what it is asked for,
@@ -20,6 +23,11 @@ type seat struct {
 	// check is what reading them against the rules came to; nil when nothing
 	// was read.
 	check *RuleCheck
+	// keys are the text keys the tables written before this role's turn
+	// hold and the text tables lack, and tables those tables: the text the
+	// role writes is for them.
+	keys   []gamedata.Finding
+	tables []string
 }
 
 // writeDown has the owners write the documents a topic ends in, by the
@@ -75,19 +83,41 @@ func (p *planner) writeDown(ctx context.Context, plan *Plan, r *TopicRecord) err
 		p.session.say("  not passed on, the rules together being longer than one question carries: %s", strings.Join(r.RulesLeft, ", "))
 	}
 
-	err := p.session.each(len(seats), func(i int) error {
-		return p.write(ctx, plan, r, seats[i])
-	})
+	// The tables of the game data are written before the text of the keys
+	// they hold: the role that writes the text is told which keys those are.
+	var err error
+	var done []*seat
+	for i, wave := range p.waves(seats) {
+		if i > 0 {
+			var written []WrittenDocument
+			for _, at := range done {
+				written = append(written, at.written...)
+			}
+			if err = p.keysFor(wave, p.writtenData(written)); err != nil {
+				break
+			}
+		}
+		err = p.session.each(len(wave), func(i int) error {
+			return p.write(ctx, plan, r, wave[i])
+		})
+		done = append(done, wave...)
+		if err != nil {
+			break
+		}
+	}
 
 	// What was written is on record, also when a role's turn failed.
-	r.Documents, r.RuleChecks = nil, nil
+	r.Documents, r.RuleChecks, r.DataCheck = nil, nil, nil
 	for _, at := range seats {
 		r.Documents = append(r.Documents, at.written...)
 		if at.check != nil {
 			r.RuleChecks = append(r.RuleChecks, *at.check)
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return p.checkData(ctx, plan, r)
 }
 
 // write is one role's turn at the documents of a topic: it writes them, they
@@ -98,7 +128,7 @@ func (p *planner) write(ctx context.Context, plan *Plan, r *TopicRecord, at *sea
 	if len(at.asked) == 0 {
 		return nil
 	}
-	written, err := p.handIn(ctx, r.step("documents "+role.ID), role, p.documentsPrompt(role, plan, r, at.asked, at.book), at.asked,
+	written, err := p.handIn(ctx, r.step("documents "+role.ID), role, p.documentsPrompt(role, plan, r, at), at.asked,
 		at.asked, func(doc string) error {
 			return fmt.Errorf("%s was not handed in; this topic ends in it, and it is yours", doc)
 		})
@@ -180,6 +210,13 @@ func writtenBy(written []WrittenDocument) []string {
 // with the document or with the line that leaves it as it is; missing says
 // what is wrong when it does not.
 func (p *planner) handIn(ctx context.Context, step string, role *Role, prompt string, asked, must []string, missing func(doc string) error) ([]WrittenDocument, error) {
+	// A role that writes game data writes it whole: a schema it hands in
+	// defines tables, and each reads a file of the role's that the topic may
+	// not have named.
+	data := slices.ContainsFunc(asked, p.isGameData)
+	mayWrite := func(doc string) bool {
+		return contains(asked, doc) || data && p.isGameData(doc)
+	}
 	var written []WrittenDocument
 	err := p.session.settle(ctx, step, role.Model, prompt, func(answer string, replay bool) error {
 		docs, err := parseDocuments(answer)
@@ -200,7 +237,7 @@ func (p *planner) handIn(ctx context.Context, step string, role *Role, prompt st
 				continue
 			case !contains(asked, doc.Path) && p.tooLong(doc.Path) != "":
 				continue // too long to be written: it stays, and is on record as left
-			case !contains(asked, doc.Path):
+			case !mayWrite(doc.Path):
 				// Its own, and not what this topic ends in: it stays as it is.
 				written = append(written, WrittenDocument{Path: doc.Path, Owner: role.ID,
 					Refused: "this topic does not end in it"})

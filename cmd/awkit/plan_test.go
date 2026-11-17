@@ -238,7 +238,7 @@ type scriptedCouncil struct {
 }
 
 var councilRole = regexp.MustCompile(`^You are the .+? \(([a-z0-9-]+)\) at a planning meeting`)
-var councilOwned = regexp.MustCompile(`(?m)^- (\S+\.md)$`)
+var councilOwned = regexp.MustCompile(`(?m)^- (\S+\.(?:md|csv))$`)
 
 // councilSeat reads a role of the table, and what it writes, from the
 // moderator's question about the agenda.
@@ -250,6 +250,7 @@ var councilFiles = map[string][]string{
 	"user-advocate": {"journeys.md"},
 	"architect":     {"architecture.md"},
 	"skeptic":       {"risks.md", "test-strategy.md"},
+	"numbers":       {"racket.csv"},
 }
 
 // councilAgenda is an agenda of one topic for the table the moderator is
@@ -308,6 +309,9 @@ func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string
 		}
 	}
 	switch {
+	case strings.Contains(prompt, "Your task now: put right what the check of the game data found"):
+		// The table is left as it is: what the check found still stands.
+		return "<<<UNCHANGED gamedata/Datas/racket.csv>>>\n", nil
 	case strings.Contains(prompt, "You check documents against the rules of a software project"):
 		carried("read")
 		if m.finds && strings.Contains(prompt, "the Architect (architect).") {
@@ -346,6 +350,11 @@ func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string
 		for _, match := range councilOwned.FindAllStringSubmatch(task, -1) {
 			if m.leaves {
 				fmt.Fprintf(&b, "<<<UNCHANGED %s>>>\n", match[1])
+				continue
+			}
+			if strings.HasSuffix(match[1], ".csv") {
+				// A table with a number left blank.
+				fmt.Fprintf(&b, "<<<DOCUMENT %s>>>\n##var,id,power\n,wood,\n<<<END>>>\n", match[1])
 				continue
 			}
 			fmt.Fprintf(&b, "<<<DOCUMENT %s>>>\n# %s\n<<<END>>>\n", match[1], match[1])
@@ -486,7 +495,7 @@ func TestCmdValidate_Roster(t *testing.T) {
 	if err := os.WriteFile(roster, game, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code, out := validate(); code != 0 || !strings.Contains(out, "Roster: 5 roles (producer decides, tech-lead plans)") {
+	if code, out := validate(); code != 0 || !strings.Contains(out, "Roster: 6 roles (producer decides, tech-lead plans)") {
 		t.Errorf("with the game studio's roster: validate = %d\n%s", code, out)
 	}
 
@@ -590,6 +599,60 @@ func TestCmdPlan_AskThePersonAtTheTerminal(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("the output should have %q:\n%s", want, out)
 		}
+	}
+}
+
+// What the check of the game data still finds in what a plan wrote, the plan
+// says at its end, with the pages to review the game data on.
+func TestCmdPlan_TheGameDataStillFound(t *testing.T) {
+	origModel := planModel
+	t.Cleanup(func() { planModel = origModel })
+	dir := t.TempDir()
+	writePlanConfig(t, dir, "repos:\n  - {name: backend, path: backend/, language: go}\n")
+	for rel, content := range map[string]string{
+		".ai/roster.yaml":     "roles:\n  - {id: owner, decides: true, stance: s, owns: [docs/product/]}\n  - {id: numbers, plans: true, stance: s, owns: [gamedata/Datas/]}\n",
+		"gamedata/luban.conf": `{"groups": [{"names": ["c"]}, {"names": ["s"]}], "schemaFiles": [{"fileName": "Defines"}], "dataDir": "Datas"}`,
+		"gamedata/Defines/racket.xml": `<module name="">
+	<bean name="Racket" comment="the rackets">
+		<var name="id" type="string" group="c,s" comment="code"/>
+		<var name="power" type="int" group="c,s" comment="how hard it hits"/>
+	</bean>
+	<table name="TbRacket" value="Racket" input="racket.csv" mode="map" group="c,s"/>
+</module>`,
+	} {
+		file := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	planModel = &scriptedCouncil{}
+	var out string
+	code := -1
+	errs := captureStderr(func() {
+		out = captureStdout(t, func() { code = cmdPlan([]string{"Add rackets.", "--state-root", dir}) })
+	})
+	if code != 0 {
+		t.Fatalf("cmdPlan = %d\n%s%s", code, out, errs)
+	}
+	plans, _ := filepath.Glob(filepath.Join(dir, "docs", "plans", "*"))
+	if len(plans) != 1 {
+		t.Fatalf("%d plans", len(plans))
+	}
+	id := filepath.Base(plans[0])
+	for _, want := range []string{
+		"  To review:  docs/plans/" + id + "/tables.md\n",
+		"  gamedata/Datas/racket.csv:2: power is blank",
+		"Put the game data right before you approve the work list; ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the plan does not say %q:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(errs, "1 point(s) the check of the game data still finds in what the plan wrote (docs/plans/"+id+"/minutes.md)") {
+		t.Errorf("the plan does not warn of the game data:\n%s", errs)
 	}
 }
 

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/gamedata"
 )
 
 // scaffolded writes the godot-go skeleton into a fresh directory.
@@ -71,6 +73,9 @@ func TestScaffold_GodotGoWritesTheSkeleton(t *testing.T) {
 		"frontend/src/Game.Core/Game.Core.csproj",
 		"frontend/tests/Game.Core.Tests/CounterTests.cs",
 		"frontend/tests/Game.Core.Tests/Game.Core.Tests.csproj",
+		"gamedata/Datas/text/ui.csv",
+		"gamedata/README.md",
+		"gamedata/luban.conf",
 	}
 	got := filesUnder(t, dir)
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -102,6 +107,38 @@ func TestScaffold_GodotGoWritesTheSkeleton(t *testing.T) {
 	}
 	if core := readFile(t, dir, "frontend", "src", "Game.Core", "Game.Core.csproj"); strings.Contains(core, "Godot") {
 		t.Errorf("Game.Core must not depend on the engine, so it can be tested without it:\n%s", core)
+	}
+
+	// The game data is where its rule and the roster say, as Luban reads it,
+	// and passes its check from the start.
+	root := os.DirFS(dir)
+	data, err := gamedata.Find(root)
+	if err != nil || data == nil {
+		t.Fatalf("the skeleton's game data cannot be found: %v, %v", data, err)
+	}
+	if data.Dir != "gamedata/" || data.Data != "gamedata/Datas/" || data.Text() != "gamedata/Datas/text/" ||
+		strings.Join(data.Schemas, ",") != "gamedata/Defines/" || strings.Join(data.Groups, ",") != "c,s" {
+		t.Errorf("the skeleton's game data is laid out as %+v", *data)
+	}
+	d, findings, err := gamedata.Check(root, data)
+	if err != nil || len(findings) != 0 {
+		t.Errorf("the skeleton's game data does not pass its check: %v %v", findings, err)
+	}
+	if name, ok := d.SourceText("ui.title.name"); !ok || name != "My Game" {
+		t.Errorf("the game's name in the text table: %q, %v", name, ok)
+	}
+
+	// A name with a comma is one cell of the text table all the same.
+	dir, _ = scaffolded(t, "Tennis, Again")
+	root = os.DirFS(dir)
+	if data, err = gamedata.Find(root); err != nil || data == nil {
+		t.Fatalf("the game data cannot be found: %v", err)
+	}
+	if d, findings, err = gamedata.Check(root, data); err != nil || len(findings) != 0 {
+		t.Errorf("a name with a comma breaks the text table: %v %v", findings, err)
+	}
+	if name, _ := d.SourceText("ui.title.name"); name != "Tennis, Again" {
+		t.Errorf("the game's name in the text table: %q", name)
 	}
 }
 
@@ -200,8 +237,8 @@ func TestScaffold_DryRunWritesNothing(t *testing.T) {
 	if files := filesUnder(t, dir); len(files) != 1 {
 		t.Errorf("a dry run must not write anything, found %v", files)
 	}
-	if len(result.Created) != 14 || len(result.Skipped) != 1 {
-		t.Errorf("dry run reports %d to create and %d to skip, want 14 and 1", len(result.Created), len(result.Skipped))
+	if len(result.Created) != 17 || len(result.Skipped) != 1 {
+		t.Errorf("dry run reports %d to create and %d to skip, want 17 and 1", len(result.Created), len(result.Skipped))
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -80,6 +81,9 @@ type RuleContext struct {
 	Contract string
 	// Date is the day the owner answered, as 2006-01-02.
 	Date string
+	// GameData says the project keeps its game data in gamedata/, by the
+	// rule of that name: its preset starts it with one.
+	GameData bool
 }
 
 // NewRuleContext builds the context of a project's rules from its
@@ -239,12 +243,18 @@ func starterRuleTemplate(preset, name string) ([]byte, error) {
 	return nil, fmt.Errorf("the preset %s has no starter rule %q", presetName(preset), name)
 }
 
+// gameDataRule is the starter rule of the game data. A preset that starts a
+// project with it keeps the project's game data in gamedata/, and the other
+// rules say so.
+const gameDataRule = "gamedata"
+
 // RenderStarterRule writes one starter rule of a preset for a project.
 func RenderStarterRule(preset, name string, ctx RuleContext) ([]byte, error) {
 	text, err := starterRuleTemplate(preset, name)
 	if err != nil {
 		return nil, err
 	}
+	ctx.GameData = slices.Contains(StarterRules(preset), gameDataRule)
 	tmpl, err := template.New(name).Option("missingkey=error").Parse(string(text))
 	if err != nil {
 		return nil, fmt.Errorf("the starter rule %s: %w", name, err)

@@ -159,7 +159,7 @@ func (p *planner) facts(role *Role, plan *Plan) string {
 // byTheRules tells a role that writes documents which rules hold for them.
 func (p *planner) byTheRules(role *Role, plan *Plan, book rulebook) string {
 	if len(book.shown) == 0 {
-		return fmt.Sprintf("\nStart every document you write with its title, and under it this line:\nOwner: %s. Written: %s, in plan %s.\n", role.ID, p.today(), plan.ID)
+		return fmt.Sprintf("\nStart every Markdown document you write with its title, and under it this line:\nOwner: %s. Written: %s, in plan %s.\n", role.ID, p.today(), plan.ID)
 	}
 	return "\nThe project has rules (" + layout.RulesDir + "/). These hold for the files you write, and your documents follow them: where a rule says where a document is kept, how it starts, which state it may claim, what it has to answer, what does not belong in it or how long it may get, write it so, and add nothing of your own to what a rule lays down. A rule about code, commits or tools is the frame the work is done in: design nothing against it, and do not copy it into a document. A document does not quote the rules and does not say that it follows them.\n\n" +
 		book.text() + p.facts(role, plan)
