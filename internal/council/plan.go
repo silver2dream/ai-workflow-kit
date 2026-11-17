@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/gamedata"
 	"github.com/silver2dream/ai-workflow-kit/internal/rules"
 )
 
@@ -190,6 +191,12 @@ type Plan struct {
 	// RuleChecks are what reading the documents against those rules came to,
 	// a role and a topic at a time; only what was read is in it.
 	RuleChecks []RuleCheck
+	// GameData are the files of the game data the plan wrote; DataOpen is
+	// what the check of the game data finds in them now; Reviews are the
+	// pages that show them for a person to review.
+	GameData []string
+	DataOpen []gamedata.Finding
+	Reviews  []string
 
 	// Milestones are the steps the plan is built in; only the first one is
 	// ticketed.
@@ -256,6 +263,8 @@ type planner struct {
 	ask        func(ctx context.Context, questions []string) ([]string, error)
 	// answers are what the owner said; every role is told from then on.
 	answers []OwnerAnswer
+	// data is where the project keeps its game data; nil when it keeps none.
+	data *gamedata.Layout
 }
 
 func (p *planner) today() string {
@@ -455,6 +464,7 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 	}
 	p := &planner{root: opts.Root, planID: plan.ID, brief: plan.Brief, roster: opts.Roster, repos: opts.Repos, rules: opts.Rules,
 		maxTickets: opts.MaxTickets, now: opts.Now, session: session, ask: opts.Ask}
+	p.findGameData()
 
 	if err := p.writeFile(plan.Dir()+"/brief.md", plan.Brief+"\n"); err != nil {
 		return plan, err

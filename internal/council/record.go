@@ -41,6 +41,9 @@ func (r *TopicRecord) started() bool {
 // and of every topic that was taken up. It is written from the roles' answers
 // as they came, also when the meeting stopped early.
 func (p *planner) writeMinutes(plan *Plan, stopped error) error {
+	if err := p.reviewGameData(plan); err != nil {
+		return err
+	}
 	for i := range plan.Topics {
 		if plan.Topics[i].started() {
 			if err := p.writeTopicMinutes(plan, &plan.Topics[i]); err != nil {
@@ -127,6 +130,7 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 		writeDocuments(&b, p.roster, plan.Documents)
 		writeRuleChecks(&b, plan.Rules, plan.RulesLeft, plan.RuleChecks)
 	}
+	writeGameData(&b, plan)
 
 	if len(plan.Milestones) > 0 {
 		fmt.Fprintf(&b, "\n## Milestones\n\nLaid out by %s. Only the first is ticketed; the others are planned when it is reached.\n\n", p.roster.Planner().ID)
@@ -278,6 +282,7 @@ func (p *planner) writeTopicMinutes(plan *Plan, r *TopicRecord) error {
 		b.WriteString("\n## Documents\n\n")
 		writeDocuments(&b, p.roster, r.Documents)
 		writeRuleChecks(&b, r.Rules, r.RulesLeft, r.RuleChecks)
+		writeDataCheck(&b, r.DataCheck)
 	}
 	return p.writeFile(plan.Dir()+"/"+topicFile(r), b.String())
 }

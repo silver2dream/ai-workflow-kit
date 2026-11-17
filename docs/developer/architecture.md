@@ -25,7 +25,8 @@ awkit plan "…"
   └─ council.Run：主持人排議程（agenda.yaml）→ 問擁有者（--ask）→ 逐議題 → 里程碑與第一個里程碑的票
        每個議題：主講提方案 → 其他角色依序發言、提異議 → 對辯 → 主持人整理 → 裁定（寫進 decisions.md）→ 擁有者寫文件
        文件：每個角色照對它的檔案生效的規則寫（internal/rules）→ 對照規則檢查 → 擁有者修一次 → 讀者回答哪幾點還在
-       寫出各角色的文件、docs/decisions.md、docs/plans/<plan>/{minutes.md,tickets.yaml}
+       遊戲資料（有 luban.conf 時，internal/gamedata）：先寫表、再寫文字（告知缺的鍵）→ 檢查 → 擁有者修一次 → 還找得到的記錄
+       寫出各角色的文件、docs/decisions.md、docs/plans/<plan>/{minutes.md,tickets.yaml}；寫了遊戲資料時加 copy.md、tables.md
 awkit plan approve <plan>
   └─ council.Approve → task.CreateTask：每張票一個 GitHub issue（ai-task 標籤 + awk-ticket 區塊）
 
@@ -109,6 +110,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `generate` | 從設定產生的檔案：`CLAUDE.md`、`AGENTS.md`、kit 的 git 規則、自訂 subagent、CI workflow、Claude Code 的本機權限 |
 | `migrate` | 設定檔格式的版本轉換，以及舊目錄結構的搬遷 |
 | `council` | `awkit plan`：名冊、會議的每一步、文件、票券清單、核可 |
+| `gamedata` | 遊戲資料（Luban）：從 `luban.conf` 找位置、讀 schema、表與文字表；Luban 擋不住的檢查；給人審的文案頁與表頁。`awkit gamedata` 與議會共用 |
 | `ticket`、`task` | `awk-ticket` 區塊的讀取與驗證；建立票券 |
 | `kickoff` | `awkit run`：啟動前的檢查、lock、PTY、log |
 | `analyzer` | 決策引擎：從 GitHub 的狀態決定下一步，計數迴圈與連續失敗 |

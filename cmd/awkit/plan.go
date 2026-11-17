@@ -221,6 +221,9 @@ func cmdPlan(args []string) int {
 	fmt.Printf("  Minutes:    %s/minutes.md, and one file per topic in %s/topics/\n", plan.Dir(), plan.Dir())
 	fmt.Printf("  Decisions:  %s\n", council.DecisionsPath)
 	fmt.Printf("  Work list:  %s/%s\n", plan.Dir(), council.WorkListFile)
+	for _, page := range plan.Reviews {
+		fmt.Printf("  To review:  %s\n", page)
+	}
 	fmt.Println("")
 	if len(plan.Milestones) > 0 {
 		fmt.Println("Milestones (only the first is ticketed):")
@@ -241,6 +244,14 @@ func cmdPlan(args []string) int {
 			fmt.Printf("  %s against %s\n       %s\n", finding.Document, finding.Rule, oneLine(finding.Point))
 		}
 		fmt.Println("Put the document right, or the rule, before you approve the work list.")
+		fmt.Println("")
+	}
+	if len(plan.DataOpen) > 0 {
+		warn("%d point(s) the check of the game data still finds in what the plan wrote (%s/minutes.md):\n", len(plan.DataOpen), plan.Dir())
+		for _, finding := range plan.DataOpen {
+			fmt.Printf("  %s\n", finding)
+		}
+		fmt.Printf("Put the game data right before you approve the work list; %s checks it again.\n", cyan("awkit gamedata check"))
 		fmt.Println("")
 	}
 	if len(plan.Assumptions) > 0 {

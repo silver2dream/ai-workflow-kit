@@ -46,7 +46,7 @@ func TestCheckAgenda(t *testing.T) {
 		{"the lead among the speakers", func(a *Agenda) { a.Topics[0].Speakers = []string{"owner", "skeptic"} }, "topic 1 (scope): owner speaks twice; a role speaks once to a topic, the lead first"},
 		{"no document", func(a *Agenda) { a.Topics[1].Writes = nil }, "topic 2 (build) ends in no document"},
 		{"a document nobody owns", func(a *Agenda) { a.Topics[1].Writes = []string{"docs/tech/protocol.md"} }, "topic 2 (build) ends in docs/tech/protocol.md, which no role owns"},
-		{"a file that is no document", func(a *Agenda) { a.Topics[1].Writes = []string{"backend/main.go"} }, `topic 2 (build): document "backend/main.go" is not a markdown file`},
+		{"a file that is no document", func(a *Agenda) { a.Topics[1].Writes = []string{"backend/main.go"} }, `topic 2 (build): document "backend/main.go" is neither a Markdown file nor a table of the game data`},
 		{"the decision log", func(a *Agenda) { a.Topics[1].Writes = []string{DecisionsPath} }, "kept by the council itself"},
 		{"a document of a role that does not speak to it", func(a *Agenda) { a.Topics[1].Writes = []string{"docs/product/journeys.md"} },
 			"topic 2 (build) ends in docs/product/journeys.md, which designer writes, and designer does not speak to the topic: add designer to the speakers"},

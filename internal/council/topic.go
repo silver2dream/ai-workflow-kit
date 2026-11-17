@@ -41,6 +41,9 @@ type TopicRecord struct {
 	Documents        []WrittenDocument
 	Rules, RulesLeft []string
 	RuleChecks       []RuleCheck
+	// DataCheck is what the check of the game data the topic wrote came to;
+	// nil when it wrote none.
+	DataCheck *DataCheck
 
 	// Held says the topic was taken up to its end: its documents written.
 	Held bool

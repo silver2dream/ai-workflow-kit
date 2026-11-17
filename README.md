@@ -94,6 +94,9 @@ The documents are written by your project's rules, not by a format of awkit's. E
 | `docs/decisions.md` | the decisions, each under a name that stays (`D7`), with who held otherwise, and what the plan assumes (`A3`); append-only |
 | `docs/<area>/*.md`, `<repo>/docs/*.md` | the documents, each written by the one role that owns it: product and design under `docs/`, the engineering documents of a repo with that repo |
 | `docs/plans/<plan>/tickets.yaml` | the milestones, and the proposed tickets of the first one, in working order |
+| `gamedata/`, `docs/plans/<plan>/copy.md`, `tables.md` | a game's numbers and copy (Luban's tables and text tables), and two pages to review them on: the copy in every language side by side, each table with what its columns hold |
+
+A game's numbers and the words its player reads are written in its game data, not in a document: the numerical designer writes the tables, the writer the text. awkit checks what was written by the rules of game data (a number left blank, a group left unmarked, a key the text tables lack, a translation out of date…) and gives what it finds back to the owner once; `awkit gamedata check` runs the same check at any time. See [configuration](docs/user/configuration.md#遊戲資料數值與文案).
 
 Nothing is on GitHub yet. Read the work list, change what you want changed, then `awkit plan approve <plan>`.
 
@@ -157,6 +160,7 @@ What a review turned back is distilled, once the change is finally approved, int
 CLAUDE.md, AGENTS.md   what agents are told, generated from the configuration
 docs/                  what the council writes: documents, decisions.md, plans/
 <repo>/docs/           the engineering documents of a repo, written by the council too
+gamedata/              a game's numbers and copy, for Luban (godot-go, with --scaffold)
 .github/workflows/     CI, one workflow per repo, generated from the configuration
 ```
 
@@ -170,6 +174,7 @@ A CI workflow follows the configuration until you delete the comment at its top;
 | `awkit doctor` | check everything a run needs, and say how to fix what is missing |
 | `awkit generate`, `awkit validate` | after the configuration changed: write the guides and the CI workflows again; check the file |
 | `awkit plan` | plan with the council; `awkit plan approve <plan>` creates the tickets |
+| `awkit gamedata` | check the game data (`check`); print the copy or the tables for a person to review (`review copy`, `review tables`) |
 | `awkit create-task` | add one ticket by hand |
 | `awkit run` | work through the open tickets (`--issue N` for one, `--dry-run` for the checks only) |
 | `awkit status` | where the work is |

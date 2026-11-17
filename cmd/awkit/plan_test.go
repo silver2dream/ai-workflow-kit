@@ -486,7 +486,7 @@ func TestCmdValidate_Roster(t *testing.T) {
 	if err := os.WriteFile(roster, game, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code, out := validate(); code != 0 || !strings.Contains(out, "Roster: 5 roles (producer decides, tech-lead plans)") {
+	if code, out := validate(); code != 0 || !strings.Contains(out, "Roster: 6 roles (producer decides, tech-lead plans)") {
 		t.Errorf("with the game studio's roster: validate = %d\n%s", code, out)
 	}
 

@@ -23,6 +23,9 @@ paths:
 | `{{.Docs}}architecture.md` | `{{.Name}}` 的工程**唯一權威** | 分層、鐵律、環境變數、新增模組的做法 | 產品規劃 |
 | `{{.Docs}}`（其他） | `{{.Name}}` 的工程設計與調研 | 各專題的工程設計；`research/`（調研筆記，Working Note）。**調研的結論要寫回 architecture.md 才算定案**，調研筆記只保留依據 | 另立一份定案 |
 {{- end}}
+{{- if .GameData}}
+| `gamedata/` | 企劃資料（Luban） | 伺服器與客戶端共用的數值表與文字表；欄位的定義在 `gamedata/Defines/`，規矩見 `gamedata.md` | 敘述性文件：為什麼這樣定，寫在 `docs/` 的設計文件，連到表 |
+{{- end}}
 | 模組級 README | 模組現況補充 | 單一模組的行為細節，連回它的 architecture.md | 重複宣告 architecture.md 已定義的事實 |
 | `CLAUDE.md`、`AGENTS.md` | 導航 | 慣例、指向各權威文件；由 `awkit generate` 從 `.ai/config.yaml` 產生，不手改 | 承載本體內容 |
 | `.ai/config.yaml` | 專案設定 | repo、分支、建置與測試指令的唯一定義處 | 敘述性文件 |
@@ -49,7 +52,7 @@ governed 文件只允許這六種狀態：`Current State`／`Partial`／`Plan`�
 
 ## 路由規則
 
-1. 產品與設計（商業、系統、玩法、世界觀、數值的設計）→ `docs/`；工程文件不放這裡{{if .RootRepo}}，放 `{{.RootRepo.Docs}}`{{end}}。
+1. 產品與設計（商業、系統、玩法、世界觀、數值的設計）→ `docs/`；工程文件不放這裡{{if .RootRepo}}，放 `{{.RootRepo.Docs}}`{{end}}。{{if .GameData}}遊戲讀的數值與文字 → `gamedata/` 的表（`gamedata.md`）：設計文件寫為什麼、連到表，不複製表裡的數字與文字。{{end}}
 2. 一個 repo 的工程設計與實作現況 → 它的工程文件目錄（或模組 README，連回 architecture.md）。跨 repo 的風險與測試策略 → `docs/qa/`。
 3. 兩份文件需要同一資訊：一份定義、另一份連結，**不複製**。
 4. 調研報告與筆記（Working Note）放在 owner 目錄的 `research/`（產品層 → `docs/research/`{{range .Repos}}、`{{.Name}}` → `{{.Docs}}research/`{{end}}），每份標 `Status: Working Note` 與 `Last Verified`，並在檔頭連到它的上位權威文件。

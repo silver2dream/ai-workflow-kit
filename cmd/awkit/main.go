@@ -126,6 +126,8 @@ func run() int {
 		return cmdUpgrade(os.Args[2:])
 	case "plan":
 		return cmdPlan(os.Args[2:])
+	case "gamedata":
+		return cmdGamedata(os.Args[2:])
 	case "run", "kickoff":
 		// kickoff is the former name of run.
 		return cmdRun(os.Args[2:])
@@ -261,6 +263,8 @@ Set up a project:
 Run the workflow:
   plan          Plan with the council: a brief becomes documents, decisions
                 and a list of tickets for you to approve
+  gamedata      Check the game data (Luban tables and text), and show it for
+                review
   create-task   Add one ticket by hand
   run           Work through the open tickets (--issue N for one ticket only)
   status        Where the work is: the run, every ticket, what to do next
@@ -391,6 +395,8 @@ func cmdHelp(command string) int {
 		usageEvents()
 	case "feedback-stats":
 		usageFeedbackStats()
+	case "gamedata":
+		usageGamedata()
 	case "context-snapshot":
 		usageContextSnapshot()
 	case "version":
@@ -1385,7 +1391,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall plan run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall plan gamedata run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1444,6 +1450,7 @@ _awkit() {
         'upgrade:Upgrade AWK kit files (preserves config by default)'
         'uninstall:Remove AWK from a project'
         'plan:Plan work with the council: documents, decisions and tickets to approve'
+        'gamedata:Check the game data and show it for review'
         'run:Start the workflow: work through the open tickets'
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
@@ -1539,6 +1546,7 @@ complete -c awkit -n __fish_use_subcommand -a install -d 'Alias for init'
 complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files (preserves config by default)'
 complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a project'
 complete -c awkit -n __fish_use_subcommand -a plan -d 'Plan work with the council: documents, decisions and tickets to approve'
+complete -c awkit -n __fish_use_subcommand -a gamedata -d 'Check the game data and show it for review'
 complete -c awkit -n __fish_use_subcommand -a run -d 'Start the workflow: work through the open tickets'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'

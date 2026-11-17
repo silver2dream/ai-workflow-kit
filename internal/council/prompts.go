@@ -82,7 +82,7 @@ func (p *planner) documentMap(role *Role) string {
 	if len(role.Owns) > 0 {
 		yours = "You write the ones that are yours, and no other."
 	}
-	return "\nThe project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or gives one to another role:\n" + b.String() + yours + "\n"
+	return "\nThe project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or gives one to another role. A folder inside another role's folder is not that role's:\n" + b.String() + yours + "\n" + p.gameDataNote()
 }
 
 // ownerSaid tells what the owner of the project answered when the questions
@@ -539,10 +539,11 @@ func (p *planner) asTheyStand(docs []string) string {
 	return b.String()
 }
 
-// documentsPrompt asks a role to write its documents of a topic. asked are the
-// ones the council can write: the topic's, of this role, without what is too
-// long. book holds the project's rules for those files.
-func (p *planner) documentsPrompt(role *Role, plan *Plan, r *TopicRecord, asked []string, book rulebook) string {
+// documentsPrompt asks a role to write its documents of a topic: the ones the
+// council can write (at.asked: the topic's, of this role, without what is too
+// long), by the project's rules for those files (at.book).
+func (p *planner) documentsPrompt(role *Role, plan *Plan, r *TopicRecord, at *seat) string {
+	asked, book := at.asked, at.book
 	var b strings.Builder
 	b.WriteString(p.frame(role))
 	b.WriteString(topicHead(plan, r))
@@ -561,13 +562,20 @@ func (p *planner) documentsPrompt(role *Role, plan *Plan, r *TopicRecord, asked 
 		b.WriteString("\nThe documents this topic read:\n" + shown)
 	}
 	b.WriteString("\nYour documents of this topic as they stand:\n" + p.asTheyStand(asked))
+	if len(at.tables) > 0 {
+		b.WriteString("\nThe tables of the game data this topic wrote before your turn:\n" + p.reading(at.tables))
+		if len(at.keys) > 0 {
+			b.WriteString("\nThey hold these text keys, and the text tables do not have them yet. Write the text of each in your text tables, in the language the text is written in and in each language it is translated into:\n" + keysText(at.keys))
+		}
+	}
 	b.WriteString("\nYour task now: write your documents of this topic, as they read after it:\n")
-	written := false
+	written, data := false, false
 	for _, doc := range asked {
 		fmt.Fprintf(&b, "- %s\n", doc)
 		if p.exists(doc) {
 			written = true
 		}
+		data = data || p.isGameData(doc)
 	}
 	for _, doc := range r.Topic.Writes {
 		if role.OwnsDocument(doc) && !contains(asked, doc) {
@@ -577,6 +585,9 @@ func (p *planner) documentsPrompt(role *Role, plan *Plan, r *TopicRecord, asked 
 	b.WriteString(`
 A document is the current truth about its subject, not the minutes of a meeting: no "we discussed", no "it was proposed", no list of the decisions and no account of who objected; docs/decisions.md holds those. Where a decision settles something, the document follows it, also where you held otherwise, and names the decision (D4) where a reader will ask why. What rests on an assumption says so and names it (A2). What another role's document holds, yours links to and does not repeat.
 `)
+	if data {
+		b.WriteString(gameDataForm)
+	}
 	b.WriteString(p.byTheRules(role, plan, book))
 	if written {
 		b.WriteString(`

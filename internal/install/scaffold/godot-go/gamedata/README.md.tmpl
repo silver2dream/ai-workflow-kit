@@ -1,0 +1,30 @@
+# gamedata：企劃資料（Luban）
+
+- **Status**: Plan（資料夾與設定已建；Luban 還沒裝，兩端的生成還沒接）
+- **這份是什麼**：`gamedata/` 的現況與用法。規矩在 `.claude/rules/gamedata.md`；為什麼這樣分表、數字從哪來，在 `docs/` 的設計文件。欄位的定義只在 `Defines/`，文件不複製。
+
+## 資料夾
+
+```
+gamedata/
+  luban.conf         groups：c（客戶端）、s（伺服器）；targets：server、client、all
+  Defines/*.xml      schema：bean 的欄位、型別、group、白話說明；table 讀哪個檔
+  Datas/*.csv        資料：一張表一個檔；表頭 ##var（欄位名）加 ##（白話說明）
+  Datas/text/*.csv   文字表：key、zh_TW、zh_CN、en、_en_依據、_上限
+```
+
+## 檢查
+
+```
+awkit gamedata check            # Luban 擋不住的：空白、表頭、group、文字鍵、文字表
+awkit gamedata review copy      # 文字，給人審：每種語言並排、每個鍵用在哪
+awkit gamedata review tables    # 表，給人審：每一欄的說明、文字鍵旁附原文
+```
+
+## 還沒做的（第一個里程碑）
+
+- **Luban 的版本與取得方式**：釘一個版本，記下來源與 SHA-256，寫在這裡。
+- **生成**：伺服器端（Go）與客戶端（C#）的程式碼與資料，從這裡生成；生成的檔不手改，Luban 失敗時不動已有的檔。
+- **CI**：`awkit gamedata check` 與 Luban 的驗證都接進 CI，沒過不合併。
+
+這三件做完之前，沒有程式讀得到這裡的資料。

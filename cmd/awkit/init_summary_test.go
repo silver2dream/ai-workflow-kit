@@ -139,7 +139,7 @@ func TestCollectInitSummary(t *testing.T) {
 		Skills: 3, Subagents: 2, Rules: 1 + len(install.StarterRules(install.PresetGodotGo)),
 		OwnRules:     len(install.StarterRules(install.PresetGodotGo)),
 		Workflows:    []string{"ci-backend.yml", "ci-frontend.yml"},
-		SkeletonDirs: []string{"backend/", "frontend/"}, SkeletonFiles: 15,
+		SkeletonDirs: []string{"backend/", "frontend/", "gamedata/"}, SkeletonFiles: 18,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("collectInitSummary =\n%+v\nwant\n%+v", got, want)
@@ -151,8 +151,8 @@ func TestCollectInitSummary(t *testing.T) {
 		t.Fatalf("Install: %v", err)
 	}
 	second := collectInitSummary(dir, install.PresetGodotGo, again)
-	if !second.ConfigKept || second.SkeletonFiles != 0 || second.SkeletonKept != 15 || second.Integration != "develop" {
-		t.Errorf("a second init: %+v, want the configuration and the 15 skeleton files kept", second)
+	if !second.ConfigKept || second.SkeletonFiles != 0 || second.SkeletonKept != 18 || second.Integration != "develop" {
+		t.Errorf("a second init: %+v, want the configuration and the 18 skeleton files kept", second)
 	}
 
 	generic := t.TempDir()
@@ -394,7 +394,7 @@ func TestCmdInit_NamesTheSkeleton(t *testing.T) {
 			t.Errorf("cmdInit = %d, want 0", code)
 		}
 	}))
-	if !strings.Contains(out, "backend/, frontend/ the project skeleton, 15 files\n") {
+	if !strings.Contains(out, "backend/, frontend/, gamedata/ the project skeleton, 18 files\n") {
 		t.Errorf("init --scaffold does not name the skeleton:\n%s", out)
 	}
 }

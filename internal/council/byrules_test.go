@@ -714,7 +714,7 @@ func TestRun_RulesThatHoldForNobodyAndForEverybody(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	owner := model.promptOf("owner", "documents")
-	if want := "\nStart every document you write with its title, and under it this line:\nOwner: owner. Written: 2026-11-14, in plan " + plan.ID + ".\n"; !strings.Contains(owner, want) || strings.Contains(owner, "<rule") || strings.Contains(owner, "The project has rules") {
+	if want := "\nStart every Markdown document you write with its title, and under it this line:\nOwner: owner. Written: 2026-11-14, in plan " + plan.ID + ".\n"; !strings.Contains(owner, want) || strings.Contains(owner, "<rule") || strings.Contains(owner, "The project has rules") {
 		t.Errorf("a role no rule holds for should be told %q and given no rule:\n%s", want, owner)
 	}
 	if builder := model.promptOf("builder", "documents"); !strings.Contains(builder, "<rule file=\".claude/rules/backend.md\"") || strings.Contains(builder, "frontend.md") {
@@ -820,7 +820,7 @@ func TestRun_RulesTooLongToPassOn(t *testing.T) {
 	if got := model.count("moderator", "rulecheck"); got != 0 {
 		t.Errorf("documents written without a rule were read %d times", got)
 	}
-	if owner := model.promptOf("owner", "documents"); strings.Contains(owner, "<rule") || !strings.Contains(owner, "\nStart every document you write with its title") {
+	if owner := model.promptOf("owner", "documents"); strings.Contains(owner, "<rule") || !strings.Contains(owner, "\nStart every Markdown document you write with its title") {
 		t.Errorf("a role that is passed no rule:\n%s", owner)
 	}
 	if minutes := readFile(t, root, plan.Dir()+"/minutes.md"); !strings.Contains(minutes, "### By the project's rules\n\nNot passed on, because the rules together are longer than one question carries: `.claude/rules/huge.md`. Nothing was read against them.\n") || strings.Contains(minutes, "Each role was given") {
@@ -1307,7 +1307,7 @@ func TestPrompts_TheDocumentMap(t *testing.T) {
 	if _, err := runWithRules(t, t.TempDir(), roster, model, projectRules()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	const head = "The project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or gives one to another role:\n"
+	const head = "The project's documents. Each has one owner, the role that writes it, and is kept where the roster names it; nothing said or decided at this meeting moves one, merges two or gives one to another role. A folder inside another role's folder is not that role's:\n"
 	// A role with documents, in every question it is asked; what is not
 	// written yet is said to be so.
 	if prompt := model.promptIn(1, "skeptic", "speak"); !strings.Contains(prompt, head+"- docs/product/requirements.md (owner, not written yet)\n- backend/docs/architecture.md (builder, not written yet)\n- docs/qa/risks.md (you, not written yet)\nYou write the ones that are yours, and no other.\n") {

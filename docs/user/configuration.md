@@ -277,7 +277,7 @@ roles:
 | `id` | 必填。小寫字母、數字與連字號。出現在會議紀錄與其他角色的發言裡 |
 | `title` | 介紹這個角色時用的稱呼；沒寫就用 `id` |
 | `stance` | 必填。這個角色主張什麼、反對什麼。立場要寫得會互相衝突：一桌人都點頭的規劃沒有被檢驗過 |
-| `owns` | 這個角色擁有的文件，路徑從專案根目錄寫起：一個資料夾（結尾加 `/`，例如 `docs/design/`、`backend/docs/`），角色在裡面寫、也可以開新的 Markdown 檔；或一份檔案（`docs/qa/risks.md`）。一份文件只能有一個擁有者，而且只有擁有者會寫它：兩個角色的資料夾不能重疊。不能是議會自己維護的檔案（`docs/decisions.md`、`docs/README.md`、`docs/plans/`，所以 `docs/` 整個不能當資料夾）、給 agent 的指示（`CLAUDE.md`、`AGENTS.md`），或以 `.` 開頭的目錄（`.claude/`、`.ai/`、`.github/`） |
+| `owns` | 這個角色擁有的文件，路徑從專案根目錄寫起：一個資料夾（結尾加 `/`，例如 `docs/design/`、`backend/docs/`），角色在裡面寫、也可以開新檔；或一份檔案（`docs/qa/risks.md`）。文件是 Markdown 檔，或遊戲資料的表（`.csv`）與它的 schema（`.xml`），見[遊戲資料](#遊戲資料數值與文案)。一份文件只能有一個擁有者，而且只有擁有者會寫它：兩個角色不能列同一個路徑。一個角色的資料夾裡可以有別的角色列出的資料夾或檔案，那一部分就是別人的（例如 `gamedata/Datas/` 是數值企劃的，裡面的 `gamedata/Datas/text/` 是文案的）；同一個角色不能把自己資料夾裡的東西再列一次。不能是議會自己維護的檔案（`docs/decisions.md`、`docs/README.md`、`docs/plans/`，所以 `docs/` 整個不能當資料夾）、給 agent 的指示（`CLAUDE.md`、`AGENTS.md`），或以 `.` 開頭的目錄（`.claude/`、`.ai/`、`.github/`） |
 | `model` | 扮演這個角色的模型；沒寫就用名冊的 `model` |
 | `decides`、`plans` | 各恰好一個角色為 `true`，可以是同一個角色 |
 
@@ -309,3 +309,35 @@ roles:
 規則全文合計超過 60000 位元組時，先放有指名這些檔案的規則，再放通用的；放不下的規則只列出檔名，會議紀錄會寫明哪些沒有傳給角色。只對照這次會議寫出的文件；擁有者維持原樣的文件不在其內。
 
 每個角色在每一次發言前都看得到名冊裡全部的文件、位置與擁有者。有哪些文件、放在哪裡、由誰寫，不是會議可以決定的事：要改就改名冊。
+
+### 遊戲資料：數值與文案
+
+遊戲讀的數值與玩家看到的字，不寫在文件裡，寫在遊戲資料：Luban 讀的表。awkit 從專案根目錄下哪個資料夾有 `luban.conf` 知道它在哪裡；`awkit init --preset godot-go --scaffold` 會寫出 `gamedata/`：
+
+```
+gamedata/
+  luban.conf         groups：c（客戶端）、s（伺服器）
+  Defines/*.xml      schema：每張表的欄位、型別、group、白話說明
+  Datas/*.csv        資料：一張表一個檔
+  Datas/text/*.csv   文字表：key、zh_TW、zh_CN、en、_en_依據、_上限
+```
+
+規矩在起始規則 `gamedata.md`：數字不准空白（Luban 會讀成 0）、group 一律標、機率與權重只給伺服器、玩家看得到的字只放文字鍵、繁中是原文、英文過期要重看。
+
+名冊裡，數值企劃擁有 `gamedata/Defines/` 與 `gamedata/Datas/`，文案擁有 `gamedata/Datas/text/`。一個議題要寫表與文字時：
+
+1. 寫表的角色先寫；寫文字的角色後寫，並被告知剛寫好的表用到哪些文字表還沒有的鍵。
+2. 都寫完之後，awkit 檢查遊戲資料（和 `awkit gamedata check` 同一套）。找到的問題交回該檔的擁有者修一次；文字表缺的鍵交給文案。
+3. 修過還找得到的，記在議題紀錄的 `The check of the game data` 一節，`awkit plan` 結束時也會列出來。
+
+給人審的兩頁放在計畫的資料夾：`docs/plans/<plan>/copy.md`（這次寫的文字，各語言並排、每個鍵用在哪張表哪一列、要注意的地方）與 `tables.md`（這次寫的表，每一欄的說明、文字鍵旁附原文）。它們從檔案產生，不手改；要改就改表。
+
+隨時都可以檢查與審閱：
+
+```bash
+awkit gamedata check            # 沒過時結束碼是 1
+awkit gamedata review copy      # 整份文字表，給人審
+awkit gamedata review tables --out review/tables.md
+```
+
+Luban 本身（版本、生成伺服器端與客戶端的程式碼、接進 CI）由第一個里程碑的票做；在那之前，沒有程式讀得到這些資料。

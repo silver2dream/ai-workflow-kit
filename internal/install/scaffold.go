@@ -82,9 +82,19 @@ func scaffoldVars(projectName string) map[string]string {
 		display = moduleSlug(projectName)
 	}
 	return map[string]string{
-		"{{PROJECT_NAME}}":   display,
-		"{{BACKEND_MODULE}}": moduleSlug(projectName) + "/backend",
+		"{{PROJECT_NAME}}":     display,
+		"{{PROJECT_NAME_CSV}}": csvCell(display),
+		"{{BACKEND_MODULE}}":   moduleSlug(projectName) + "/backend",
 	}
+}
+
+// csvCell writes a value as one cell of a CSV row: quoted when it holds what
+// would end the cell. A project's name holds no quote (validateProjectName).
+func csvCell(value string) string {
+	if strings.ContainsAny(value, ",\r\n\"") {
+		return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+	}
+	return value
 }
 
 // moduleSlug turns a project name into something usable as an element of a Go

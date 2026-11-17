@@ -73,14 +73,21 @@ type Role struct {
 	// Stance is what the role stands for, pushes for and pushes back on.
 	Stance string `yaml:"stance"`
 	// Owns lists what only this role writes, by paths from the project's
-	// root: a Markdown file, or a folder, written with a slash at its end, in
-	// which the role writes any Markdown file and opens a new one when a topic
-	// ends in it.
+	// root: a document, or a folder, written with a slash at its end, in which
+	// the role writes any document and opens a new one when a topic ends in
+	// it. A document is a Markdown file, or a file of the game data: a table
+	// (.csv) or its schema (.xml). A folder or a file inside another role's
+	// folder is not that role's: what is named closest owns it
+	// (gamedata/Datas/text/ inside gamedata/Datas/).
 	Owns []string `yaml:"owns"`
 	// Decides marks the one role that rules on what stays disputed.
 	Decides bool `yaml:"decides"`
 	// Plans marks the one role that drafts the work list.
 	Plans bool `yaml:"plans"`
+
+	// inner are what other roles own inside this role's folders. Validate
+	// sets them.
+	inner []string
 }
 
 // The rosters a project starts with are templates: the engineering documents
@@ -241,8 +248,9 @@ func (r *Roster) Validate() error {
 				return fmt.Errorf("role %q: %w", role.ID, err)
 			}
 			// Two paths that differ in case only are one file where the file
-			// system does not tell them apart; a file in a folder is the folder
-			// owner's.
+			// system does not tell them apart. What one role names inside
+			// another's folder is the first role's; a role does not name what
+			// it owns twice.
 			for _, other := range claims {
 				a, b := strings.ToLower(other.entry), strings.ToLower(entry)
 				var inner, outer claim
@@ -261,9 +269,19 @@ func (r *Roster) Validate() error {
 				if inner.role == outer.role {
 					return fmt.Errorf("role %q owns %s twice: it is in %s", role.ID, inner.entry, outer.entry)
 				}
-				return fmt.Errorf("%s is in %s, which %q owns; a document has one owner", inner.entry, outer.entry, outer.role)
 			}
 			claims = append(claims, claim{entry, role.ID})
+		}
+	}
+	for i := range r.Roles {
+		role := &r.Roles[i]
+		role.inner = nil
+		for _, folder := range role.Folders() {
+			for _, other := range claims {
+				if other.role != role.ID && inFolder(other.entry, folder) {
+					role.inner = append(role.inner, other.entry)
+				}
+			}
 		}
 	}
 	if len(deciders) != 1 {
@@ -366,8 +384,23 @@ func checkOwnedEntry(entry string) error {
 	return nil
 }
 
-// checkOwnedPath checks that a path can be a role's document: a markdown file
-// of the project, named from the project's root the way it is stored. It is
+// isDocument reports whether a file, named in lower case, is of a kind a role
+// writes: a Markdown document, or a file of the game data, a table (.csv) or
+// its schema (.xml).
+func isDocument(lower string) bool {
+	return strings.HasSuffix(lower, ".md") || isData(lower)
+}
+
+// isData reports whether a file, named in lower case, is of the kind the game
+// data is kept in: a table or its schema. What it holds is checked only when
+// the project keeps its game data there (gamedata.Layout).
+func isData(lower string) bool {
+	return strings.HasSuffix(lower, ".csv") || strings.HasSuffix(lower, ".xml")
+}
+
+// checkOwnedPath checks that a path can be a role's document: a Markdown
+// file, or a table or a schema of the game data, of the project, named from
+// the project's root the way it is stored. It is
 // not one of the files this package keeps, not a file an agent is instructed
 // by, and not in a directory a tool keeps for itself (.claude, .ai, .git,
 // .github): what a role writes is there to be read, not to be obeyed.
@@ -389,8 +422,8 @@ func checkOwnedPath(doc string) error {
 	}
 	lower := strings.ToLower(doc)
 	switch {
-	case !strings.HasSuffix(lower, ".md"):
-		return fmt.Errorf("document %q is not a markdown file", doc)
+	case !isDocument(lower):
+		return fmt.Errorf("document %q is neither a Markdown file nor a table of the game data (.csv) or its schema (.xml)", doc)
 	case lower == strings.ToLower(DecisionsPath) || lower == strings.ToLower(indexPath):
 		return fmt.Errorf("document %q is kept by the council itself and has no owner", doc)
 	case strings.HasPrefix(lower, strings.ToLower(PlansDir)+"/"):
@@ -402,11 +435,16 @@ func checkOwnedPath(doc string) error {
 }
 
 // OwnsDocument reports whether the role is the owner of a document: the
-// roster names the file, or a folder it is in. A path that cannot be a
-// document is nobody's.
+// roster names the file, or a folder it is in and no other role names it or a
+// folder closer to it. A path that cannot be a document is nobody's.
 func (role *Role) OwnsDocument(doc string) bool {
 	if checkOwnedPath(doc) != nil {
 		return false
+	}
+	for _, inner := range role.inner {
+		if strings.EqualFold(inner, doc) || strings.HasSuffix(inner, "/") && inFolder(doc, inner) {
+			return false
+		}
 	}
 	for _, owned := range role.Owns {
 		if owned == doc || strings.HasSuffix(owned, "/") && strings.HasPrefix(doc, owned) {
@@ -414,6 +452,12 @@ func (role *Role) OwnsDocument(doc string) bool {
 		}
 	}
 	return false
+}
+
+// inFolder reports whether a path is inside a folder, upper and lower case
+// alike: where the file system does not tell them apart, they are one path.
+func inFolder(file, folder string) bool {
+	return len(file) > len(folder) && strings.EqualFold(file[:len(folder)], folder)
 }
 
 // Files lists the documents the roster names for the role by their files.
