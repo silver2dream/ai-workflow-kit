@@ -29,7 +29,7 @@ func (d *Data) uses() map[string][]use {
 			continue
 		}
 		for _, v := range t.Bean.Vars {
-			if !IsTextKey(v) || isContainer(v.Type) {
+			if !t.HoldsTextKey(v) {
 				continue
 			}
 			for _, sheet := range t.Sheets {
@@ -226,7 +226,7 @@ func (d *Data) writeSheet(b *strings.Builder, t *Table, sheet *Sheet) {
 	}
 	value := func(field, raw string) string {
 		v, ok := t.Bean.Var(field)
-		if !ok || !IsTextKey(v) || isContainer(v.Type) {
+		if !ok || !t.HoldsTextKey(v) {
 			return cell(raw)
 		}
 		key := strings.TrimSpace(raw)

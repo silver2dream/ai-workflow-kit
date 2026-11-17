@@ -78,8 +78,19 @@ type Table struct {
 	Bean *Bean
 	// Sheets are the CSV files among the inputs, as read.
 	Sheets []*Sheet
+	// Index are the fields a row is found by: the table's index, or the
+	// first field of a map that names none.
+	Index []string
 
 	module string
+}
+
+// HoldsTextKey reports whether a field of the table holds the key of a text
+// the player reads: its comment says so (文字鍵, or text key), it holds one
+// value, not a list, and it is not a field rows are found by, which holds a
+// code.
+func (t *Table) HoldsTextKey(v Var) bool {
+	return IsTextKey(v) && !isContainer(v.Type) && !contains(t.Index, v.Name)
 }
 
 // Sheet is one CSV file of a table.
@@ -248,6 +259,7 @@ type xmlTable struct {
 	Name    string `xml:"name,attr"`
 	Value   string `xml:"value,attr"`
 	Input   string `xml:"input,attr"`
+	Index   string `xml:"index,attr"`
 	Mode    string `xml:"mode,attr"`
 	Group   string `xml:"group,attr"`
 	Comment string `xml:"comment,attr"`
@@ -279,6 +291,12 @@ func (d *Data) addModule(file string, module xmlModule, outer string) {
 	for _, table := range module.Tables {
 		t := &Table{Name: table.Name, Value: strings.TrimSpace(table.Value), Mode: table.Mode, Group: table.Group,
 			Comment: table.Comment, File: file, module: name}
+		// index="a+b" is one key of two fields, index="a,b" two keys.
+		for _, field := range strings.FieldsFunc(table.Index, func(r rune) bool { return r == '+' || r == ',' }) {
+			if field = strings.TrimSpace(field); field != "" {
+				t.Index = append(t.Index, field)
+			}
+		}
 		for input := range strings.SplitSeq(table.Input, ",") {
 			input = strings.TrimSpace(strings.ReplaceAll(input, `\`, "/"))
 			if input == "" {
@@ -367,6 +385,10 @@ func (d *Data) resolve() {
 	}
 	for _, t := range d.Tables {
 		t.Bean = d.bean(t.module, t.Value)
+		// A map without an index is found by its first field.
+		if len(t.Index) == 0 && t.Bean != nil && len(t.Bean.Vars) > 0 && (t.Mode == "" || t.Mode == "map") {
+			t.Index = []string{t.Bean.Vars[0].Name}
+		}
 	}
 }
 

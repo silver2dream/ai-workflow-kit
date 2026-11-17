@@ -267,7 +267,7 @@ func (d *Data) checkTextKeys() []Finding {
 			continue
 		}
 		for _, v := range t.Bean.Vars {
-			if !IsTextKey(v) || isContainer(v.Type) {
+			if !t.HoldsTextKey(v) {
 				continue
 			}
 			for _, sheet := range t.Sheets {
@@ -281,6 +281,11 @@ func (d *Data) checkTextKeys() []Finding {
 					case key == "":
 						findings = append(findings, Finding{File: sheet.File, Line: row.Line, Key: v.Name,
 							Message: fmt.Sprintf("%s holds no text key; it holds the key of the text the player reads", v.Name)})
+					case !textKey.MatchString(key):
+						// Not a key the text tables could have: the field
+						// holds something else, and its comment says wrong.
+						findings = append(findings, Finding{File: sheet.File, Line: row.Line, Key: v.Name,
+							Message: fmt.Sprintf("%s holds %q, which is not a text key (lower case parts joined by dots, such as char.swift.name): if %s holds no text key, its comment does not say 文字鍵", v.Name, key, v.Name)})
 					default:
 						if _, ok := keys[key]; !ok {
 							findings = append(findings, Finding{File: sheet.File, Line: row.Line, Key: key,
