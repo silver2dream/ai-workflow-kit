@@ -38,7 +38,7 @@ var areas = []area{
 	{name: "plans", dir: council.PlansDir},
 	// A meeting that goes on: where it is, what was said, what the owner
 	// said. Not every prompt and answer it keeps, which grow all the time.
-	{name: "meeting", dir: layout.StateDir + "/council", only: []string{council.LiveFile, council.TranscriptFile, council.RecordFile, "owner.jsonl", "questions.json"}},
+	{name: "meeting", dir: layout.StateDir + "/council", only: []string{council.LiveFile, council.TranscriptFile, council.RecordFile, "owner.jsonl", "questions.json", council.ApprovalFile}},
 }
 
 const (

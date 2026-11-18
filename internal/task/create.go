@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,11 @@ type CreateTaskOptions struct {
 	StateRoot string
 	DryRun    bool
 	GHTimeout time.Duration
+	// Unlabeled creates the issue without the task label: it is no ticket,
+	// and no run takes it up, until Label puts the label on. An approval
+	// that brings the plan's documents to the integration branch first does
+	// so, so that no Worker starts before they are there.
+	Unlabeled bool
 }
 
 // CreateTaskResult contains the result of creating a ticket.
@@ -71,6 +77,9 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 			block.Repo, strings.Join(cfg.TicketRepos(), ", "))
 	}
 	label, repo := resolveGHParams(opts, cfg)
+	if opts.Unlabeled {
+		label = ""
+	}
 	ghArgs := buildGHCreateArgs(title, bodyPath, label, repo)
 
 	if opts.DryRun {
@@ -130,12 +139,56 @@ func buildGHCreateArgs(title, bodyFile, label, repo string) []string {
 		"issue", "create",
 		"--title", title,
 		"--body-file", bodyFile,
-		"--label", label,
+	}
+	if label != "" {
+		args = append(args, "--label", label)
 	}
 	if repo != "" {
 		args = append(args, "--repo", repo)
 	}
 	return args
+}
+
+// Label puts the task label on issues, which makes each a ticket a run takes
+// up. An issue that has it already keeps it.
+func Label(ctx context.Context, stateRoot string, issues []int) error {
+	cfg, err := analyzer.LoadConfig(config.Path(stateRoot))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if cfg == nil {
+		cfg = &analyzer.Config{}
+	}
+	label, repo := resolveGHParams(CreateTaskOptions{}, cfg)
+	if len(issues) == 0 {
+		return nil
+	}
+	// A repository that never had a run has no task label yet, and gh will
+	// not put a label on that does not exist. One that is there is left as
+	// it is.
+	create := []string{"label", "create", label, "--color", "1d76db", "--description", "AWK automated task"}
+	if repo != "" {
+		create = append(create, "--repo", repo)
+	}
+	call, cancel := context.WithTimeout(ctx, 60*time.Second)
+	if output, err := runGH(call, create...); err != nil && !strings.Contains(strings.ToLower(err.Error()+string(output)), "already exists") {
+		cancel()
+		return fmt.Errorf("the %s label cannot be made: %s\n%s", label, err, string(output))
+	}
+	cancel()
+	for _, issue := range issues {
+		args := []string{"issue", "edit", strconv.Itoa(issue), "--add-label", label}
+		if repo != "" {
+			args = append(args, "--repo", repo)
+		}
+		call, cancel := context.WithTimeout(ctx, 60*time.Second)
+		output, err := runGH(call, args...)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("issue #%d cannot be given the %s label: %s\n%s", issue, label, err, string(output))
+		}
+	}
+	return nil
 }
 
 func parseIssueOutput(output string) (int, string, error) {

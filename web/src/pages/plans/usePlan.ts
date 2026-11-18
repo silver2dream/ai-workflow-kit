@@ -55,7 +55,8 @@ export function usePlan(planId: string): PlanData {
   // Asked again while the meeting goes on, or is starting and has said
   // nothing yet; a plan held before meetings said where they are is not.
   const d = detail.data;
-  const going = d?.meeting?.state === "meeting" || (!!d && !d.meeting && !d.record && d.tickets.length === 0);
+  const going =
+    d?.meeting?.state === "meeting" || d?.approval?.state === "working" || (!!d && !d.meeting && !d.record && d.tickets.length === 0);
   useEffect(() => {
     if (!going) return;
     const timer = window.setInterval(() => setTick((t) => t + 1), 8000);

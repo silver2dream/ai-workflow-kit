@@ -1,5 +1,5 @@
 // What the workbench's server answers, as internal/workbench writes it.
-import type { MeetingState } from "@/lib/council";
+import type { ApprovalState, MeetingState } from "@/lib/council";
 
 export type OnboardingStatus = "new" | "touring" | "paused" | "ended" | "done" | "skipped";
 
@@ -114,6 +114,8 @@ export interface PlanView {
   approved: number;
   /** Where its meeting is; none for a plan held before meetings said so. */
   meeting?: MeetingState;
+  /** Where its approval from the workbench is. */
+  approval?: ApprovalState;
 }
 
 /** An answer the server gave with an error: what it said, and its status. */

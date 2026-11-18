@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, CircleCheck, ExternalLink, Flag, Pencil, Rocket, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowRight, CircleCheck, Flag, Pencil, Rocket, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,7 +10,9 @@ import { useProject } from "@/app/project";
 import { council, type ListObjection, type Milestone, type PlanDetail, type Ticket, type TicketText } from "@/lib/council";
 import { href } from "@/lib/router";
 import { cn } from "@/lib/utils";
+import { ApprovalProgress } from "@/pages/plans/ApprovalProgress";
 import { useSeats } from "@/pages/plans/roles";
+import { useOtherMeeting } from "@/pages/plans/usePlan";
 
 const lines = (items?: string[] | null) => (items ?? []).filter((s) => s.trim());
 
@@ -229,17 +231,28 @@ function MilestoneLine({ milestones, later }: { milestones: Milestone[]; later: 
  * drop it, and approve the list, which makes each ticket an issue on GitHub.
  */
 export function TicketsTab({ detail, going, onChanged }: { detail: PlanDetail; going: boolean; onChanged: () => void }) {
-  const { project, plans } = useProject();
+  const { project, plans, status } = useProject();
   const [editing, setEditing] = useState<Ticket | null>(null);
   const [dropping, setDropping] = useState<Ticket | null>(null);
   const [approving, setApproving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  const other = useOtherMeeting(detail.id);
   const tickets = detail.tickets;
   const waiting = tickets.filter((t) => !t.issue);
   const objections = detail.record?.list_objections ?? [];
-  const locked = going ? "會議還在開，工單還沒排定" : undefined;
+  const approval = detail.approval;
+  const working = approval?.state === "working";
+  const unfinished = approval?.state === "failed" || approval?.state === "stopped";
+  const locked = going ? "會議還在開，工單還沒排定" : working ? "核可中，工單先不改" : undefined;
   const waiters = dropping ? tickets.filter((t) => (t.depends_on ?? []).includes(dropping.key)) : [];
+  // What keeps an approval from starting now, said before it is asked for.
+  const blocked =
+    status.data?.run.state === "running"
+      ? "專案裡有工作正在跑：等它停了再核可，免得它半路接到新工單。"
+      : other
+        ? "另一份規劃正在開會，它會改到這次要合併的文件：等它開完再核可。"
+        : undefined;
 
   async function drop() {
     if (!dropping) return;
@@ -261,10 +274,8 @@ export function TicketsTab({ detail, going, onChanged }: { detail: PlanDetail; g
     setBusy(true);
     setProblem("");
     try {
-      const done = await council.approve(project.id, detail.id);
-      toast.success(done.created.length ? `建好了 ${done.created.length} 張工單` : "工單都已經在 GitHub 上了", {
-        description: "執行者可以開始做了：在終端機執行 awkit run。",
-      });
+      await council.approve(project.id, detail.id);
+      toast.success("開始核可", { description: "關掉工作台也會繼續；每一步都會顯示在這裡。" });
     } catch (e) {
       setProblem((e as Error).message);
     } finally {
@@ -287,25 +298,41 @@ export function TicketsTab({ detail, going, onChanged }: { detail: PlanDetail; g
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
-      {waiting.length === 0 ? (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-go/50 bg-go/5 px-5 py-4">
-          <CircleCheck className="size-5 text-go" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <div className="text-[15.5px] font-extrabold">核可了：{tickets.length} 張工單都在 GitHub 上</div>
-            <p className="text-[14px] text-ink2">在終端機執行 awkit run，執行者就會一張一張做。</p>
+      {approval && approval.state !== "done" ? (
+        <ApprovalProgress approval={approval} onRetry={() => setApproving(true)} retryBlocked={blocked} />
+      ) : waiting.length === 0 ? (
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-go/50 bg-go/5 px-5 py-4">
+            <CircleCheck className="size-5 text-go" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <div className="text-[15.5px] font-extrabold">核可了：{tickets.length} 張工單都在 GitHub 上</div>
+              <p className="text-[14px] text-ink2">
+                {approval ? "議會的文件已經合併進整合分支。" : ""}在終端機執行 awkit run，執行者就會一張一張做。
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => (window.location.hash = href({ project: project.id, page: "board", rest: [] }))}>
+              看工作看板 <ArrowRight aria-hidden />
+            </Button>
           </div>
-          <Button variant="outline" onClick={() => (window.location.hash = href({ project: project.id, page: "board", rest: [] }))}>
-            看工作看板 <ArrowRight aria-hidden />
-          </Button>
+          {approval?.left && (
+            <Problem title="你的專案資料夾沒有自動更新">
+              文件和工單都好了，但你電腦上的專案資料夾和整合分支不一樣，開始工作前要先讓它一致（工作只從乾淨的資料夾開始）。
+              <details className="mt-1.5">
+                <summary className="cursor-pointer text-[13px] font-bold text-muted-foreground">awkit 說的原文</summary>
+                <p className="mt-1 whitespace-pre-wrap break-words font-mono text-[12px]">{approval.left}</p>
+              </details>
+            </Problem>
+          )}
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border border-l-[6px] border-l-signal bg-card px-5 py-4" data-tour="approve">
           <div className="min-w-0 flex-1">
             <div className="text-[15.5px] font-extrabold">{waiting.length} 張工單等你核可</div>
-            <p className="text-[14px] text-ink2">核可前可以改標題和內容，也可以刪掉不要的。核可後會建到 GitHub，執行者才會開始做。</p>
+            <p className="text-[14px] text-ink2">核可前可以改標題和內容，也可以刪掉不要的。核可後，議會的文件先合併進整合分支，工單才會開工。</p>
+            {blocked && <p className="mt-1 text-[13.5px] font-bold text-foreground">{blocked}</p>}
           </div>
-          <Button size="lg" onClick={() => setApproving(true)} disabled={!!locked || !!detail.list_problem || busy} title={locked}>
-            <Rocket aria-hidden /> 核可，建到 GitHub
+          <Button size="lg" onClick={() => setApproving(true)} disabled={!!locked || !!detail.list_problem || busy || !!blocked} title={locked ?? blocked}>
+            <Rocket aria-hidden /> 核可
           </Button>
         </div>
       )}
@@ -316,12 +343,8 @@ export function TicketsTab({ detail, going, onChanged }: { detail: PlanDetail; g
         </Problem>
       )}
       {problem && (
-        <Problem title="沒有全部建好">
-          GitHub 沒有把工單建起來。常見的原因：這個專案沒有連到 GitHub、gh 沒有登入，或網路斷了；
-          <a href={href({ project: project.id, page: "health", rest: [] })} className="font-bold text-ring underline-offset-4 hover:underline">
-            到健康檢查看看
-          </a>
-          。已經建好的會留著，再按一次核可會接著建剩下的。
+        <Problem title="核可沒有開始">
+          工作台沒能開始核可。
           <details className="mt-1.5">
             <summary className="cursor-pointer text-[13px] font-bold text-muted-foreground">awkit 說的原文</summary>
             <p className="mt-1 whitespace-pre-wrap break-words font-mono text-[12px]">{problem}</p>
@@ -370,27 +393,35 @@ export function TicketsTab({ detail, going, onChanged }: { detail: PlanDetail; g
       <Dialog open={approving} onOpenChange={(o) => !busy && setApproving(o)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>核可 {waiting.length} 張工單？</DialogTitle>
-            <DialogDescription>每張工單會在 GitHub 建成一個 issue，執行者照它做事。</DialogDescription>
+            <DialogTitle>{unfinished ? "接著核可？" : `核可 ${waiting.length} 張工單？`}</DialogTitle>
+            <DialogDescription>
+              {unfinished
+                ? "從停下的那一步接著做。已經建好的工單不會重建。"
+                : "工作台會依序：在 GitHub 建工單（先不掛工作標籤），把議會寫的文件開成 PR、CI 過了就合併進整合分支，再掛上工作標籤。執行者讀得到文件之後，工單才會開工。"}
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex gap-2.5 rounded-lg border-l-4 border-caution bg-caution/10 px-4 py-3 text-[14px]">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-caution-ink" aria-hidden />
-            <span>GitHub 上的 issue 建了就刪不掉，只能關掉。先確定標題和內容是你要的。</span>
-          </div>
-          <ul className="grid max-h-56 gap-1 overflow-y-auto text-[14px]">
-            {waiting.map((t) => (
-              <li key={t.key} className="flex gap-2">
-                <span className="w-10 shrink-0 font-mono text-[12.5px] font-bold text-muted-foreground">{t.key}</span>
-                <span className="min-w-0">{t.title}</span>
-              </li>
-            ))}
-          </ul>
+          {waiting.length > 0 && (
+            <>
+              <div className="flex gap-2.5 rounded-lg border-l-4 border-caution bg-caution/10 px-4 py-3 text-[14px]">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-caution-ink" aria-hidden />
+                <span>GitHub 上的 issue 建了就刪不掉，只能關掉。先確定標題和內容是你要的。</span>
+              </div>
+              <ul className="grid max-h-56 gap-1 overflow-y-auto text-[14px]">
+                {waiting.map((t) => (
+                  <li key={t.key} className="flex gap-2">
+                    <span className="w-10 shrink-0 font-mono text-[12.5px] font-bold text-muted-foreground">{t.key}</span>
+                    <span className="min-w-0">{t.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproving(false)} disabled={busy}>
               再看看
             </Button>
             <Button onClick={approve} disabled={busy}>
-              <ExternalLink aria-hidden /> {busy ? "建立中…" : `核可，建 ${waiting.length} 張`}
+              <Rocket aria-hidden /> {busy ? "開始中…" : unfinished ? "接著核可" : `核可 ${waiting.length} 張`}
             </Button>
           </DialogFooter>
         </DialogContent>

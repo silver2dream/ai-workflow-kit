@@ -23,9 +23,17 @@ export interface PlanStatus {
 }
 
 /** planStatus says where a plan is, as its owner sees it: what it waits for first. */
-export function planStatus(plan: Pick<PlanView, "meeting" | "tickets">): PlanStatus {
+export function planStatus(plan: Pick<PlanView, "meeting" | "tickets" | "approval">): PlanStatus {
   const state = plan.meeting?.state;
   const waiting = plan.tickets.filter((t) => !t.issue).length;
+  const approval = plan.approval;
+  if (approval?.state === "working") return { label: "核可中", tone: "live", needsYou: false };
+  if (approval?.state === "failed" || approval?.state === "stopped") {
+    return { label: "核可沒完成", tone: "signal", needsYou: true, todo: "核可停在半路，工單還不會開工。打開看是哪一步、怎麼接著做。" };
+  }
+  if (approval?.state === "done" && approval.left) {
+    return { label: "資料夾要更新", tone: "caution", needsYou: true, todo: "工單核可了，但你的專案資料夾沒有自動更新，開始工作前要先處理。" };
+  }
   switch (state) {
     case "meeting":
     case "paused":

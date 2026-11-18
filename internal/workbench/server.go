@@ -64,9 +64,6 @@ type Options struct {
 	Spawn func(root string, args []string, log string) (int, error)
 	// Alive reports whether a process runs; kickoff.ProcessAlive when nil.
 	Alive func(pid int) bool
-	// CreateIssue makes the GitHub issue of a ticket, from the project folder;
-	// awkit create-task does when nil.
-	CreateIssue func(ctx context.Context, root, title, bodyFile string) (int, error)
 }
 
 // Server is the workbench of one awkit process.
@@ -99,9 +96,6 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.Alive == nil {
 		opts.Alive = kickoff.ProcessAlive
-	}
-	if opts.CreateIssue == nil {
-		opts.CreateIssue = createIssue
 	}
 	if opts.Poll <= 0 {
 		opts.Poll = time.Second

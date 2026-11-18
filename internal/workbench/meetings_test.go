@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
+	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 )
 
 // A table of three for the tests: one decides, one plans, each owns a file.
@@ -325,40 +325,77 @@ func TestMeetings_Tickets(t *testing.T) {
 	}
 }
 
-// Approving the work list creates the issues; one that failed half way says
-// what was created, and approving again goes on.
+// Approving from the page is `awkit plan approve --merge-docs` in a process
+// of its own: its checks may take a while. The page follows its record; the
+// work list is not changed meanwhile, and a second approval is not started.
 func TestMeetings_Approve(t *testing.T) {
-	s, root, base, _, _ := meetingProject(t, council.LiveFinished)
+	s, root, base, spawn, alive := meetingProject(t, council.LiveFinished)
 	putWorkList(t, root)
-	next, fail := 100, true
-	s.opts.CreateIssue = func(ctx context.Context, dir, title, bodyFile string) (int, error) {
-		if dir != root {
-			t.Errorf("an issue was created from %s", dir)
-		}
-		if title == "[feat] serve /healthz" && fail {
-			return 0, errors.New("GitHub is down")
-		}
-		body, _ := os.ReadFile(bodyFile)
-		if !strings.Contains(string(body), "awk-ticket") {
-			t.Errorf("the body has no block:\n%s", body)
-		}
-		next++
-		return next, nil
+	// What an approval before left is not this one's.
+	if err := council.WriteApproval(root, "p1", &council.ApprovalRecord{PID: 1, State: council.ApprovalFailed, Why: "checks"}); err != nil {
+		t.Fatal(err)
 	}
-	w := do(t, s, http.MethodPost, base+"/plans/p1/approve", "")
-	got := decode[Approval](t, w)
-	if w.Code != http.StatusBadGateway || len(got.Created) != 1 || got.Created[0].Issue != 101 || !strings.Contains(got.Error, "GitHub is down") {
-		t.Errorf("a failed approval: %d %+v", w.Code, got)
+	if w := do(t, s, http.MethodPost, base+"/plans/p1/approve", ""); w.Code != http.StatusAccepted {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
 	}
-	fail = false
-	w = do(t, s, http.MethodPost, base+"/plans/p1/approve", "")
-	got = decode[Approval](t, w)
-	if w.Code != http.StatusOK || len(got.Existing) != 1 || len(got.Created) != 1 || got.Created[0].Issue != 102 {
-		t.Errorf("approving again: %d %+v", w.Code, got)
+	dir, args := spawn.last()
+	want := []string{"plan", "approve", "p1", "--merge-docs", "--state-root", root}
+	if dir != root || strings.Join(args, "|") != strings.Join(want, "|") {
+		t.Errorf("spawned in %s: %v\nwant %v", dir, args, want)
+	}
+	if _, err := council.ReadApproval(root, "p1"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record of the approval before is still there: %v", err)
+	}
+
+	// The process writes where it is: the page shows it.
+	if err := council.WriteApproval(root, "p1", &council.ApprovalRecord{PID: 4242, State: council.ApprovalWorking, Step: "checks", PR: 41, URL: "https://github.com/acme/game/pull/41"}); err != nil {
+		t.Fatal(err)
 	}
 	detail := decode[PlanDetail](t, do(t, s, http.MethodGet, base+"/plans/p1", ""))
-	if len(detail.Tickets) != 2 || detail.Tickets[0].Issue != 101 || detail.Tickets[1].Issue != 102 {
-		t.Errorf("tickets = %+v", detail.Tickets)
+	if detail.Approval == nil || detail.Approval.State != council.ApprovalWorking || detail.Approval.PR != 41 {
+		t.Errorf("approval = %+v", detail.Approval)
+	}
+	if w := do(t, s, http.MethodPost, base+"/plans/p1/approve", ""); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "being approved already") {
+		t.Errorf("a second approval: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, s, http.MethodDelete, base+"/plans/p1/tickets/t2", ""); w.Code != http.StatusConflict {
+		t.Errorf("drop a ticket while it is approved: %d %s", w.Code, w.Body)
+	}
+	// Its process gone: it stopped, and can be approved again.
+	*alive = false
+	detail = decode[PlanDetail](t, do(t, s, http.MethodGet, base+"/plans/p1", ""))
+	if detail.Approval == nil || detail.Approval.State != "stopped" {
+		t.Errorf("approval = %+v", detail.Approval)
+	}
+	if w := do(t, s, http.MethodPost, base+"/plans/p1/approve", ""); w.Code != http.StatusAccepted {
+		t.Errorf("approving again: %d %s", w.Code, w.Body)
+	}
+	*alive = true
+
+	// Not while a run is going: it would take up the tickets half way.
+	lock, _ := json.Marshal(kickoff.LockInfo{PID: os.Getpid(), StartTime: time.Now(), Hostname: "here"})
+	write(t, root, ".ai/state/kickoff.lock", string(lock))
+	if w := do(t, s, http.MethodPost, base+"/plans/p1/approve", ""); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "a run is going") {
+		t.Errorf("approve with a run going: %d %s", w.Code, w.Body)
+	}
+	if err := os.Remove(filepath.Join(root, ".ai", "state", "kickoff.lock")); err != nil {
+		t.Fatal(err)
+	}
+	// Nor while a meeting of the project writes the documents.
+	setLive(t, root, "p1", council.LiveMeeting)
+	if w := do(t, s, http.MethodPost, base+"/plans/p1/approve", ""); w.Code != http.StatusConflict {
+		t.Errorf("approve while the meeting goes on: %d %s", w.Code, w.Body)
+	}
+	setLive(t, root, "p1", council.LiveFinished)
+
+	// Once the tickets are issues, they cannot be changed.
+	list, _ := council.LoadWorkList(root, "p1")
+	list.Tickets[0].Issue = 101
+	if err := council.SaveWorkList(root, list); err != nil {
+		t.Fatal(err)
+	}
+	if err := council.WriteApproval(root, "p1", &council.ApprovalRecord{PID: 4242, State: council.ApprovalDone, Step: "done"}); err != nil {
+		t.Fatal(err)
 	}
 	if w := do(t, s, http.MethodPut, base+"/plans/p1/tickets/t1", `{"title": "[chore] x", "summary": "x", "scope": ["a"], "acceptance": ["b"], "testing": []}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "#101") {
 		t.Errorf("change a ticket that is an issue: %d %s", w.Code, w.Body)
@@ -384,6 +421,13 @@ func TestMeetings_TheStreamFollowsAMeeting(t *testing.T) {
 	setLive(t, root, "p1", council.LiveMeeting)
 	if fingerprint(root, meeting) == before {
 		t.Error("where the meeting is was not told as a change")
+	}
+	before = fingerprint(root, meeting)
+	if err := council.WriteApproval(root, "p1", &council.ApprovalRecord{State: council.ApprovalWorking, Step: "checks"}); err != nil {
+		t.Fatal(err)
+	}
+	if fingerprint(root, meeting) == before {
+		t.Error("where an approval is was not told as a change")
 	}
 }
 

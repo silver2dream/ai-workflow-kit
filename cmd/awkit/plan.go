@@ -31,7 +31,7 @@ Usage:
   awkit plan --resume <plan>
   awkit plan say <plan> "<what you say>" [--to "<the question it answers>"]
   awkit plan pause <plan>
-  awkit plan approve <plan> [--dry-run]
+  awkit plan approve <plan> [--merge-docs] [--dry-run]
 
 What a plan does:
   A moderator who takes no side sets the agenda: the topics the roles of
@@ -76,7 +76,17 @@ What a plan does:
 
     awkit plan approve <plan>
 
-  Nothing is created on GitHub before that.
+  Nothing is created on GitHub before that. The documents the council wrote
+  are in your working tree only: a Worker, which starts from the integration
+  branch, sees them once they are committed there. With --merge-docs the
+  approval does that too: the issues are created without the task label, the
+  documents go to the integration branch through a pull request that is
+  merged once its checks pass, then the issues get the label and the working
+  tree is brought up to the branch. The documents are all that is not
+  committed under docs/ and where the roster keeps a document: the meetings
+  share them. A project with CI for pull requests is merged only once its
+  checks passed; one whose CI GitHub did not start is not merged. The
+  workbench approves this way.
 
 Options:
   --ask              Answer the questions of the agenda before the first topic (it waits for you)
@@ -92,6 +102,7 @@ Options of say:
   --to           The question it answers: one of the agenda, or what an assumption asked
 
 Options of approve:
+  --merge-docs   Merge the documents into the integration branch first, through a pull request; then label the tickets
   --dry-run      Say what would be created, and create nothing
 
 Examples:
@@ -100,6 +111,7 @@ Examples:
   awkit plan say 20261114-a-daily-login-reward "A missed day does not start over; it pauses the streak"
   awkit plan --resume 20261114-a-daily-login-reward
   awkit plan approve 20261114-a-daily-login-reward
+  awkit plan approve 20261114-a-daily-login-reward --merge-docs
 `)
 }
 
@@ -364,6 +376,7 @@ func cmdPlanApprove(args []string) int {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = usagePlan
 	dryRun := fs.Bool("dry-run", false, "")
+	mergeDocs := fs.Bool("merge-docs", false, "")
 	rosterFile := fs.String("roster", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	showHelp := fs.Bool("help", false, "")
@@ -409,6 +422,9 @@ func cmdPlanApprove(args []string) int {
 		roster, _ = council.LoadRoster(file)
 	}
 
+	if *mergeDocs {
+		return approveMergingDocs(context.Background(), root, id, repos, roster, *dryRun)
+	}
 	if !*dryRun {
 		if dirty := uncommittedDocs(root, roster); dirty != "" {
 			warn("The project's documents have changes that are not committed. A Worker reads the project from %s and will not see them:\n%s\n", integrationBranch(root), dirty)

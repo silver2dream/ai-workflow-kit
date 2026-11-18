@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,7 +14,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
-	"github.com/silver2dream/ai-workflow-kit/internal/task"
+	"github.com/silver2dream/ai-workflow-kit/internal/status"
 )
 
 // A plan's meeting is held by `awkit plan`, started from the page in a
@@ -104,6 +103,8 @@ type PlanDetail struct {
 	Milestones  []council.Milestone `json:"milestones"`
 	Tickets     []TicketView        `json:"tickets"`
 	ListProblem string              `json:"list_problem,omitempty"`
+	// Approval is where the approval started from the page is.
+	Approval *council.ApprovalRecord `json:"approval,omitempty"`
 	// Log is the end of what the meeting's process printed, when it is not
 	// meeting: why it stopped, when it says so nowhere else.
 	Log []string `json:"log,omitempty"`
@@ -190,6 +191,12 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request, root, id str
 	}
 	if detail.Meeting == nil || detail.Meeting.State != council.LiveMeeting {
 		detail.Log = tail(meetingLog(root, id), 30)
+	}
+	detail.Approval = s.approvalOf(root, id)
+	if detail.Approval != nil && detail.Approval.State == council.ApprovalWorking {
+		// The work list is written as the issues are created; it is not
+		// changed from the page meanwhile.
+		detail.ListProblem = ""
 	}
 	writeJSON(w, http.StatusOK, detail)
 }
@@ -412,10 +419,14 @@ func (s *Server) handleDeleteTicket(w http.ResponseWriter, r *http.Request, root
 }
 
 // changeList changes a plan's work list the way the person asked, while no
-// meeting writes it.
+// meeting or approval writes it.
 func (s *Server) changeList(w http.ResponseWriter, root, id string, change func([]council.Repo) (*council.WorkList, error)) {
 	if s.goingOn(root, id) {
 		writeError(w, http.StatusConflict, "the meeting of plan "+id+" is going on: its work list is not laid out yet")
+		return
+	}
+	if approval := s.approvalOf(root, id); approval != nil && approval.State == council.ApprovalWorking {
+		writeError(w, http.StatusConflict, "plan "+id+" is being approved: its work list is not changed meanwhile")
 		return
 	}
 	repos, err := council.ProjectRepos(root)
@@ -435,59 +446,58 @@ func (s *Server) changeList(w http.ResponseWriter, root, id string, change func(
 	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
 }
 
-// Approval is what approving a work list did.
-type Approval struct {
-	Created  []TicketView `json:"created"`
-	Existing []TicketView `json:"existing"`
-	// Error says why it stopped, when it stopped before every ticket was on
-	// GitHub; what was created before stays, and approving again goes on.
-	Error string `json:"error,omitempty"`
+// approvalOf returns where the approval of a plan is; nil when it was not
+// approved from the page. One that said it was working, and whose process is
+// gone, is said to have stopped.
+func (s *Server) approvalOf(root, id string) *council.ApprovalRecord {
+	record, err := council.ReadApproval(root, id)
+	if err != nil {
+		return nil
+	}
+	if record.State == council.ApprovalWorking && !s.opts.Alive(record.PID) {
+		record.State, record.Why = approvalStopped, "stopped"
+		record.Error = "the process that approved the plan is gone (it was stopped, or the computer was): approve again to go on"
+	}
+	return record
 }
 
+// The state of an approval whose process is gone without saying it ended.
+const approvalStopped = "stopped"
+
+func approvalLog(root, id string) string {
+	return filepath.Join(council.StateDir(root, id), "approval.log")
+}
+
+// handleApprove approves a plan's work list as `awkit plan approve
+// --merge-docs` does, in a process of its own: the documents go to the
+// integration branch through a pull request, whose checks may take a while,
+// before the tickets are labelled for a run. The page follows the approval's
+// record.
 func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request, root, id string) {
 	if s.goingOn(root, id) {
 		writeError(w, http.StatusConflict, "the meeting of plan "+id+" is going on: its work list is not laid out yet")
 		return
 	}
-	repos, err := council.ProjectRepos(root)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if other := s.meetingAnywhere(root); other != "" {
+		writeError(w, http.StatusConflict, "the meeting of plan "+other+" is going on: it writes the documents this approval would merge")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
-	defer cancel()
-	approval, err := council.Approve(ctx, council.ApproveOptions{Root: root, ID: id, Repos: repos,
-		Create: func(ctx context.Context, title, bodyFile string) (int, error) {
-			return s.opts.CreateIssue(ctx, root, title, bodyFile)
-		}})
-	out := Approval{Created: []TicketView{}, Existing: []TicketView{}}
-	if approval != nil {
-		for _, ticket := range approval.Created {
-			out.Created = append(out.Created, TicketView{Ticket: ticket, Issue: ticket.Issue})
-		}
-		for _, ticket := range approval.Existing {
-			out.Existing = append(out.Existing, TicketView{Ticket: ticket, Issue: ticket.Issue})
-		}
-	}
-	if err != nil {
-		out.Error = err.Error()
-		code := http.StatusBadGateway
-		if len(out.Created) == 0 && !errors.Is(err, context.DeadlineExceeded) {
-			code = http.StatusBadRequest
-		}
-		writeJSON(w, code, out)
+	if approval := s.approvalOf(root, id); approval != nil && approval.State == council.ApprovalWorking {
+		writeError(w, http.StatusConflict, "plan "+id+" is being approved already")
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-// createIssue makes the issue of a ticket as awkit create-task does.
-func createIssue(ctx context.Context, root, title, bodyFile string) (int, error) {
-	result, err := task.CreateTask(ctx, task.CreateTaskOptions{Title: title, BodyFile: bodyFile, StateRoot: root})
-	if err != nil {
-		return 0, err
+	if report, err := status.Collect(root, status.Options{Now: s.opts.Now()}); err == nil && report.Run.State == "running" {
+		writeError(w, http.StatusConflict, "a run is going in this project: approve once it has stopped")
+		return
 	}
-	return result.IssueNumber, nil
+	// A record from an approval before is not this one's: the page waits for
+	// the new process to write its own.
+	_ = os.Remove(filepath.Join(council.StateDir(root, id), council.ApprovalFile))
+	if _, err := s.opts.Spawn(root, []string{"plan", "approve", id, "--merge-docs", "--state-root", root}, approvalLog(root, id)); err != nil {
+		writeError(w, http.StatusInternalServerError, "the approval cannot be started: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // RoleView is a seat at the council's table, as the page shows it.

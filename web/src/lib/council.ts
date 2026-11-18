@@ -224,6 +224,7 @@ export interface PlanDetail {
   tickets: Ticket[];
   list_problem?: string;
   log?: string[];
+  approval?: ApprovalRecord;
 }
 
 /** The kinds of what was said, as the meeting's transcript names them. */
@@ -287,10 +288,34 @@ export interface TicketText {
   testing: string[];
 }
 
-export interface Approval {
-  created: Ticket[];
-  existing: Ticket[];
+/** Where an approval started from the page is: `awkit plan approve --merge-docs` writes it as it goes. */
+export type ApprovalStep = "check" | "issues" | "documents" | "checks" | "label" | "sync" | "done";
+export type ApprovalStateName = "working" | "done" | "failed" | "stopped";
+
+export interface ApprovalRecord {
+  pid: number;
+  state: ApprovalStateName;
+  step: ApprovalStep;
+  /** How it stopped: run, branch, checks, slow, refused, stopped, error. */
+  why?: string;
   error?: string;
+  created: number;
+  issues: number[];
+  pr?: number;
+  url?: string;
+  /** Why the working tree was not brought up to the integration branch. */
+  left?: string;
+  lines: string[];
+  started: string;
+  updated: string;
+}
+
+/** An approval in short, as the list of plans has it. */
+export interface ApprovalState {
+  state: ApprovalStateName;
+  step: ApprovalStep;
+  why?: string;
+  left?: string;
 }
 
 const project = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
@@ -310,7 +335,7 @@ export const council = {
   editTicket: (id: string, planId: string, key: string, text: TicketText) =>
     request<{ tickets: Ticket[] }>("PUT", `${plan(id, planId)}/tickets/${encodeURIComponent(key)}`, text),
   dropTicket: (id: string, planId: string, key: string) => request<{ tickets: Ticket[] }>("DELETE", `${plan(id, planId)}/tickets/${encodeURIComponent(key)}`),
-  approve: (id: string, planId: string) => request<Approval>("POST", `${plan(id, planId)}/approve`),
+  approve: (id: string, planId: string) => request<void>("POST", `${plan(id, planId)}/approve`),
 };
 
 /** What a meeting's state means for its owner, in a few words. */

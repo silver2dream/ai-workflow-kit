@@ -363,6 +363,16 @@ type PlanView struct {
 	// Meeting is where its meeting is; nil for a plan held before meetings
 	// said so.
 	Meeting *MeetingState `json:"meeting,omitempty"`
+	// Approval is where its approval from the page is, without what it said.
+	Approval *ApprovalState `json:"approval,omitempty"`
+}
+
+// ApprovalState is where an approval is, in short.
+type ApprovalState struct {
+	State string `json:"state"`
+	Step  string `json:"step"`
+	Why   string `json:"why,omitempty"`
+	Left  string `json:"left,omitempty"`
 }
 
 // PlanTicket is a ticket of a plan's work list.
@@ -412,6 +422,9 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request, root string
 	plans := []PlanView{}
 	for _, id := range planIDs(root) {
 		plan := PlanView{ID: id, Brief: briefOf(root, id), Milestones: []council.Milestone{}, Tickets: []PlanTicket{}, Meeting: s.meetingOf(root, id)}
+		if approval := s.approvalOf(root, id); approval != nil {
+			plan.Approval = &ApprovalState{State: approval.State, Step: approval.Step, Why: approval.Why, Left: approval.Left}
+		}
 		if list, err := council.LoadWorkList(root, id); err == nil {
 			plan.Milestones = append(plan.Milestones, list.Milestones...)
 			for _, t := range list.Tickets {

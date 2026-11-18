@@ -74,12 +74,20 @@ awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 
 想在規劃途中被問問題，用 `awkit plan --ask "…"`。
 
-Worker 是從 integration branch 讀專案的，所以議會寫的文件要先 commit 並推上去（漏了的話，核可時會列出還沒 commit 的檔案）；然後核可清單：
+Worker 是從 integration branch 讀專案的，所以議會寫的文件要先進 integration branch。最簡單是讓核可一起做：
+
+```bash
+awkit plan approve <plan> --merge-docs --dry-run   # 先看會建哪些 issue、哪些文件會合併
+awkit plan approve <plan> --merge-docs             # 建 issue，文件開 PR、CI 過了就合併，再幫工單掛上標籤
+```
+
+`--merge-docs` 先把 issue 建好但不掛工作標籤，等文件的 PR 合併進 integration branch 之後才掛上，所以 Worker 不會在文件到之前動手；最後把工作目錄更新到 integration branch，讓 `awkit run` 能開工。CI 沒過或 GitHub 規定要人審核時，它停下來說明，修好再執行一次會接著做。工作台的「核可」就是這樣做的。
+
+想自己 commit 也可以（漏了的話，核可時會列出還沒 commit 的檔案）；注意核可會把 issue 編號寫回 `tickets.yaml`，這個變更也要 commit，`awkit run` 才會開工：
 
 ```bash
 git add docs backend/docs frontend/docs && git commit -m "[docs] plan the daily login reward" && git push
-awkit plan approve <plan> --dry-run   # 先看會建哪些 issue
-awkit plan approve <plan>             # 建立 issue
+awkit plan approve <plan>
 ```
 
 只想補一張票，不必開會：照 `.claude/skills/principal-workflow/references/ticket.md` 的格式寫內文，再

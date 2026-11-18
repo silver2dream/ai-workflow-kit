@@ -153,6 +153,67 @@ func TestCreateTask_LabelAndRepoFromConfig(t *testing.T) {
 	}
 }
 
+// An issue created without the label is no ticket until Label puts it on.
+func TestCreateTask_UnlabeledThenLabel(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "github:\n  repo: acme/game\n  labels:\n    task: work-item\nrepos:\n  - name: backend\n    path: backend/\n")
+	body := writeBody(t, dir, validBody)
+	calls := fakeGH(t, "https://github.com/acme/game/issues/9\n", nil)
+	if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir, Unlabeled: true}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	want := []string{"issue", "create", "--title", "t", "--body-file", body, "--repo", "acme/game"}
+	if !reflect.DeepEqual((*calls)[0], want) {
+		t.Errorf("gh was called with %v, want %v", (*calls)[0], want)
+	}
+
+	calls = fakeGH(t, "", nil)
+	if err := Label(context.Background(), dir, []int{9, 10}); err != nil {
+		t.Fatal(err)
+	}
+	wantEdits := [][]string{
+		{"label", "create", "work-item", "--color", "1d76db", "--description", "AWK automated task", "--repo", "acme/game"},
+		{"issue", "edit", "9", "--add-label", "work-item", "--repo", "acme/game"},
+		{"issue", "edit", "10", "--add-label", "work-item", "--repo", "acme/game"},
+	}
+	if !reflect.DeepEqual(*calls, wantEdits) {
+		t.Errorf("gh was called with %v, want %v", *calls, wantEdits)
+	}
+}
+
+// A label that is there already is no reason to stop; another failure is.
+func TestLabel_MakesTheLabelWhenItIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	var calls [][]string
+	orig := runGH
+	t.Cleanup(func() { runGH = orig })
+	runGH = func(ctx context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, args)
+		if args[0] == "label" {
+			return []byte(`label with name "ai-task" already exists; use --force to update its color and description`), errors.New("exit status 1")
+		}
+		return nil, nil
+	}
+	if err := Label(context.Background(), dir, []int{3}); err != nil || len(calls) != 2 {
+		t.Errorf("Label = %v after %v", err, calls)
+	}
+	runGH = func(ctx context.Context, args ...string) ([]byte, error) {
+		return []byte("HTTP 403: Resource not accessible by integration"), errors.New("exit status 1")
+	}
+	if err := Label(context.Background(), dir, []int{3}); err == nil || !strings.Contains(err.Error(), "cannot be made") {
+		t.Errorf("Label = %v", err)
+	}
+	// No issue, nothing asked.
+	calls = nil
+	runGH = func(ctx context.Context, args ...string) ([]byte, error) {
+		calls = append(calls, args)
+		return nil, nil
+	}
+	if err := Label(context.Background(), dir, nil); err != nil || len(calls) != 0 {
+		t.Errorf("Label of nothing = %v, %v", err, calls)
+	}
+}
+
 // A ticket is for a repo of the project's config, or for the root of the
 // repository. One the Worker would refuse is not created.
 func TestCreateTask_RepoOfTheConfig(t *testing.T) {
