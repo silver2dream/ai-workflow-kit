@@ -222,7 +222,7 @@ func (p *planner) checkRules(ctx context.Context, step string, role *Role, plan 
 	type answer struct {
 		Findings []RuleFinding `json:"findings"`
 	}
-	got, err := settleJSON(ctx, p.session, step, p.roster.Model, p.ruleCheckPrompt(role, plan, docs, book), func(got *answer) error {
+	got, err := settleJSON(ctx, p.session, step, p.roster.Voice(), p.ruleCheckPrompt(role, plan, docs, book), func(got *answer) error {
 		for i := range got.Findings {
 			finding := &got.Findings[i]
 			finding.Document = strings.Trim(strings.TrimSpace(finding.Document), "`")
@@ -293,7 +293,7 @@ func (p *planner) recheckRules(ctx context.Context, step string, role *Role, pla
 	type answer struct {
 		Stands []standing `json:"stands"`
 	}
-	got, err := settleJSON(ctx, p.session, step, p.roster.Model, p.ruleRecheckPrompt(role, plan, docs, book, found), func(got *answer) error {
+	got, err := settleJSON(ctx, p.session, step, p.roster.Voice(), p.ruleRecheckPrompt(role, plan, docs, book, found), func(got *answer) error {
 		named := map[int]bool{}
 		for _, stand := range got.Stands {
 			if stand.Finding < 1 || stand.Finding > len(found) {

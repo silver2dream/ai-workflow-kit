@@ -317,7 +317,10 @@ func (c *Codex) IsFullAuto() bool {
 
 // ClaudeCode holds the settings of the claude-code backend.
 type ClaudeCode struct {
-	Model                      string `yaml:"model"`
+	Model string `yaml:"model"`
+	// Effort is how hard the Worker thinks: one of the levels the claude CLI
+	// takes, or empty for its own default.
+	Effort                     string `yaml:"effort"`
 	MaxTurns                   int    `yaml:"max_turns"`
 	DangerouslySkipPermissions bool   `yaml:"dangerously_skip_permissions"`
 }

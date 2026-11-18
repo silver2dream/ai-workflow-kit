@@ -25,6 +25,11 @@
 
 model: sonnet
 
+# How hard a role thinks before it answers: low, medium, high, xhigh or max.
+# Higher is more careful, slower and dearer. Without it: the claude CLI's own
+# default. A role can name its own, as it can its model.
+# effort: high
+
 limits:
   topics: 8            # topics an agenda may have
   disputes: 2          # disputed points of a topic that are argued out

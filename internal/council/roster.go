@@ -25,6 +25,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"gopkg.in/yaml.v3"
 )
@@ -38,6 +39,9 @@ type Roster struct {
 	Language string `yaml:"language"`
 	// Model answers for every role that names none.
 	Model string `yaml:"model"`
+	// Effort is how hard every role that names none thinks: one of the levels
+	// the claude CLI takes, or empty for its own default.
+	Effort string `yaml:"effort"`
 	// Limits bound one plan.
 	Limits Limits `yaml:"limits"`
 	// Roles are the ones who argue. The moderator is not one of them: it has
@@ -70,6 +74,8 @@ type Role struct {
 	Title string `yaml:"title"`
 	// Model answers for this role; the roster's when empty.
 	Model string `yaml:"model"`
+	// Effort is how hard this role thinks; the roster's when empty.
+	Effort string `yaml:"effort"`
 	// Stance is what the role stands for, pushes for and pushes back on.
 	Stance string `yaml:"stance"`
 	// Owns lists what only this role writes, by paths from the project's
@@ -207,6 +213,9 @@ func (r *Roster) applyDefaults() {
 		if r.Roles[i].Model == "" {
 			r.Roles[i].Model = r.Model
 		}
+		if r.Roles[i].Effort == "" {
+			r.Roles[i].Effort = r.Effort
+		}
 		if r.Roles[i].Title == "" {
 			r.Roles[i].Title = r.Roles[i].ID
 		}
@@ -222,6 +231,9 @@ func (r *Roster) Validate() error {
 	if len(r.Roles) < 2 {
 		return fmt.Errorf("the roster has %d role(s); a discussion needs at least two", len(r.Roles))
 	}
+	if !claudecli.ValidEffort(r.Effort) {
+		return fmt.Errorf("effort %q: use %s", r.Effort, claudecli.EffortHint)
+	}
 	seen := map[string]bool{}
 	var deciders, planners []string
 	type claim struct{ entry, role string }
@@ -236,6 +248,9 @@ func (r *Roster) Validate() error {
 		seen[role.ID] = true
 		if strings.TrimSpace(role.Stance) == "" {
 			return fmt.Errorf("role %q has no stance: say what it stands for", role.ID)
+		}
+		if !claudecli.ValidEffort(role.Effort) {
+			return fmt.Errorf("role %q: effort %q: use %s", role.ID, role.Effort, claudecli.EffortHint)
 		}
 		if role.Decides {
 			deciders = append(deciders, role.ID)
@@ -294,6 +309,13 @@ func (r *Roster) Validate() error {
 	}
 	return nil
 }
+
+// Voice is what the moderator answers with: the roster's model and effort.
+func (r *Roster) Voice() Voice { return Voice{Model: r.Model, Effort: r.Effort} }
+
+// Voice is what the role answers with: its model and effort, which are the
+// roster's when it names none.
+func (r *Role) Voice() Voice { return Voice{Model: r.Model, Effort: r.Effort} }
 
 // Role returns the role with an id, or nil.
 func (r *Roster) Role(id string) *Role {

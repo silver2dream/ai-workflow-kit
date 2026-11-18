@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 )
 
 // ValidationError says what is wrong with one field of the configuration.
@@ -130,6 +132,12 @@ func (c *Config) Validate() []ValidationError {
 			errors = append(errors, ValidationError{Field: fmt.Sprintf("repos[%d].type", i), Message: fmt.Sprintf("invalid value: %s", repo.Type),
 				Expected: "root, directory, or submodule"})
 		}
+	}
+	// The claude CLI takes an effort it does not know with a warning and goes
+	// on with its default: a misspelt one would change nothing, unnoticed.
+	if !claudecli.ValidEffort(c.Worker.ClaudeCode.Effort) {
+		errors = append(errors, ValidationError{Field: "worker.claude_code.effort", Message: fmt.Sprintf("invalid effort: %s", c.Worker.ClaudeCode.Effort),
+			Expected: claudecli.EffortHint})
 	}
 	return errors
 }

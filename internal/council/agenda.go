@@ -188,7 +188,7 @@ func (p *planner) setAgenda(ctx context.Context, plan *Plan) error {
 			Topics    []Topic  `json:"topics"`
 			Questions []string `json:"questions"`
 		}
-		got, err := settleJSON(ctx, p.session, "moderator sets the agenda", p.roster.Model, p.agendaPrompt(), func(got *answer) error {
+		got, err := settleJSON(ctx, p.session, "moderator sets the agenda", p.roster.Voice(), p.agendaPrompt(), func(got *answer) error {
 			for i := range got.Topics {
 				topic := &got.Topics[i]
 				topic.ID = strings.TrimSpace(topic.ID)

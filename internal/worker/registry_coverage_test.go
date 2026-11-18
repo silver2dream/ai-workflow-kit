@@ -75,7 +75,7 @@ func TestCov_BackendRegistry_OverwriteRegistration(t *testing.T) {
 }
 
 func TestCov_DefaultRegistry_Extended(t *testing.T) {
-	reg := DefaultRegistry("", 0, false)
+	reg := DefaultRegistry("", "", 0, false)
 	names := reg.Names()
 
 	foundCodex := false

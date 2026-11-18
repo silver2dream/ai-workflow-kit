@@ -50,9 +50,11 @@ func (r *BackendRegistry) Names() []string {
 }
 
 // DefaultRegistry creates a registry with codex + claude-code pre-registered.
-func DefaultRegistry(claudeModel string, claudeMaxTurns int, claudeSkipPerms bool) *BackendRegistry {
+func DefaultRegistry(claudeModel, claudeEffort string, claudeMaxTurns int, claudeSkipPerms bool) *BackendRegistry {
 	reg := NewBackendRegistry()
 	reg.Register(NewCodexBackend())
-	reg.Register(NewClaudeCodeBackend(claudeModel, claudeMaxTurns, claudeSkipPerms))
+	claude := NewClaudeCodeBackend(claudeModel, claudeMaxTurns, claudeSkipPerms)
+	claude.Effort = claudeEffort
+	reg.Register(claude)
 	return reg
 }

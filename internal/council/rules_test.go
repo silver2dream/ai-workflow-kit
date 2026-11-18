@@ -184,10 +184,10 @@ func TestRun_WhoPlaysWhom(t *testing.T) {
 	var mu = make(chan struct{}, 1)
 	played := map[string]string{}
 	base := agreeable(roster)
-	model := modelFunc(func(ctx context.Context, name, prompt string) (string, error) {
+	model := modelFunc(func(ctx context.Context, voice Voice, prompt string) (string, error) {
 		c := readCall(prompt)
 		mu <- struct{}{}
-		played[c.Role] = name
+		played[c.Role] = voice.Model
 		<-mu
 		return base(c)
 	})
@@ -200,9 +200,59 @@ func TestRun_WhoPlaysWhom(t *testing.T) {
 	}
 }
 
-// modelFunc is a Model made of a function.
-type modelFunc func(ctx context.Context, model, prompt string) (string, error)
+// How hard each one thinks: the moderator as the roster says; a role as it
+// says, or else as the roster does. The record of each call says which.
+func TestRun_WhoThinksHowHard(t *testing.T) {
+	root := t.TempDir()
+	roster := mustRoster(t, "effort: high\n"+strings.Replace(testRoster, "    title: Skeptic\n", "    title: Skeptic\n    model: opus\n    effort: max\n", 1))
+	var mu = make(chan struct{}, 1)
+	played := map[string][]Voice{}
+	base := agreeable(roster)
+	model := modelFunc(func(ctx context.Context, voice Voice, prompt string) (string, error) {
+		c := readCall(prompt)
+		mu <- struct{}{}
+		played[c.Role] = append(played[c.Role], voice)
+		first := c.Role == "skeptic" && len(played[c.Role]) == 1
+		<-mu
+		// The skeptic's first answer cannot be used: it is asked again, and
+		// thinks as hard the second time.
+		if first {
+			return "I would rather not say.", nil
+		}
+		return base(c)
+	})
 
-func (f modelFunc) Ask(ctx context.Context, model, prompt string) (string, error) {
-	return f(ctx, model, prompt)
+	plan, err := runPlan(t, root, roster, model, "Add a health endpoint.")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	high, strong := Voice{Model: "sonnet", Effort: "high"}, Voice{Model: "opus", Effort: "max"}
+	want := map[string]Voice{"moderator": high, "owner": high, "designer": high, "builder": high, "skeptic": strong}
+	for role, voices := range played {
+		for _, voice := range voices {
+			if voice != want[role] {
+				t.Errorf("%s was played by %v, want %v", role, voice, want[role])
+			}
+		}
+	}
+	if len(played) != len(want) || len(played["skeptic"]) < 2 {
+		t.Errorf("played: %v; want every role, and the skeptic asked again", played)
+	}
+	calls := filepath.Join(root, ".ai", "state", "council", plan.ID, "calls")
+	for pattern, want := range map[string]string{"*-moderator-sums-up.md": "(sonnet, effort high)", "*-skeptic-*.md": "(opus, effort max)", "*-skeptic-*again*.md": "(opus, effort max)"} {
+		records, _ := filepath.Glob(filepath.Join(calls, pattern))
+		if len(records) == 0 {
+			t.Fatalf("no record of %s", pattern)
+		}
+		if record := readFile(t, calls, filepath.Base(records[0])); !strings.Contains(strings.SplitN(record, "\n", 2)[0], want) {
+			t.Errorf("the record of %s should say %s:\n%s", filepath.Base(records[0]), want, strings.SplitN(record, "\n", 2)[0])
+		}
+	}
+}
+
+// modelFunc is a Model made of a function.
+type modelFunc func(ctx context.Context, voice Voice, prompt string) (string, error)
+
+func (f modelFunc) Ask(ctx context.Context, voice Voice, prompt string) (string, error) {
+	return f(ctx, voice, prompt)
 }

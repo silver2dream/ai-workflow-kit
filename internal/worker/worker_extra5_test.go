@@ -118,7 +118,7 @@ func TestBackendRegistry_Names_Sorted(t *testing.T) {
 }
 
 func TestDefaultRegistry_HasBothBackends(t *testing.T) {
-	reg := DefaultRegistry("claude-sonnet-5-5", 10, false)
+	reg := DefaultRegistry("claude-sonnet-5-5", "", 10, false)
 	names := reg.Names()
 	if len(names) < 2 {
 		t.Errorf("DefaultRegistry names = %v, want at least 2", names)

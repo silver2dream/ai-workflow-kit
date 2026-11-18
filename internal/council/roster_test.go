@@ -160,6 +160,82 @@ roles:
 	}
 }
 
+// A role thinks as hard as the roster says unless it says otherwise; with no
+// effort anywhere, the claude CLI's own default is used.
+func TestParseRoster_Effort(t *testing.T) {
+	roster, err := ParseRoster([]byte(`
+effort: high
+roles:
+  - id: a
+    decides: true
+    stance: stands for a
+  - id: b
+    plans: true
+    model: opus
+    effort: max
+    stance: stands for b
+`))
+	if err != nil {
+		t.Fatalf("ParseRoster: %v", err)
+	}
+	if got, want := roster.Voice(), (Voice{Model: "sonnet", Effort: "high"}); got != want {
+		t.Errorf("the moderator answers with %+v, want %+v", got, want)
+	}
+	if got, want := roster.Role("a").Voice(), (Voice{Model: "sonnet", Effort: "high"}); got != want {
+		t.Errorf("role a answers with %+v, want the roster's %+v", got, want)
+	}
+	if got, want := roster.Role("b").Voice(), (Voice{Model: "opus", Effort: "max"}); got != want {
+		t.Errorf("role b answers with %+v, want its own %+v", got, want)
+	}
+
+	plain, err := ParseRoster([]byte("roles:\n  - {id: a, decides: true, stance: s}\n  - {id: b, plans: true, effort: low, stance: s}\n"))
+	if err != nil {
+		t.Fatalf("ParseRoster: %v", err)
+	}
+	if plain.Effort != "" || plain.Role("a").Effort != "" || plain.Role("b").Effort != "low" {
+		t.Errorf("efforts = %q, %q, %q; want none, none and low", plain.Effort, plain.Role("a").Effort, plain.Role("b").Effort)
+	}
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		if _, err := ParseRoster([]byte("effort: " + effort + "\nroles:\n  - {id: a, decides: true, stance: s}\n  - {id: b, plans: true, stance: s}\n")); err != nil {
+			t.Errorf("effort %s was refused: %v", effort, err)
+		}
+	}
+	// A misspelt effort of the roster is the roster's: it is not laid on the
+	// first role that took it over.
+	_, err = ParseRoster([]byte("effort: hgih\nroles:\n  - {id: a, decides: true, stance: s}\n  - {id: b, plans: true, stance: s}\n"))
+	if want := `effort "hgih": use low, medium, high, xhigh or max, or no value for the claude CLI's own default`; err == nil || err.Error() != want {
+		t.Errorf("error = %v, want %q", err, want)
+	}
+}
+
+func TestVoice_String(t *testing.T) {
+	if got := (Voice{Model: "sonnet"}).String(); got != "sonnet" {
+		t.Errorf("a voice with no effort reads %q", got)
+	}
+	if got := (Voice{Model: "opus", Effort: "max"}).String(); got != "opus, effort max" {
+		t.Errorf("a voice with an effort reads %q", got)
+	}
+}
+
+// A call is given the voice's effort as well as its model.
+func TestAskArgs(t *testing.T) {
+	oneShot, effort := oneShotArgs, effortArgs
+	t.Cleanup(func() { oneShotArgs, effortArgs = oneShot, effort })
+	oneShotArgs = func(model string) []string { return []string{"--print", "--model", model} }
+	effortArgs = func(level string) []string {
+		if level == "" {
+			return nil
+		}
+		return []string{"--effort", level}
+	}
+	if got, want := askArgs(Voice{Model: "opus", Effort: "max"}), []string{"--print", "--model", "opus", "--effort", "max"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("askArgs = %q, want %q", got, want)
+	}
+	if got, want := askArgs(Voice{Model: "haiku"}), []string{"--print", "--model", "haiku"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("askArgs with no effort = %q, want %q", got, want)
+	}
+}
+
 func TestParseRoster_RefusesWhatCannotHoldAMeeting(t *testing.T) {
 	const two = "roles:\n  - {id: a, decides: true, stance: s}\n  - {id: b, plans: true, stance: s}\n"
 	// owning is the roster of two whose first role owns the documents.
@@ -224,6 +300,9 @@ func TestParseRoster_RefusesWhatCannotHoldAMeeting(t *testing.T) {
 		{"a document with two owners", strings.ReplaceAll(two, "stance: s}", "stance: s, owns: [docs/a.md]}"), `docs/a.md has two owners, "a" and "b"`},
 		{"a document with two owners who write it in other letters", strings.Replace(owning("docs/a.md"), "plans: true, stance: s}", "plans: true, stance: s, owns: [Docs/A.md]}", 1), `Docs/A.md has two owners, "a" and "b"`},
 		{"a document one role owns twice", owning("docs/a.md, docs/a.md"), `role "a" owns docs/a.md twice`},
+		{"an effort the CLI does not take", "effort: hgih\n" + two, `effort "hgih": use low, medium, high, xhigh or max`},
+		{"a role's effort in capitals", strings.Replace(two, "plans: true,", "plans: true, effort: High,", 1), `role "b": effort "High": use low, medium`},
+		{"a role's effort that is no level", strings.Replace(two, "plans: true,", "plans: true, effort: ultra,", 1), `role "b": effort "ultra"`},
 	}
 	for _, tt := range tests {
 		roster, err := ParseRoster([]byte(tt.roster))
