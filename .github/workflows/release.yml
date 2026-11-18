@@ -10,8 +10,35 @@ permissions:
   contents: write
 
 jobs:
+  # The workbench's page, built once and put into every awkit.
+  page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the workbench's page
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+          npm run build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-page
+          path: internal/workbench/dist
+          if-no-files-found: error
+
   build:
     runs-on: ubuntu-latest
+    needs: page
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +70,15 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25.x"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: workbench-page
+          path: internal/workbench/dist
+
+      # An awkit without the page still builds; a released one must not.
+      - name: The page is there
+        run: test -f internal/workbench/dist/index.html
 
       - name: Build
         env:
