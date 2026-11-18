@@ -1,7 +1,8 @@
 import { Activity, ArrowRight, CloudOff, Hand, History, RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Empty, Panel, PanelHead, Problem, Term } from "@/components/bits";
+import { Empty, Panel, PanelHead, Problem, Tag, Term } from "@/components/bits";
+import { headline, planStatus } from "@/pages/plans/status";
 import { useProject } from "@/app/project";
 import { useTicketSheet } from "@/app/ticket-sheet";
 import { href, navigate } from "@/lib/router";
@@ -110,7 +111,7 @@ function AttentionStrip({ needs }: { needs: Ticket[] }) {
 }
 
 function LineMap() {
-  const { tickets, plans } = useProject();
+  const { project, tickets, plans } = useProject();
   const open = tickets.data?.tickets?.open ?? [];
   const done = tickets.data?.tickets?.done ?? 0;
   const at = (stages: Stage[]) => open.filter((t) => stages.includes(t.stage));
@@ -119,17 +120,39 @@ function LineMap() {
   // Where GitHub could not be asked, nothing is known of the tickets' stations.
   const blind = unknown(tickets.data);
   const notKnown = <p className="text-[12.5px] text-muted-foreground">—</p>;
+  const meeting = (plans.data?.plans ?? []).find((p) => p.meeting?.state === "meeting");
+  const shown = meeting ?? latest;
+  const shownStatus = shown ? planStatus(shown) : undefined;
+  const planLink = (rest: string[]) => href({ project: project.id, page: "plans", rest });
   const stations: { name: string; busy?: boolean; body: React.ReactNode }[] = [
     {
       name: "需求",
-      body: latest ? <p className="line-clamp-3 max-w-[160px] text-center text-[13px] leading-snug text-ink2">「{latest.brief || latest.id}」</p> : <p className="text-[12.5px] text-muted-foreground">還沒有規劃</p>,
+      body: shown ? (
+        <a href={planLink([shown.id])} className="line-clamp-3 max-w-[160px] text-center text-[13px] leading-snug text-ink2 underline-offset-4 hover:text-foreground hover:underline">
+          「{headline(shown.brief, shown.id)}」
+        </a>
+      ) : (
+        <a href={planLink(["new"])} className="text-center text-[12.5px] font-bold text-ring underline-offset-4 hover:underline">
+          開第一個規劃
+        </a>
+      ),
     },
     {
       name: "議會",
-      body: latest ? (
-        <p className="text-center text-[12.5px] text-muted-foreground">
-          {latest.milestones.length} 個里程碑，{latest.tickets.length} 張工單
-        </p>
+      busy: !!meeting,
+      body: shown ? (
+        <a href={planLink([shown.id])} className="flex flex-col items-center gap-1 text-center text-[12.5px] text-muted-foreground underline-offset-4 hover:underline">
+          {shownStatus && <Tag tone={shownStatus.tone}>{shownStatus.label}</Tag>}
+          {meeting?.meeting && meeting.meeting.topics > 0 ? (
+            <span className="tnum">
+              第 {Math.min(Math.max(meeting.meeting.topic, 1), meeting.meeting.topics)} / {meeting.meeting.topics} 題
+            </span>
+          ) : shown.tickets.length > 0 ? (
+            <span className="tnum">
+              {shown.milestones.length} 個里程碑，{shown.tickets.length} 張工單
+            </span>
+          ) : null}
+        </a>
       ) : (
         <p className="text-[12.5px] text-muted-foreground">—</p>
       ),
@@ -364,7 +387,10 @@ function Tally() {
 
 function Milestones() {
   const { plans } = useProject();
-  const latest = plans.data?.plans[0];
+  // The milestones of the work under way: the newest plan that was approved,
+  // or else the newest that laid milestones out.
+  const laid = (plans.data?.plans ?? []).filter((p) => p.milestones.length > 0);
+  const latest = laid.find((p) => p.tickets.some((t) => t.issue)) ?? laid[0];
   if (!latest || latest.milestones.length === 0) {
     return (
       <div className="p-5">

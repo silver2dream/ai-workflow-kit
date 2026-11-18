@@ -13,6 +13,9 @@ import { Board } from "@/pages/Board";
 import { HealthPage } from "@/pages/Health";
 import { InboxPage } from "@/pages/Inbox";
 import { Overview } from "@/pages/Overview";
+import { NewPlan } from "@/pages/plans/NewPlan";
+import { PlanPage } from "@/pages/plans/PlanPage";
+import { PlansList } from "@/pages/plans/PlansList";
 import { ProjectsPage } from "@/pages/Projects";
 import { api, ApiError, LOCKED_EVENT, type Session } from "@/lib/api";
 import { href, redirect, useRoute, type Route } from "@/lib/router";
@@ -72,6 +75,11 @@ function ProjectPage({ route }: { route: Route }) {
       const n = Number(route.rest[0]);
       return <Board openTicket={Number.isInteger(n) && n > 0 ? n : undefined} />;
     }
+    case "plans": {
+      const [plan] = route.rest;
+      if (plan === "new") return <NewPlan />;
+      return plan ? <PlanPage key={plan} planId={plan} /> : <PlansList />;
+    }
     case "activity":
       return <ActivityPage />;
     case "health":
@@ -81,7 +89,7 @@ function ProjectPage({ route }: { route: Route }) {
   }
 }
 
-const KNOWN = ["overview", "inbox", "board", "activity", "health"];
+const KNOWN = ["overview", "inbox", "plans", "board", "activity", "health"];
 
 function Routes({ session, reload }: { session: Session; reload: () => void }) {
   const route = useRoute();

@@ -18,6 +18,7 @@ import { Help } from "@/onboarding/Help";
 import { useOnboarding } from "@/onboarding/state";
 import type { ProjectView } from "@/lib/api";
 import { href, navigate, useRoute } from "@/lib/router";
+import { planStatus } from "@/pages/plans/status";
 import { useTheme } from "@/lib/theme";
 import { useAfterClose } from "@/lib/after-close";
 import { cn } from "@/lib/utils";
@@ -85,8 +86,9 @@ function NavLinks({ onGo }: { onGo: Go }) {
   const { project, tickets, plans } = useProject();
   const route = useRoute();
   const needs = (tickets.data?.tickets?.open ?? []).filter((t) => t.stage === "needs_you").length;
-  const toApprove = (plans.data?.plans ?? []).filter((p) => p.tickets.some((t) => !t.issue)).length;
-  const waiting = needs + toApprove;
+  const all = plans.data?.plans ?? [];
+  const waiting = needs + all.filter((p) => planStatus(p).needsYou).length;
+  const meeting = all.some((p) => p.meeting?.state === "meeting");
   return (
     <nav aria-label="主要" className="flex-1 overflow-y-auto pb-3">
       {PAGES.map((p) => {
@@ -109,6 +111,15 @@ function NavLinks({ onGo }: { onGo: Go }) {
               {p.page === "inbox" && waiting > 0 && (
                 <span className="ml-auto rounded-md bg-signal px-1.5 text-[12px] font-extrabold text-[#231a00] tnum" aria-label={`${waiting} 件`}>
                   {waiting}
+                </span>
+              )}
+              {p.page === "plans" && meeting && (
+                <span className="ml-auto flex items-center gap-1.5 text-[12px] font-bold text-white/80">
+                  <span className="relative flex size-2" aria-hidden>
+                    <span className="absolute inset-0 animate-ping rounded-full bg-live opacity-70" />
+                    <span className="relative size-2 rounded-full bg-live" />
+                  </span>
+                  開會中
                 </span>
               )}
             </a>
@@ -293,7 +304,7 @@ export function ProjectShell({ projects, children }: { projects: ProjectView[]; 
         )}
         top={
           <>
-            <Crumbs items={[project.name, pageTitle(route.page)]} />
+            <Crumbs items={[project.name, pageTitle(route.page), ...(route.page === "plans" && route.rest[0] ? [route.rest[0] === "new" ? "開新的規劃" : route.rest[0]] : [])]} />
             <span className="ml-auto" />
             <RunChip />
             <button

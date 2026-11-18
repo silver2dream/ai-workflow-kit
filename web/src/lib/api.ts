@@ -1,4 +1,5 @@
 // What the workbench's server answers, as internal/workbench writes it.
+import type { MeetingState } from "@/lib/council";
 
 export type OnboardingStatus = "new" | "touring" | "paused" | "ended" | "done" | "skipped";
 
@@ -111,6 +112,8 @@ export interface PlanView {
   milestones: Milestone[];
   tickets: { key: string; title: string; repo: string; issue?: number; depends_on?: string[] }[];
   approved: number;
+  /** Where its meeting is; none for a plan held before meetings said so. */
+  meeting?: MeetingState;
 }
 
 /** An answer the server gave with an error: what it said, and its status. */
@@ -126,7 +129,7 @@ export class ApiError extends Error {
 /** LOCKED_EVENT is sent on the window when the workbench no longer knows this browser. */
 export const LOCKED_EVENT = "awk:locked";
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") {
     // The server takes a change only with this header: a page of another

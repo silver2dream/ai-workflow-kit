@@ -74,7 +74,7 @@ func (s *Server) goingOn(root, id string) bool {
 // if one is: a project holds one meeting at a time, since every meeting
 // writes the decision log and the documents.
 func (s *Server) meetingAnywhere(root string) string {
-	for _, id := range council.Plans(root) {
+	for _, id := range planIDs(root) {
 		if s.goingOn(root, id) {
 			return id
 		}
@@ -163,12 +163,7 @@ func tail(file string, n int) []string {
 }
 
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request, root, id string) {
-	detail := PlanDetail{ID: id, Questions: []string{}, Words: []council.OwnerWord{}, Milestones: []council.Milestone{}, Tickets: []TicketView{}}
-	if brief, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(council.PlansDir), id, "brief.md")); err == nil {
-		detail.Brief = strings.TrimSpace(string(brief))
-	} else if brief, err := os.ReadFile(startedBrief(root, id)); err == nil {
-		detail.Brief = strings.TrimSpace(string(brief))
-	}
+	detail := PlanDetail{ID: id, Brief: briefOf(root, id), Questions: []string{}, Words: []council.OwnerWord{}, Milestones: []council.Milestone{}, Tickets: []TicketView{}}
 	detail.Meeting = s.meetingOf(root, id)
 	if record, err := council.ReadRecord(root, id); err == nil {
 		detail.Record = record
@@ -493,4 +488,49 @@ func createIssue(ctx context.Context, root, title, bodyFile string) (int, error)
 		return 0, err
 	}
 	return result.IssueNumber, nil
+}
+
+// RoleView is a seat at the council's table, as the page shows it.
+type RoleView struct {
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Stance  string   `json:"stance"`
+	Owns    []string `json:"owns"`
+	Decides bool     `json:"decides,omitempty"`
+	Plans   bool     `json:"plans,omitempty"`
+	Model   string   `json:"model,omitempty"`
+	Effort  string   `json:"effort,omitempty"`
+}
+
+// RosterView is who sits at the table, and how far a plan may go.
+type RosterView struct {
+	// Missing says the project has no roster yet: its first plan writes the
+	// one that fits its repos.
+	Missing bool       `json:"missing,omitempty"`
+	Roles   []RoleView `json:"roles"`
+	Topics  int        `json:"topics"`
+	Calls   int        `json:"calls"`
+}
+
+func (s *Server) handleRoster(w http.ResponseWriter, r *http.Request, root string) {
+	file := layout.Roster(root)
+	if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
+		writeJSON(w, http.StatusOK, RosterView{Missing: true, Roles: []RoleView{}})
+		return
+	}
+	roster, err := council.LoadRoster(file)
+	if err != nil {
+		writeError(w, http.StatusConflict, fmt.Sprintf("%s cannot be read: %v", council.RosterPath, err))
+		return
+	}
+	view := RosterView{Roles: []RoleView{}, Topics: roster.Limits.Topics, Calls: roster.Limits.Calls}
+	for _, role := range roster.Roles {
+		owns := role.Owns
+		if owns == nil {
+			owns = []string{}
+		}
+		view.Roles = append(view.Roles, RoleView{ID: role.ID, Title: role.Title, Stance: strings.TrimSpace(role.Stance), Owns: owns,
+			Decides: role.Decides, Plans: role.Plans, Model: role.Voice().Model, Effort: role.Voice().Effort})
+	}
+	writeJSON(w, http.StatusOK, view)
 }
