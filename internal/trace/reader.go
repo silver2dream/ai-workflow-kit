@@ -285,6 +285,10 @@ func (r *EventReader) matchesFilter(e Event, filter EventFilter) bool {
 }
 
 // getCurrentSessionID reads the current session ID from the principal session file.
+// CurrentSessionID names the session of the Principal that is running, or
+// ran last and left its file.
+func (r *EventReader) CurrentSessionID() (string, error) { return r.getCurrentSessionID() }
+
 func (r *EventReader) getCurrentSessionID() (string, error) {
 	sessionFile := filepath.Join(r.stateRoot, ".ai", "state", "principal", "session.json")
 	data, err := os.ReadFile(sessionFile)

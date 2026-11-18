@@ -32,7 +32,7 @@ func cmdDoctor(args []string) int {
 
 	cwd, _ := os.Getwd()
 	probe := kickoff.NewPreflightChecker(config.Path("."), filepath.Join(layout.StateDir, "kickoff.lock"))
-	return printDoctor(os.Stdout, setupChecks(probe), doctor.New(cwd).RunAll(context.Background()))
+	return printDoctor(os.Stdout, doctor.Setup(probe), doctor.New(cwd).RunAll(context.Background()))
 }
 
 // printDoctor writes the doctor's two halves and its verdict, and returns the

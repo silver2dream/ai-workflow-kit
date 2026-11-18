@@ -66,6 +66,47 @@ jobs:
           name: coverage-report
           path: coverage.out
 
+  # The workbench's page (web/): typed, tested and built as a release builds
+  # it, then checked to be the page awkit embeds and serves.
+  workbench_page:
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "linux", "x64", "awk-vps"]') || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: Type check
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: web
+        run: npm test
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+      - name: awkit serves the built page
+        env:
+          AWKIT_REQUIRE_PAGE: "1"
+        run: go test ./internal/workbench/ -run TestAssets -count=1 -v
+
   awkit_cli_windows:
     runs-on: windows-latest
     steps:

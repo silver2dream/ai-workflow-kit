@@ -142,8 +142,25 @@ func TestCollectTickets_Stages(t *testing.T) {
 	if tickets.Done != 4 {
 		t.Errorf("Done = %d, want 4", tickets.Done)
 	}
-	if len(l.asked) != 3 || l.asked[0] != "ai-task/open number,title,labels,body" {
+	if len(l.asked) != 3 || l.asked[0] != "ai-task/open number,title,url,labels,body" {
 		t.Errorf("GitHub was asked %v", l.asked)
+	}
+}
+
+// Each ticket keeps the address of its issue, for a page to link to.
+func TestCollectTickets_KeepsTheAddress(t *testing.T) {
+	list := func(ctx context.Context, label, state, fields string) ([]byte, error) {
+		if state == "open" {
+			return []byte(`[{"number": 7, "title": "[feat] x", "url": "https://github.com/o/r/issues/7", "labels": [{"name": "ai-task"}], "body": ""}]`), nil
+		}
+		return []byte(`[]`), nil
+	}
+	tickets, err := CollectTickets(context.Background(), config.DefaultLabels(), list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets.Open) != 1 || tickets.Open[0].URL != "https://github.com/o/r/issues/7" {
+		t.Errorf("open = %+v", tickets.Open)
 	}
 }
 

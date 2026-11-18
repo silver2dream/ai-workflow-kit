@@ -1,0 +1,177 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./styles/shadcn.css";
+@import "@fontsource-variable/overpass";
+@import "@fontsource/overpass-mono/400.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * The workbench speaks the language of a transit map: work runs along a line
+ * from the brief to the merge. Ink and platform grey carry the page; signal
+ * yellow is kept for one meaning only, "this needs you", so that seeing it is
+ * enough. Overpass comes from road signs and reads well small; Chinese is set in the
+ * system's own face, so that awkit does not carry a CJK font.
+ */
+@theme inline {
+  --font-sans: "Overpass Variable", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: "Overpass Mono", ui-monospace, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-ink2: var(--ink2);
+  --color-rail: var(--rail);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-go: var(--go);
+  --color-live: var(--live);
+  --color-review: var(--review);
+  --color-caution: var(--caution);
+  --color-caution-ink: var(--caution-ink);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: #eceff2;
+  --foreground: #14202c;
+  --card: #ffffff;
+  --card-foreground: #14202c;
+  --popover: #ffffff;
+  --popover-foreground: #14202c;
+  --primary: #14202c;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f6f8;
+  --secondary-foreground: #14202c;
+  --muted: #f4f6f8;
+  --muted-foreground: #64707d;
+  --accent: #f4f6f8;
+  --accent-foreground: #14202c;
+  --destructive: #be321e;
+  --border: #d3d9df;
+  --input: #d3d9df;
+  --ring: #2e5be8;
+
+  --ink2: #46525f;
+  --rail: #14202c;
+  --signal: #ffc83d;
+  --signal-ink: #6e4c00;
+  --go: #0b7a47;
+  --live: #087ba8;
+  --review: #6d4acc;
+  /* A warning is not a call for the person: orange, never the signal's yellow. */
+  --caution: #e8822a;
+  --caution-ink: #8f4708;
+}
+
+.dark {
+  --background: #0d131a;
+  --foreground: #e7ecf1;
+  --card: #141c25;
+  --card-foreground: #e7ecf1;
+  --popover: #141c25;
+  --popover-foreground: #e7ecf1;
+  --primary: #e7ecf1;
+  --primary-foreground: #141c25;
+  --secondary: #1a242f;
+  --secondary-foreground: #e7ecf1;
+  --muted: #1a242f;
+  --muted-foreground: #8a97a5;
+  --accent: #1a242f;
+  --accent-foreground: #e7ecf1;
+  --destructive: #f47c68;
+  --border: #2c3845;
+  --input: #2c3845;
+  --ring: #809eff;
+
+  --ink2: #acb7c2;
+  --rail: #080d13;
+  --signal: #ffc83d;
+  --signal-ink: #ffd66e;
+  --go: #48cc86;
+  --live: #50beeb;
+  --review: #aa92f8;
+  --caution: #f0954a;
+  --caution-ink: #f7b27a;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  /* The edge of what needs you: the yellow and black of a road sign. */
+  .hazard {
+    background-image: repeating-linear-gradient(-45deg, #231a00 0 6px, var(--signal) 6px 12px);
+  }
+  /* The tour's card: beside what it points at, or, where there is no room
+     for it, a wide and short bar at the foot of the window. */
+  .tour-pop {
+    width: min(400px, calc(100vw - 32px));
+    padding: 20px;
+  }
+  .tour-pop[data-dock] {
+    width: min(760px, calc(100vw - 32px));
+    padding: 14px 18px;
+  }
+  .tour-spot {
+    box-shadow:
+      0 0 0 3px var(--signal),
+      0 0 0 7px rgb(255 200 61 / 0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
