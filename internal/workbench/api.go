@@ -30,6 +30,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/projects/{id}/events", s.project(s.handleEvents))
 	s.mux.HandleFunc("GET /api/projects/{id}/health", s.project(s.handleHealth))
 	s.mux.HandleFunc("GET /api/projects/{id}/plans", s.project(s.handlePlans))
+	s.mux.HandleFunc("POST /api/projects/{id}/plans", s.project(s.handleStartPlan))
+	s.mux.HandleFunc("GET /api/projects/{id}/plans/{plan}", s.plan(s.handlePlan))
+	s.mux.HandleFunc("GET /api/projects/{id}/plans/{plan}/transcript", s.plan(s.handleTranscript))
+	s.mux.HandleFunc("POST /api/projects/{id}/plans/{plan}/say", s.plan(s.handleSay))
+	s.mux.HandleFunc("POST /api/projects/{id}/plans/{plan}/pause", s.plan(s.handlePause))
+	s.mux.HandleFunc("POST /api/projects/{id}/plans/{plan}/continue", s.plan(s.handleContinue))
+	s.mux.HandleFunc("POST /api/projects/{id}/plans/{plan}/answers", s.plan(s.handleAnswers))
+	s.mux.HandleFunc("PUT /api/projects/{id}/plans/{plan}/agenda", s.plan(s.handleAgenda))
+	s.mux.HandleFunc("PUT /api/projects/{id}/plans/{plan}/tickets/{key}", s.plan(s.handleEditTicket))
+	s.mux.HandleFunc("DELETE /api/projects/{id}/plans/{plan}/tickets/{key}", s.plan(s.handleDeleteTicket))
+	s.mux.HandleFunc("POST /api/projects/{id}/plans/{plan}/approve", s.plan(s.handleApprove))
 	s.mux.HandleFunc("GET /api/projects/{id}/stream", s.project(s.handleStream))
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "the workbench has no "+r.Method+" "+r.URL.Path)
@@ -347,6 +358,9 @@ type PlanView struct {
 	Tickets    []PlanTicket        `json:"tickets"`
 	// Approved counts the tickets that are on GitHub.
 	Approved int `json:"approved"`
+	// Meeting is where its meeting is; nil for a plan held before meetings
+	// said so.
+	Meeting *MeetingState `json:"meeting,omitempty"`
 }
 
 // PlanTicket is a ticket of a plan's work list.
@@ -361,7 +375,7 @@ type PlanTicket struct {
 func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request, root string) {
 	plans := []PlanView{}
 	for _, id := range council.Plans(root) {
-		plan := PlanView{ID: id, Milestones: []council.Milestone{}, Tickets: []PlanTicket{}}
+		plan := PlanView{ID: id, Milestones: []council.Milestone{}, Tickets: []PlanTicket{}, Meeting: s.meetingOf(root, id)}
 		if brief, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(council.PlansDir), id, "brief.md")); err == nil {
 			plan.Brief = strings.TrimSpace(string(brief))
 		}

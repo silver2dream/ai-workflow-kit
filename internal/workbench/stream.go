@@ -22,6 +22,9 @@ type area struct {
 	dir  string
 	// skip are folders of dir that change without changing the area.
 	skip []string
+	// only, when set, are the names of the files that count, wherever they
+	// are in dir; every other file, and every calls folder, is passed over.
+	only []string
 }
 
 // areas are what a stream watches. The tickets are on GitHub, not on disk:
@@ -33,6 +36,9 @@ var areas = []area{
 	{name: "status", dir: layout.StateDir, skip: []string{"logs", "events", "council", "tmp"}},
 	{name: "events", dir: layout.StateDir + "/events"},
 	{name: "plans", dir: council.PlansDir},
+	// A meeting that goes on: where it is, what was said, what the owner
+	// said. Not every prompt and answer it keeps, which grow all the time.
+	{name: "meeting", dir: layout.StateDir + "/council", only: []string{council.LiveFile, council.TranscriptFile, council.RecordFile, "owner.jsonl", "questions.json"}},
 }
 
 const (
@@ -111,8 +117,14 @@ func fingerprint(root string, a area) string {
 			if path != base && slices.Contains(a.skip, entry.Name()) && filepath.Dir(path) == base {
 				return filepath.SkipDir
 			}
+			if len(a.only) > 0 && entry.Name() == "calls" {
+				return filepath.SkipDir
+			}
 			// A folder changes when anything is made in it, a skipped folder
 			// too: its files are what count.
+			return nil
+		}
+		if len(a.only) > 0 && !slices.Contains(a.only, entry.Name()) {
 			return nil
 		}
 		if count++; count > maxWatched {

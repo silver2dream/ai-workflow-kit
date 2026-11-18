@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
+	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/status"
 )
 
@@ -58,6 +59,14 @@ type Options struct {
 	// SetupProbe asks about what a run of the project in root needs: the
 	// checker of awkit run, asking git and gh in root, when nil.
 	SetupProbe func(root string) doctor.SetupProbe
+	// Spawn starts awkit with args in a project folder, in a process of its
+	// own that outlives the workbench, and returns its pid; spawnAwkit when nil.
+	Spawn func(root string, args []string, log string) (int, error)
+	// Alive reports whether a process runs; kickoff.ProcessAlive when nil.
+	Alive func(pid int) bool
+	// CreateIssue makes the GitHub issue of a ticket, from the project folder;
+	// awkit create-task does when nil.
+	CreateIssue func(ctx context.Context, root, title, bodyFile string) (int, error)
 }
 
 // Server is the workbench of one awkit process.
@@ -84,6 +93,15 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.SetupProbe == nil {
 		opts.SetupProbe = doctor.SetupProbeOf
+	}
+	if opts.Spawn == nil {
+		opts.Spawn = spawnAwkit
+	}
+	if opts.Alive == nil {
+		opts.Alive = kickoff.ProcessAlive
+	}
+	if opts.CreateIssue == nil {
+		opts.CreateIssue = createIssue
 	}
 	if opts.Poll <= 0 {
 		opts.Poll = time.Second
