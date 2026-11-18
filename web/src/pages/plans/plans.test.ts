@@ -45,6 +45,14 @@ describe("planStatus", () => {
     expect(planStatus({ meeting: meeting("finished"), tickets: [tickets[0]] })).toMatchObject({ needsYou: false, label: "已核可" });
     expect(planStatus({ tickets: [] })).toMatchObject({ needsYou: false, label: "準備中" });
   });
+  it("puts an approval under way or stopped short first", () => {
+    const tickets = [{ key: "T1", title: "", repo: "root", issue: 12 }];
+    expect(planStatus({ meeting: meeting("finished"), tickets, approval: { state: "working", step: "checks" } })).toMatchObject({ needsYou: false, label: "核可中" });
+    expect(planStatus({ meeting: meeting("finished"), tickets, approval: { state: "failed", step: "checks", why: "checks" } })).toMatchObject({ needsYou: true, label: "核可沒完成" });
+    expect(planStatus({ meeting: meeting("finished"), tickets, approval: { state: "stopped", step: "label" } })).toMatchObject({ needsYou: true });
+    expect(planStatus({ meeting: meeting("finished"), tickets, approval: { state: "done", step: "done", left: "on branch main" } })).toMatchObject({ needsYou: true, label: "資料夾要更新" });
+    expect(planStatus({ meeting: meeting("finished"), tickets, approval: { state: "done", step: "done" } })).toMatchObject({ needsYou: false, label: "已核可" });
+  });
 });
 
 describe("headline", () => {
