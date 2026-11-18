@@ -225,7 +225,7 @@ func (p *planner) handIn(ctx context.Context, step string, role *Role, prompt st
 		return contains(asked, doc) || data && p.isGameData(doc)
 	}
 	var written []WrittenDocument
-	err := p.session.settle(ctx, step, role.Model, prompt, func(answer string, replay bool) error {
+	err := p.session.settle(ctx, step, role.Voice(), prompt, func(answer string, replay bool) error {
 		docs, err := parseDocuments(answer)
 		if err != nil {
 			return err

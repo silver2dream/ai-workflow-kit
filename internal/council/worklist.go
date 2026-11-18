@@ -320,7 +320,7 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	}
 
 	draftStep, revisedStep := "work list "+planner.ID, "work list revised "+planner.ID
-	draft, err := settleJSON(ctx, p.session, draftStep, planner.Model, p.worklistPrompt(planner, plan), check)
+	draft, err := settleJSON(ctx, p.session, draftStep, planner.Voice(), p.worklistPrompt(planner, plan), check)
 	if err != nil {
 		return err
 	}
@@ -346,7 +346,7 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	perRole := make([][]ListObjection, len(reviewers))
 	err = p.session.each(len(reviewers), func(i int) error {
 		role := reviewers[i]
-		got, err := settleJSON(ctx, p.session, "work list review "+role.ID, role.Model, p.worklistReviewPrompt(role, plan, draft.Milestones, draft.Tickets), func(got *review) error {
+		got, err := settleJSON(ctx, p.session, "work list review "+role.ID, role.Voice(), p.worklistReviewPrompt(role, plan, draft.Milestones, draft.Tickets), func(got *review) error {
 			for _, objection := range got.Objections {
 				// One objection may be about several tickets: "t5, t7".
 				for _, named := range strings.Split(objection.Ticket, ",") {
@@ -390,7 +390,7 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	final := draft
 	if len(plan.ListObjections) > 0 {
 		p.session.say("  %d objections to the list; %s revises it", len(plan.ListObjections), planner.ID)
-		final, err = settleJSON(ctx, p.session, revisedStep, planner.Model,
+		final, err = settleJSON(ctx, p.session, revisedStep, planner.Voice(),
 			p.worklistRevisionPrompt(planner, plan, draft.Milestones, draft.Tickets, plan.ListObjections), check)
 		if err != nil {
 			return err

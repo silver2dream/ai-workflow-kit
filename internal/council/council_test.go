@@ -139,7 +139,7 @@ func readCall(prompt string) call {
 	return c
 }
 
-func (m *table) Ask(ctx context.Context, model, prompt string) (string, error) {
+func (m *table) Ask(ctx context.Context, voice Voice, prompt string) (string, error) {
 	c := readCall(prompt)
 	m.mu.Lock()
 	m.calls = append(m.calls, c)

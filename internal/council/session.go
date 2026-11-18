@@ -109,7 +109,7 @@ func (s *session) wasAsked(step string) bool {
 var unsafeInName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
 // call makes one model call and records it.
-func (s *session) call(ctx context.Context, step, model, prompt string) (string, error) {
+func (s *session) call(ctx context.Context, step string, voice Voice, prompt string) (string, error) {
 	s.mu.Lock()
 	if s.calls >= s.limits.Calls {
 		s.mu.Unlock()
@@ -122,9 +122,9 @@ func (s *session) call(ctx context.Context, step, model, prompt string) (string,
 
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(s.limits.TimeoutSeconds)*time.Second)
 	defer cancel()
-	answer, err := s.model.Ask(callCtx, model, prompt)
+	answer, err := s.model.Ask(callCtx, voice, prompt)
 
-	record := fmt.Sprintf("# %s (%s)\n\n## prompt\n\n%s\n\n## answer\n\n%s\n", step, model, prompt, answer)
+	record := fmt.Sprintf("# %s (%s)\n\n## prompt\n\n%s\n\n## answer\n\n%s\n", step, voice, prompt, answer)
 	if err != nil {
 		record += "\n## error\n\n" + err.Error() + "\n"
 	}
@@ -148,7 +148,7 @@ func (b broken) Unwrap() error { return b.err }
 // can be used; replay tells it that the answer is a remembered one, which was
 // acted on when it was given. An answer that cannot be used is asked for once
 // more, with what was wrong with it; a second unusable answer fails the step.
-func (s *session) settle(ctx context.Context, step, model, prompt string, use func(answer string, replay bool) error) error {
+func (s *session) settle(ctx context.Context, step string, voice Voice, prompt string, use func(answer string, replay bool) error) error {
 	if answer, ok := s.remembered(step); ok {
 		if err := use(answer, true); err == nil {
 			s.say("  %s: kept from the earlier run", step)
@@ -157,7 +157,7 @@ func (s *session) settle(ctx context.Context, step, model, prompt string, use fu
 		// What was remembered no longer fits (the roster changed, say): ask again.
 	}
 	started := time.Now()
-	answer, err := s.call(ctx, step, model, prompt)
+	answer, err := s.call(ctx, step, voice, prompt)
 	if err != nil {
 		return err
 	}
@@ -170,7 +170,7 @@ func (s *session) settle(ctx context.Context, step, model, prompt string, use fu
 		s.say("  %s: the answer could not be used (%s); asking again", step, oneLine(problem.Error()))
 		again := prompt + "\n\nYour previous answer could not be used: " + problem.Error() +
 			"\nAnswer again, in exactly the form asked for and with nothing else."
-		answer, err = s.call(ctx, step+" (again)", model, again)
+		answer, err = s.call(ctx, step+" (again)", voice, again)
 		if err != nil {
 			return err
 		}
@@ -189,9 +189,9 @@ func (s *session) settle(ctx context.Context, step, model, prompt string, use fu
 }
 
 // settleJSON settles a step whose answer is one JSON object.
-func settleJSON[T any](ctx context.Context, s *session, step, model, prompt string, check func(*T) error) (*T, error) {
+func settleJSON[T any](ctx context.Context, s *session, step string, voice Voice, prompt string, check func(*T) error) (*T, error) {
 	var result *T
-	err := s.settle(ctx, step, model, prompt, func(answer string, _ bool) error {
+	err := s.settle(ctx, step, voice, prompt, func(answer string, _ bool) error {
 		value := new(T)
 		if err := decodeJSON(answer, value); err != nil {
 			return err

@@ -13,10 +13,24 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 )
 
+// Voice is what a role answers with: a model, and the effort it thinks with
+// (empty for the claude CLI's own default).
+type Voice struct {
+	Model  string
+	Effort string
+}
+
+func (v Voice) String() string {
+	if v.Effort == "" {
+		return v.Model
+	}
+	return v.Model + ", effort " + v.Effort
+}
+
 // Model answers one prompt with one text. A role is never more than that: it
 // has no tools and writes no files.
 type Model interface {
-	Ask(ctx context.Context, model, prompt string) (string, error)
+	Ask(ctx context.Context, voice Voice, prompt string) (string, error)
 }
 
 // ClaudeCLI asks a headless Claude: a single turn, text only, with none of the
@@ -24,11 +38,11 @@ type Model interface {
 type ClaudeCLI struct{}
 
 // Ask runs one `claude --print` call with the prompt on stdin.
-func (ClaudeCLI) Ask(ctx context.Context, model, prompt string) (string, error) {
+func (ClaudeCLI) Ask(ctx context.Context, voice Voice, prompt string) (string, error) {
 	if _, err := exec.LookPath("claude"); err != nil {
 		return "", errors.New("the claude CLI is not on the PATH")
 	}
-	cmd := exec.CommandContext(ctx, "claude", claudecli.OneShotArgs(model)...)
+	cmd := exec.CommandContext(ctx, "claude", askArgs(voice)...)
 	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -40,6 +54,19 @@ func (ClaudeCLI) Ask(ctx context.Context, model, prompt string) (string, error) 
 		return "", fmt.Errorf("claude failed: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+// The flags of a call, as package claudecli makes them. Variables, so tests
+// can see what a call is given without a claude CLI to ask.
+var (
+	oneShotArgs = claudecli.OneShotArgs
+	effortArgs  = claudecli.EffortArgs
+)
+
+// askArgs are the arguments of one call: a single turn on the voice's model,
+// with its effort when it has one.
+func askArgs(voice Voice) []string {
+	return append(oneShotArgs(voice.Model), effortArgs(voice.Effort)...)
 }
 
 // fenced returns the code blocks of an answer: for each, its info string and

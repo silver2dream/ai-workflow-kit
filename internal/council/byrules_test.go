@@ -1062,12 +1062,12 @@ func TestRuleCheckPrompt(t *testing.T) {
 	strong := mustRoster(t, strings.Replace(repoRoster, "    title: Builder\n", "    title: Builder\n    model: opus\n", 1))
 	played := map[string]string{}
 	base := checked(strong, 1, revised)
-	asking := modelFunc(func(ctx context.Context, name, prompt string) (string, error) {
+	asking := modelFunc(func(ctx context.Context, voice Voice, prompt string) (string, error) {
 		c := readCall(prompt)
 		// The builder is played by a model of its own: who reads its documents,
 		// and who puts them right.
 		if c.Step == "redocuments" || c.Step == "rulecheck" && strings.Contains(prompt, "the Builder (builder).") {
-			played[c.Step] = name
+			played[c.Step] = voice.Model
 		}
 		return base(c)
 	})

@@ -116,7 +116,7 @@ hooks:
 worker:
   backend: claude-code
   codex: {full_auto: false}
-  claude_code: {model: opus, max_turns: 80, dangerously_skip_permissions: true}
+  claude_code: {model: opus, effort: xhigh, max_turns: 80, dangerously_skip_permissions: true}
   knowledge_graph: "off"
 lessons:
   enabled: false
@@ -160,7 +160,7 @@ func TestLoad_WhatTheFileSays(t *testing.T) {
 			OnMerge: []Hook{{Command: "echo merged"}}, OnFailure: []Hook{{Command: "echo failed"}},
 		},
 		Worker: Worker{Backend: "claude-code", Codex: Codex{FullAuto: &no},
-			ClaudeCode: ClaudeCode{Model: "opus", MaxTurns: 80, DangerouslySkipPermissions: true}, KnowledgeGraph: "off"},
+			ClaudeCode: ClaudeCode{Model: "opus", Effort: "xhigh", MaxTurns: 80, DangerouslySkipPermissions: true}, KnowledgeGraph: "off"},
 		Lessons: Lessons{Enabled: &no, MaxActive: 7, InjectTopK: 2, InjectMaxChars: 300, Distiller: LessonsDistiller{Model: "haiku", TimeoutSeconds: 20}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
@@ -420,6 +420,10 @@ func TestValidate(t *testing.T) {
 			"agents.custom[0].trigger: invalid trigger: generate_tasks (expected: review_pr, check_result, or dispatch_worker)"},
 		{"a label under another name", func(c *Config) { c.GitHub.Labels.Task = "todo" },
 			`github.labels.task: the label cannot be renamed ("todo"): the workflow writes it under its own name. Remove the key (expected: ai-task)`},
+		{"a Worker effort that is no level", func(c *Config) { c.Worker.ClaudeCode.Effort = "hgih" },
+			"worker.claude_code.effort: invalid effort: hgih (expected: low, medium, high, xhigh or max, or no value for the claude CLI's own default)"},
+		{"a Worker effort in capitals", func(c *Config) { c.Worker.ClaudeCode.Effort = "High" },
+			"worker.claude_code.effort: invalid effort: High (expected: low, medium, high, xhigh or max, or no value for the claude CLI's own default)"},
 	}
 	for _, tt := range tests {
 		cfg := valid()
@@ -427,6 +431,14 @@ func TestValidate(t *testing.T) {
 		errs := cfg.Validate()
 		if len(errs) != 1 || errs[0].Error() != tt.want {
 			t.Errorf("%s: problems = %v, want exactly %q", tt.name, errs, tt.want)
+		}
+	}
+	// Every level the claude CLI takes, and none at all, passes.
+	for _, effort := range []string{"", "low", "medium", "high", "xhigh", "max"} {
+		cfg := valid()
+		cfg.Worker.ClaudeCode.Effort = effort
+		if errs := cfg.Validate(); len(errs) != 0 {
+			t.Errorf("worker effort %q: problems = %v", effort, errs)
 		}
 	}
 

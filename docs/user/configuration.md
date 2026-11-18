@@ -138,6 +138,7 @@ commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如
 | `backend` | `codex` | 誰來寫程式：`codex` 或 `claude-code`。對應的 CLI 必須裝好並登入，`awkit doctor` 會檢查 |
 | `codex.full_auto` | `true` | 用 `--full-auto` 執行 codex |
 | `claude_code.model` | `sonnet` | Claude Code 當 Worker 時用的模型 |
+| `claude_code.effort` | 不設 | Worker 想得多深：`low`、`medium`、`high`、`xhigh` 或 `max`，越高越仔細，也越慢、越花錢。不設就用 claude CLI 自己的預設。其他值是錯誤：CLI 遇到不認得的值只會警告、照預設跑，打錯了不會有人發現。CLI 太舊、沒有 `--effort` 時照常執行，並提醒一次 |
 | `claude_code.max_turns` | `50` | 一次嘗試最多幾輪 |
 | `claude_code.dangerously_skip_permissions` | `false` | 以 `--dangerously-skip-permissions` 執行。Worker 在自己的 worktree 裡工作，但這個旗標讓它不再受任何權限設定限制；只在隔離的機器上打開 |
 | `knowledge_graph` | `auto` | `auto`：專案有 `.understand-anything/knowledge-graph.json` 時，把和這張票有關的一小段放進 Worker 的 prompt。`off`：不放 |
@@ -245,6 +246,7 @@ hooks:
 ```yaml
 language: ""           # 議會用什麼語言寫；空的時候跟需求的語言走
 model: sonnet          # 沒有自己指定模型的角色用這個
+effort: high           # 沒有自己指定的角色想得多深；不寫就用 claude CLI 的預設
 limits:
   topics: 8            # 議程最多幾個議題
   disputes: 2          # 一個議題最多辯幾個爭點；其餘直接交給決策角色
@@ -279,13 +281,14 @@ roles:
 | `stance` | 必填。這個角色主張什麼、反對什麼。立場要寫得會互相衝突：一桌人都點頭的規劃沒有被檢驗過 |
 | `owns` | 這個角色擁有的文件，路徑從專案根目錄寫起：一個資料夾（結尾加 `/`，例如 `docs/design/`、`backend/docs/`），角色在裡面寫、也可以開新檔；或一份檔案（`docs/qa/risks.md`）。文件是 Markdown 檔，或遊戲資料的表（`.csv`）與它的 schema（`.xml`），見[遊戲資料](#遊戲資料數值與文案)。一份文件只能有一個擁有者，而且只有擁有者會寫它：兩個角色不能列同一個路徑。一個角色的資料夾裡可以有別的角色列出的資料夾或檔案，那一部分就是別人的（例如 `gamedata/Datas/` 是數值企劃的，裡面的 `gamedata/Datas/text/` 是文案的）；同一個角色不能把自己資料夾裡的東西再列一次。不能是議會自己維護的檔案（`docs/decisions.md`、`docs/README.md`、`docs/plans/`，所以 `docs/` 整個不能當資料夾）、給 agent 的指示（`CLAUDE.md`、`AGENTS.md`），或以 `.` 開頭的目錄（`.claude/`、`.ai/`、`.github/`） |
 | `model` | 扮演這個角色的模型；沒寫就用名冊的 `model` |
+| `effort` | 這個角色想得多深：`low`、`medium`、`high`、`xhigh` 或 `max`；沒寫就用名冊的 `effort`，名冊也沒寫就用 claude CLI 的預設。越高越仔細，也越慢、越花錢：負責裁定、反覆推敲的角色比較值得調高。其他值會讓名冊無法使用 |
 | `decides`、`plans` | 各恰好一個角色為 `true`，可以是同一個角色 |
 
 至少要有兩個角色。
 
 ### 會議怎麼開
 
-1. **議程**：主持人（用名冊的 `model`，不選邊）讀需求、名冊與現有的文件，排出議程，存在 `docs/plans/<plan>/agenda.yaml`。每個議題寫明：要回答什麼（`question`）、誰主講（`lead`）、誰依序發言（`speakers`）、先讀哪些文件（`reads`）、結束時寫進哪些文件（`writes`）。寫文件的角色一定在發言名單裡。
+1. **議程**：主持人（用名冊的 `model` 與 `effort`，不選邊）讀需求、名冊與現有的文件，排出議程，存在 `docs/plans/<plan>/agenda.yaml`。每個議題寫明：要回答什麼（`question`）、誰主講（`lead`）、誰依序發言（`speakers`）、先讀哪些文件（`reads`）、結束時寫進哪些文件（`writes`）。寫文件的角色一定在發言名單裡。
 2. **只有你答得出來的問題**：議程也列出這些問題。用 `awkit plan --ask` 時，第一個議題開始前會問你；沒問的話，決策角色在用到時寫下假設。
 3. **逐議題**：主講者先讀文件、提出方案；其他角色照順序發言，每個人都看得到前面的人說了什麼，看到不能接受的就提出異議；兩個角色有分歧時直接對辯（`dispute_rounds` 回合）；主持人整理；決策角色裁定，寫進 `docs/decisions.md`；擁有者把結論寫進 `writes` 裡自己的文件（照下一節的規則）。下一個議題從這些文件開始。
 4. **工作清單**：規劃角色把整個計畫排成里程碑（每個都是看得到在運作的東西），只為第一個里程碑擬票；其他角色可以反對一次。其餘里程碑等第一個做完再規劃。
@@ -299,7 +302,7 @@ roles:
 議會寫文件時遵守 `.claude/rules/` 裡的規則，不是 awkit 內建的格式：
 
 1. 每個角色拿到「對它要寫的檔案生效」的規則全文：`paths` 符合那些檔案的規則，加上沒有 `paths` 的規則。判斷方式與 Claude Code 載入規則的方式相同。AWK 自己出貨的規則（`.claude/rules/_kit/`）講的是 git 的做法，不在其內。
-2. 寫完之後，由一個不選邊的讀者（用名冊的 `model`）拿同一批規則逐份對照，列出文件與規則不一致的地方。
+2. 寫完之後，由一個不選邊的讀者（用名冊的 `model` 與 `effort`）拿同一批規則逐份對照，列出文件與規則不一致的地方。
 3. 有不一致時，擁有者修一次。要搬到別人文件裡的內容，擁有者從自己的文件拿掉並指向那份文件。
 4. 讀者再回答一件事：剛才列的那幾點，哪些還在。它不重新整份檢查（每次重看都會找到別的，收不了斂）。
 5. 還在的幾點不再來回：記在會議紀錄的 `By the project's rules` 一節，`awkit plan` 結束時也會列出來，由你決定改文件還是改規則。

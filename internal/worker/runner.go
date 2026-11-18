@@ -554,12 +554,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if backendName == "" {
 		backendName = "codex"
 	}
-	registry := DefaultRegistry(
-		cfg.Worker.ClaudeCode.Model,
-		cfg.Worker.ClaudeCode.MaxTurns,
-		cfg.Worker.ClaudeCode.DangerouslySkipPermissions,
-	)
-	backend, backendErr := registry.Get(backendName)
+	backend, backendErr := registryFor(cfg).Get(backendName)
 	if backendErr != nil {
 		// Fallback to codex if unknown backend
 		fmt.Fprintf(os.Stderr, "[worker] warning: %v, falling back to codex\n", backendErr)
@@ -1035,6 +1030,13 @@ func (opts *RunIssueOptions) fillTimeouts(timeouts workflowTimeouts) {
 
 func loadWorkflowConfig(path string) (*workflowConfig, error) {
 	return config.LoadFile(path)
+}
+
+// registryFor makes the backends a Worker can run, set as the configuration
+// says.
+func registryFor(cfg *workflowConfig) *BackendRegistry {
+	claude := cfg.Worker.ClaudeCode
+	return DefaultRegistry(claude.Model, claude.Effort, claude.MaxTurns, claude.DangerouslySkipPermissions)
 }
 
 // resolveRepoConfig returns the type and the path of the repo a ticket names.

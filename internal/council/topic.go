@@ -98,7 +98,7 @@ func (p *planner) hold(ctx context.Context, plan *Plan, i int) error {
 // propose asks the lead how the topic is settled.
 func (p *planner) propose(ctx context.Context, plan *Plan, r *TopicRecord) error {
 	lead := p.roster.Role(r.Topic.Lead)
-	got, err := settleJSON(ctx, p.session, r.step(lead.ID+" proposes"), lead.Model, p.proposalPrompt(lead, plan, r), func(got *Speech) error {
+	got, err := settleJSON(ctx, p.session, r.step(lead.ID+" proposes"), lead.Voice(), p.proposalPrompt(lead, plan, r), func(got *Speech) error {
 		if strings.TrimSpace(got.Says) == "" {
 			return errors.New("the proposal says nothing: says is empty")
 		}
@@ -119,7 +119,7 @@ func (p *planner) speak(ctx context.Context, plan *Plan, r *TopicRecord) error {
 	spoken := []string{r.Topic.Lead}
 	for _, id := range r.Topic.Speakers {
 		role := p.roster.Role(id)
-		got, err := settleJSON(ctx, p.session, r.step(id+" speaks"), role.Model, p.speechPrompt(role, plan, r), func(got *Speech) error {
+		got, err := settleJSON(ctx, p.session, r.step(id+" speaks"), role.Voice(), p.speechPrompt(role, plan, r), func(got *Speech) error {
 			if strings.TrimSpace(got.Says) == "" {
 				return errors.New("says is empty: say where you stand on the topic")
 			}
@@ -173,7 +173,7 @@ func (p *planner) argueOut(ctx context.Context, plan *Plan, r *TopicRecord) erro
 			Disputes []Dispute `json:"disputes"`
 		}
 		at := r.at()
-		got, err := settleJSON(ctx, p.session, r.step("moderator picks the disputes"), p.roster.Model, p.disputesPrompt(r), func(got *answer) error {
+		got, err := settleJSON(ctx, p.session, r.step("moderator picks the disputes"), p.roster.Voice(), p.disputesPrompt(r), func(got *answer) error {
 			if len(got.Disputes) == 0 {
 				return errors.New("no dispute was picked, and there are objections")
 			}
@@ -230,7 +230,7 @@ func (p *planner) argue(ctx context.Context, plan *Plan, r *TopicRecord, index i
 
 	for round := 1; round <= p.roster.Limits.DisputeRounds; round++ {
 		step := r.step(fmt.Sprintf("dispute %d round %d", index+1, round))
-		answer, err := settleJSON(ctx, p.session, step+" "+defender.ID+" answers", defender.Model, p.defencePrompt(defender, plan, r, dispute), func(got *defence) error {
+		answer, err := settleJSON(ctx, p.session, step+" "+defender.ID+" answers", defender.Voice(), p.defencePrompt(defender, plan, r, dispute), func(got *defence) error {
 			got.Stance = strings.ToLower(strings.TrimSpace(got.Stance))
 			switch got.Stance {
 			case "concede", "revise", "hold":
@@ -253,7 +253,7 @@ func (p *planner) argue(ctx context.Context, plan *Plan, r *TopicRecord, index i
 			break
 		}
 
-		verdict, err := settleJSON(ctx, p.session, step+" "+challenger.ID+" replies", challenger.Model, p.replyPrompt(challenger, plan, r, dispute), func(got *reply) error {
+		verdict, err := settleJSON(ctx, p.session, step+" "+challenger.ID+" replies", challenger.Voice(), p.replyPrompt(challenger, plan, r, dispute), func(got *reply) error {
 			if strings.TrimSpace(got.Reply) == "" {
 				return errors.New("the answer has no reply")
 			}
@@ -283,7 +283,7 @@ func (p *planner) argue(ctx context.Context, plan *Plan, r *TopicRecord, index i
 
 // sumUp asks the moderator where the topic stands.
 func (p *planner) sumUp(ctx context.Context, plan *Plan, r *TopicRecord) error {
-	got, err := settleJSON[Summary](ctx, p.session, r.step("moderator sums up"), p.roster.Model, p.summaryPrompt(plan, r), nil)
+	got, err := settleJSON[Summary](ctx, p.session, r.step("moderator sums up"), p.roster.Voice(), p.summaryPrompt(plan, r), nil)
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func (p *planner) decide(ctx context.Context, plan *Plan, r *TopicRecord) error 
 		Decisions   []Decision   `json:"decisions"`
 		Assumptions []Assumption `json:"assumptions"`
 	}
-	got, err := settleJSON(ctx, p.session, r.step("decision"), decider.Model, p.decisionPrompt(decider, plan, r), func(got *answer) error {
+	got, err := settleJSON(ctx, p.session, r.step("decision"), decider.Voice(), p.decisionPrompt(decider, plan, r), func(got *answer) error {
 		if len(got.Decisions) == 0 {
 			return errors.New("nothing was decided; a topic ends in at least one decision")
 		}

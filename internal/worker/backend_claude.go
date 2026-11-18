@@ -9,11 +9,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 )
 
 // ClaudeCodeBackend implements WorkerBackend for Claude Code CLI.
 type ClaudeCodeBackend struct {
-	Model                      string
+	Model string
+	// Effort is how hard the Worker thinks; empty for the CLI's own default.
+	Effort                     string
 	MaxTurns                   int
 	DangerouslySkipPermissions bool
 }
@@ -31,6 +35,24 @@ func NewClaudeCodeBackend(model string, maxTurns int, skipPerms bool) *ClaudeCod
 		MaxTurns:                   maxTurns,
 		DangerouslySkipPermissions: skipPerms,
 	}
+}
+
+// effortArgs makes the flag of an effort, as package claudecli does. A
+// variable, so tests can see what the Worker is given without a claude CLI.
+var effortArgs = claudecli.EffortArgs
+
+// args are the arguments the Worker's claude is run with.
+func (b *ClaudeCodeBackend) args() []string {
+	args := []string{
+		"--print",
+		"--model", b.Model,
+		"--max-turns", strconv.Itoa(b.MaxTurns),
+	}
+	args = append(args, effortArgs(b.Effort)...)
+	if b.DangerouslySkipPermissions {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	return args
 }
 
 // Name returns the backend identifier.
@@ -81,7 +103,7 @@ func (b *ClaudeCodeBackend) Execute(ctx context.Context, opts BackendOptions) Ba
 		if opts.Trace != nil {
 			status := "success"
 			errorMessage := ""
-			traceCtx := map[string]interface{}{"attempt": attempt, "model": b.Model}
+			traceCtx := map[string]interface{}{"attempt": attempt, "model": b.Model, "effort": b.Effort}
 			if exitCode != 0 {
 				status = "failed"
 				errorMessage = fmt.Sprintf("claude rc=%d", exitCode)
@@ -163,17 +185,7 @@ func (b *ClaudeCodeBackend) runAttempt(ctx context.Context, opts BackendOptions,
 	execCtx, cancel := withOptionalTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	// Build claude command args
-	args := []string{
-		"--print",
-		"--model", b.Model,
-		"--max-turns", strconv.Itoa(b.MaxTurns),
-	}
-	if b.DangerouslySkipPermissions {
-		args = append(args, "--dangerously-skip-permissions")
-	}
-
-	cmd := exec.CommandContext(execCtx, "claude", args...)
+	cmd := exec.CommandContext(execCtx, "claude", b.args()...)
 	cmd.Dir = opts.WorkDir
 	cmd.Stdin = prompt
 	cmd.Stdout = multiWriter

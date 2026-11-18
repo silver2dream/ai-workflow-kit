@@ -286,7 +286,7 @@ func councilAgenda(prompt string, questions string) string {
 		strings.Join(speakers, ", ") + `], "reads": [], "writes": [` + strings.Join(writes, ", ") + `]}], "questions": [` + questions + `]}`
 }
 
-func (m *scriptedCouncil) Ask(ctx context.Context, model, prompt string) (string, error) {
+func (m *scriptedCouncil) Ask(ctx context.Context, voice council.Voice, prompt string) (string, error) {
 	m.mu.Lock()
 	m.calls++
 	if strings.Contains(prompt, "  The owner: A readiness probe.\n") {
@@ -989,6 +989,6 @@ func TestCmdPlan_AMeetingThatStops(t *testing.T) {
 
 type failingCouncil struct{}
 
-func (failingCouncil) Ask(ctx context.Context, model, prompt string) (string, error) {
+func (failingCouncil) Ask(ctx context.Context, voice council.Voice, prompt string) (string, error) {
 	return "", fmt.Errorf("the claude CLI is not on the PATH")
 }

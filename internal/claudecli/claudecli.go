@@ -12,12 +12,55 @@ package claudecli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 )
+
+// Efforts are the levels the claude CLI takes with --effort: how long and how
+// carefully the model thinks before it answers.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+// EffortHint says what an effort may be, for an error about one that may not.
+const EffortHint = "low, medium, high, xhigh or max, or no value for the claude CLI's own default"
+
+// ValidEffort reports whether an effort can be asked for: one of Efforts, or
+// empty for the CLI's own default. The CLI takes a level it does not know
+// with a warning and goes on with its default, so a misspelt setting would
+// otherwise change nothing without anyone noticing.
+func ValidEffort(effort string) bool {
+	return effort == "" || slices.Contains(Efforts, effort)
+}
+
+var effortWarning sync.Once
+
+// warn tells the person running AWK something it did not do. A variable so
+// tests can hear it.
+var warn = func(message string) { fmt.Fprintln(os.Stderr, "warning: "+message) }
+
+// EffortArgs returns the flag that asks for an effort: nothing for an empty
+// effort. A CLI too old to take the flag gets nothing either, so the call
+// still runs; that the effort was not used is said once.
+func EffortArgs(effort string) []string {
+	if effort == "" {
+		return nil
+	}
+	if !ValidEffort(effort) {
+		warn(fmt.Sprintf("effort %q is not one the claude CLI takes (%s); it is not used", effort, EffortHint))
+		return nil
+	}
+	if !hasOption(helpTextFunc(), "--effort") {
+		effortWarning.Do(func() {
+			warn(fmt.Sprintf("the claude CLI on this machine takes no --effort; effort %q is not used (update Claude Code)", effort))
+		})
+		return nil
+	}
+	return []string{"--effort", effort}
+}
 
 // IsolationEnv switches the isolation flags off when set to "0", "off" or
 // "false" - an escape hatch for an environment where they misbehave.
