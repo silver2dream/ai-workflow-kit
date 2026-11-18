@@ -200,6 +200,12 @@ roles:
 			t.Errorf("effort %s was refused: %v", effort, err)
 		}
 	}
+	// A misspelt effort of the roster is the roster's: it is not laid on the
+	// first role that took it over.
+	_, err = ParseRoster([]byte("effort: hgih\nroles:\n  - {id: a, decides: true, stance: s}\n  - {id: b, plans: true, stance: s}\n"))
+	if want := `effort "hgih": use low, medium, high, xhigh or max, or no value for the claude CLI's own default`; err == nil || err.Error() != want {
+		t.Errorf("error = %v, want %q", err, want)
+	}
 }
 
 func TestVoice_String(t *testing.T) {
