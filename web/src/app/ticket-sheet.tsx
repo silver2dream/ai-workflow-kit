@@ -1,10 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, GitPullRequest, Hand, History, Link2, Ticket as TicketIcon } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DOT, Empty, Tag, TONE } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useOnboarding } from "@/onboarding/state";
 import { describe, STAGES, when } from "@/lib/words";
+import { useRoute } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 interface SheetApi {
@@ -21,9 +22,23 @@ export function useTicketSheet() {
 export function TicketSheetProvider({ children }: { children: ReactNode }) {
   const [number, setNumber] = useState<number | null>(null);
   const { mark } = useOnboarding();
+  // A ticket belongs to the page it was opened on: going to another page
+  // (by the address, or Back) closes it, rather than covering the new page.
+  const route = useRoute();
+  const here = `${route.project}/${route.page}`;
+  const hereNow = useRef(here);
+  hereNow.current = here;
+  const [openedOn, setOpenedOn] = useState<string | null>(null);
+  useEffect(() => {
+    if (openedOn !== null && openedOn !== here) {
+      setNumber(null);
+      setOpenedOn(null);
+    }
+  }, [here, openedOn]);
   const open = useCallback(
     (ticket: number) => {
       setNumber(ticket);
+      setOpenedOn(hereNow.current);
       mark("ticket");
     },
     [mark],

@@ -73,7 +73,7 @@ awkit stop       # 請 run 做完手上這一步之後停下
 
 run 會在沒有票可做、或有事需要你的時候結束：Worker 每次嘗試都失敗、審查一再退回、某張票在等一個不會完成的 issue。它會說是哪一種，`awkit status` 會指出是哪張票。
 
-也可以在瀏覽器裡看：`awkit ui` 打開工作台，一個只在你電腦上的網頁，看得到每張票在哪一站、哪裡要你出手、每一輪做了什麼、`awkit doctor` 查到什麼。第一次打開會有簡短的導覽，可以跳過。詳見[工作台](docs/user/workbench.md)。
+也可以在瀏覽器裡看：`awkit ui` 打開工作台，一個只在你電腦上的網頁，看得到每張票在哪一站、哪裡要你出手、每一輪做了什麼、`awkit doctor` 查到什麼。規劃也能在裡面做：開新的規劃、看議會開會、插話或暫停、改議程、回答問題、改工單、核可。第一次打開會有簡短的導覽，可以跳過。詳見[工作台](docs/user/workbench.md)。
 
 [開始使用](docs/user/getting-started.md)把這幾步一步一步講完。
 
@@ -181,7 +181,7 @@ CI workflow 會跟著設定檔走，直到你刪掉它開頭那行註解；之�
 | `awkit create-task` | 手動補一張票 |
 | `awkit run` | 處理所有開著的票（`--issue N` 只做一張，`--dry-run` 只跑檢查） |
 | `awkit status` | 工作進行到哪裡 |
-| `awkit ui` | 在瀏覽器裡看工作 |
+| `awkit ui` | 在瀏覽器裡看工作、做規劃 |
 | `awkit stop` | 請 run 停下 |
 | `awkit events`、`awkit lessons` | run 做了什麼；審查教了什麼 |
 | `awkit upgrade` | 把專案裡的 kit 檔案更新到已安裝的版本 |

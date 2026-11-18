@@ -25,6 +25,12 @@ export const TOUR: TourStep[] = [
     body: "只有你能決定的事會出現在這條帶子上，擋住工作的排最前面。整個工作台只有這種事用黃色；沒有事要你處理時，它只是一行安靜的字。",
   },
   {
+    page: "plans",
+    targets: ["plans", "newplan"],
+    title: "想做新東西，從規劃開始",
+    body: "寫下你想要什麼，議會的角色會輪流發言、互相質疑，由負責裁定的角色拍板，寫好文件，再擬出工單給你核可。開會時你隨時可以插話或暫停；關掉工作台，會也照樣開。",
+  },
+  {
     page: "board",
     targets: ["ticketcard", "board"],
     title: "工單和 PR 不一樣",
@@ -63,6 +69,7 @@ export interface Task {
 export const TASKS: Task[] = [
   { key: "tour", title: "認識工作台", sub: "跟著導覽走一遍，約 2 分鐘", cta: "開始導覽" },
   { key: "health", title: "檢查這台電腦", sub: "GitHub 與設定準備好了嗎", cta: "去檢查", page: "health" },
+  { key: "plan", title: "看議會怎麼規劃", sub: "開一個新的規劃，或打開一份看議會怎麼討論", cta: "去看規劃", page: "plans" },
   { key: "ticket", title: "打開一張工單", sub: "看它的經過、在等誰、GitHub 上的工單與 PR", cta: "去看板", page: "board" },
   { key: "activity", title: "看活動紀錄", sub: "每一步誰做的、結果如何", cta: "去看", page: "activity" },
 ];

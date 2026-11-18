@@ -130,6 +130,15 @@ func TestMeetings_Start(t *testing.T) {
 	if spawn.calls[0].log != filepath.Join(council.StateDir(root, id), "meeting.log") {
 		t.Errorf("log = %s", spawn.calls[0].log)
 	}
+	// It is in the list of plans at once too, with the brief it was given:
+	// one that could not start is found again there.
+	listed := false
+	for _, plan := range decode[map[string][]PlanView](t, do(t, s, http.MethodGet, base+"/plans", ""))["plans"] {
+		listed = listed || plan.ID == id && plan.Brief == "A daily login reward."
+	}
+	if !listed {
+		t.Errorf("the plan just started is not listed")
+	}
 
 	// One meeting at a time in a project.
 	setLive(t, root, "p1", council.LiveMeeting)
@@ -375,5 +384,26 @@ func TestMeetings_TheStreamFollowsAMeeting(t *testing.T) {
 	setLive(t, root, "p1", council.LiveMeeting)
 	if fingerprint(root, meeting) == before {
 		t.Error("where the meeting is was not told as a change")
+	}
+}
+
+// The page shows who sits at the table; a project without a roster gets one
+// at its first plan.
+func TestMeetings_Roster(t *testing.T) {
+	s, root, base, _, _ := meetingProject(t, "")
+	roster := decode[RosterView](t, do(t, s, http.MethodGet, base+"/roster", ""))
+	if roster.Missing || len(roster.Roles) != 3 || roster.Roles[0].ID != "owner" || !roster.Roles[0].Decides || !roster.Roles[1].Plans ||
+		roster.Roles[2].Stance != "You look for how it fails." || roster.Calls != 60 || roster.Roles[0].Owns[0] != "docs/product/requirements.md" {
+		t.Errorf("roster = %+v", roster)
+	}
+	if err := os.Remove(filepath.Join(root, ".ai", "roster.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if missing := decode[RosterView](t, do(t, s, http.MethodGet, base+"/roster", "")); !missing.Missing || missing.Roles == nil {
+		t.Errorf("no roster = %+v", missing)
+	}
+	write(t, root, ".ai/roster.yaml", "roles: [")
+	if w := do(t, s, http.MethodGet, base+"/roster", ""); w.Code != http.StatusConflict {
+		t.Errorf("a roster that cannot be read: %d", w.Code)
 	}
 }

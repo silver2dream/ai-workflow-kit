@@ -73,7 +73,7 @@ awkit stop       # ask the run to stop once the step it is on is done
 
 A run ends when no ticket is left, or when something needs you: a Worker that failed on every attempt, a review that keeps turning a change back, a ticket that waits for an issue that will not be done. It says which, and `awkit status` shows the ticket.
 
-Or follow it in a browser: `awkit ui` opens the workbench, a page on this computer that shows where every ticket is, what needs you, what each run did and what `awkit doctor` finds. The first time, it offers a short tour, which you can skip. [The workbench](docs/user/workbench.md) says more.
+Or follow it in a browser: `awkit ui` opens the workbench, a page on this computer that shows where every ticket is, what needs you, what each run did and what `awkit doctor` finds. Plans are made there too: start one, watch the council meet, speak up or pause it, change the agenda, answer its questions, edit the tickets and approve them. The first time, it offers a short tour, which you can skip. [The workbench](docs/user/workbench.md) says more.
 
 [Getting started](docs/user/getting-started.md) goes through these steps one by one.
 
@@ -181,7 +181,7 @@ A CI workflow follows the configuration until you delete the comment at its top;
 | `awkit create-task` | add one ticket by hand |
 | `awkit run` | work through the open tickets (`--issue N` for one, `--dry-run` for the checks only) |
 | `awkit status` | where the work is |
-| `awkit ui` | follow the work in a browser |
+| `awkit ui` | follow the work and make plans in a browser |
 | `awkit stop` | ask the run to stop |
 | `awkit events`, `awkit lessons` | what a run did; what the reviews taught |
 | `awkit upgrade` | bring a project's kit files up to the installed version |

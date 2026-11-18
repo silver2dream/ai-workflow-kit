@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/projects/{id}/health", s.project(s.handleHealth))
 	s.mux.HandleFunc("GET /api/projects/{id}/plans", s.project(s.handlePlans))
 	s.mux.HandleFunc("POST /api/projects/{id}/plans", s.project(s.handleStartPlan))
+	s.mux.HandleFunc("GET /api/projects/{id}/roster", s.project(s.handleRoster))
 	s.mux.HandleFunc("GET /api/projects/{id}/plans/{plan}", s.plan(s.handlePlan))
 	s.mux.HandleFunc("GET /api/projects/{id}/plans/{plan}/transcript", s.plan(s.handleTranscript))
 	s.mux.HandleFunc("POST /api/projects/{id}/plans/{plan}/say", s.plan(s.handleSay))
@@ -372,13 +374,44 @@ type PlanTicket struct {
 	DependsOn []string `json:"depends_on,omitempty"`
 }
 
+// planIDs lists the plans of a project, newest first: the ones with a folder,
+// and the ones the page started whose meeting has not written theirs yet (or
+// could not start): the person finds them again in the list.
+func planIDs(root string) []string {
+	ids := council.Plans(root)
+	known := map[string]bool{}
+	for _, id := range ids {
+		known[id] = true
+	}
+	entries, _ := os.ReadDir(filepath.Dir(council.StateDir(root, "plan")))
+	for _, entry := range entries {
+		id := entry.Name()
+		if entry.IsDir() && !known[id] && council.IsPlanName(id) {
+			if _, err := os.Stat(startedBrief(root, id)); err == nil {
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
+	return ids
+}
+
+// briefOf reads the brief of a plan: the plan's own, or the one the page
+// gave the meeting it started.
+func briefOf(root, id string) string {
+	if brief, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(council.PlansDir), id, "brief.md")); err == nil {
+		return strings.TrimSpace(string(brief))
+	}
+	if brief, err := os.ReadFile(startedBrief(root, id)); err == nil {
+		return strings.TrimSpace(string(brief))
+	}
+	return ""
+}
+
 func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request, root string) {
 	plans := []PlanView{}
-	for _, id := range council.Plans(root) {
-		plan := PlanView{ID: id, Milestones: []council.Milestone{}, Tickets: []PlanTicket{}, Meeting: s.meetingOf(root, id)}
-		if brief, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(council.PlansDir), id, "brief.md")); err == nil {
-			plan.Brief = strings.TrimSpace(string(brief))
-		}
+	for _, id := range planIDs(root) {
+		plan := PlanView{ID: id, Brief: briefOf(root, id), Milestones: []council.Milestone{}, Tickets: []PlanTicket{}, Meeting: s.meetingOf(root, id)}
 		if list, err := council.LoadWorkList(root, id); err == nil {
 			plan.Milestones = append(plan.Milestones, list.Milestones...)
 			for _, t := range list.Tickets {

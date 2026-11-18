@@ -1,12 +1,15 @@
-import { CircleHelp, TriangleAlert } from "lucide-react";
-import { Panel, PanelHead, PageHead, Tag } from "@/components/bits";
+import { ArrowRight, TriangleAlert } from "lucide-react";
+import { DOT, Panel, PanelHead, PageHead, Tag } from "@/components/bits";
 import { useProject } from "@/app/project";
+import { href } from "@/lib/router";
+import { cn } from "@/lib/utils";
 import { NeedsYouList } from "@/pages/Overview";
+import { headline, planStatus } from "@/pages/plans/status";
 
 /** Inbox is what only the person can decide: what blocks the work first. */
 export function InboxPage() {
-  const { plans, status } = useProject();
-  const toApprove = (plans.data?.plans ?? []).filter((p) => p.tickets.some((t) => !t.issue));
+  const { project, plans, status } = useProject();
+  const waiting = (plans.data?.plans ?? []).map((plan) => ({ plan, status: planStatus(plan) })).filter((p) => p.status.needsYou);
   const warnings = status.data?.warnings ?? [];
   const suggestions = status.data?.suggestions ?? [];
   return (
@@ -17,26 +20,25 @@ export function InboxPage() {
           <PanelHead title="卡住的工單" sub="審查幾次都沒過，或執行者做不下去" />
           <NeedsYouList />
         </Panel>
-        {toApprove.length > 0 && (
+        {waiting.length > 0 && (
           <Panel>
-            <PanelHead title="等你核可的規劃" sub="議會擬好了工單，還沒建到 GitHub" />
+            <PanelHead title="規劃在等你" sub="議程要你看、問題要你答，或工單等你核可" />
             <ul>
-              {toApprove.map((plan) => {
-                const waiting = plan.tickets.filter((t) => !t.issue).length;
-                return (
-                  <li key={plan.id} className="flex flex-wrap items-start gap-3.5 border-t border-border px-5 py-3.5 first:border-t-0">
-                    <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-ring/10 text-ring">
-                      <CircleHelp className="size-[18px]" aria-hidden />
-                    </span>
+              {waiting.map(({ plan, status: s }) => (
+                <li key={plan.id} className="border-t border-border first:border-t-0">
+                  <a href={href({ project: project.id, page: "plans", rest: [plan.id] })} className="group flex items-start gap-3.5 px-5 py-3.5 transition-colors hover:bg-muted/50">
+                    <span className={cn("mt-2 size-2.5 shrink-0 rounded-full", DOT[s.tone])} aria-hidden />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[15px] font-bold">{plan.brief || plan.id}</div>
-                      <p className="mt-0.5 text-[14px] text-ink2">
-                        {waiting} 張工單等你核可。核可前可以改，在終端機執行 <code className="rounded bg-muted px-1 font-mono text-[13px]">awkit plan approve {plan.id}</code>；工作台裡的核可按鈕會在下一個版本加上。
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[15px] font-bold">{headline(plan.brief, `規劃 ${plan.id}`)}</span>
+                        <Tag tone={s.tone}>{s.label}</Tag>
+                      </div>
+                      <p className="mt-0.5 text-[14px] text-ink2">{s.todo}</p>
                     </div>
-                  </li>
-                );
-              })}
+                    <ArrowRight className="mt-1.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  </a>
+                </li>
+              ))}
             </ul>
           </Panel>
         )}
