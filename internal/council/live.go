@@ -175,8 +175,12 @@ func (t *transcript) add(entry Entry) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	// What is told is told as well as it can be: a line that cannot be
+	// written is left out, and the meeting goes on.
 	_, _ = f.Write(append(line, '\n'))
+	if err := f.Close(); err != nil {
+		return
+	}
 }
 
 // ReadTranscript returns what was said at a plan's meeting after the entry

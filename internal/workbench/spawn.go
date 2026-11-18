@@ -58,13 +58,19 @@ func StartAlone(dir string, args []string, log string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer out.Close()
 	cmd := exec.Command(self, args...)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = out, out
 	cmd.SysProcAttr = detached()
-	if err := cmd.Start(); err != nil {
-		return 0, err
+	started := cmd.Start()
+	// The process writes the log through a handle of its own: this one is
+	// done with either way, and failing to close it does not stop the work
+	// that started.
+	if closed := out.Close(); closed != nil && started != nil {
+		return 0, fmt.Errorf("%w (and %s could not be closed: %v)", started, log, closed)
+	}
+	if started != nil {
+		return 0, started
 	}
 	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()

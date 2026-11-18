@@ -107,8 +107,11 @@ func Say(root, id, text, question string, now time.Time) (OwnerWord, error) {
 	if err != nil {
 		return OwnerWord{}, err
 	}
-	defer f.Close()
 	if _, err := f.Write(append(line, '\n')); err != nil {
+		_ = f.Close()
+		return OwnerWord{}, err
+	}
+	if err := f.Close(); err != nil {
 		return OwnerWord{}, err
 	}
 	return word, nil
