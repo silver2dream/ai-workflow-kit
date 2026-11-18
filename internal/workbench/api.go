@@ -91,7 +91,14 @@ func (s *Server) handleAddProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	root, err := ResolveProject(body.Path)
+	// The page asks for the folder's full path. Cleaned, a full path has no
+	// ".." left in it; one that has is refused rather than guessed at.
+	path := filepath.Clean(strings.TrimSpace(body.Path))
+	if !filepath.IsAbs(path) || strings.Contains(path, "..") {
+		writeError(w, http.StatusBadRequest, "give the folder's full path, as the file manager's address bar shows it")
+		return
+	}
+	root, err := ResolveProject(path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -252,9 +259,15 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, root strin
 		last = n
 	}
 	reader := trace.NewEventReader(root)
-	session := r.URL.Query().Get("session")
-	if session == "" {
-		session = latestSession(reader)
+	session := latestSession(reader)
+	if asked := r.URL.Query().Get("session"); asked != "" {
+		// A session is named by the file a run left, never by a path the
+		// page sends: "../" in it reads no other file.
+		session = knownSession(reader, asked)
+		if session == "" {
+			writeError(w, http.StatusNotFound, "the project has no session "+strconv.Quote(asked))
+			return
+		}
 	}
 	out := EventsView{Session: session, Events: []trace.Event{}}
 	if session != "" {
@@ -268,6 +281,21 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, root strin
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// knownSession is the session of the project's events that is named so, or
+// "" when it has none of that name.
+func knownSession(reader *trace.EventReader, name string) string {
+	sessions, err := reader.ListSessions()
+	if err != nil {
+		return ""
+	}
+	for _, session := range sessions {
+		if session == name {
+			return session
+		}
+	}
+	return ""
 }
 
 // latestSession is the run going on, or else the newest one that left events.

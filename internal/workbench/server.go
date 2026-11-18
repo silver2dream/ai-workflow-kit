@@ -161,11 +161,10 @@ func (s *Server) guard(next http.Handler) http.Handler {
 				return
 			}
 			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-			clean := *r.URL
-			query := clean.Query()
-			query.Del("token")
-			clean.RawQuery = query.Encode()
-			http.Redirect(w, r, clean.RequestURI(), http.StatusSeeOther)
+			// To the page itself, on this address: the page routes the rest,
+			// and a path taken from the request could name another site
+			// ("//elsewhere").
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {

@@ -248,6 +248,13 @@ func TestGuard(t *testing.T) {
 	if cookie := w.Result().Cookies(); len(cookie) != 1 || cookie[0].Value != s.Token() || !cookie[0].HttpOnly || cookie[0].SameSite != http.SameSiteStrictMode {
 		t.Errorf("cookies = %+v", cookie)
 	}
+	// Wherever the token comes in, it goes to the page on this address, never
+	// to a path the request names ("//elsewhere" is another site).
+	for _, target := range []string{"//evil.example/?token=", "/board/306?token=", "/?x=1&token="} {
+		if w := send("127.0.0.1:4747", target+s.Token(), false, false, http.MethodGet); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
+			t.Errorf("%s…: %d to %q, want 303 to /", target, w.Code, w.Header().Get("Location"))
+		}
+	}
 	if w := send("127.0.0.1:4747", "/?token=wrong", false, false, http.MethodGet); w.Code != http.StatusForbidden {
 		t.Errorf("a wrong token: %d, want 403", w.Code)
 	}
@@ -328,6 +335,13 @@ func TestSessionProjectsAndOnboarding(t *testing.T) {
 	}
 	if w := do(t, s, http.MethodPost, "/api/projects", `{"folder": "x"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("a body of another shape: %d", w.Code)
+	}
+	// The page sends a folder's full path; a relative one, from wherever
+	// awkit happens to run, is not taken.
+	for _, path := range []string{"rally", "./rally", "../" + filepath.Base(root)} {
+		if w := do(t, s, http.MethodPost, "/api/projects", `{"path": "`+path+`"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "full path") {
+			t.Errorf("add %q: %d %s", path, w.Code, w.Body)
+		}
 	}
 	session = decode[Session](t, do(t, s, http.MethodGet, "/api/session", ""))
 	if len(session.Projects) != 1 || session.Projects[0].ID != projectID(root) {
@@ -429,6 +443,18 @@ func TestProjectAPI(t *testing.T) {
 	}
 	if last := decode[EventsView](t, do(t, s, http.MethodGet, base+"/events?last=1", "")); len(last.Events) != 1 || last.Events[0].Seq != 2 {
 		t.Errorf("the last event = %+v", last.Events)
+	}
+	// A session is one the project's runs left; a name that climbs out of
+	// the events folder reads nothing.
+	write(t, root, ".ai/state/events/principal-20261117-080000-cd34.jsonl", `{"seq": 9, "ts": "2026-11-17T08:00:00Z", "component": "principal", "type": "session_start", "level": "info"}`+"\n")
+	write(t, root, ".ai/secret.jsonl", `{"seq": 7, "ts": "2026-11-17T08:00:00Z", "component": "x", "type": "secret", "level": "info"}`+"\n")
+	if older := decode[EventsView](t, do(t, s, http.MethodGet, base+"/events?session=principal-20261117-080000-cd34", "")); older.Session != "principal-20261117-080000-cd34" || len(older.Events) != 1 || older.Events[0].Seq != 9 {
+		t.Errorf("an earlier session = %+v", older)
+	}
+	for _, name := range []string{"../../secret", "..%2F..%2Fsecret", "nothing"} {
+		if w := do(t, s, http.MethodGet, base+"/events?session="+name, ""); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "secret\",") {
+			t.Errorf("session %q: %d %s", name, w.Code, w.Body)
+		}
 	}
 
 	write(t, root, "docs/plans/20261117-plan/brief.md", "A tennis game, played online.\n")
