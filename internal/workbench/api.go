@@ -43,6 +43,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/projects/{id}/plans/{plan}/tickets/{key}", s.plan(s.handleEditTicket))
 	s.mux.HandleFunc("DELETE /api/projects/{id}/plans/{plan}/tickets/{key}", s.plan(s.handleDeleteTicket))
 	s.mux.HandleFunc("POST /api/projects/{id}/plans/{plan}/approve", s.plan(s.handleApprove))
+	s.mux.HandleFunc("POST /api/projects/{id}/run", s.project(s.handleStartRun))
+	s.mux.HandleFunc("POST /api/projects/{id}/run/stop", s.project(s.handleStopRun))
+	s.mux.HandleFunc("GET /api/projects/{id}/run/logs", s.project(s.handleRunLogs))
+	s.mux.HandleFunc("GET /api/projects/{id}/run/output", s.project(s.handleRunOutput))
 	s.mux.HandleFunc("GET /api/projects/{id}/stream", s.project(s.handleStream))
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "the workbench has no "+r.Method+" "+r.URL.Path)
