@@ -32,3 +32,8 @@ Thumbs.db
 .kiro/
 
 awkit.exe
+
+# The workbench page is built from web/ (npm --prefix web run build); only the placeholder is kept.
+internal/workbench/dist/*
+!internal/workbench/dist/.keep
+web/node_modules/

@@ -128,6 +128,8 @@ func run() int {
 		return cmdPlan(os.Args[2:])
 	case "gamedata":
 		return cmdGamedata(os.Args[2:])
+	case "ui":
+		return cmdUI(os.Args[2:])
 	case "run", "kickoff":
 		// kickoff is the former name of run.
 		return cmdRun(os.Args[2:])
@@ -215,6 +217,7 @@ Set up:
   validate     Check the configuration, and name the keys in it nothing reads
 
 Work:
+  ui           Open the workbench: plan and follow the work in a browser
   plan         Plan with the council: a brief becomes documents, decisions
                and a list of tickets for you to approve
   create-task  Add one ticket by hand
@@ -261,6 +264,8 @@ Set up a project:
   list-presets  Show the presets init knows
 
 Run the workflow:
+  ui            Open the workbench in your browser: plan, follow the work
+                and see everything, without the terminal
   plan          Plan with the council: a brief becomes documents, decisions
                 and a list of tickets for you to approve
   gamedata      Check the game data (Luban tables and text), and show it for
@@ -397,6 +402,8 @@ func cmdHelp(command string) int {
 		usageFeedbackStats()
 	case "gamedata":
 		usageGamedata()
+	case "ui":
+		usageUI()
 	case "context-snapshot":
 		usageContextSnapshot()
 	case "version":
@@ -1391,7 +1398,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall plan gamedata run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall ui plan gamedata run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1451,6 +1458,7 @@ _awkit() {
         'uninstall:Remove AWK from a project'
         'plan:Plan work with the council: documents, decisions and tickets to approve'
         'gamedata:Check the game data and show it for review'
+        'ui:Open the workbench in your browser'
         'run:Start the workflow: work through the open tickets'
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
@@ -1547,6 +1555,7 @@ complete -c awkit -n __fish_use_subcommand -a upgrade -d 'Upgrade AWK kit files 
 complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a project'
 complete -c awkit -n __fish_use_subcommand -a plan -d 'Plan work with the council: documents, decisions and tickets to approve'
 complete -c awkit -n __fish_use_subcommand -a gamedata -d 'Check the game data and show it for review'
+complete -c awkit -n __fish_use_subcommand -a ui -d 'Open the workbench in your browser'
 complete -c awkit -n __fish_use_subcommand -a run -d 'Start the workflow: work through the open tickets'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'

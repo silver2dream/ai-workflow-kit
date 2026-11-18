@@ -478,6 +478,9 @@ func indexLink(label, file string) string {
 }
 
 // planIDs lists the plans of a project, the newest first.
+// Plans names the plans of a project, the newest first.
+func Plans(root string) []string { return planIDs(root) }
+
 func planIDs(root string) []string {
 	entries, _ := os.ReadDir(filepath.Join(root, filepath.FromSlash(PlansDir)))
 	var ids []string
