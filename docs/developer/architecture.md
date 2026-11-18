@@ -122,7 +122,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `hooks` | 設定檔的 `hooks` |
 | `trace`、`session` | 事件流；Principal 與 Worker 的 session 紀錄 |
 | `status`、`doctor`、`reset` | 同名的指令 |
-| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
+| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）；從頁面開的會議（`meetings.go`）由 `awkit detach` 另起一個不屬於工作台的程序來開，關掉工作台、甚至連子程序一起結束它，會議都照開，停只能靠暫停或開完。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
 | `stopmark`、`workflow` | STOP 標記；停止原因、結束語、報告 |
 | `selfheal` | 修復結構性的壞狀態（integration branch 遺失骨架時補回去） |
 | `audit`、`evaluate` | `awkit evaluate`：給 CI 用的檢查 |

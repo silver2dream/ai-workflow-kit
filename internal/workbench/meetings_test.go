@@ -120,6 +120,10 @@ func TestMeetings_Start(t *testing.T) {
 	if dir != root || strings.Join(args, "|") != strings.Join(want, "|") {
 		t.Errorf("spawned in %s: %v\nwant %v", dir, args, want)
 	}
+	// The page follows the meeting at once, before it wrote its brief.
+	if w := do(t, s, http.MethodGet, base+"/plans/"+id, ""); w.Code != http.StatusOK || decode[PlanDetail](t, w).Brief != "A daily login reward." {
+		t.Errorf("a meeting just started: %d %s", w.Code, w.Body)
+	}
 	if data, _ := os.ReadFile(brief); string(data) != "A daily login reward.\n" {
 		t.Errorf("brief = %q", data)
 	}
@@ -146,6 +150,13 @@ func TestMeetings_Detail(t *testing.T) {
 			`{"seq": 2, "step": "topic scope owner proposes", "topic": "scope", "kind": "proposal", "role": "owner", "data": {"says": "Build it."}}`+"\n")
 	write(t, root, ".ai/state/council/p1/meeting.log", "AWK Plan: 3 roles at the table\nline two\n")
 
+	raw := do(t, s, http.MethodGet, base+"/plans/p1", "").Body.String()
+	// The page reads what the council writes by the names JSON gives it.
+	for _, want := range []string{`"agenda":{"plan":"p1","questions":["Who calls it?"],"topics":[{"id":"scope"`, `"meeting":{"state":"meeting"`} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("the detail lacks %s:\n%s", want, raw)
+		}
+	}
 	detail := decode[PlanDetail](t, do(t, s, http.MethodGet, base+"/plans/p1", ""))
 	if detail.Brief != "A health endpoint." || detail.Meeting == nil || detail.Meeting.State != council.LiveMeeting || detail.Meeting.Speaker != "skeptic" ||
 		detail.Agenda == nil || len(detail.Agenda.Topics) != 2 || len(detail.Words) != 1 || detail.Log != nil {

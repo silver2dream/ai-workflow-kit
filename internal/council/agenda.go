@@ -37,9 +37,9 @@ type Topic struct {
 // Agenda is what a meeting takes up, in order, and what only the owner of the
 // project can answer.
 type Agenda struct {
-	Plan      string   `yaml:"plan"`
-	Questions []string `yaml:"questions,omitempty"`
-	Topics    []Topic  `yaml:"topics"`
+	Plan      string   `yaml:"plan" json:"plan"`
+	Questions []string `yaml:"questions,omitempty" json:"questions"`
+	Topics    []Topic  `yaml:"topics" json:"topics"`
 }
 
 // AgendaFile is the name of the agenda in a plan's folder.

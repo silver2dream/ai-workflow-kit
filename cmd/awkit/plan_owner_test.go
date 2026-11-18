@@ -142,3 +142,15 @@ func TestCmdPlan_OptionsThatDoNotGoTogether(t *testing.T) {
 		}
 	}
 }
+
+// awkit detach is how the workbench starts work; it takes its arguments in
+// one form only.
+func TestCmdDetach_Arguments(t *testing.T) {
+	for _, args := range [][]string{nil, {"plan"}, {"--log", "x.log", "plan"}, {"--log", "x.log", "--"}} {
+		var code int
+		_ = captureStdout(t, func() { code = cmdDetach(args) })
+		if code != 2 {
+			t.Errorf("detach %v = %d, want 2", args, code)
+		}
+	}
+}

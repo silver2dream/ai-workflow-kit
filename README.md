@@ -176,7 +176,7 @@ A CI workflow follows the configuration until you delete the comment at its top;
 | `awkit init` | set a project up |
 | `awkit doctor` | check everything a run needs, and say how to fix what is missing |
 | `awkit generate`, `awkit validate` | after the configuration changed: write the guides and the CI workflows again; check the file |
-| `awkit plan` | plan with the council; `awkit plan approve <plan>` creates the tickets |
+| `awkit plan` | plan with the council; `say` and `pause` while it meets; `awkit plan approve <plan>` creates the tickets |
 | `awkit gamedata` | check the game data (`check`); print the copy or the tables for a person to review (`review copy`, `review tables`) |
 | `awkit create-task` | add one ticket by hand |
 | `awkit run` | work through the open tickets (`--issue N` for one, `--dry-run` for the checks only) |

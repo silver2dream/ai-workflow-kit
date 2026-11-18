@@ -176,7 +176,7 @@ CI workflow 會跟著設定檔走，直到你刪掉它開頭那行註解；之�
 | `awkit init` | 設定一個專案 |
 | `awkit doctor` | 檢查 run 需要的所有東西，並說缺的怎麼補 |
 | `awkit generate`、`awkit validate` | 改過設定檔之後：重新產生指引與 CI workflow；檢查設定檔 |
-| `awkit plan` | 與議會一起規劃；`awkit plan approve <plan>` 建立票券 |
+| `awkit plan` | 與議會一起規劃；開會中用 `say` 插話、`pause` 暫停；`awkit plan approve <plan>` 建立票券 |
 | `awkit gamedata` | 檢查遊戲資料（`check`）；印出給人審的文案或表（`review copy`、`review tables`） |
 | `awkit create-task` | 手動補一張票 |
 | `awkit run` | 處理所有開著的票（`--issue N` 只做一張，`--dry-run` 只跑檢查） |

@@ -109,9 +109,14 @@ type PlanDetail struct {
 	Log []string `json:"log,omitempty"`
 }
 
+// planIn reports whether a project has a plan: its brief is written, or the
+// page just started its meeting, which writes the brief when it starts.
 func planIn(root, id string) bool {
 	if !council.IsPlanName(id) {
 		return false
+	}
+	if _, err := os.Stat(startedBrief(root, id)); err == nil {
+		return true
 	}
 	_, err := os.Stat(filepath.Join(root, filepath.FromSlash(council.PlansDir), id, "brief.md"))
 	return err == nil
@@ -127,6 +132,11 @@ func (s *Server) plan(handle func(w http.ResponseWriter, r *http.Request, root, 
 		}
 		handle(w, r, root, id)
 	})
+}
+
+// startedBrief is the brief a meeting started from the page is given.
+func startedBrief(root, id string) string {
+	return filepath.Join(council.StateDir(root, id), "brief-from-workbench.md")
 }
 
 func meetingLog(root, id string) string {
@@ -155,6 +165,8 @@ func tail(file string, n int) []string {
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request, root, id string) {
 	detail := PlanDetail{ID: id, Questions: []string{}, Words: []council.OwnerWord{}, Milestones: []council.Milestone{}, Tickets: []TicketView{}}
 	if brief, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(council.PlansDir), id, "brief.md")); err == nil {
+		detail.Brief = strings.TrimSpace(string(brief))
+	} else if brief, err := os.ReadFile(startedBrief(root, id)); err == nil {
 		detail.Brief = strings.TrimSpace(string(brief))
 	}
 	detail.Meeting = s.meetingOf(root, id)
@@ -230,7 +242,7 @@ func (s *Server) handleStartPlan(w http.ResponseWriter, r *http.Request, root st
 		return
 	}
 	id := council.NewName(root, brief, s.opts.Now())
-	file := filepath.Join(council.StateDir(root, id), "brief-from-workbench.md")
+	file := startedBrief(root, id)
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -81,13 +81,13 @@ func checkMilestones(milestones []Milestone) error {
 
 // WorkList is the file a plan ends with: docs/plans/<id>/tickets.yaml.
 type WorkList struct {
-	Plan string `yaml:"plan"`
+	Plan string `yaml:"plan" json:"plan"`
 	// Milestones are the steps the plan is built in; the tickets are those of
 	// the first.
-	Milestones []Milestone `yaml:"milestones,omitempty"`
-	Tickets    []Ticket    `yaml:"tickets"`
+	Milestones []Milestone `yaml:"milestones,omitempty" json:"milestones"`
+	Tickets    []Ticket    `yaml:"tickets" json:"tickets"`
 	// Later is what the list leaves for another plan.
-	Later []string `yaml:"later,omitempty"`
+	Later []string `yaml:"later,omitempty" json:"later"`
 }
 
 // WorkListFile is the name of the work list in a plan's folder.
