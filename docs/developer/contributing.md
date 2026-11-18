@@ -7,6 +7,7 @@
 ## 環境
 
 - Go 1.25 以上
+- 改工作台的畫面時：Node.js 22 以上（`web/`）
 - `git`、[`gh`](https://cli.github.com/)
 - Windows：Git for Windows，而且 `sh`、`bash` 要在 `PATH` 上（從 Git Bash 執行測試最省事）。有些測試會真的執行 shell 指令
 
@@ -17,7 +18,15 @@ go test ./...
 go build -o awkit ./cmd/awkit   # 本機試用的 binary
 ```
 
-AWK 沒有 Go 以外的執行期相依。
+AWK 沒有 Go 以外的執行期相依。工作台的畫面（`web/`）在建置時要 Node.js，建好的檔案嵌進 awkit，執行時不需要：
+
+```bash
+npm --prefix web ci
+npm --prefix web run build        # 寫到 internal/workbench/dist/，再 go build 才會包進去
+npm --prefix web run dev          # 改畫面時：開著 awkit ui，另開這個，API 轉給 127.0.0.1:4747
+```
+
+沒先建畫面的 awkit 照樣能編、能用，打開工作台時會說它沒有包含畫面。
 
 ## 這個 repository 的幾件事
 
@@ -55,15 +64,17 @@ go test -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 - 對外部工具的呼叫（`gh`、`claude`、`git`）用套件層級的函式變數隔開，測試換成假的；不要在測試裡真的打 GitHub。
 - **有些測試只在特定環境才會跑。** `TestIntegration_PreflightToLockRelease` 需要已登入的 `gh`、`claude`，而且工作目錄是乾淨的，否則跳過。所以送出之前，在 commit 之後的乾淨工作目錄再跑一次 `go test ./...`。
 - 改了規則，問自己：把這條規則改壞，會有測試失敗嗎？沒有就補一個。
+- 工作台的畫面：`npm --prefix web test`（vitest）與 `npm --prefix web run typecheck`。改了畫面，自己在瀏覽器裡把動到的每個按鈕點過，至少看寬、窄兩種視窗。
 
 ## CI
 
-`.github/workflows/ci.yml` 是手寫的（`awkit generate` 不會動它），三個 job：
+`.github/workflows/ci.yml` 是手寫的（`awkit generate` 不會動它），四個 job：
 
 | Job | 做什麼 |
 |---|---|
 | `awkit_cli`（ubuntu） | `go vet`、`go test -race` 並要求整體覆蓋率 60% 以上、`awkit evaluate --offline --strict` |
 | `awkit_cli_windows`（windows） | 在 Windows 上跑完整的 `go test ./...`，守住路徑、ConPTY 與行程相關的行為 |
+| `workbench_page`（ubuntu） | 工作台的畫面：`npm ci`、型別檢查、vitest、建置，再確認 awkit 嵌進去、送得出來的就是剛建好的畫面 |
 | `skeleton`（ubuntu） | 用 `godot-go` preset 建一個專案，以它產生的 CI workflow 的指令建置並測試 |
 
 `awkit evaluate --offline` 是給這個 CI 用的檢查：`.gitignore` 是否忽略了執行期的檔案、專案稽核有沒有 P0 的發現、設定檔是否有效、`internal/buildinfo/version.go` 在不在、文字檔的編碼與行尾是否一致。`--strict` 讓任何一項失敗都以非零結束。
@@ -83,7 +94,7 @@ go test -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
    git push origin vX.Y.Z
    ```
 
-   推 tag 會觸發 `.github/workflows/release.yml`：建置五個平台的 binary 並發佈 GitHub release。**推出去就是公開發佈，收不回來。**
+   推 tag 會觸發 `.github/workflows/release.yml`：先建一次工作台的畫面，再建置五個平台的 binary（每一個都包著畫面，少了就失敗）並發佈 GitHub release。**推出去就是公開發佈，收不回來。**
 
 ## 回報問題
 
