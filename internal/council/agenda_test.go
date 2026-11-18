@@ -59,8 +59,14 @@ func TestCheckAgenda(t *testing.T) {
 			"topic 1 (scope) reads docs/tech/architecture.md, which is not written yet and no earlier topic writes"},
 		{"reading what the topic itself writes first", func(a *Agenda) { a.Topics[0].Reads = []string{"docs/product/requirements.md"} },
 			"topic 1 (scope) reads docs/product/requirements.md, which is not written yet"},
-		{"reading what is no document of the table", func(a *Agenda) { a.Topics[1].Reads = []string{"README.md"} },
-			"topic 2 (build) reads README.md, which is no document of the table"},
+		{"reading a file of the project that is not there", func(a *Agenda) { a.Topics[1].Reads = []string{"README.md"} },
+			"topic 2 (build) reads README.md, which is neither a document of the table nor a file of the project that is there"},
+		{"reading a file that is no text", func(a *Agenda) { a.Topics[1].Reads = []string{"backend/main.go"} },
+			"topic 2 (build) reads backend/main.go: it is not a document of the table, and not a text file a topic reads"},
+		{"reading a tool's file", func(a *Agenda) { a.Topics[1].Reads = []string{".ai/config.yaml"} },
+			"topic 2 (build) reads .ai/config.yaml: it is in .ai, which a tool keeps for itself"},
+		{"reading a path that is not plain", func(a *Agenda) { a.Topics[1].Reads = []string{"../other/README.md"} },
+			"topic 2 (build) reads ../other/README.md: write the path plainly"},
 		{"reading a document twice", func(a *Agenda) { a.Topics[1].Reads = []string{"docs/qa/risks.md", "docs/qa/risks.md"} }, "topic 2 (build) reads docs/qa/risks.md twice"},
 	}
 	for _, tt := range tests {
@@ -81,6 +87,14 @@ func TestCheckAgenda(t *testing.T) {
 	agenda.Questions = []string{"1", "2", "3", "4", "5", "6", "7", " "}
 	if err := checkAgenda(agenda, roster, 2, exists); err != nil {
 		t.Errorf("an agenda at the bounds: %v", err)
+	}
+	// A topic reads a text file of the project no role owns, when it is there:
+	// a configuration, a contract.
+	agenda = good()
+	agenda.Topics[1].Reads = []string{"gamedata/luban.conf", "api/match.proto"}
+	there := func(doc string) bool { return written[doc] || doc == "gamedata/luban.conf" || doc == "api/match.proto" }
+	if err := checkAgenda(agenda, roster, 8, there); err != nil {
+		t.Errorf("reading a configuration and a contract: %v", err)
 	}
 }
 

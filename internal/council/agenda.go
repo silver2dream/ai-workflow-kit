@@ -108,8 +108,10 @@ func checkAgenda(agenda *Agenda, roster *Roster, maxTopics int, exists func(doc 
 		}
 		for j, doc := range topic.Reads {
 			switch {
-			case roster.Owner(doc) == nil:
-				return fmt.Errorf("%s reads %s, which is no document of the table: the roles read the documents they write", name, doc)
+			case roster.Owner(doc) == nil && checkReadPath(doc) != nil:
+				return fmt.Errorf("%s reads %s: %w", name, doc, checkReadPath(doc))
+			case roster.Owner(doc) == nil && !exists(doc):
+				return fmt.Errorf("%s reads %s, which is neither a document of the table nor a file of the project that is there", name, doc)
 			case !written[doc] && !exists(doc):
 				return fmt.Errorf("%s reads %s, which is not written yet and no earlier topic writes", name, doc)
 			case contains(topic.Reads[:j], doc):
@@ -272,7 +274,7 @@ Your task: set the agenda.
 - At most %d topics. Cover what has to be settled before work on the brief can start; what can wait for a later plan is left out.
 - lead: the role whose documents the topic is mostly about; it proposes. speakers: the other roles whose stance bears on the topic, in the order they speak, each building on the one before: who shapes the thing, then who builds it, then who weighs what it costs, and who looks for how it fails last. Not every role speaks to every topic.
 - writes: the documents the topic ends in. Each is a document of a role that leads or speaks to the topic: a file the table lists as that role's, or %s, named for what it holds. A subject the table splits into several topics can end in several documents.
-%s- reads: the documents the roles read before they speak: ones written already (listed above), or written by an earlier topic.
+%s- reads: the documents the roles read before they speak: ones written already (listed above), or written by an earlier topic; or a text file of the project that is there, such as a configuration or a contract.
 - questions: what only the owner of the project can answer and the plan turns on, at most %d, each answerable in a sentence or two. The meeting does not wait for the answers: where they are missing, the deciding role says what it assumes.
 
 %s
