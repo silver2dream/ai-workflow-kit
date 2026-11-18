@@ -118,6 +118,23 @@ export interface PlanView {
   approval?: ApprovalState;
 }
 
+/** A log of a run: the run's own (started from the page), the Principal's, or a ticket's Worker's. */
+export interface RunLog {
+  name: string;
+  issue?: number;
+  size: number;
+  updated: string;
+}
+
+/** A piece of a log, from where the page read last. */
+export interface RunOutput {
+  exists: boolean;
+  text: string;
+  next: number;
+  /** The text does not follow what was read before: the log started over, or only its end is given. */
+  fresh: boolean;
+}
+
 /** An answer the server gave with an error: what it said, and its status. */
 export class ApiError extends Error {
   constructor(
@@ -178,5 +195,9 @@ export const api = {
   events: (id: string, last = 300) => request<EventsView>("GET", `${project(id)}/events?last=${last}`),
   health: (id: string) => request<Health>("GET", `${project(id)}/health`),
   plans: (id: string) => request<{ plans: PlanView[] }>("GET", `${project(id)}/plans`),
+  startRun: (id: string, issue?: number) => request<void>("POST", `${project(id)}/run`, { issue: issue ?? 0 }),
+  stopRun: (id: string, now: boolean) => request<void>("POST", `${project(id)}/run/stop`, { now }),
+  runLogs: (id: string) => request<{ logs: RunLog[] }>("GET", `${project(id)}/run/logs`),
+  runOutput: (id: string, log: string, since: number) => request<RunOutput>("GET", `${project(id)}/run/output?log=${encodeURIComponent(log)}&since=${since}`),
   streamURL: (id: string) => `${project(id)}/stream`,
 };

@@ -64,6 +64,8 @@ type Options struct {
 	Spawn func(root string, args []string, log string) (int, error)
 	// Alive reports whether a process runs; kickoff.ProcessAlive when nil.
 	Alive func(pid int) bool
+	// Kill ends a process and what it started; killTree when nil.
+	Kill func(pid int) error
 }
 
 // Server is the workbench of one awkit process.
@@ -96,6 +98,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.Alive == nil {
 		opts.Alive = kickoff.ProcessAlive
+	}
+	if opts.Kill == nil {
+		opts.Kill = killTree
 	}
 	if opts.Poll <= 0 {
 		opts.Poll = time.Second

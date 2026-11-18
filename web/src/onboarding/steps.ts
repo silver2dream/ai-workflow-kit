@@ -37,6 +37,12 @@ export const TOUR: TourStep[] = [
     body: "工單寫「要做什麼」，PR 是照著工單改好的「程式」。兩者在 GitHub 上共用編號，所以畫面上一律寫清楚是「工單 #306」還是「PR #313」。點開卡片看它的經過。",
   },
   {
+    page: "run",
+    targets: ["runcontrols"],
+    title: "開工、停工都在這裡",
+    body: "按「開始工作」，執行者就一張一張做；要停，可以等手上這一步做完再停，也可以立刻停。下面看得到主控和執行者現在在說什麼。關掉工作台，工作照樣繼續。",
+  },
+  {
     page: "activity",
     targets: ["activity"],
     title: "每一步都有紀錄",

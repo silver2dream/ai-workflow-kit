@@ -1,4 +1,4 @@
-import { Hand, HeartPulse, History, Kanban, MapIcon, Users, type LucideIcon } from "lucide-react";
+import { Hand, HeartPulse, History, Kanban, MapIcon, Play, Users, type LucideIcon } from "lucide-react";
 
 export interface PageInfo {
   page: string;
@@ -14,6 +14,7 @@ export const PAGES: PageInfo[] = [
   { page: "inbox", title: "需要你處理", icon: Hand },
   { page: "plans", title: "規劃與議會", icon: Users, group: "工作" },
   { page: "board", title: "工作看板", icon: Kanban },
+  { page: "run", title: "執行", icon: Play },
   { page: "activity", title: "活動紀錄", icon: History },
   { page: "health", title: "健康檢查", icon: HeartPulse, group: "這台電腦" },
 ];

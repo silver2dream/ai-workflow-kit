@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 const ORDER: Record<string, number> = { error: 0, warning: 1, ok: 2 };
 const worstFirst = (checks: Check[]) => [...checks].sort((a, b) => (ORDER[a.status] ?? 3) - (ORDER[b.status] ?? 3));
 
-function Checks({ checks, loading }: { checks?: Check[]; loading: boolean }) {
+export function Checks({ checks, loading }: { checks?: Check[]; loading: boolean }) {
   if (loading && !checks) {
     return (
       <div className="grid gap-3 px-5 pb-5">
