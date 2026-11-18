@@ -1199,3 +1199,49 @@ func TestCheckConfig_KeysNothingReadsAndRenamedLabels(t *testing.T) {
 		t.Errorf("a renamed label: passed %v, %q; want the check to fail and say which label", got.Passed, got.Message)
 	}
 }
+
+// A checker put In a project's folder asks git about that project, not about
+// the folder awkit runs in: the workbench checks projects it was not started
+// in, and this package's own folder is a git repository with an origin.
+func TestPreflightChecker_In(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	bare := t.TempDir()
+	r := NewPreflightChecker(layout.Config(bare), layout.State(bare, "kickoff.lock")).In(bare).CheckGitRemote()
+	if r.Passed || !strings.Contains(r.Message, "not a git repository") {
+		t.Errorf("a folder that is no repository: %+v", r)
+	}
+
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://example.com/rally.git"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	p := NewPreflightChecker(layout.Config(repo), layout.State(repo, "kickoff.lock")).In(repo)
+	if r := p.CheckGitRemote(); !r.Passed || r.Message != "origin is https://example.com/rally.git" {
+		t.Errorf("the project's origin: %+v", r)
+	}
+	if r := p.CheckGitClean(); !r.Passed {
+		t.Errorf("an empty repository is clean: %+v", r)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "new.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.CheckGitClean(); r.Passed {
+		t.Errorf("a file not committed in the project: %+v", r)
+	}
+
+	if err := stopmark.Write(repo, "stop-workflow", "needs_human_review"); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.CheckStopMarker(); !r.Warning || !strings.Contains(r.Message, "needs_human_review") {
+		t.Errorf("the project's STOP marker: %+v", r)
+	}
+	if p.baseDir() != repo {
+		t.Errorf("baseDir = %q, want %q", p.baseDir(), repo)
+	}
+}

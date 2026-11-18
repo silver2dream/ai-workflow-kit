@@ -19,6 +19,9 @@ type PreflightChecker struct {
 	config     *Config
 	configPath string
 	lockFile   string
+	// dir is the project's folder, where git and gh are asked; empty is the
+	// folder awkit runs in.
+	dir string
 }
 
 // CheckResult represents the result of a single check
@@ -35,6 +38,29 @@ func NewPreflightChecker(configPath, lockFile string) *PreflightChecker {
 		configPath: configPath,
 		lockFile:   lockFile,
 	}
+}
+
+// In has the checker ask git and gh about the project in dir, not about the
+// folder awkit runs in: the workbench checks projects it was not started in.
+// The configuration and lock paths it was given are used as they are.
+func (p *PreflightChecker) In(dir string) *PreflightChecker {
+	p.dir = dir
+	return p
+}
+
+// command is a git or gh command run in the project's folder.
+func (p *PreflightChecker) command(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = p.dir
+	return cmd
+}
+
+// root is the project's folder, as a path.
+func (p *PreflightChecker) root() string {
+	if p.dir == "" {
+		return "."
+	}
+	return p.dir
 }
 
 // preflightStep is one check of a run: what is checked, and whether the run
@@ -117,7 +143,7 @@ func (p *PreflightChecker) CheckGhCLI() CheckResult {
 
 // CheckGhAuth checks if gh is authenticated
 func (p *PreflightChecker) CheckGhAuth() CheckResult {
-	cmd := exec.Command("gh", "auth", "status")
+	cmd := p.command("gh", "auth", "status")
 	if err := cmd.Run(); err != nil {
 		return CheckResult{
 			Name:    "gh Auth",
@@ -193,13 +219,13 @@ func (p *PreflightChecker) CheckCodexCLI() CheckResult {
 // opened there.
 func (p *PreflightChecker) CheckGitRemote() CheckResult {
 	const name = "Git Remote"
-	if err := exec.Command("git", "rev-parse", "--git-dir").Run(); err != nil {
+	if err := p.command("git", "rev-parse", "--git-dir").Run(); err != nil {
 		return CheckResult{
 			Name:    name,
 			Message: "this is not a git repository. Make it one (git init), commit, and add the GitHub repository as its remote: git remote add origin <url>",
 		}
 	}
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	out, err := p.command("git", "remote", "get-url", "origin").Output()
 	if err != nil || strings.TrimSpace(string(out)) == "" {
 		return CheckResult{
 			Name:    name,
@@ -211,7 +237,7 @@ func (p *PreflightChecker) CheckGitRemote() CheckResult {
 
 // CheckGitClean checks if working directory is clean
 func (p *PreflightChecker) CheckGitClean() CheckResult {
-	cmd := exec.Command("git", "status", "--porcelain")
+	cmd := p.command("git", "status", "--porcelain")
 	output, err := cmd.Output()
 	if err != nil {
 		return CheckResult{
@@ -242,7 +268,7 @@ func (p *PreflightChecker) CheckGitClean() CheckResult {
 // start over it had to be forced each time. The run clears it when it starts;
 // the check changes nothing, so that a dry run leaves the project as it is.
 func (p *PreflightChecker) CheckStopMarker() CheckResult {
-	reason, present := stopmark.Read(".")
+	reason, present := stopmark.Read(p.root())
 	switch {
 	case !present:
 		return CheckResult{Name: "Stop Marker", Passed: true, Message: "No stop marker"}
@@ -428,6 +454,9 @@ func (p *PreflightChecker) CheckAgents() CheckResult {
 func (p *PreflightChecker) baseDir() string {
 	d := layout.ProjectOf(p.configPath)
 	if d == "." || d == "" {
+		if p.dir != "" {
+			return p.dir
+		}
 		d, _ = os.Getwd()
 	}
 	return d
@@ -463,10 +492,13 @@ func (p *PreflightChecker) CheckRepoPaths() CheckResult {
 	}
 }
 
-// remoteHasBranch asks origin whether it has a branch. known is false when it
-// could not be asked: no remote of that name, or no way to reach it.
-var remoteHasBranch = func(branch string) (found, known bool) {
-	err := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+branch).Run()
+// remoteHasBranch asks the origin of the repository in dir (empty: the folder
+// awkit runs in) whether it has a branch. known is false when it could not be
+// asked: no remote of that name, or no way to reach it.
+var remoteHasBranch = func(dir, branch string) (found, known bool) {
+	cmd := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+branch)
+	cmd.Dir = dir
+	err := cmd.Run()
 	if err == nil {
 		return true, true
 	}
@@ -502,8 +534,8 @@ func (p *PreflightChecker) CheckIntegrationBranch() CheckResult {
 		}
 	}
 
-	here := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
-	found, known := remoteHasBranch(branch)
+	here := p.command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
+	found, known := remoteHasBranch(p.dir, branch)
 	switch {
 	case found:
 		return CheckResult{Name: name, Passed: true, Message: fmt.Sprintf("pull requests go to %q", branch)}
@@ -547,7 +579,7 @@ func (p *PreflightChecker) CheckGitHubRepo() CheckResult {
 		}
 	}
 
-	cmd := exec.Command("gh", "repo", "view", "--json", "name", "-q", ".name")
+	cmd := p.command("gh", "repo", "view", "--json", "name", "-q", ".name")
 	output, err := cmd.Output()
 	if err != nil {
 		return CheckResult{
@@ -580,14 +612,14 @@ func (p *PreflightChecker) CheckRepoWritePermission() CheckResult {
 	}
 
 	// Resolve OWNER/REPO for the current directory.
-	repoOut, err := exec.Command("gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").Output()
+	repoOut, err := p.command("gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").Output()
 	repo := strings.TrimSpace(string(repoOut))
 	if err != nil || repo == "" {
 		return CheckResult{Name: name, Passed: true, Warning: true, Message: "could not detect repo (offline or no remote), skipping write-access check"}
 	}
 
 	// Ask GitHub what the *current* identity may do on this repo.
-	permOut, err := exec.Command("gh", "api", "repos/"+repo, "--jq", ".permissions.push").Output()
+	permOut, err := p.command("gh", "api", "repos/"+repo, "--jq", ".permissions.push").Output()
 	if err != nil {
 		return CheckResult{Name: name, Passed: true, Warning: true, Message: fmt.Sprintf("could not verify write access to %s (offline?), continuing", repo)}
 	}
@@ -595,7 +627,7 @@ func (p *PreflightChecker) CheckRepoWritePermission() CheckResult {
 
 	// Best-effort: name the account so the fix is obvious.
 	login := "the current gh account"
-	if out, uerr := exec.Command("gh", "api", "user", "--jq", ".login").Output(); uerr == nil {
+	if out, uerr := p.command("gh", "api", "user", "--jq", ".login").Output(); uerr == nil {
 		if l := strings.TrimSpace(string(out)); l != "" {
 			login = l
 		}
