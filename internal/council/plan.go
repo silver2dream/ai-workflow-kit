@@ -55,11 +55,21 @@ type Options struct {
 	// question open. Without it nobody is asked: the meeting never waits for a
 	// person, and the deciding role says what the plan assumes instead.
 	Ask func(ctx context.Context, questions []string) ([]string, error)
+	// Name names a new plan; empty names it after the day and the brief.
+	Name string
+	// AskInPage puts the questions of the agenda to an owner who is not at
+	// the terminal: the meeting writes them down and stops, and goes on with
+	// the answers once they are given (AnswerQuestions). It holds for every
+	// run of the plan, and over Ask.
+	AskInPage bool
+	// ReviewAgenda stops the meeting once its agenda is set, for the owner
+	// to look at and change; it goes on once they let it (ReleaseAgenda).
+	ReviewAgenda bool
 }
 
 // Objection is what one role cannot accept in what another said.
 type Objection struct {
-	From  string `json:"-"`
+	From  string `json:"from,omitempty"`
 	To    string `json:"to"`
 	Point string `json:"point"`
 	Why   string `json:"why"`
@@ -84,14 +94,14 @@ type Dispute struct {
 // Exchange is one round of a dispute: the defender's answer and, unless the
 // defender conceded, what the challenger made of it.
 type Exchange struct {
-	Stance   string // concede, revise or hold
-	Reply    string
-	Position string
+	Stance   string `json:"stance"` // concede, revise or hold
+	Reply    string `json:"reply"`
+	Position string `json:"position,omitempty"`
 
-	Answered   bool // the challenger was asked
-	Accepts    bool
-	Answer     string
-	StillWants string
+	Answered   bool   `json:"answered"` // the challenger was asked
+	Accepts    bool   `json:"accepts"`
+	Answer     string `json:"answer,omitempty"`
+	StillWants string `json:"still_wants,omitempty"`
 }
 
 // OwnerAnswer is what the owner of the project said to a question of the
@@ -114,11 +124,14 @@ type Decision struct {
 	// is given here, not by the role, and counts on from the decisions that
 	// are on record, so that it names one decision for as long as the project
 	// lasts.
-	ID        string `json:"-"`
+	ID        string `json:"id,omitempty"`
 	Title     string `json:"title"`
 	Decision  string `json:"decision"`
 	Rationale string `json:"rationale"`
 	Dissent   string `json:"dissent"`
+	// Replaces names the decision this one takes the place of, when the
+	// owner's word had the deciding role read the plan's decisions again.
+	Replaces string `json:"replaces,omitempty"`
 }
 
 // Assumption is what a plan takes to be true where only the owner of the
@@ -126,7 +139,7 @@ type Decision struct {
 // shown what the plan rests on.
 type Assumption struct {
 	// ID names the assumption the way a decision is named: A3.
-	ID         string `json:"-"`
+	ID         string `json:"id,omitempty"`
 	Question   string `json:"question"`
 	Assumption string `json:"assumption"`
 	IfWrong    string `json:"if_wrong"`
@@ -134,32 +147,32 @@ type Assumption struct {
 
 // WrittenDocument is what became of a document in a plan.
 type WrittenDocument struct {
-	Path  string
-	Owner string
+	Path  string `json:"path"`
+	Owner string `json:"owner"`
 	// Unchanged says the owner left the document as it stood.
-	Unchanged bool
+	Unchanged bool `json:"unchanged,omitempty"`
 	// Refused says why the document was not written; empty when it was.
-	Refused string
+	Refused string `json:"refused,omitempty"`
 }
 
 // RuleCheck is what reading one role's documents against the project's rules
 // came to.
 type RuleCheck struct {
 	// Owner is the role whose documents were read.
-	Owner string
+	Owner string `json:"owner"`
 	// Found is what the reading found, before the owner put anything right.
-	Found []RuleFinding
+	Found []RuleFinding `json:"found"`
 	// Settled says how it ended is known: nothing was found, or the owner had
 	// its turn at putting it right and the reader said what still stands. It
 	// is false when the meeting stopped in between.
-	Settled bool
+	Settled bool `json:"settled"`
 	// Open is what still stands after the owner's turn.
-	Open []RuleFinding
+	Open []RuleFinding `json:"open"`
 }
 
 // ListObjection is what a role finds wrong with the work list.
 type ListObjection struct {
-	From   string `json:"-"`
+	From   string `json:"from,omitempty"`
 	Ticket string `json:"ticket"`
 	Point  string `json:"point"`
 	Wants  string `json:"wants"`
@@ -176,6 +189,10 @@ type Plan struct {
 	// Answers are what the owner of the project said when the questions of
 	// the agenda were put to them; empty when nobody was asked.
 	Answers []OwnerAnswer
+	// Words are what the owner said while the meeting went on, as far as it
+	// took them in; Revisions what the deciding role made of them.
+	Words     []OwnerWord
+	Revisions []Review
 	// Topics are the topics of the agenda as far as they were held, in order.
 	Topics []TopicRecord
 
@@ -263,6 +280,17 @@ type planner struct {
 	ask        func(ctx context.Context, questions []string) ([]string, error)
 	// answers are what the owner said; every role is told from then on.
 	answers []OwnerAnswer
+	// words are what the owner said while the meeting went on, as far as it
+	// took them in, and taken names them.
+	words []OwnerWord
+	taken map[string]bool
+	// plan is the plan being held; topic the topic it is at, from 1.
+	plan  *Plan
+	topic int
+	// live and transcript tell whoever follows the meeting where it is and
+	// what was said.
+	live       *liveWriter
+	transcript *transcript
 	// data is where the project keeps its game data; nil when it keeps none.
 	data *gamedata.Layout
 }
@@ -446,6 +474,15 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 			return nil, errors.New("a plan needs a brief: say what is wanted")
 		}
 		plan.ID = newID(opts.Root, plan.Brief, opts.Now())
+		if opts.Name != "" {
+			if !planID.MatchString(opts.Name) {
+				return nil, fmt.Errorf("%q cannot name a plan: lowercase letters, digits and -", opts.Name)
+			}
+			if _, err := os.Stat(filepath.Join(opts.Root, filepath.FromSlash(PlansDir), opts.Name)); err == nil {
+				return nil, fmt.Errorf("there is a plan %s already", opts.Name)
+			}
+			plan.ID = opts.Name
+		}
 	} else {
 		if !planID.MatchString(plan.ID) {
 			return nil, fmt.Errorf("%q is not the name of a plan", plan.ID)
@@ -463,8 +500,26 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 		return nil, err
 	}
 	p := &planner{root: opts.Root, planID: plan.ID, brief: plan.Brief, roster: opts.Roster, repos: opts.Repos, rules: opts.Rules,
-		maxTickets: opts.MaxTickets, now: opts.Now, session: session, ask: opts.Ask}
+		maxTickets: opts.MaxTickets, now: opts.Now, session: session, ask: opts.Ask, taken: map[string]bool{}, plan: plan,
+		live: newLiveWriter(stateDir, opts.Roster.Limits.Calls, opts.Now), transcript: newTranscript(stateDir, opts.Now)}
 	p.findGameData()
+
+	// Going on with a plan is the end of a pause. What the owner asked for at
+	// the start holds for every run of the plan: it is kept as a mark.
+	if opts.ID != "" {
+		_ = os.Remove(p.stateFile(pauseFile))
+	}
+	for mark, wanted := range map[string]bool{agendaReview: opts.ReviewAgenda, questionsAsked: opts.AskInPage} {
+		if wanted && !p.marked(mark) {
+			if err := os.WriteFile(p.stateFile(mark), []byte("asked\n"), 0o644); err != nil {
+				return plan, err
+			}
+		}
+	}
+	if p.marked(questionsAsked) && p.ask == nil {
+		p.ask = p.askInPage
+	}
+	p.live.set(func(l *Live) { l.State = LiveMeeting })
 
 	if err := p.writeFile(plan.Dir()+"/brief.md", plan.Brief+"\n"); err != nil {
 		return plan, err
@@ -472,6 +527,7 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 
 	meetingErr := p.meet(ctx, plan)
 	plan.Calls = session.callsMade()
+	p.topic = 0
 
 	// Whatever was reached goes on record, also when the meeting stopped early.
 	if err := p.writeMinutes(plan, meetingErr); err != nil && meetingErr == nil {
@@ -480,6 +536,22 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 	if err := writeIndex(p.root, p.roster); err != nil && meetingErr == nil {
 		meetingErr = err
 	}
+	if err := p.writeRecord(plan, meetingErr); err != nil && meetingErr == nil {
+		meetingErr = err
+	}
+	p.live.set(func(l *Live) {
+		l.Calls, l.Step, l.Speaker, l.Note = plan.Calls, "", "", ""
+		var waiting *Waiting
+		switch {
+		case meetingErr == nil:
+			l.State = LiveFinished
+		case errors.As(meetingErr, &waiting):
+			l.State = waiting.State
+		default:
+			l.State, l.Note = LiveFailed, meetingErr.Error()
+		}
+	})
+	p.tell(Entry{Step: "the meeting stops", Kind: EntryStopped, Data: p.live.get()})
 	return plan, meetingErr
 }
 
@@ -488,6 +560,15 @@ func Run(ctx context.Context, opts Options) (*Plan, error) {
 func (p *planner) meet(ctx context.Context, plan *Plan) error {
 	if err := p.setAgenda(ctx, plan); err != nil {
 		return fmt.Errorf("the meeting stopped at the agenda: %w", err)
+	}
+	p.live.set(func(l *Live) { l.Topics = len(plan.Topics) })
+	if plan.Agenda != nil && p.session.wasAsked("moderator sets the agenda") {
+		p.tell(Entry{Step: "moderator sets the agenda", Kind: EntryAgenda, Role: "moderator", Data: plan.Agenda})
+	}
+	// An owner who asked to see the agenda first is shown it, and the
+	// meeting goes on once they let it, with the agenda as they left it.
+	if p.marked(agendaReview) && !p.marked(agendaReleased) {
+		return &Waiting{State: LiveAgenda}
 	}
 	if err := p.askOwner(ctx, plan); err != nil {
 		return fmt.Errorf("the meeting stopped at the owner's questions: %w", err)
@@ -499,6 +580,7 @@ func (p *planner) meet(ctx context.Context, plan *Plan) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		p.topic = i + 1
 		err := p.hold(ctx, plan, i)
 		plan.gather()
 		if err != nil {

@@ -35,6 +35,9 @@ type seat struct {
 // rules, and the role puts right what was found, once. Only this function
 // writes the documents, and only to the paths the role owns.
 func (p *planner) writeDown(ctx context.Context, plan *Plan, r *TopicRecord) error {
+	if err := p.point(ctx, plan, r.step("documents"), "", ""); err != nil {
+		return err
+	}
 	// What each role is asked for: its documents of the topic, without the
 	// ones that are too long for the council to write.
 	var seats []*seat
@@ -128,6 +131,12 @@ func (p *planner) write(ctx context.Context, plan *Plan, r *TopicRecord, at *sea
 	if len(at.asked) == 0 {
 		return nil
 	}
+	// What the role wrote is told once its turn is over, with what the
+	// check of the rules came to.
+	defer func() {
+		p.tell(Entry{Step: r.step("documents " + role.ID), Topic: r.Topic.ID, Kind: EntryDocuments, Role: role.ID,
+			Data: DocumentsEntry{Documents: at.written, Check: at.check}})
+	}()
 	written, err := p.handIn(ctx, r.step("documents "+role.ID), role, p.documentsPrompt(role, plan, r, at), at.asked,
 		at.asked, func(doc string) error {
 			return fmt.Errorf("%s was not handed in; this topic ends in it, and it is yours", doc)

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -19,7 +20,6 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/rules"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
-	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
 func usagePlan() {
@@ -29,6 +29,8 @@ Usage:
   awkit plan "<what you want built>" [options]
   awkit plan --brief-file <path> [options]
   awkit plan --resume <plan>
+  awkit plan say <plan> "<what you say>" [--to "<the question it answers>"]
+  awkit plan pause <plan>
   awkit plan approve <plan> [--dry-run]
 
 What a plan does:
@@ -55,6 +57,17 @@ What a plan does:
   waits for a person. With --ask the questions of the agenda are put to you
   before the first topic, and the table argues from your answers.
 
+  While it goes on, you can step in: awkit plan say (or the workbench) puts
+  what you say to the meeting, and the next role to speak is told; it holds
+  like the brief. When something was decided already, the deciding role
+  first reads every decision of the plan again against what you said, and
+  the owners read again in full every document that rests on what changed.
+  The topics are not held again. What you say after the meeting is over is
+  taken in when it goes on (--resume), and the work list is laid out again.
+
+  awkit plan pause stops the meeting after the step it is at; --resume goes
+  on from there, and nothing that was said is asked for again.
+
   To change the agenda, stop the plan, edit agenda.yaml, and go on with
   --resume: the topics that were held stay as they were.
 
@@ -66,11 +79,17 @@ What a plan does:
   Nothing is created on GitHub before that.
 
 Options:
-  --ask          Answer the questions of the agenda before the first topic (it waits for you)
-  --brief-file   Read the brief from a file
-  --resume       Go on with a plan that stopped; its name is its folder in docs/plans/
-  --roster       The roster to use (default: `+layout.RosterFile+`)
-  --state-root   Project root (default: git root)
+  --ask              Answer the questions of the agenda before the first topic (it waits for you)
+  --review-agenda    Stop once the agenda is set, for you to look at and change it; --resume goes on
+  --ask-in-workbench Put the questions of the agenda to you in the workbench: the meeting stops until they are answered
+  --brief-file       Read the brief from a file
+  --name             Name a new plan (lowercase letters, digits and -); by default the day and the brief name it
+  --resume           Go on with a plan that stopped; its name is its folder in docs/plans/
+  --roster           The roster to use (default: `+layout.RosterFile+`)
+  --state-root       Project root (default: git root)
+
+Options of say:
+  --to           The question it answers: one of the agenda, or what an assumption asked
 
 Options of approve:
   --dry-run      Say what would be created, and create nothing
@@ -78,6 +97,7 @@ Options of approve:
 Examples:
   awkit plan "A daily login reward: seven days, the reward grows, a missed day starts over"
   awkit plan --ask --brief-file notes/reward.md
+  awkit plan say 20261114-a-daily-login-reward "A missed day does not start over; it pauses the streak"
   awkit plan --resume 20261114-a-daily-login-reward
   awkit plan approve 20261114-a-daily-login-reward
 `)
@@ -121,8 +141,15 @@ var planCreate = func(ctx context.Context, stateRoot, title, bodyFile string) (i
 }
 
 func cmdPlan(args []string) int {
-	if len(args) > 0 && args[0] == "approve" {
-		return cmdPlanApprove(args[1:])
+	if len(args) > 0 {
+		switch args[0] {
+		case "approve":
+			return cmdPlanApprove(args[1:])
+		case "say":
+			return cmdPlanSay(args[1:])
+		case "pause":
+			return cmdPlanPause(args[1:])
+		}
 	}
 
 	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
@@ -130,14 +157,17 @@ func cmdPlan(args []string) int {
 	fs.Usage = usagePlan
 	briefFile := fs.String("brief-file", "", "")
 	askOwner := fs.Bool("ask", false, "")
+	reviewAgenda := fs.Bool("review-agenda", false, "")
+	askInWorkbench := fs.Bool("ask-in-workbench", false, "")
+	name := fs.String("name", "", "")
 	resume := fs.String("resume", "", "")
 	rosterFile := fs.String("roster", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 	// The brief may come before or after the options.
-	flags, words := splitFlags(args, map[string]bool{"--brief-file": true, "--resume": true, "--roster": true, "--state-root": true,
-		"-brief-file": true, "-resume": true, "-roster": true, "-state-root": true})
+	flags, words := splitFlags(args, map[string]bool{"--brief-file": true, "--resume": true, "--roster": true, "--state-root": true, "--name": true,
+		"-brief-file": true, "-resume": true, "-roster": true, "-state-root": true, "-name": true})
 	if err := fs.Parse(flags); err != nil {
 		return 2
 	}
@@ -150,6 +180,12 @@ func cmdPlan(args []string) int {
 	switch {
 	case *resume != "" && (brief != "" || *briefFile != ""):
 		errorf("--resume goes on with a plan that has its brief; give no other\n")
+		return 2
+	case *resume != "" && *name != "":
+		errorf("--name names a new plan; --resume goes on with one that has its name\n")
+		return 2
+	case *askOwner && *askInWorkbench:
+		errorf("the questions are asked here (--ask) or in the workbench (--ask-in-workbench), not both\n")
 		return 2
 	case brief != "" && *briefFile != "":
 		errorf("give the brief as words or with --brief-file, not both\n")
@@ -201,11 +237,26 @@ func cmdPlan(args []string) int {
 	if *askOwner {
 		ask = ownerAtTerminal(planInput, os.Stdout)
 	}
+	// Going on with a meeting that waits for its owner to look at its agenda
+	// is the owner's word that they have: the agenda is checked and let go.
+	if *resume != "" {
+		if live, err := council.ReadLive(root, *resume); err == nil && live.State == council.LiveAgenda {
+			if err := council.ReleaseAgenda(root, *resume, roster); err != nil {
+				errorf("%s/%s/%s: %v\n", council.PlansDir, *resume, council.AgendaFile, err)
+				return 1
+			}
+		}
+	}
 	plan, err := council.Run(context.Background(), council.Options{
 		Root: root, Brief: brief, Roster: roster, Model: planModel, Repos: repos, Rules: projectRules, ID: *resume, Ask: ask,
+		Name: *name, ReviewAgenda: *reviewAgenda, AskInPage: *askInWorkbench,
 		Progress: func(line string) { fmt.Println(line) },
 	})
 	fmt.Println("")
+	var waiting *council.Waiting
+	if errors.As(err, &waiting) {
+		return waitsForOwner(root, plan, waiting)
+	}
 	if err != nil {
 		errorf("%v\n", err)
 		if plan != nil && plan.ID != "" {
@@ -216,6 +267,19 @@ func cmdPlan(args []string) int {
 
 	success("Plan %s: %d topics, %d decisions, %d documents written, %d milestones, %d tickets proposed for the first (%d model calls)\n", plan.ID,
 		len(plan.Topics), len(plan.Decisions), writtenDocuments(plan), len(plan.Milestones), len(plan.Tickets), plan.Calls)
+	if len(plan.Words) > 0 {
+		replaced, withdrawn := 0, 0
+		for _, review := range plan.Revisions {
+			for _, decision := range review.Decisions {
+				if decision.Replaces != "" {
+					replaced++
+				}
+			}
+			withdrawn += len(review.Withdrawn)
+		}
+		fmt.Printf("You said %d thing(s) while it went on; reading the plan again against them replaced %d decision(s) and withdrew %d.\n",
+			len(plan.Words), replaced, withdrawn)
+	}
 	fmt.Println("")
 	fmt.Printf("  Agenda:     %s/%s\n", plan.Dir(), council.AgendaFile)
 	fmt.Printf("  Minutes:    %s/minutes.md, and one file per topic in %s/topics/\n", plan.Dir(), plan.Dir())
@@ -414,23 +478,7 @@ func planRoot(flagValue string) (string, int) {
 
 // planRepos lists the repos a ticket can be for: the ones of the config, and
 // the repository root.
-func planRepos(root string) ([]council.Repo, error) {
-	cfg, err := analyzer.LoadConfig(config.Path(root))
-	if err != nil {
-		return nil, fmt.Errorf("the project's config cannot be read ("+layout.ConfigFile+"): %w\nRun `awkit init` first", err)
-	}
-	var repos []council.Repo
-	for _, name := range cfg.TicketRepos() {
-		entry := council.Repo{Name: name}
-		if configured := cfg.FindRepo(name); configured != nil {
-			entry.Language, entry.Path = configured.Language, configured.Path
-		} else if name == ticket.RootRepo {
-			entry.Path = "./"
-		}
-		repos = append(repos, entry)
-	}
-	return repos, nil
-}
+func planRepos(root string) ([]council.Repo, error) { return council.ProjectRepos(root) }
 
 func rosterPath(root, flagValue string) string {
 	if flagValue != "" {

@@ -320,6 +320,13 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	}
 
 	draftStep, revisedStep := "work list "+planner.ID, "work list revised "+planner.ID
+	p.topic = 0
+	if err := p.point(ctx, plan, "work list", draftStep, planner.ID); err != nil {
+		return err
+	}
+	// What the owner says from here on was not known to the draft: the list
+	// is laid out again from the plan as it then holds.
+	revisionsBefore := len(plan.Revisions)
 	draft, err := settleJSON(ctx, p.session, draftStep, planner.Voice(), p.worklistPrompt(planner, plan), check)
 	if err != nil {
 		return err
@@ -342,6 +349,11 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 	}
 	for _, milestone := range draft.Milestones {
 		keys[strings.TrimSpace(milestone.Key)] = true
+	}
+	if len(reviewers) > 0 {
+		if err := p.point(ctx, plan, "work list review", "work list review "+reviewers[0].ID, ""); err != nil {
+			return err
+		}
 	}
 	perRole := make([][]ListObjection, len(reviewers))
 	err = p.session.each(len(reviewers), func(i int) error {
@@ -389,6 +401,9 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 
 	final := draft
 	if len(plan.ListObjections) > 0 {
+		if err := p.point(ctx, plan, "work list revision", revisedStep, planner.ID); err != nil {
+			return err
+		}
 		p.session.say("  %d objections to the list; %s revises it", len(plan.ListObjections), planner.ID)
 		final, err = settleJSON(ctx, p.session, revisedStep, planner.Voice(),
 			p.worklistRevisionPrompt(planner, plan, draft.Milestones, draft.Tickets, plan.ListObjections), check)
@@ -396,6 +411,28 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 			return err
 		}
 		asked = asked || p.session.wasAsked(revisedStep)
+	}
+
+	// The owner's word reaches the list too: what was said after the draft
+	// was laid out is taken in now, also when the meeting had finished and
+	// goes on only for it, and the list is laid out again from the plan as
+	// it then holds.
+	if err := p.takeWords(ctx, plan, "after the work list", true); err != nil {
+		return err
+	}
+	if len(plan.Revisions) > revisionsBefore {
+		since := plan.Revisions[revisionsBefore:]
+		var words []OwnerWord
+		for _, review := range since {
+			words = append(words, review.Words...)
+		}
+		step := "work list after the owner " + wordIDs(words) + " " + planner.ID
+		p.session.say("  the owner said more after the list was laid out; %s lays it out again", planner.ID)
+		final, err = settleJSON(ctx, p.session, step, planner.Voice(), p.worklistOwnerPrompt(planner, plan, final.Milestones, final.Tickets, since), check)
+		if err != nil {
+			return err
+		}
+		asked = asked || p.session.wasAsked(step)
 	}
 
 	ordered, err := workOrder(final.Tickets)
@@ -438,7 +475,11 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 		}
 	}
 	p.session.say("  %d milestones; %d tickets proposed for the first", len(plan.Milestones), len(plan.Tickets))
-	return SaveWorkList(p.root, &WorkList{Plan: plan.ID, Milestones: plan.Milestones, Tickets: plan.Tickets, Later: plan.Later})
+	saved := &WorkList{Plan: plan.ID, Milestones: plan.Milestones, Tickets: plan.Tickets, Later: plan.Later}
+	if asked {
+		p.tell(Entry{Step: "work list", Kind: EntryWorkList, Role: planner.ID, Data: saved})
+	}
+	return SaveWorkList(p.root, saved)
 }
 
 // Open names the plans of a project whose work list still has tickets that
