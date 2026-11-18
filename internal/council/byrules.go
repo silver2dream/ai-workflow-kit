@@ -33,7 +33,7 @@ const maxFindings = 8
 // project.
 type RuleFinding struct {
 	// Owner is the role that owns the document.
-	Owner string `json:"-"`
+	Owner string `json:"owner,omitempty"`
 	// Document is the document's path, and Rule the rule's file.
 	Document string `json:"document"`
 	Rule     string `json:"rule"`

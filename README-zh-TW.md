@@ -103,6 +103,7 @@ awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 這時 GitHub 上還什麼都沒有。看過工作清單、改掉你想改的，再執行 `awkit plan approve <plan>`。
 
 - **只有你答得出來的事。** 規劃不等人：角色需要你才有的答案時，決策角色會寫明這次規劃假設了什麼，結尾會把假設列出來。想被問的話，用 `awkit plan --ask "…"` 開始：議會最多問你七題，再從你的回答辯下去。
+- **開會中可以插話。** `awkit plan say <plan> "…"`（或工作台）把你的話送進會議：下一個發言的角色就看得到，效力跟需求本身一樣。已經有裁定的話，決策角色會先拿你的話把這次規劃的每一條決策重審一遍，受影響文件的擁有者把整份文件重看重寫；已談完的議題不會重開。`awkit plan pause <plan>` 讓會議做完手上這一步就停；`--resume` 從停的地方接著開，說過的不會重問。`--review-agenda` 讓會議排好議程就停，你改完再開第一個議題。
 - **下一次規劃接著這一次。** 每個角色會讀已記錄的決策與自己現有的文件，規劃角色看得到之前的規劃開過哪些票。
 - **名冊由你改：** 角色、各自的立場、負責哪些資料夾與文件、由哪個模型扮演、一次規劃最多幾個議題與幾次模型呼叫。中途停下的規劃用 `awkit plan --resume <plan>` 接續，照當下的議程。
 
@@ -175,7 +176,7 @@ CI workflow 會跟著設定檔走，直到你刪掉它開頭那行註解；之�
 | `awkit init` | 設定一個專案 |
 | `awkit doctor` | 檢查 run 需要的所有東西，並說缺的怎麼補 |
 | `awkit generate`、`awkit validate` | 改過設定檔之後：重新產生指引與 CI workflow；檢查設定檔 |
-| `awkit plan` | 與議會一起規劃；`awkit plan approve <plan>` 建立票券 |
+| `awkit plan` | 與議會一起規劃；開會中用 `say` 插話、`pause` 暫停；`awkit plan approve <plan>` 建立票券 |
 | `awkit gamedata` | 檢查遊戲資料（`check`）；印出給人審的文案或表（`review copy`、`review tables`） |
 | `awkit create-task` | 手動補一張票 |
 | `awkit run` | 處理所有開著的票（`--issue N` 只做一張，`--dry-run` 只跑檢查） |

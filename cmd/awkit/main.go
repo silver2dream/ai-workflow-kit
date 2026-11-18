@@ -130,6 +130,9 @@ func run() int {
 		return cmdGamedata(os.Args[2:])
 	case "ui":
 		return cmdUI(os.Args[2:])
+	case "detach":
+		// How the workbench starts work that outlives it; not for a person.
+		return cmdDetach(os.Args[2:])
 	case "run", "kickoff":
 		// kickoff is the former name of run.
 		return cmdRun(os.Args[2:])

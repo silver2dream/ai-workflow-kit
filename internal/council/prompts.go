@@ -86,8 +86,9 @@ func (p *planner) documentMap(role *Role) string {
 }
 
 // ownerSaid tells what the owner of the project answered when the questions
-// of the agenda were put to them. It stands with the brief: it is the
-// owner's word, and no role argues against it.
+// of the agenda were put to them, and what they said while the meeting went
+// on. It stands with the brief: it is the owner's word, and no role argues
+// against it.
 func (p *planner) ownerSaid() string {
 	var b strings.Builder
 	for _, answer := range p.answers {
@@ -95,10 +96,14 @@ func (p *planner) ownerSaid() string {
 			fmt.Fprintf(&b, "- Asked: %s\n  The owner: %s\n", oneLine(answer.Question), oneLine(answer.Answer))
 		}
 	}
-	if b.Len() == 0 {
-		return ""
+	said := ""
+	if b.Len() > 0 {
+		said = "\nThe owner of the project was asked before the meeting, and answered. This holds like the brief:\n" + b.String()
 	}
-	return "\nThe owner of the project was asked before the meeting, and answered. This holds like the brief:\n" + b.String()
+	if len(p.words) > 0 {
+		said += "\nWhile the meeting went on, the owner of the project said this. It holds like the brief, and over anything said or decided before it:\n" + wordsText(p.words)
+	}
+	return said
 }
 
 func (p *planner) languageLine() string {
@@ -170,12 +175,7 @@ func earlierTopics(plan *Plan, r *TopicRecord) string {
 
 // decidedSoFar shows what this plan has decided before a topic.
 func decidedSoFar(plan *Plan, r *TopicRecord) string {
-	var decisions []Decision
-	var assumptions []Assumption
-	for _, other := range plan.Topics[:r.Number-1] {
-		decisions = append(decisions, other.Decisions...)
-		assumptions = append(assumptions, other.Assumptions...)
-	}
+	decisions, assumptions := plan.standing(r.Number - 1)
 	if len(decisions)+len(assumptions) == 0 {
 		return ""
 	}
@@ -516,13 +516,7 @@ func decisionsText(decisions []Decision, assumptions []Assumption) string {
 
 // throughTopic shows what a meeting has decided up to and with a topic.
 func throughTopic(plan *Plan, r *TopicRecord) string {
-	var decisions []Decision
-	var assumptions []Assumption
-	for _, other := range plan.Topics[:r.Number] {
-		decisions = append(decisions, other.Decisions...)
-		assumptions = append(assumptions, other.Assumptions...)
-	}
-	return decisionsText(decisions, assumptions)
+	return decisionsText(plan.standing(r.Number))
 }
 
 // asTheyStand shows a role its documents of a topic as they are.
@@ -745,7 +739,7 @@ Rules for the tickets:
 func (p *planner) worklistPrompt(role *Role, plan *Plan) string {
 	var b strings.Builder
 	b.WriteString(p.frame(role))
-	b.WriteString("\nThe meeting is over. What it decided:\n" + decisionsText(plan.Decisions, plan.Assumptions))
+	b.WriteString("\nThe meeting is over. What it decided:\n" + decisionsText(plan.standing(len(plan.Topics))))
 	b.WriteString("\nThe project's documents, as they stand after the meeting:\n\n" + p.documentsText(plan))
 	earlier := p.earlierTickets(plan.ID)
 	if earlier != "" {
@@ -785,7 +779,7 @@ func ticketsText(tickets []Ticket) string {
 
 // worklistReviewPrompt asks a role what is wrong with the work list.
 func (p *planner) worklistReviewPrompt(role *Role, plan *Plan, milestones []Milestone, tickets []Ticket) string {
-	return p.frame(role) + "\nWhat the meeting decided:\n" + decisionsText(plan.Decisions, plan.Assumptions) + "\nThe documents, written by their owners:\n" + p.documentsList(plan) +
+	return p.frame(role) + "\nWhat the meeting decided:\n" + decisionsText(plan.standing(len(plan.Topics))) + "\nThe documents, written by their owners:\n" + p.documentsList(plan) +
 		"\nThe milestones " + p.roster.Planner().ID + " laid out:\n\n" + milestonesText(milestones) +
 		"The tickets of the first milestone:\n\n" + ticketsText(tickets) + `
 Your task now: object to the work list, from where you stand: a first milestone that does not show the core of the brief works, or is larger than it needs to be; work the first milestone needs that is missing; a ticket too large to merge alone; a wrong order; an acceptance criterion nobody can check; something the decisions ruled out. ` + notTickets + ` Do not ask for more than was decided. When the list is acceptable, the list of objections is empty.
@@ -796,11 +790,33 @@ At most 4 objections, the strongest first.
 `
 }
 
+// worklistOwnerPrompt asks the planning role to lay the list out again from
+// the plan as it holds after the owner said more.
+func (p *planner) worklistOwnerPrompt(role *Role, plan *Plan, milestones []Milestone, tickets []Ticket, since []Review) string {
+	var b strings.Builder
+	b.WriteString(p.frame(role))
+	b.WriteString("\nAfter the work list below was laid out, the owner of the project said more, and " + p.roster.Decider().ID + " read the plan's decisions again against it:\n")
+	for i := range since {
+		b.WriteString(wordsText(since[i].Words) + reviewText(&since[i]))
+	}
+	b.WriteString("\nWhat the meeting holds now:\n" + decisionsText(plan.standing(len(plan.Topics))) + "\nThe documents, written by their owners:\n" + p.documentsList(plan) +
+		"\nThe milestones as they were laid out:\n\n" + milestonesText(milestones) + "The tickets of the first milestone:\n\n" + ticketsText(tickets))
+	earlier := p.earlierTickets(plan.ID) != ""
+	b.WriteString(`
+Your task now: lay the milestones and the tickets out again so that they follow the plan as it holds now. What still holds stays as it is, its key too; what the owner's word changes, changes; what it makes pointless goes.
+
+` + p.ticketRules(earlier) + "\n" + jsonOnly + "\n" + workShape + `,
+  "kept": []
+}
+`)
+	return b.String()
+}
+
 // worklistRevisionPrompt asks the planning role to take the objections in.
 func (p *planner) worklistRevisionPrompt(role *Role, plan *Plan, milestones []Milestone, tickets []Ticket, objections []ListObjection) string {
 	var b strings.Builder
 	b.WriteString(p.frame(role))
-	b.WriteString("\nWhat the meeting decided:\n" + decisionsText(plan.Decisions, plan.Assumptions) + "\nThe documents, written by their owners:\n" + p.documentsList(plan) +
+	b.WriteString("\nWhat the meeting decided:\n" + decisionsText(plan.standing(len(plan.Topics))) + "\nThe documents, written by their owners:\n" + p.documentsList(plan) +
 		"\nYour milestones:\n\n" + milestonesText(milestones) + "Your tickets of the first milestone:\n\n" + ticketsText(tickets) + "\nThe table's objections to them:\n")
 	for _, objection := range objections {
 		target := "the list"

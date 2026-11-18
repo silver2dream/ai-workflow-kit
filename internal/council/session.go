@@ -239,6 +239,16 @@ func (s *session) each(n int, work func(i int) error) error {
 	return nil
 }
 
+// isLive reports whether the meeting is past what an earlier run did: the
+// step that follows (next) is not remembered, or, when it is not known, this
+// run has asked the model already.
+func (s *session) isLive(next string) bool {
+	if next != "" {
+		return !s.isRemembered(next)
+	}
+	return s.callsMade() > 0
+}
+
 func (s *session) callsMade() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

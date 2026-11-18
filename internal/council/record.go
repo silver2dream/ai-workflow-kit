@@ -1,6 +1,7 @@
 package council
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -70,7 +71,10 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 		seats = append(seats, seat)
 	}
 	fmt.Fprintf(&b, "- At the table: %s\n", strings.Join(seats, ", "))
+	var waiting *Waiting
 	switch {
+	case errors.As(stopped, &waiting):
+		fmt.Fprintf(&b, "- Status: **waits for the owner**: %s. Go on with `awkit plan --resume %s`.\n", waiting.Error(), plan.ID)
 	case stopped != nil:
 		fmt.Fprintf(&b, "- Status: **not finished**. %s. Go on with `awkit plan --resume %s`.\n", oneLine(stopped.Error()), plan.ID)
 	case len(plan.Tickets) > 0:
@@ -110,6 +114,43 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 				said = oneLine(answer.Answer)
 			}
 			fmt.Fprintf(&b, "- %s\n  - %s\n", oneLine(answer.Question), said)
+		}
+	}
+
+	if len(plan.Words) > 0 {
+		b.WriteString("\n## What the owner said while the meeting went on\n\nEach holds like the brief from the step it was taken in at. Before it, " + p.roster.Decider().ID +
+			" read every decision of the plan again against it, and the owners read again in full the documents that rest on what changed.\n")
+		for i := range plan.Revisions {
+			review := &plan.Revisions[i]
+			fmt.Fprintf(&b, "\n### %s (taken in at: %s)\n\n", wordIDs(review.Words), review.At)
+			for _, word := range review.Words {
+				if word.Question != "" {
+					fmt.Fprintf(&b, "> **%s**, to \"%s\": %s\n>\n", word.ID, oneLine(word.Question), oneLine(word.Text))
+				} else {
+					fmt.Fprintf(&b, "> **%s**: %s\n>\n", word.ID, oneLine(word.Text))
+				}
+			}
+			b.WriteString("\n" + reviewText(review))
+			if len(review.Documents) > 0 {
+				b.WriteString("\nRead again:\n")
+				writeDocuments(&b, p.roster, review.Documents)
+			}
+		}
+		// A word taken in before anything was decided needed no reading again.
+		var plain []OwnerWord
+		for _, word := range plan.Words {
+			reviewed := false
+			for _, review := range plan.Revisions {
+				for _, w := range review.Words {
+					reviewed = reviewed || w.ID == word.ID
+				}
+			}
+			if !reviewed {
+				plain = append(plain, word)
+			}
+		}
+		if len(plain) > 0 {
+			b.WriteString("\nSaid before anything was decided, and held from then on:\n\n" + wordsText(plain))
 		}
 	}
 

@@ -22,7 +22,8 @@
 
 ```
 awkit plan "…"
-  └─ council.Run：主持人排議程（agenda.yaml）→ 問擁有者（--ask）→ 逐議題 → 里程碑與第一個里程碑的票
+  └─ council.Run：主持人排議程（agenda.yaml；--review-agenda 時停下等擁有者看）→ 問擁有者（--ask，或 --ask-in-workbench 停下等回答）→ 逐議題 → 里程碑與第一個里程碑的票
+     每一步之間的停點（point）：要暫停就停；擁有者說的話在這裡收進來，已有裁定時決策角色先重審全部決策、受影響文件整份重看（review.go）
        每個議題：主講提方案 → 其他角色依序發言、提異議 → 對辯 → 主持人整理 → 裁定（寫進 decisions.md）→ 擁有者寫文件
        文件：每個角色照對它的檔案生效的規則寫（internal/rules）→ 對照規則檢查 → 擁有者修一次 → 讀者回答哪幾點還在
        遊戲資料（有 luban.conf 時，internal/gamedata）：先寫表、再寫文字（告知缺的鍵）→ 檢查 → 擁有者修一次 → 還找得到的記錄
@@ -54,7 +55,7 @@ awkit run
 | 發生過的每件事 | `.ai/state/events/`（`awkit events` 讀） | `trace` |
 | 迴圈次數、連續失敗次數、STOP 標記、lock | `.ai/state/` | `analyzer`、`worker`、`stopmark`、`kickoff` |
 | 審查紀錄與教訓 | `.ai/state/review_feedback.jsonl`、`lessons.json` | `reviewer`、`lessons` |
-| 一場規劃的每次模型呼叫 | `.ai/state/council/<plan>/` | `council` |
+| 一場規劃的每次模型呼叫，以及會議走到哪（`live.json`）、逐句紀錄（`transcript.jsonl`）、整理成資料的紀錄（`record.json`）、擁有者說的話（`owner.jsonl`）與暫停、議程、提問的標記 | `.ai/state/council/<plan>/` | `council`；擁有者的話與標記由 `awkit plan say`、`pause` 與工作台寫 |
 
 Principal 的對話不是狀態：session 隨時可以結束再開，下一個 session 從 `awkit analyze-next` 重新得知一切。`.ai/state/` 整個被 git 忽略。
 
@@ -109,7 +110,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `rules` | 讀專案的規則檔（`.claude/rules/`）：標題、它適用的檔案（`paths:`）、內文；以及哪些規則對某個檔案生效（`For`、`Match`，語法照 Claude Code） |
 | `generate` | 從設定產生的檔案：`CLAUDE.md`、`AGENTS.md`、kit 的 git 規則、自訂 subagent、CI workflow、Claude Code 的本機權限 |
 | `migrate` | 設定檔格式的版本轉換，以及舊目錄結構的搬遷 |
-| `council` | `awkit plan`：名冊、會議的每一步、文件、票券清單、核可 |
+| `council` | `awkit plan`：名冊、會議的每一步、文件、票券清單、核可前的修改與核可；會議中擁有者的話、暫停、議程與提問（owner.go）、重審（review.go）、給外部讀的即時狀態與紀錄（live.go、record_json.go） |
 | `gamedata` | 遊戲資料（Luban）：從 `luban.conf` 找位置、讀 schema、表與文字表；Luban 擋不住的檢查；給人審的文案頁與表頁。`awkit gamedata` 與議會共用 |
 | `ticket`、`task` | `awk-ticket` 區塊的讀取與驗證；建立票券 |
 | `kickoff` | `awkit run`：啟動前的檢查、lock、PTY、log |
@@ -121,7 +122,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `hooks` | 設定檔的 `hooks` |
 | `trace`、`session` | 事件流；Principal 與 Worker 的 session 紀錄 |
 | `status`、`doctor`、`reset` | 同名的指令 |
-| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
+| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）；從頁面開的會議（`meetings.go`）由 `awkit detach` 另起一個不屬於工作台的程序來開，關掉工作台、甚至連子程序一起結束它，會議都照開，停只能靠暫停或開完。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
 | `stopmark`、`workflow` | STOP 標記；停止原因、結束語、報告 |
 | `selfheal` | 修復結構性的壞狀態（integration branch 遺失骨架時補回去） |
 | `audit`、`evaluate` | `awkit evaluate`：給 CI 用的檢查 |

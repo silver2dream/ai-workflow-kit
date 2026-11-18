@@ -10,7 +10,7 @@ import (
 // Speech is what a role said to a topic: the lead's proposal, or what a role
 // that speaks after it says.
 type Speech struct {
-	Role      string   `json:"-"`
+	Role      string   `json:"role,omitempty"`
 	Says      string   `json:"says"`
 	Proposals []string `json:"proposals"`
 	Concerns  []string `json:"concerns"`
@@ -98,7 +98,11 @@ func (p *planner) hold(ctx context.Context, plan *Plan, i int) error {
 // propose asks the lead how the topic is settled.
 func (p *planner) propose(ctx context.Context, plan *Plan, r *TopicRecord) error {
 	lead := p.roster.Role(r.Topic.Lead)
-	got, err := settleJSON(ctx, p.session, r.step(lead.ID+" proposes"), lead.Voice(), p.proposalPrompt(lead, plan, r), func(got *Speech) error {
+	step := r.step(lead.ID + " proposes")
+	if err := p.point(ctx, plan, step, step, lead.ID); err != nil {
+		return err
+	}
+	got, err := settleJSON(ctx, p.session, step, lead.Voice(), p.proposalPrompt(lead, plan, r), func(got *Speech) error {
 		if strings.TrimSpace(got.Says) == "" {
 			return errors.New("the proposal says nothing: says is empty")
 		}
@@ -109,6 +113,7 @@ func (p *planner) propose(ctx context.Context, plan *Plan, r *TopicRecord) error
 	}
 	got.Role, got.Objections = lead.ID, nil
 	r.Proposal = got
+	p.tell(Entry{Step: step, Kind: EntryProposal, Role: lead.ID, Data: got})
 	return nil
 }
 
@@ -119,7 +124,11 @@ func (p *planner) speak(ctx context.Context, plan *Plan, r *TopicRecord) error {
 	spoken := []string{r.Topic.Lead}
 	for _, id := range r.Topic.Speakers {
 		role := p.roster.Role(id)
-		got, err := settleJSON(ctx, p.session, r.step(id+" speaks"), role.Voice(), p.speechPrompt(role, plan, r), func(got *Speech) error {
+		step := r.step(id + " speaks")
+		if err := p.point(ctx, plan, step, step, id); err != nil {
+			return err
+		}
+		got, err := settleJSON(ctx, p.session, step, role.Voice(), p.speechPrompt(role, plan, r), func(got *Speech) error {
 			if strings.TrimSpace(got.Says) == "" {
 				return errors.New("says is empty: say where you stand on the topic")
 			}
@@ -147,6 +156,7 @@ func (p *planner) speak(ctx context.Context, plan *Plan, r *TopicRecord) error {
 		r.Speeches = append(r.Speeches, *got)
 		r.Objections = append(r.Objections, got.Objections...)
 		spoken = append(spoken, id)
+		p.tell(Entry{Step: step, Kind: EntrySpeech, Role: id, Data: got})
 	}
 	if len(r.Objections) > 0 {
 		p.session.say("  %d objection(s) raised", len(r.Objections))
@@ -159,6 +169,11 @@ func (p *planner) speak(ctx context.Context, plan *Plan, r *TopicRecord) error {
 // when they are more than the roster argues out.
 func (p *planner) argueOut(ctx context.Context, plan *Plan, r *TopicRecord) error {
 	r.Disputes = nil
+	if len(r.Objections) > 0 {
+		if err := p.point(ctx, plan, r.step("disputes"), "", ""); err != nil {
+			return err
+		}
+	}
 	limit := p.roster.Limits.Disputes
 	switch {
 	case len(r.Objections) == 0:
@@ -247,6 +262,8 @@ func (p *planner) argue(ctx context.Context, plan *Plan, r *TopicRecord, index i
 		}
 		exchange := Exchange{Stance: answer.Stance, Reply: answer.Reply, Position: answer.Position}
 		dispute.Exchanges = append(dispute.Exchanges, exchange)
+		p.tell(Entry{Step: step + " " + defender.ID + " answers", Kind: EntryExchange, Role: defender.ID,
+			Data: ExchangeEntry{Challenger: dispute.Challenger, Defender: dispute.Defender, Point: dispute.Point, Round: round, Exchange: exchange}})
 		if exchange.Stance == "concede" {
 			dispute.Settled = true
 			dispute.Outcome = fmt.Sprintf("%s conceded in round %d", defender.ID, round)
@@ -264,6 +281,8 @@ func (p *planner) argue(ctx context.Context, plan *Plan, r *TopicRecord, index i
 		}
 		last := &dispute.Exchanges[len(dispute.Exchanges)-1]
 		last.Answered, last.Accepts, last.Answer, last.StillWants = true, verdict.Accepts, verdict.Reply, verdict.Wants
+		p.tell(Entry{Step: step + " " + challenger.ID + " replies", Kind: EntryExchange, Role: challenger.ID,
+			Data: ExchangeEntry{Challenger: dispute.Challenger, Defender: dispute.Defender, Point: dispute.Point, Round: round, Exchange: *last}})
 		if verdict.Accepts {
 			dispute.Settled = true
 			dispute.Outcome = fmt.Sprintf("%s accepted %s's answer in round %d", challenger.ID, defender.ID, round)
@@ -283,11 +302,16 @@ func (p *planner) argue(ctx context.Context, plan *Plan, r *TopicRecord, index i
 
 // sumUp asks the moderator where the topic stands.
 func (p *planner) sumUp(ctx context.Context, plan *Plan, r *TopicRecord) error {
-	got, err := settleJSON[Summary](ctx, p.session, r.step("moderator sums up"), p.roster.Voice(), p.summaryPrompt(plan, r), nil)
+	step := r.step("moderator sums up")
+	if err := p.point(ctx, plan, step, step, "moderator"); err != nil {
+		return err
+	}
+	got, err := settleJSON[Summary](ctx, p.session, step, p.roster.Voice(), p.summaryPrompt(plan, r), nil)
 	if err != nil {
 		return err
 	}
 	r.Summary = *got
+	p.tell(Entry{Step: step, Kind: EntrySummary, Role: "moderator", Data: got})
 	return nil
 }
 
@@ -307,7 +331,11 @@ func (p *planner) decide(ctx context.Context, plan *Plan, r *TopicRecord) error 
 		Decisions   []Decision   `json:"decisions"`
 		Assumptions []Assumption `json:"assumptions"`
 	}
-	got, err := settleJSON(ctx, p.session, r.step("decision"), decider.Voice(), p.decisionPrompt(decider, plan, r), func(got *answer) error {
+	step := r.step("decision")
+	if err := p.point(ctx, plan, step, step, decider.ID); err != nil {
+		return err
+	}
+	got, err := settleJSON(ctx, p.session, step, decider.Voice(), p.decisionPrompt(decider, plan, r), func(got *answer) error {
 		switch {
 		case len(got.Decisions) == 0:
 			return errors.New("nothing was decided; a topic ends in at least one decision")
@@ -333,11 +361,13 @@ func (p *planner) decide(ctx context.Context, plan *Plan, r *TopicRecord) error 
 	}
 	r.Decisions, r.Assumptions = got.Decisions, got.Assumptions
 	for i := range r.Decisions {
+		r.Decisions[i].Replaces = ""
 		if saysNobody(r.Decisions[i].Dissent) {
 			r.Decisions[i].Dissent = ""
 		}
 	}
 	p.number(plan, r)
+	p.tell(Entry{Step: step, Kind: EntryRuling, Role: decider.ID, Data: RulingEntry{Decisions: r.Decisions, Assumptions: r.Assumptions}})
 	p.session.say("  %s rules: %d decided, %d assumed until the owner answers", decider.ID, len(r.Decisions), len(r.Assumptions))
 	return p.recordDecisions(plan, r)
 }
