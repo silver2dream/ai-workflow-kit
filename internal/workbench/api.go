@@ -289,16 +289,25 @@ type CheckView struct {
 	Name    string `json:"name"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
+	// CanClean says awkit reset clears what the check found.
+	CanClean bool `json:"can_clean,omitempty"`
 }
 
+// handleHealth is awkit doctor, both halves: what a run needs (setup), and
+// what earlier runs left behind (state).
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request, root string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	checks := []CheckView{}
-	for _, c := range doctor.New(root).RunAll(ctx) {
-		checks = append(checks, CheckView{Name: c.Name, Status: c.Status, Message: c.Message})
+	view := func(results []doctor.CheckResult) []CheckView {
+		checks := []CheckView{}
+		for _, c := range results {
+			checks = append(checks, CheckView{Name: c.Name, Status: c.Status, Message: c.Message, CanClean: c.CanClean})
+		}
+		return checks
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"checks": checks})
+	setup := view(doctor.Setup(s.opts.SetupProbe(root)))
+	state := view(doctor.New(root).RunAll(ctx))
+	writeJSON(w, http.StatusOK, map[string]any{"setup": setup, "state": state})
 }
 
 // PlanView is a plan of the council: what it was asked, how far it went, and

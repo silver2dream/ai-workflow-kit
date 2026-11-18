@@ -9,12 +9,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
+	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/status"
 )
 
@@ -272,8 +275,40 @@ func TestAssets(t *testing.T) {
 	if w := do(t, s, http.MethodGet, "/projects/abc", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "<title>AWK</title>") {
 		t.Errorf("a route of the page: %d %s", w.Code, w.Body)
 	}
+	// A file of an earlier build is not there, and is not the page either.
+	if w := do(t, s, http.MethodGet, "/assets/app-0ld.js", ""); w.Code != http.StatusNotFound {
+		t.Errorf("an asset of an earlier build: %d %s", w.Code, w.Body)
+	}
 	if w := do(t, s, http.MethodGet, "/api/nothing", ""); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "has no GET /api/nothing") {
 		t.Errorf("an API the workbench does not have: %d %s", w.Code, w.Body)
+	}
+}
+
+// The page npm builds is the page awkit serves: index.html, and every file it
+// names, are in awkit. Where the page was not built this is skipped, unless
+// AWKIT_REQUIRE_PAGE says it must have been (CI after building it).
+func TestAssets_TheBuiltPage(t *testing.T) {
+	files := Assets()
+	if files == nil {
+		if os.Getenv("AWKIT_REQUIRE_PAGE") != "" {
+			t.Fatal("the page is not in awkit: npm --prefix web run build writes it to internal/workbench/dist")
+		}
+		t.Skip("the page is not built (npm --prefix web run build)")
+	}
+	s := newServer(t, nil)
+	s.opts.Assets = files
+	w := do(t, s, http.MethodGet, "/", "")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `<div id="root">`) {
+		t.Fatalf("/: %d %s", w.Code, w.Body)
+	}
+	named := regexp.MustCompile(`(?:src|href)="/(assets/[^"]+)"`).FindAllStringSubmatch(w.Body.String(), -1)
+	if len(named) == 0 {
+		t.Fatalf("index.html names no script or style: %s", w.Body)
+	}
+	for _, m := range named {
+		if a := do(t, s, http.MethodGet, "/"+m[1], ""); a.Code != http.StatusOK || a.Body.Len() == 0 {
+			t.Errorf("%s: %d, %d bytes", m[1], a.Code, a.Body.Len())
+		}
 	}
 }
 
@@ -469,5 +504,72 @@ func TestStream(t *testing.T) {
 	write(t, root, "docs/plans/p/brief.md", "x")
 	if got := next(); got != `data: {"areas":["plans"]}` {
 		t.Errorf("a plan was written, after a log: %s", got)
+	}
+}
+
+// probe answers what a run needs as a project in one folder would: its
+// configuration fails, everything else passes.
+type probe struct{ root string }
+
+func (p probe) ok(name string) kickoff.CheckResult {
+	return kickoff.CheckResult{Name: name, Passed: true, Message: "fine in " + p.root}
+}
+func (p probe) CheckGhCLI() kickoff.CheckResult     { return p.ok("gh CLI") }
+func (p probe) CheckGhAuth() kickoff.CheckResult    { return p.ok("gh Auth") }
+func (p probe) CheckClaudeCLI() kickoff.CheckResult { return p.ok("claude CLI") }
+func (p probe) CheckCodexCLI() kickoff.CheckResult  { return p.ok("codex CLI") }
+func (p probe) CheckConfig() kickoff.CheckResult {
+	return kickoff.CheckResult{Name: "Config", Message: "repos[0].path is missing"}
+}
+func (p probe) CheckRepoPaths() kickoff.CheckResult           { return p.ok("Repo Paths") }
+func (p probe) CheckIntegrationBranch() kickoff.CheckResult   { return p.ok("Integration Branch") }
+func (p probe) CheckGitHubRepo() kickoff.CheckResult          { return p.ok("GitHub Repo") }
+func (p probe) CheckRepoWritePermission() kickoff.CheckResult { return p.ok("Repo Write Access") }
+func (p probe) CheckPermissions() kickoff.CheckResult         { return p.ok("Permissions") }
+func (p probe) CheckAgents() kickoff.CheckResult              { return p.ok("Agents") }
+func (p probe) CheckGitClean() kickoff.CheckResult            { return p.ok("Git Status") }
+func (p probe) CheckGitRemote() kickoff.CheckResult           { return p.ok("Git Remote") }
+
+// The health page is awkit doctor, both halves, asked about the project's own
+// folder: what a run needs, and what earlier runs left behind.
+func TestHealth(t *testing.T) {
+	s, root, base := added(t, nil)
+	var askedIn string
+	s.opts.SetupProbe = func(dir string) doctor.SetupProbe {
+		askedIn = dir
+		return probe{root: dir}
+	}
+	health := decode[struct {
+		Setup []CheckView `json:"setup"`
+		State []CheckView `json:"state"`
+	}](t, do(t, s, http.MethodGet, base+"/health", ""))
+	if askedIn != root {
+		t.Errorf("what a run needs was asked in %q, not in the project %q", askedIn, root)
+	}
+	setup := map[string]CheckView{}
+	for _, c := range health.Setup {
+		setup[c.Name] = c
+	}
+	if c := setup["Config"]; c.Status != "error" || c.Message != "repos[0].path is missing" {
+		t.Errorf("the configuration's check: %+v", c)
+	}
+	if c := setup["gh CLI"]; c.Status != "ok" || c.Message != "fine in "+root {
+		t.Errorf("gh: %+v", c)
+	}
+	// Without a configuration, nothing is asked of what it names.
+	if _, asked := setup["Repo Paths"]; asked {
+		t.Error("the repo paths were checked without a configuration")
+	}
+	want := map[string]bool{}
+	for _, c := range doctor.New(root).RunAll(context.Background()) {
+		want[c.Name] = true
+	}
+	if len(health.State) == 0 || len(health.State) != len(want) {
+		t.Errorf("what earlier runs left behind: %d checks, awkit doctor has %d", len(health.State), len(want))
+	}
+	for _, c := range health.State {
+		if !want[c.Name] {
+			t.Errorf("%s is not a check of awkit doctor", c.Name)
+		}
 	}
 }

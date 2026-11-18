@@ -217,7 +217,7 @@ Set up:
   validate     Check the configuration, and name the keys in it nothing reads
 
 Work:
-  ui           Open the workbench: plan and follow the work in a browser
+  ui           Open the workbench: follow the work in a browser
   plan         Plan with the council: a brief becomes documents, decisions
                and a list of tickets for you to approve
   create-task  Add one ticket by hand
@@ -264,7 +264,7 @@ Set up a project:
   list-presets  Show the presets init knows
 
 Run the workflow:
-  ui            Open the workbench in your browser: plan, follow the work
+  ui            Open the workbench in your browser: follow the work
                 and see everything, without the terminal
   plan          Plan with the council: a brief becomes documents, decisions
                 and a list of tickets for you to approve

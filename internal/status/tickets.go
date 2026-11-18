@@ -37,6 +37,7 @@ var Stages = []struct{ Stage, Title string }{
 type Ticket struct {
 	Number   int    `json:"number"`
 	Title    string `json:"title"`
+	URL      string `json:"url,omitempty"`
 	Stage    string `json:"stage"`
 	Why      string `json:"why,omitempty"` // what puts it in its stage, where that is not plain from the stage
 	WaitsFor []int  `json:"waits_for,omitempty"`
@@ -85,13 +86,14 @@ func ListWithGh(ctx context.Context, label, state, fields string) ([]byte, error
 // tickets is taken as done: whether it was closed as completed is the
 // decision engine's question, asked when the ticket's turn comes.
 func CollectTickets(ctx context.Context, labels config.Labels, list IssueLister) (*Tickets, error) {
-	raw, err := list(ctx, labels.Task, "open", "number,title,labels,body")
+	raw, err := list(ctx, labels.Task, "open", "number,title,url,labels,body")
 	if err != nil {
 		return nil, err
 	}
 	var issues []struct {
 		Number int    `json:"number"`
 		Title  string `json:"title"`
+		URL    string `json:"url"`
 		Body   string `json:"body"`
 		Labels []struct {
 			Name string `json:"name"`
@@ -112,7 +114,7 @@ func CollectTickets(ctx context.Context, labels config.Labels, list IssueLister)
 		for _, label := range issue.Labels {
 			has[label.Name] = true
 		}
-		t := Ticket{Number: issue.Number, Title: issue.Title}
+		t := Ticket{Number: issue.Number, Title: issue.Title, URL: issue.URL}
 		switch {
 		case has[labels.NeedsHumanReview]:
 			t.Stage, t.Why = StageNeedsYou, "marked "+labels.NeedsHumanReview+"; the issue's comments say why"

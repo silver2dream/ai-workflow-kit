@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
 	"github.com/silver2dream/ai-workflow-kit/internal/status"
 )
 
@@ -54,6 +55,9 @@ type Options struct {
 	IssuesIn func(root string) status.IssueLister
 	// Poll is how often a stream looks for changes; a second when zero.
 	Poll time.Duration
+	// SetupProbe asks about what a run of the project in root needs: the
+	// checker of awkit run, asking git and gh in root, when nil.
+	SetupProbe func(root string) doctor.SetupProbe
 }
 
 // Server is the workbench of one awkit process.
@@ -77,6 +81,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.IssuesIn == nil {
 		opts.IssuesIn = issuesWithGhIn
+	}
+	if opts.SetupProbe == nil {
+		opts.SetupProbe = doctor.SetupProbeOf
 	}
 	if opts.Poll <= 0 {
 		opts.Poll = time.Second
@@ -205,6 +212,12 @@ func (s *Server) serveAssets(w http.ResponseWriter, r *http.Request) {
 	}
 	file, err := s.opts.Assets.Open(name)
 	if err != nil {
+		// A file of an earlier build, asked for by a page opened before
+		// awkit was upgraded: the page in its place would be read as script.
+		if strings.HasPrefix(name, "assets/") {
+			http.NotFound(w, r)
+			return
+		}
 		name = "index.html"
 		file, err = s.opts.Assets.Open(name)
 		if err != nil {
