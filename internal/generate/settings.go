@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 	projectconfig "github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
@@ -92,28 +93,26 @@ func LocalSettings(stateRoot string) error {
 func generateClaudeSettings(path string, config *Config) (changed bool, err error) {
 	needed := neededPermissions(config)
 
+	var settings map[string]any
 	data, readErr := os.ReadFile(path)
-	if os.IsNotExist(readErr) {
-		entries := make([]string, len(needed))
-		for i, permission := range needed {
-			entries[i] = "      " + quoteJSON(permission)
-		}
-		content := "{\n  \"permissions\": {\n    \"allow\": [\n" + strings.Join(entries, ",\n") + "\n    ]\n  }\n}\n"
+	switch {
+	case os.IsNotExist(readErr):
+		settings, changed = map[string]any{}, true
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return false, err
 		}
-		return true, os.WriteFile(path, []byte(content), 0o644)
-	}
-	if readErr != nil {
+	case readErr != nil:
 		return false, readErr
-	}
-
-	var settings map[string]any
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return false, fmt.Errorf("%s is not valid JSON (%v); it is left as it is, and a run may ask for permissions nobody is there to give", filepath.ToSlash(filepath.Base(filepath.Dir(path)))+"/"+filepath.Base(path), err)
+	default:
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return false, fmt.Errorf("%s is not valid JSON (%v); it is left as it is, and a run may ask for permissions nobody is there to give, and its tool calls are not checked", filepath.ToSlash(filepath.Base(filepath.Dir(path)))+"/"+filepath.Base(path), err)
+		}
 	}
 	if settings == nil {
 		settings = map[string]any{}
+	}
+	if ensureGuardHook(settings, guardHook(config)) {
+		changed = true
 	}
 	permissions, _ := settings["permissions"].(map[string]any)
 	if permissions == nil {
@@ -148,6 +147,76 @@ func generateClaudeSettings(path string, config *Config) (changed bool, err erro
 		return false, err
 	}
 	return true, os.WriteFile(path, out.Bytes(), 0o644)
+}
+
+// guardHookPrefix starts the command of the hook awkit puts in the settings:
+// a hook whose command starts so is awkit's, and is replaced.
+const guardHookPrefix = "awkit guard tool"
+
+// guardHook is the PreToolUse hook that holds the session of `awkit run`,
+// with its reviewer and conflict resolver, to the principal's tool policy
+// (internal/guard): it cannot merge a pull request on its own, push where
+// pull requests are merged, read credentials or reach other hosts.
+func guardHook(config *Config) map[string]any {
+	command := guardHookPrefix + " --role principal"
+	for _, branch := range []string{config.Git.IntegrationBranch, config.Git.ReleaseBranch} {
+		if branch != "" {
+			command += " --protect " + quoteJSON(branch)
+		}
+	}
+	hook := map[string]any{"type": "command", "command": command, "timeout": 30}
+	// A check that fails or times out refuses the call, where the CLI knows
+	// to (2.1.295 on); an older one would let it through.
+	if claudeAtLeast(2, 1, 295) {
+		hook["onFailure"] = "block"
+	}
+	return map[string]any{"matcher": "*", "hooks": []any{hook}}
+}
+
+// claudeAtLeast reports the version of the claude CLI here; a variable, so
+// tests do not depend on what is installed.
+var claudeAtLeast = claudecli.AtLeast
+
+// ensureGuardHook puts awkit's hook among the PreToolUse hooks of the
+// settings, in place of the one awkit put there before, and leaves every
+// other hook as it is. It reports whether the settings changed.
+func ensureGuardHook(settings map[string]any, entry map[string]any) bool {
+	hooks, _ := settings["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+	}
+	pre, _ := hooks["PreToolUse"].([]any)
+	var kept []any
+	var old any
+	for _, e := range pre {
+		if isGuardEntry(e) {
+			old = e
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if old != nil {
+		a, _ := json.Marshal(old)
+		b, _ := json.Marshal(entry)
+		if bytes.Equal(a, b) {
+			return false
+		}
+	}
+	hooks["PreToolUse"] = append(kept, entry)
+	settings["hooks"] = hooks
+	return true
+}
+
+func isGuardEntry(e any) bool {
+	m, _ := e.(map[string]any)
+	list, _ := m["hooks"].([]any)
+	for _, h := range list {
+		hm, _ := h.(map[string]any)
+		if command, _ := hm["command"].(string); strings.HasPrefix(command, guardHookPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // quoteJSON writes a string as JSON does.

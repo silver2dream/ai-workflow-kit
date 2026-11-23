@@ -45,6 +45,9 @@ Status values:
   in_progress                - a Worker is already on the issue
   needs_conflict_resolution  - the rebase stopped on a conflict; WORKTREE_PATH,
                                ISSUE_NUMBER and PR_NUMBER follow
+  blocked                    - a guardrail blocked what the Worker would have
+                               read; the issue waits for a person
+                               (needs-human-review)
 
 Examples:
   awkit dispatch-worker --issue 25

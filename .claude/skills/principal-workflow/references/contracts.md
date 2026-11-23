@@ -52,6 +52,7 @@
 | `failed` | Worker 失敗。未到重試上限時下一輪會再派；到上限時 issue 已標成 `worker-failed` |
 | `in_progress` | 這張票已經有 Worker 在做，這次沒有再派 |
 | `needs_conflict_resolution` | rebase 停在衝突上。另印出 `WORKTREE_PATH=`、`ISSUE_NUMBER=`、`PR_NUMBER=`；issue 仍帶 `in-progress`，照 `conflict-resolution.md` 處理 |
+| `blocked` | 執行者要讀的內容被 guardrail 擋下，沒有派出去；issue 已標成 `needs-human-review` 並留言說明。回到主迴圈 |
 
 ## awkit check-result --issue N
 
@@ -65,6 +66,7 @@
 | `failed_will_retry` | 失敗，未到上限；已移除 `in-progress`，下一輪會再派 |
 | `failed_max_retries` | 失敗到上限；已標成 `worker-failed` |
 | `crashed`、`timeout` | Worker 的行程不見了或跑太久；已移除 `in-progress` |
+| `blocked` | 執行者要讀的內容被 guardrail 擋下；已標成 `needs-human-review` |
 | `failed`、`error` | 結果檔說成功卻沒有 PR，或結果檔讀不了 |
 
 ## awkit stop-workflow \<reason\>

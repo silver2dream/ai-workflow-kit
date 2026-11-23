@@ -233,6 +233,16 @@ func processResult(ctx context.Context, opts CheckResultOptions, result *IssueRe
 			Status: "success_no_changes",
 		}, nil
 
+	case "blocked":
+		// A guardrail blocked what the Worker would have read. dispatch-worker
+		// labels and explains it; this is the way back when that was cut
+		// short, and it labels only: the explanation is in the events.
+		_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"needs-human-review"}, []string{"in-progress"})
+		return &CheckResultOutput{
+			Status: "blocked",
+			Error:  result.ErrorMessage,
+		}, nil
+
 	case "failed", "crashed", "timeout":
 		// Check retry count (AttemptGuard already incremented before worker started)
 		failCount := ReadFailCount(opts.StateRoot, opts.IssueNumber)

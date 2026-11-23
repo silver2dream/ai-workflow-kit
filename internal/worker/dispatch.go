@@ -37,7 +37,7 @@ const DefaultWorkerTimeout = 60 * time.Minute
 
 // DispatchOutput is the output for bash eval compatibility
 type DispatchOutput struct {
-	Status       string // success, failed, in_progress, needs_conflict_resolution
+	Status       string // success, failed, in_progress, needs_conflict_resolution, blocked
 	PRURL        string
 	Error        string
 	WorktreePath string // For conflict resolution
@@ -371,6 +371,10 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 		}, nil
 	}
 
+	if result.Status == "blocked" {
+		return handleWorkerBlocked(ctx, opts, logger, ghClient, result)
+	}
+
 	if result.Status == "success" && result.PRURL != "" {
 		return handleWorkerSuccess(ctx, opts, logger, ghClient, result)
 	}
@@ -557,6 +561,45 @@ func ticketForDispatch(issueNumber int, issueBody string, logger *DispatchLogger
 }
 
 // handleWorkerFailure handles failed worker execution
+// handleWorkerBlocked stops a ticket whose context a guardrail blocked before
+// a Worker saw it. Trying again would give a Worker the same text, so it waits
+// for a person. The comment names the rules and where the text came from, not
+// the text: an agent reads GitHub, and the text is what it must not read.
+func handleWorkerBlocked(ctx context.Context, opts DispatchOptions, logger *DispatchLogger, ghClient *GitHubClient, result *IssueResult) (*DispatchOutput, error) {
+	logger.Log("✗ guardrail 擋下了這張工單（%s）：%s", result.FailureStage, result.ErrorMessage)
+	_ = ghClient.EditIssueLabels(ctx, opts.IssueNumber, []string{"needs-human-review"}, []string{"in-progress"})
+	_ = ghClient.CommentOnIssue(ctx, opts.IssueNumber, BlockedComment(opts.IssueNumber, result.FailureStage, result.ErrorMessage))
+	recordSessionAction(opts.StateRoot, opts.PrincipalSessionID, "worker_blocked",
+		fmt.Sprintf(`{"issue_id":"%d"}`, opts.IssueNumber))
+	return &DispatchOutput{Status: "blocked", Error: result.ErrorMessage}, nil
+}
+
+// FailureStageGuardOutput is the failure stage of a Worker whose pull
+// request the guard did not let reach GitHub; "guard" is that of one whose
+// context it blocked before the Worker started.
+const FailureStageGuardOutput = "guard_output"
+
+// BlockedComment is what a ticket a guardrail blocked says on GitHub: what
+// was stopped, by which rule, and what to do. Never the text itself.
+func BlockedComment(issue int, stage, summary string) string {
+	if stage == FailureStageGuardOutput {
+		return fmt.Sprintf("AWK 沒有開這張工單的 PR：要寫到 GitHub 的內容裡，有看起來像憑證或個人資料的東西，被 guardrail 擋下了，沒有送出。\n\n"+
+			"%s\n\n"+
+			"接下來：\n"+
+			"1. 在這台電腦執行 `awkit events --issue %d --type guardrail_verdict`，看是哪一條規則、在哪個欄位（內容本身不會記錄，也不會貼到 GitHub）。\n"+
+			"2. 執行者的分支已經推上去了，但 PR 還沒開：檢查分支與執行者的摘要，把憑證或個資拿掉；真的外洩的憑證要撤銷換新。\n"+
+			"3. 移除這張工單的 `needs-human-review` 標籤，下一輪就會再派。",
+			summary, issue)
+	}
+	return fmt.Sprintf("AWK 沒有把這張工單交給執行者：執行者要讀的內容裡，有一段被 guardrail 擋下了。\n\n"+
+		"%s\n\n"+
+		"接下來：\n"+
+		"1. 在這台電腦執行 `awkit events --issue %d --type guardrail_verdict`，看被擋下的原文與原因（原文只留在本機，不會貼到 GitHub）。\n"+
+		"2. 那段文字如果沒有問題（例如是在討論注入的例子），到上面寫的來源把它改掉或刪掉。\n"+
+		"3. 移除這張工單的 `needs-human-review` 標籤，下一輪就會再派。",
+		summary, issue)
+}
+
 func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *DispatchLogger, ghClient *GitHubClient, meta *TicketMetadata, failReason string) (*DispatchOutput, error) {
 	logger.Log("✗ Worker 失敗 (reason: %s)", failReason)
 

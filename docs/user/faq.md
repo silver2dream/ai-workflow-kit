@@ -48,7 +48,7 @@ Worker 在 `.worktrees/` 下自己的 worktree 裡工作，只能透過 pull req
 
 ### `claude_code.dangerously_skip_permissions` 是什麼？
 
-讓 Claude Code 當 Worker 時不受任何權限設定限制。預設關閉。只在隔離的機器（容器、CI runner）上打開。
+讓 Claude Code 當 Worker 時不再問、也不再擋權限設定裡沒允許的工具。預設關閉。awkit 對每個工具呼叫的檢查（不能用 `gh`、不能 push、不能連外、不能讀憑證）照樣執行，但其他沒列出的事都會被允許，所以只在隔離的機器（容器、CI runner）上打開。
 
 ---
 

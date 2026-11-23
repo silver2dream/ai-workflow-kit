@@ -6,8 +6,11 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
 // RetryConfig holds retry parameters for gh CLI calls.
@@ -71,6 +74,13 @@ func RunWithRetry(ctx context.Context, cfg RetryConfig, name string, args ...str
 	if cfg.MaxAttempts <= 0 {
 		cfg.MaxAttempts = 1
 	}
+	// What a gh call would write to GitHub is scanned first, and a call that
+	// would put a credential there is not made, nor retried.
+	if isGH(name) {
+		if err := guard.GHGate(ctx, args); err != nil {
+			return nil, err
+		}
+	}
 
 	var lastErr error
 	var lastOutput []byte
@@ -112,4 +122,11 @@ func RunWithRetry(ctx context.Context, cfg RetryConfig, name string, args ...str
 	}
 
 	return lastOutput, fmt.Errorf("gh command failed after %d attempts: %w", cfg.MaxAttempts, lastErr)
+}
+
+// isGH says whether a program is the gh CLI, by name or path. A backslash
+// separates on every platform: a name that might be gh is checked.
+func isGH(name string) bool {
+	base := strings.ToLower(path.Base(strings.ReplaceAll(name, `\`, "/")))
+	return base == "gh" || base == "gh.exe"
 }

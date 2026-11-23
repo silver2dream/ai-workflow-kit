@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
 // CodexBackend implements WorkerBackend for OpenAI Codex CLI.
@@ -252,6 +254,9 @@ func runCodexAttempt(ctx context.Context, cmdArgs []string, opts BackendOptions,
 
 	cmd := exec.CommandContext(execCtx, "codex", cmdArgs...)
 	cmd.Dir = opts.WorkDir
+	// What the Worker may reach is its sandbox's to say; what it may read of
+	// the environment is said here: no token but Codex's own.
+	cmd.Env = guard.AgentEnv(os.Environ(), guard.CodexCredentialEnv...)
 	cmd.Stdin = prompt
 	cmd.Stdout = multiWriter
 	cmd.Stderr = multiWriter

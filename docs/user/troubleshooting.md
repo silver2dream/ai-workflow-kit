@@ -77,7 +77,7 @@ awkit run
 
 ### 需要人處理（`needs-human-review`）
 
-流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改。issue 上的留言會說是哪一種。
+流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改；Worker 要讀的內容，或它的 pull request 要寫到 GitHub 的內容，被 guardrail 擋下（見下一節）。issue 上的留言會說是哪一種。
 
 處理完之後拿掉標籤，票就回到佇列：
 
@@ -85,6 +85,35 @@ awkit run
 gh issue edit 42 --remove-label needs-human-review
 awkit run
 ```
+
+### 被 guardrail 擋下（`blocked`）
+
+Worker 開工前，AWK 會檢查它要讀的內容。工單是你寫的或核可過的，照原樣給；審查意見、教訓這些由 agent 寫的內容，會先拿掉看不見的字元與 HTML 註解，再比對注入的寫法（例如「ignore all previous instructions」「忽略之前的所有指示」、假的對話或工具呼叫格式、把密鑰送到外部的指令）。明顯是注入的會擋下：這張票不派出去，標上 `needs-human-review`，issue 上的留言寫出是哪條規則、內容來自哪裡，但不貼原文（Worker 會讀 GitHub）。
+
+```bash
+awkit events --issue 42 --type guardrail_verdict   # 被擋下的原文與原因，只在這台電腦上
+```
+
+那段文字如果沒問題（例如是在討論注入的例子），到留言寫的來源把它改掉或刪掉，再拿掉標籤。只是可疑、不到擋下的內容，會照樣交給 Worker，但包在標明來源的資料區塊裡，並記一筆在同一個地方。
+
+**要寫到 GitHub 的內容被擋下。** awkit 每一次用 `gh` 寫到 GitHub（開 pull request、留言、開 issue、送審查），送出之前都會掃過要寫的標題與內文：看起來像憑證的（GitHub、Anthropic、OpenAI、AWS、Slack、Google 的金鑰與 token、私鑰、JWT），或個人資料（檢查碼對得上的信用卡號、身分證字號）就不送。Worker 的 pull request 被擋時，分支已經推上去、但 pull request 沒開，票標上 `needs-human-review`；其他指令被擋時，指令失敗並印出 `AWK guard:` 開頭的原因。記錄裡只有規則與欄位，沒有內容本身：
+
+```bash
+awkit events --issue 42 --type guardrail_verdict   # 哪一條規則、哪一個 gh 指令
+```
+
+把憑證或個資從分支與 Worker 的摘要拿掉；真的寫出去過的憑證，撤銷換新。付款服務公開的測試卡號（例如 `4242 4242 4242 4242`）與表單上的範例身分證字號不會被擋。
+
+**教訓被隔離（`quarantined`）。** 教訓由 agent 從審查的案例濃縮出來，而案例裡可能有別人寫的文字。所以一條教訓在交給 Worker 之前會先過篩檢：注入的寫法，或講到流程的權限與檢查（`--no-verify`、`permission_mode`）、連外（`curl`、網址）、流程自己的檔案與指令（`.ai/state`、`awkit submit-review`）的，會被隔離，不再給任何 Worker，並記一筆在 `awkit events`。`awkit lessons list` 會列出隔離的原因；讀過、確定沒問題，就放行：
+
+```bash
+awkit lessons list
+awkit lessons approve L-012   # 放行後當成新的教訓重新試用
+```
+
+你用 `awkit lessons add` 自己加的教訓不篩檢。
+
+**可疑的變更（只記錄）。** Worker 的變更通過密鑰檢查之後，AWK 會看它新增的內容有沒有這些情況：新的對外連線、執行期才決定的指令或程式碼、改了 CI 或建置、改了相依套件或安裝時執行的腳本、二進位檔、大量刪除。有的話記一筆 `flag`（規則是 `diff-signals/1#…`，只記檔名，不記內容），變更照樣去跑測試與審查；審查一個 pull request 時可以用同一個指令看它有沒有這些記錄。
 
 ### 審查一直退回
 
@@ -99,6 +128,7 @@ awkit run
 - **Too many attempts failed in a row.** 連續 5 次失敗。通常是環境問題（登入過期、網路、建置指令壞了），不是某一張票的問題。`awkit events --level error` 看這幾次失敗的共同點；修好之後 `awkit reset`，再 `awkit run`。
 - **The run reached the limit of its loop.** 迴圈跑了太多次，表示有票在繞圈。`awkit events --level decision` 看是哪一張；處理之後 `awkit reset`。
 - **Claude Code 停下來問你要不要允許某個指令。** `awkit generate` 會把 run 需要的權限補進 `.claude/settings.local.json`；設定檔的建置或測試指令換了工具之後，再執行一次 `awkit generate`。
+- **出現 `AWK guard:` 開頭的拒絕。** 主控的 session 與 Worker 的每一個工具呼叫都先經過 `awkit guard tool`：不能自己合併 pull request（那是審查通過後 `awkit submit-review` 的事）、不能推到整合或發版分支、不能讀放憑證的地方、不能連外、不能印出環境變數、不能用 `gh issue create` 開票。`awkit events --all --type guardrail_verdict` 看是哪一條規則擋下了什麼。這個 hook 由 `awkit generate` 寫進 `.claude/settings.local.json`，改了分支設定之後重新執行一次。
 - **想讓它停。** `awkit stop`：做完手上這一步就停，不會留下做到一半的東西。要立刻停，在啟動它的終端機按 Ctrl-C。
 
 ## 設定檔

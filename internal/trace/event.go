@@ -13,6 +13,8 @@ const (
 	ComponentGitHub    = "github"
 	ComponentHooks     = "hooks"
 	ComponentAudit     = "audit"
+	// ComponentGuard is the guardrails: what they checked and decided.
+	ComponentGuard = "guard"
 )
 
 // Level represents the severity/type of an event.
@@ -67,6 +69,9 @@ const (
 
 	// Worker retry
 	TypeWorkerRetry = "worker_retry"
+
+	// Guard events: a check flagged or blocked something.
+	TypeGuardrailVerdict = "guardrail_verdict"
 )
 
 // Event represents a single trace event in the unified event stream.
