@@ -115,7 +115,9 @@ func fake(t *testing.T, replies ...fakeReply) (*Runner, string) {
 		goos, codexHome = origGOOS, origHome
 	})
 	r := NewRunner()
-	r.minute = time.Second
+	// A "minute" long enough for a slow machine; the test of the time
+	// limit sets its own.
+	r.minute = 10 * time.Second
 	r.environ = func() []string {
 		return append(os.Environ(),
 			"GO_AGENT_FAKE=1", "GO_AGENT_DIR="+dir,

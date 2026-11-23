@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const countSchema = `{"type":"object","required":["count"],"properties":{"count":{"type":"integer"}},"additionalProperties":false}`
@@ -133,6 +134,9 @@ func TestRun_HowItEnds(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			r, _ := fake(t, c.reply)
+			if c.want == StatusTimeout {
+				r.minute = 500 * time.Millisecond
+			}
 			env := envelope(t, Judge, ClaudeCode, countSchema)
 			env.Profile.USD = c.usd
 			res := r.Run(context.Background(), env)
