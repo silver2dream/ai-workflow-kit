@@ -23,7 +23,7 @@ Options:
   --level <level>   Filter by level: info, warn, error, decision
   --issue <n>       Filter by issue number (searches across all sessions)
   --pr <n>          Filter by PR number
-  --component <c>   Filter by component: principal, worker, reviewer, github, hooks, audit
+  --component <c>   Filter by component: principal, worker, reviewer, github, hooks, audit, guard
   --type <t>        Filter by event type (comma-separated, e.g. hook_fired,worker_retry)
   --last <n>        Show only last N events (default: all)
   --json            Output raw JSON (for AI analysis)
@@ -190,6 +190,35 @@ func printEvent(e trace.Event) {
 	}
 }
 
+// formatVerdict prints what a guardrail decided, in a fixed order: what it
+// decided, which rule, about what, why, and what matched.
+func formatVerdict(data any) string {
+	v, ok := data.(map[string]any)
+	if !ok {
+		return ""
+	}
+	field := func(key string) string {
+		if s, ok := v[key].(string); ok {
+			return s
+		}
+		return ""
+	}
+	line := fmt.Sprintf("%s %s %s", field("result"), field("class"), field("rule"))
+	if source := field("source"); source != "" {
+		line += " in " + source
+	}
+	if piece := field("piece"); piece != "" {
+		line += " (" + piece + ")"
+	}
+	if reason := field("reason"); reason != "" {
+		line += ": " + reason
+	}
+	if evidence := field("evidence"); evidence != "" {
+		line += fmt.Sprintf(" | %q", evidence)
+	}
+	return line
+}
+
 func colorizeLevel(level string) string {
 	switch level {
 	case "error":
@@ -249,6 +278,9 @@ func formatConditions(conditions map[string]any) string {
 func formatEventData(e trace.Event) string {
 	if e.Data == nil {
 		return ""
+	}
+	if e.Type == trace.TypeGuardrailVerdict {
+		return formatVerdict(e.Data)
 	}
 
 	switch data := e.Data.(type) {

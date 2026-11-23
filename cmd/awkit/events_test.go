@@ -213,3 +213,16 @@ func TestCmdEvents_AProjectWithoutARun(t *testing.T) {
 		}
 	}
 }
+
+// A guardrail's verdict prints in a fixed order: what it decided, which
+// rule, about what, why, and what matched.
+func TestFormatVerdict(t *testing.T) {
+	got := formatEventData(trace.Event{Type: trace.TypeGuardrailVerdict, Data: map[string]any{
+		"result": "block", "class": "security", "rule": "injection-rules/1#override-en",
+		"source": "review comments on issue #12", "piece": "c3", "reason": "tells the reader to ignore its instructions", "evidence": "Ignore all previous instructions",
+	}})
+	want := `block security injection-rules/1#override-en in review comments on issue #12 (c3): tells the reader to ignore its instructions | "Ignore all previous instructions"`
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
