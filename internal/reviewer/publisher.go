@@ -82,6 +82,15 @@ func (opts SubmitReviewOptions) publisher() Publisher {
 	return ghPublisher{timeout: opts.GHTimeout}
 }
 
+// GHPublisher is the Principal's workflow's Publisher: the one the engine's
+// builds on.
+func GHPublisher(timeout time.Duration) Publisher { return ghPublisher{timeout: timeout} }
+
+// PRDiff is a pull request's diff, as GitHub has it.
+func PRDiff(ctx context.Context, pr int, timeout time.Duration) (string, error) {
+	return fetchPRDiffFunc(ctx, pr, timeout)
+}
+
 // What a ticket does after its review: what the result says to the one who
 // moves the ticket on, in the place of the labels the Principal's workflow
 // reads.
@@ -98,6 +107,19 @@ const (
 	// with its base, or is behind it.
 	NextResolveConflict = "resolve_conflict"
 	NextResolveRebase   = "resolve_rebase"
-	// NextNeedsYou: only a person can say what comes next.
+	// NextNeedsYou: only a person can say what comes next; the result's
+	// NeedsYou says why.
 	NextNeedsYou = "needs_you"
+)
+
+// Why a review needs a person (SubmitReviewResult.NeedsYou).
+const (
+	// NeedsYouMergeBlocked: GitHub would not merge, and not for a conflict
+	// or a base that moved on (a protection rule, a check).
+	NeedsYouMergeBlocked = "merge_blocked"
+	// NeedsYouMaintainer: a maintainer's feedback is open on the current
+	// commit, and the implementer pushed nothing for it.
+	NeedsYouMaintainer = "maintainer_feedback"
+	// NeedsYouGuardOutput: the guard kept the review's comment from GitHub.
+	NeedsYouGuardOutput = "guard_output"
 )

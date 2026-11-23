@@ -2,6 +2,7 @@ package reviewer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/session"
@@ -53,6 +55,9 @@ type SubmitReviewOptions struct {
 	// tests before the review, and gives the reviewer their results). nil
 	// runs them here.
 	TestRun *TestRun
+	// Diff is the pull request's diff, when the caller has read it; "" reads
+	// it where it is needed.
+	Diff string
 
 	// headSHA is the commit checked out in the worktree when the review
 	// started: the version this review judges. SubmitReview fills it in
@@ -67,6 +72,9 @@ type SubmitReviewResult struct {
 	// Next is what the ticket does now (the Next constants): what the
 	// Principal's workflow reads from the labels the review set.
 	Next string
+	// NeedsYou says why a person is needed, when Next is NextNeedsYou (the
+	// NeedsYou constants).
+	NeedsYou string
 }
 
 // fillDefaults sets what the caller left open. The tests are run again with
@@ -93,6 +101,9 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		return nil, fmt.Errorf("state root is required")
 	}
 	opts.fillDefaults()
+	// What the guard keeps from GitHub is recorded under this project and
+	// this ticket, wherever the review was started from.
+	ctx = guard.WithScope(ctx, guard.Scope{StateRoot: opts.StateRoot, Issue: opts.IssueNumber})
 
 	// Write review_start event
 	trace.WriteEvent(trace.ComponentReviewer, trace.TypeReviewStart, trace.LevelInfo,
@@ -331,8 +342,12 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		commentBody += "\n\n" + jitResult.FormatComment()
 	}
 
-	// Post PR comment (non-critical, log warning if failed)
+	// Post PR comment (non-critical, log warning if failed). One the guard
+	// kept from GitHub is not: a review that cannot be shown is not acted on.
 	if err := opts.publisher().CommentPR(ctx, opts.PRNumber, commentBody); err != nil {
+		if errors.Is(err, guard.ErrBlocked) {
+			return holdForGuard(ctx, opts, err), nil
+		}
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post PR comment: %v\n", err)
 	}
 
@@ -531,6 +546,27 @@ PR: #%d
 	return &SubmitReviewResult{Result: "review_blocked", Reason: reason, Next: NextReviewRetry}, nil
 }
 
+// holdForGuard stops a review whose comment the guard kept from GitHub: what
+// it would have written holds what looks like a credential or personal data.
+// Nothing is approved or merged; a person looks at the ticket. The issue is
+// told why in the guard's words, which name the kind of data, never the data.
+func holdForGuard(ctx context.Context, opts SubmitReviewOptions, blocked error) *SubmitReviewResult {
+	fmt.Fprintf(os.Stderr, "[REVIEW] the review's comment was not posted: %v\n", blocked)
+	if err := opts.publisher().Labels(ctx, opts.IssueNumber, []string{"needs-human-review"}, []string{"pr-ready"}); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
+	}
+	comment := fmt.Sprintf(`## AWK Review: 審查留言被擋下（需要人工介入）
+
+PR #%d 的審查留言沒有送出：%v
+
+AWK 不會核准或合併一份沒有留下紀錄的審查。請看過這個 PR 與審查紀錄（`+"`awkit events --issue %d`"+`），處理完後移除 needs-human-review 標籤。`,
+		opts.PRNumber, blocked, opts.IssueNumber)
+	if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, comment); err != nil {
+		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
+	}
+	return &SubmitReviewResult{Result: "review_blocked", Reason: blocked.Error(), Next: NextNeedsYou, NeedsYou: NeedsYouGuardOutput}
+}
+
 func handleMergeFailure(ctx context.Context, opts SubmitReviewOptions, sessionID string, mergeErr error) (*SubmitReviewResult, error) {
 	// Get merge state status
 	mergeState := opts.publisher().MergeState(ctx, opts.PRNumber)
@@ -587,7 +623,11 @@ PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumb
 	if mergeErr != nil {
 		reason = fmt.Sprintf("%s: %v", mergeState, mergeErr)
 	}
-	return &SubmitReviewResult{Result: result, Reason: reason, Next: next}, nil
+	res := &SubmitReviewResult{Result: result, Reason: reason, Next: next}
+	if next == NextNeedsYou {
+		res.NeedsYou = NeedsYouMergeBlocked
+	}
+	return res, nil
 }
 
 // fetchIssueBody fetches the issue body from GitHub

@@ -128,9 +128,13 @@ func (claudeAdapter) prepare(env Envelope, files runFiles) (invocation, error) {
 // hookCommand is the command line of the command-policy hook: this awkit's
 // `guard tool`, with the role's policy, the project, and its branches.
 func hookCommand(env Envelope) (string, error) {
-	exe, err := awkitExecutable()
-	if err != nil {
-		return "", fmt.Errorf("awkit cannot find itself for the command-policy hook: %w", err)
+	exe := env.Awkit
+	if exe == "" {
+		self, err := awkitExecutable()
+		if err != nil {
+			return "", fmt.Errorf("awkit cannot find itself for the command-policy hook: %w", err)
+		}
+		exe = self
 	}
 	quote := func(s string) string { return `"` + filepath.ToSlash(s) + `"` }
 	parts := []string{quote(exe), "guard", "tool", "--role", env.Profile.guardRole()}

@@ -179,6 +179,13 @@
 **審查與解衝突拆成獨立程序**：
 - 審查：engine 做 `prepare-review` 的事（收集 diff、工單、驗收條件、測試結果）→ 啟動 reviewer → 拿到 `StructuredReview`（schema 現有）→ engine 做 `submit-review` 的證據關卡與發表審查 → 通過的進合併佇列（合併從 `submit-review` 移到合併佇列）。
 - 審查的判斷與對外動作分開（1.4a）：`internal/reviewer` 的 `SubmitReview` 做全部判斷（CI、證據關卡、JiT 測試、分數門檻、合併失敗的原因），對外的動作（取工單、留言、核准或要求修改、合併、問合併狀態、關 issue、改標籤、記下已落地、清 worktree）都經過 `Publisher`。主控用 `ghPublisher`，照舊用 gh 與標籤；engine 給自己的 `Publisher`，不改標籤（狀態在線裡，標籤由 §6 的投影寫）。結果多一個 `Next`（`merged`、`rework`、`review_retry`、`resolve_conflict`、`resolve_rebase`、`needs_you`），engine 依它轉線，不讀標籤。engine 自己跑的測試以 `TestRun` 傳入，證據關卡核對它，不再跑一次。兩條路共用一套判斷，1.7 的影子模式才比得出分歧。
+- engine 的審查步驟（1.4b，`internal/engine/review.go`）：`ReviewStep.Review(ctx, lane)` 審一條 `reviewing` 的線，回傳線要怎麼走的轉換，由 engine 的主迴圈（1.6）記下。
+  - 給 reviewer 的：指示（`review_instructions.md`，含專案的核准分數與該語言測試名稱的寫法）、工單（owner）、專案裡適用於這次改動的檔案的規則（repo；從專案讀，不從 worktree 讀，改動自己改的規則不算數）、commit 標題與 diff（agent）、engine 跑測試的結論（system）、測試印出來的內容（引用了受審的程式碼印出的東西，所以降到 agent）、維護者在 PR 上的意見（owner）、審查的教訓（agent）。
+  - 答案的 schema 每個欄位都必填、不允許其他欄位（Codex 的嚴格模式也收）；schema 說不出的（實作描述至少 20 字、非 meta 的條目要有測試與斷言）由 `ParseStructuredReview` 檢查，不過就帶著原因重問，次數依角色設定的 `SchemaRetries`。
+  - 每次審查的檔案在 `runs/<issue>/<seq>/`，`seq` 是讓線進入 `reviewing` 的那個轉換在事件日誌裡的序號；每問一次 reviewer 是底下的 `reviewer-<n>/`。
+  - 結果：`Next` 依序對到 `merged`、`rework`、`review_retry`、`resolving`（`conflict`／`rebase`）、`needs_you`（`merge_blocked`、`needs_human_review`、`guard_output`）；不認得的一律 `needs_you`。reviewer 沒跑完（逾時、失敗、預算、schema）→ `review_retry`；後端達不到角色設定而沒執行 → `needs_you`（`agent_refused`）；輸入檢查擋下 → `needs_you`（`guard_blocked`），reviewer 不會拿到那些內容；reviewer 回報可疑的資料區塊 → 記 flag 判定，審查照常。
+  - 審查的留言被對外檢查擋下時（兩條路都一樣）：不核准、不合併，票轉人並說明原因，判定記在那張工單下。
+  - engine 的 `Publisher`（`EnginePublisher`）就是主控的，只是不改標籤。P1 的合併仍由它在 `SubmitReview` 裡做（engine 直接合併）；P2 把它換成進合併佇列。
 - 解衝突：engine 在 rebase 停住的 worktree 啟動 resolver → 拿到 `{result: RESOLVED|TOO_COMPLEX|FAILED, files, reason}` → engine 檢查沒有衝突標記、改動只在衝突檔案、驗證通過 → 繼續 rebase、push。現在由主控用 `gh issue edit` 改標籤的步驟（`references/conflict-resolution.md`）改由 engine 做。
 
 ### 5.6 Context builder 與任務信封

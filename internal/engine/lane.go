@@ -89,6 +89,7 @@ const (
 	WhyInvalidTicket    = "invalid_ticket"       // the ticket's awk-ticket block cannot be read
 	WhyDependencyCycle  = "dependency_cycle"     // its dependencies go round in a circle
 	WhyPerson           = "person"               // a person marked it on GitHub
+	WhyAgentRefused     = "agent_refused"        // an agent's backend cannot be held to its role's settings: it was not run
 )
 
 // Attempts are the counts a lane's limits are checked against, as the
