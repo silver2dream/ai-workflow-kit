@@ -75,10 +75,12 @@
 
 ## P1 Engine 取代 LLM 主控（行為等同）
 
-- [ ] 1.1 `internal/engine`：線的狀態機、事件、快照與重建
+- [x] 1.1 `internal/engine`：線的狀態機、事件、快照與重建
   - 相依：0.1
   - `design.md` §6 的狀態與轉換；事件日誌與快照；從事件重建快照；GitHub 標籤投影
+  - 狀態表依現行主控的實際行為更正（`review_retry`、`completed`、`rework` 的投影、`resolving` 的兩種）；標籤除了投影，也能讀回狀態（匯入與對帳用，順序同 `analyzer`）；轉換帶起點，依舊狀態做的決定會被拒絕；事件加不起來就拒絕開啟
   - 需求：R1、R13、R14
+  - 完成：#280
 - [ ] 1.2 Agent runtime 與角色設定
   - 相依：0.5
   - 契約 `Run(ctx, envelope) → Result`；Claude Code 與 Codex 轉接器（§5.5 的展開表）；能力探測；結構化輸出（`--json-schema`／`--output-schema`）；預算；展開結果寫事件；角色設定的預設值與上限
