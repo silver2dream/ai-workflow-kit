@@ -17,7 +17,6 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
-	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/rules"
 	"github.com/silver2dream/ai-workflow-kit/internal/task"
 )
@@ -552,24 +551,8 @@ func planRoster(root, flagValue string, repos []council.Repo) (*council.Roster, 
 	return roster, nil
 }
 
-// rosterPresetFor picks the roster a project starts with from its repos: the
-// game studio for a Go server with a C# (Godot) client, the generic one for
-// everything else.
-func rosterPresetFor(repos []council.Repo) string {
-	var hasGo, hasDotnet bool
-	for _, entry := range repos {
-		switch repo.ToolchainOf(entry.Language) {
-		case repo.ToolchainGo:
-			hasGo = true
-		case repo.ToolchainDotnet:
-			hasDotnet = true
-		}
-	}
-	if hasGo && hasDotnet {
-		return "godot-go"
-	}
-	return "generic"
-}
+// rosterPresetFor picks the roster a project starts with from its repos.
+func rosterPresetFor(repos []council.Repo) string { return council.PresetFor(repos) }
 
 // integrationBranch names the branch pull requests go to, for a message.
 func integrationBranch(root string) string {

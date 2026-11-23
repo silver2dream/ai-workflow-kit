@@ -360,3 +360,86 @@ func TestSync_LeavesWhatItCannotBeSureOf(t *testing.T) {
 		}
 	})
 }
+
+// A change made in the worktree is made to the file as develop on origin has
+// it, which the working tree may be behind: what origin has and the working
+// tree lacks is kept. The working tree is not touched until Sync moves it
+// forward.
+func TestLand_EditsTheFileAsOriginHasIt(t *testing.T) {
+	p := newProject(t)
+	other := filepath.Join(t.TempDir(), "other")
+	git(t, filepath.Dir(other), "clone", "--quiet", "-c", "core.autocrlf=false", "--branch", "develop", p.origin, other)
+	configure(t, other)
+	write(t, other, "docs/decisions.md", "# Decisions\n\n### D0\n")
+	git(t, other, "commit", "--quiet", "-am", "elsewhere")
+	git(t, other, "push", "--quiet", "origin", "develop")
+
+	opts := p.options(nil)
+	opts.Edit = func(ctx context.Context, work string) error {
+		file := filepath.Join(work, "docs", "decisions.md")
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(file, append(data, "### D1\n"...), 0o644)
+	}
+	p.gh.checks = [][]Check{{{Name: "build", Bucket: "pass"}}}
+	landed, err := Land(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landed.PR == nil {
+		t.Fatal("no pull request")
+	}
+	if got, _ := p.onOrigin("docs/decisions.md"); got != "# Decisions\n\n### D0\n### D1\n" {
+		t.Errorf("develop has %q", got)
+	}
+	if data, _ := os.ReadFile(filepath.Join(p.root, "docs", "decisions.md")); string(data) != "# Decisions\n" {
+		t.Errorf("the working tree was touched: %q", data)
+	}
+
+	synced, err := Sync(context.Background(), nil, p.root, "develop", nil)
+	if err != nil || !synced.Updated {
+		t.Fatalf("sync = %+v, %v", synced, err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(p.root, "docs", "decisions.md")); string(data) != "# Decisions\n\n### D0\n### D1\n" {
+		t.Errorf("the working tree has %q", data)
+	}
+	if status := git(t, p.root, "status", "--porcelain"); status != "" {
+		t.Errorf("the working tree is not clean:\n%s", status)
+	}
+}
+
+// An edit that leaves the files as origin has them lands nothing.
+func TestLand_AnEditThatChangesNothingOpensNoPullRequest(t *testing.T) {
+	p := newProject(t)
+	opts := p.options(nil)
+	edited := false
+	opts.Edit = func(ctx context.Context, work string) error {
+		edited = true
+		return os.WriteFile(filepath.Join(work, "docs", "decisions.md"), []byte("# Decisions\n"), 0o644)
+	}
+	landed, err := Land(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !edited || landed.PR != nil || p.gh.created != 0 {
+		t.Errorf("edited %v, landed %+v, %d pull request(s) opened", edited, landed, p.gh.created)
+	}
+}
+
+// An edit that fails lands nothing, and leaves no worktree behind.
+func TestLand_AnEditThatFailsLandsNothing(t *testing.T) {
+	p := newProject(t)
+	opts := p.options(nil)
+	opts.Edit = func(ctx context.Context, work string) error { return errors.New("the roster is not valid") }
+	if _, err := Land(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "the roster is not valid") {
+		t.Fatalf("err = %v", err)
+	}
+	if p.gh.created != 0 {
+		t.Error("a pull request was opened")
+	}
+	if list := git(t, p.root, "worktree", "list"); strings.Count(list, "\n") != 0 {
+		t.Errorf("a worktree is left:\n%s", list)
+	}
+}

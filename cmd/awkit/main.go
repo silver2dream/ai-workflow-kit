@@ -173,6 +173,8 @@ func run() int {
 		return cmdReset(os.Args[2:])
 	case "generate":
 		return cmdGenerate(os.Args[2:])
+	case "settings":
+		return cmdSettings(os.Args[2:])
 	case "list-presets":
 		return cmdListPresets()
 	case "completion":
@@ -267,6 +269,8 @@ Set up a project:
   uninstall     Take AWK out of a project
   generate      Write the guides and the CI workflows again from the configuration
   validate      Check the configuration, and name the keys in it nothing reads
+  settings      Change the roster or the configuration through a pull request,
+                as the workbench does
   list-presets  Show the presets init knows
 
 Run the workflow:
@@ -393,6 +397,8 @@ func cmdHelp(command string) int {
 		usageLessons()
 	case "generate":
 		usageGenerate()
+	case "settings":
+		usageSettings()
 	case "list-presets":
 		fmt.Println("Show available project presets with descriptions.")
 		fmt.Println("\nUsage: awkit list-presets")
@@ -1404,7 +1410,7 @@ _awkit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="init install upgrade uninstall ui plan gamedata run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot check-update completion version help"
+    commands="init install upgrade uninstall ui plan gamedata run stop validate status next check-result dispatch-worker run-issue analyze-next reconcile stop-workflow prepare-review submit-review create-task jittest doctor reset generate list-presets hooks events feedback-stats evaluate lessons context-snapshot settings check-update completion version help"
     
     case "${prev}" in
         awkit)
@@ -1465,6 +1471,7 @@ _awkit() {
         'plan:Plan work with the council: documents, decisions and tickets to approve'
         'gamedata:Check the game data and show it for review'
         'ui:Open the workbench in your browser'
+        'settings:Change the roster or the configuration through a pull request'
         'run:Start the workflow: work through the open tickets'
         'validate:Validate workflow configuration'
         'status:Show offline workflow status'
@@ -1562,6 +1569,7 @@ complete -c awkit -n __fish_use_subcommand -a uninstall -d 'Remove AWK from a pr
 complete -c awkit -n __fish_use_subcommand -a plan -d 'Plan work with the council: documents, decisions and tickets to approve'
 complete -c awkit -n __fish_use_subcommand -a gamedata -d 'Check the game data and show it for review'
 complete -c awkit -n __fish_use_subcommand -a ui -d 'Open the workbench in your browser'
+complete -c awkit -n __fish_use_subcommand -a settings -d 'Change the roster or the configuration through a pull request'
 complete -c awkit -n __fish_use_subcommand -a run -d 'Start the workflow: work through the open tickets'
 complete -c awkit -n __fish_use_subcommand -a validate -d 'Validate workflow configuration'
 complete -c awkit -n __fish_use_subcommand -a status -d 'Show offline workflow status'

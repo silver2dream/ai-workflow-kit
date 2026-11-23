@@ -18,6 +18,7 @@ import { PlanPage } from "@/pages/plans/PlanPage";
 import { PlansList } from "@/pages/plans/PlansList";
 import { ProjectsPage } from "@/pages/Projects";
 import { RunPage } from "@/pages/Run";
+import { SettingsPage } from "@/pages/settings/SettingsPage";
 import { api, ApiError, LOCKED_EVENT, type Session } from "@/lib/api";
 import { href, redirect, useRoute, type Route } from "@/lib/router";
 import { useResource } from "@/lib/resource";
@@ -89,12 +90,14 @@ function ProjectPage({ route }: { route: Route }) {
       return <ActivityPage />;
     case "health":
       return <HealthPage />;
+    case "settings":
+      return <SettingsPage />;
     default:
       return null;
   }
 }
 
-const KNOWN = ["overview", "inbox", "plans", "board", "run", "activity", "health"];
+const KNOWN = ["overview", "inbox", "plans", "board", "run", "activity", "settings", "health"];
 
 function Routes({ session, reload }: { session: Session; reload: () => void }) {
   const route = useRoute();

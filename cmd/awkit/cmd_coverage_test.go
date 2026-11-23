@@ -914,7 +914,7 @@ func TestRun_ReachesHelpAllAndStop(t *testing.T) {
 func TestUsageAll_ListsEveryCommandOnce(t *testing.T) {
 	output := captureStderr(usageAll)
 	commands := []string{
-		"init", "doctor", "upgrade", "uninstall", "generate", "validate", "list-presets",
+		"init", "doctor", "upgrade", "uninstall", "generate", "validate", "settings", "list-presets",
 		"plan", "gamedata", "create-task", "run", "status", "stop", "next", "reset",
 		"events", "feedback-stats", "lessons", "evaluate", "hooks",
 		"analyze-next", "dispatch-worker", "check-result", "run-issue", "prepare-review", "submit-review",
