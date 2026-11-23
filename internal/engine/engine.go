@@ -61,6 +61,9 @@ type Engine struct {
 	Implement, Check, Review, Resolve Step
 	// Log is where the engine says what it does; nil is stderr.
 	Log io.Writer
+	// Watch, when set, is told each decision before the engine acts on it
+	// (Serve keeps the run file with it).
+	Watch func(*analyzer.Decision)
 
 	now func() time.Time
 }
@@ -140,6 +143,9 @@ func (e *Engine) Run(ctx context.Context) (string, error) {
 			return analyzer.ReasonGitHubAPIError, err
 		}
 		e.logf("next: %s%s", d.NextAction, describe(d))
+		if e.Watch != nil {
+			e.Watch(d)
+		}
 		end, err := e.Step(ctx, d)
 		if ctx.Err() != nil {
 			return EndInterrupted, nil

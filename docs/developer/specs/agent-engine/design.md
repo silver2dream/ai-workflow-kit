@@ -109,6 +109,13 @@
 - **投影與告知**：每個轉換都寫事件，再把工單的標籤改成線的投影（§6）。線轉 `needs_you` 而產生它的那一步沒有留言（engine 自己的上限、審查步驟的 `guard_blocked`／`agent_refused`、解衝突步驟的一切）時，engine 在 issue 留言說為什麼、要移除哪個標籤；worker 與 `SubmitReview` 已經留言的不重複。
 - **同一個狀態有多條線時**取編號最小的；analyzer 取 `gh issue list` 給的第一個。1.7 比對時把這點列為已知的差異。
 
+實作（1.6b，`internal/engine/process.go`、`inbox.go`，`cmd/awkit/run_engine.go`、`stop.go`）：
+
+- **啟動**：`AWKIT_ENGINE=engine awkit run` 走 `awkit run` 原本的前置檢查、session、鎖（`kickoff.lock`，與主控同一把，兩者不會同時跑）與標籤建立，然後由 `engine.Serve` 跑。結束時照主控的做法寫 `stop-workflow` 的報告與停止標記，再印出結束的原因。預設仍是主控，到 1.7 才切換。工作台以 `awkit detach` 啟動 `awkit run`（3b），環境變數照帶，所以同樣適用。
+- **心跳與租約**：engine 每 15 秒把 PID、主機、心跳時間、正在做的決定（動作、工單、PR、從何時開始）寫進 `.ai/state/engine/run.json`；結束時寫下結束時間與原因。`RunInfo.Alive` 以「沒有結束、程序還在、心跳在三個間隔內」判斷是否還在跑。當掉重開不另外接回：`Next` 本來就會先讀實作中的線的結果、重做解到一半的衝突、重審審到一半的 PR。
+- **收件匣**：`Send` 把指令寫成 `.ai/state/engine/inbox/<id>.json`（id 依時間排序），engine 每兩秒依序處理，回覆寫到 `outbox/<id>.json`（`applied` 或 `rejected`＋原因），每個指令都寫 `engine_command` 事件，開始與結束寫 `engine_run`。P1 只接 `stop`（寫停止標記，analyzer 的 `Precheck` 在下一步停下）與 `stop_now`（取消 engine 的 context，agent 程序樹一起結束；線留在當時的狀態，下次接著做）；其他種類回覆「2.6 才接」。
+- **`awkit stop`**：照舊寫停止標記；engine 在跑時另外經收件匣送 `stop`，等它回覆並印出。`--now` 只對 engine 的 run 有效（主控的 run 仍以 Ctrl-C 立刻停）。
+
 ### 5.2 狀態
 
 | 資料 | 位置 | 誰寫 | 用途 |
