@@ -6,7 +6,9 @@
 > its issue. The inception phase is `awkit plan`: a council of roles writes
 > the documents and proposes the tickets; there is no spec triple, since the
 > specs under `.ai/specs` are gone. The parallelism track has not been
-> started. The paths and commands below (`.ai/config/workflow.yaml`,
+> started; it is superseded by [`agent-engine`](../agent-engine/README.md)
+> (phase P2), which keeps its rule of parallel work and serial merges. The
+> paths and commands below (`.ai/config/workflow.yaml`,
 > `awkit kickoff`, `awkit adopt`, `awkit inception`) are those of the time
 > this was written.
 

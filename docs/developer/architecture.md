@@ -157,4 +157,5 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 
 - [貢獻](contributing.md)：建置、測試、commit 與發版
 - [學習迴圈的設計](specs/learning-loop/design.md)
+- [Agent Engine](specs/agent-engine/README.md)：以確定性的 engine 取代 LLM 主控、平行的線與合併佇列、角色設定、分層的 guardrail、容器隔離（已核可，分階段實作中；完成前，本頁描述的仍是現行架構）
 - [Skills 與規則](../user/skills.md)：kit 的 skill 怎麼寫
