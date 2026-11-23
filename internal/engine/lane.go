@@ -136,6 +136,7 @@ type Cause string
 
 const (
 	CauseOpened         Cause = "opened"           // a ticket became a lane
+	CauseImported       Cause = "imported"         // a ticket the engine did not have became a lane where its labels left it (Infer)
 	CauseUnblocked      Cause = "unblocked"        // what it depends on landed
 	CauseBlocked        Cause = "blocked"          // something it depends on is open again
 	CauseDispatched     Cause = "dispatched"       // an implementer took it
@@ -255,6 +256,11 @@ func Allowed(from, to State, cause Cause) bool {
 	}
 	if cause == CauseResumed {
 		return from == Paused && to != Paused && !to.Terminal() && to.Known()
+	}
+	if cause == CauseImported {
+		// A ticket the Principal's workflow, or a person, left somewhere:
+		// the lane starts there. A closed ticket is not taken in.
+		return from == "" && to.Known() && !to.Terminal() && to != Paused
 	}
 	for _, e := range edges {
 		if e.to != to || e.cause != cause {
