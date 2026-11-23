@@ -314,6 +314,13 @@ func landedMarker(stateRoot string, issue int) string {
 	return filepath.Join(stateRoot, ".ai", "state", "landed", fmt.Sprintf("issue-%d", issue))
 }
 
+// KnownLanded says whether an issue's work is known to be on the integration
+// branch: its merge was recorded (MarkLanded). It asks GitHub nothing.
+func KnownLanded(stateRoot string, issue int) bool {
+	_, err := os.Stat(landedMarker(stateRoot, issue))
+	return err == nil
+}
+
 func (a *Analyzer) knownLanded(issue int) bool {
 	_, err := os.Stat(landedMarker(a.StateRoot, issue))
 	return err == nil

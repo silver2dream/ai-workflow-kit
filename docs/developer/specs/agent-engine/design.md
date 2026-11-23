@@ -116,6 +116,16 @@
 - **收件匣**：`Send` 把指令寫成 `.ai/state/engine/inbox/<id>.json`（id 依時間排序），engine 每兩秒依序處理，回覆寫到 `outbox/<id>.json`（`applied` 或 `rejected`＋原因），每個指令都寫 `engine_command` 事件，開始與結束寫 `engine_run`。P1 只接 `stop`（寫停止標記，analyzer 的 `Precheck` 在下一步停下）與 `stop_now`（取消 engine 的 context，agent 程序樹一起結束；線留在當時的狀態，下次接著做）；其他種類回覆「2.6 才接」。
 - **`awkit stop`**：照舊寫停止標記；engine 在跑時另外經收件匣送 `stop`，等它回覆並印出。`--now` 只對 engine 的 run 有效（主控的 run 仍以 Ctrl-C 立刻停）。
 
+實作（1.6c，`internal/engine/engine.go` 的 `Reconcile`）：
+
+- **每一輪先對帳**：engine 每次決定下一步之前讀一次開著的工單（一次 `gh issue list`），把人在 GitHub 上做的事轉成線的轉換，其他標籤的改動不動、也不改回去：
+  - 沒有線的工單依標籤匯入（主控跑過的專案、執行中新開的票）；
+  - 已經結束的線，工單又以工作標籤開著 → `ready`（`reopened`）；
+  - 等人的線，人拿掉了 `needs-human-review`／`worker-failed` → 依標籤回到 `ready`（有 PR 的回 `rework`）、`reviewing` 或 `resolving`（`released`）；
+  - 人在線上加了 `needs-human-review` → `needs_you`（`person`），不另外留言。P1 為了與主控等同，整輪停下；P2（2.4）改成只停那條線；
+  - 人關了工單：工作已知落地（`analyzer.KnownLanded`）→ `merged`（新原因 `landed`，可以從任何進行中的狀態來）；否則 → `cancelled`；工單拿掉了工作標籤 → `cancelled`。
+- `Import` 併進 `Reconcile`。
+
 ### 5.2 狀態
 
 | 資料 | 位置 | 誰寫 | 用途 |
@@ -516,6 +526,7 @@ guardrails:
 ```
 
 - 現有的 `worker.backend`、`worker.claude_code.*`、`timeouts.codex_minutes` 由 `awkit upgrade` 遷移到 `agents.implementer`；遷移期間舊鍵照讀並寫 deprecation 事件。
+- 1.6c 先加了 `agents.reviewer` 與 `agents.resolver`（`backend`、`model`、`effort`、`minutes`、`usd`），與既有的 `agents.builtin`／`agents.custom` 並存；engine 以 `worker.*` 推出實作者的設定（`engine.Implementer`），再用 `agent.Resolve` 得到兩個角色的設定，超出角色上限就不啟動並說明是哪一項；審查者與實作者同一個模型時啟動提醒。`agents.implementer` 與舊鍵的遷移跟實作者改走 agent runtime 一起做（3.3）；`agents.helpers` 等到有輔助角色（P5）才加；工作台設定頁的編輯在 1.8。
 - 每個新鍵依 `docs/developer/contributing.md` 的規則：程式讀、預設值、`docs/user/configuration.md` 說明、`config_test.go` 的完整範例。
 - 工作台的「設定」頁（4a）加上這些鍵的編輯。
 

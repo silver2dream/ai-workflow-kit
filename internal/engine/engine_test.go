@@ -301,7 +301,7 @@ func TestEngine_TakenUpWhereTheLabelsLeftIt(t *testing.T) {
 		Ticket{Number: 10, Labels: []string{"bug"}},
 	)
 	f.an.prs = map[int]int{3: 33, 4: 44, 7: 77, 8: 88}
-	if err := f.e.Import(context.Background()); err != nil {
+	if err := f.e.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	want := map[int]string{3: "reviewing", 4: "resolving/conflict", 5: "implementing", 6: "ready", 7: "resolving/rebase", 8: "review_retry", 9: "needs_you/worker_failed"}
@@ -395,7 +395,7 @@ func TestEngine_Stops(t *testing.T) {
 	// A run limited to one ticket takes up that one.
 	f = newEngineFixture(t, task(12, "pr-ready"), task(13))
 	f.e.Only = 13
-	if err := f.e.Import(context.Background()); err != nil {
+	if err := f.e.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if f.e.Journal.Lane(12) != nil || f.e.Journal.Lane(13) == nil {
@@ -530,5 +530,119 @@ func TestNew(t *testing.T) {
 	}
 	if _, err := New(Options{Root: t.TempDir()}); err == nil {
 		t.Error("an engine without a configuration")
+	}
+}
+
+// What a person does on GitHub between the engine's steps moves the lanes:
+// it is an instruction, not an error to put back.
+func TestReconcile_APersonsHand(t *testing.T) {
+	ctx := context.Background()
+	setLabels := func(f *engineFixture, issue int, closed bool, labels ...string) {
+		f.gh.tickets[issue].Labels, f.gh.tickets[issue].Closed = labels, closed
+	}
+	reconcile := func(f *engineFixture) {
+		t.Helper()
+		if err := f.e.Reconcile(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := func(l Lane) string {
+		s := string(l.State)
+		if l.Why != "" {
+			s += "/" + l.Why
+		}
+		return s
+	}
+
+	// A person takes needs-human-review off a lane that waited for them.
+	f := newEngineFixture(t, task(12, "needs-human-review"), task(13, "needs-human-review"))
+	f.an.prs = map[int]int{12: 30}
+	reconcile(f)
+	setLabels(f, 12, false, "ai-task")
+	setLabels(f, 13, false, "ai-task", "pr-ready")
+	reconcile(f)
+	if got := state(f.lane(12)) + " " + state(f.lane(13)); got != "rework reviewing" {
+		t.Errorf("released: %s", got)
+	}
+
+	// A person puts needs-human-review on a lane under review: the run stops
+	// on it, and nobody is told what the person did.
+	setLabels(f, 13, false, "ai-task", "pr-ready", "needs-human-review")
+	reconcile(f)
+	if got := state(f.lane(13)); got != "needs_you/person" || len(f.gh.comments) != 0 {
+		t.Errorf("marked: %s, comments %v", got, f.gh.comments)
+	}
+	if d, _ := f.e.Next(ctx); d.NextAction != analyzer.ActionNone || d.IssueNumber != 13 {
+		t.Errorf("the run goes on past a lane a person took: %+v", d)
+	}
+
+	// A person closes tickets: one whose work landed, one whose did not, and
+	// one is no longer a ticket.
+	f = newEngineFixture(t, task(20, "pr-ready"), task(21, "pr-ready"), task(22))
+	reconcile(f)
+	analyzer.MarkLanded(f.e.Root, 20)
+	setLabels(f, 20, true, "ai-task", "pr-ready")
+	setLabels(f, 21, true, "ai-task", "pr-ready")
+	setLabels(f, 22, false, "bug")
+	reconcile(f)
+	if got := state(f.lane(20)) + " " + state(f.lane(21)) + " " + state(f.lane(22)); got != "merged cancelled cancelled" {
+		t.Errorf("closed: %s", got)
+	}
+	if got := f.gh.labels(21); got != " (closed)" {
+		t.Errorf("a cancelled ticket keeps the workflow's labels: %q", got)
+	}
+	if got := f.gh.labels(22); got != "bug" {
+		t.Errorf("a person's own label was touched: %q", got)
+	}
+
+	// A ticket that ended is opened again, and a new one appears.
+	setLabels(f, 20, false, "ai-task")
+	f.gh.tickets[23] = &Ticket{Number: 23, Labels: []string{"ai-task"}}
+	reconcile(f)
+	if got := state(f.lane(20)) + " " + state(f.lane(23)); got != "ready ready" {
+		t.Errorf("reopened and new: %s", got)
+	}
+
+	// Any other change of the labels is left as the person left it.
+	setLabels(f, 23, false, "ai-task", "priority:high")
+	reconcile(f)
+	if got := f.gh.labels(23); got != "ai-task,priority:high" || f.lane(23).State != Ready {
+		t.Errorf("other labels: %q, %+v", got, f.lane(23))
+	}
+}
+
+// The agents' settings come from the configuration, on the roles' defaults;
+// what goes past a role's limits keeps the engine from starting.
+func TestNew_TheAgentsSettings(t *testing.T) {
+	cfg := config.Default()
+	if p := Implementer(cfg); p.Backend != "codex" || p.Model != "" {
+		t.Errorf("the default Worker: %+v", p)
+	}
+	cfg.Worker.Backend, cfg.Worker.ClaudeCode.Model, cfg.Worker.ClaudeCode.Effort = "claude-code", "opus", "high"
+	if p := Implementer(cfg); p.Backend != "claude-code" || p.Model != "opus" || p.Effort != "high" {
+		t.Errorf("a Claude Code Worker: %+v", p)
+	}
+
+	start := func(agents string) (*Engine, string, error) {
+		root := t.TempDir()
+		writeFile(t, root+"/.ai/config.yaml", reviewConfig+"worker:\n  backend: claude-code\n  claude_code: {model: opus}\n"+agents)
+		var log bytes.Buffer
+		e, err := New(Options{Root: root, Log: &log})
+		if e != nil {
+			e.Journal.Close()
+		}
+		return e, log.String(), err
+	}
+	if _, log, err := start(""); err != nil || log != "" {
+		t.Errorf("the defaults: %v, %q", err, log)
+	}
+	if _, _, err := start("agents:\n  reviewer: {minutes: 500}\n"); err == nil || !strings.Contains(err.Error(), "agents.reviewer") {
+		t.Errorf("a reviewer past its limit: %v", err)
+	}
+	if _, _, err := start("agents:\n  resolver: {backend: nobody}\n"); err == nil || !strings.Contains(err.Error(), "agents.resolver") {
+		t.Errorf("a resolver on no backend: %v", err)
+	}
+	if _, log, err := start("agents:\n  reviewer: {model: opus}\n"); err != nil || !strings.Contains(log, "same model as the Worker") {
+		t.Errorf("the reviewer is the Worker's model: %v, %q", err, log)
 	}
 }

@@ -108,7 +108,7 @@
   - 需求：R2、R11
   - `internal/engine/resolve.go` 的 `ResolveStep`，細節在 `design.md` §5.5。與原本寫的不同或多做的：rebase 也由 engine 做（resolver 只改檔）；push 前不跑建置與測試，交給接著的審查；manifest 衝突時它的 lockfile 可以一起改；resolver 的檢查留下的未追蹤檔案清掉而不算越界；先把有人推到 PR 的 commit 收進來、push 指定 lease（現行 worker 的流程 fetch 後再 `--force-with-lease`，會蓋掉別人剛推的）。標籤仍由 1.6 的投影寫。P0 的指令政策仍允許 agent push 自己的票分支（給主控時代的 conflict-resolver）；engine 的 resolver 被告知不要 push，政策依角色收緊留到 4.x
   - 完成：#285
-- [ ] 1.6 Engine 主迴圈、鎖、租約、對帳、停止
+- [x] 1.6 Engine 主迴圈、鎖、租約、對帳、停止
   - 相依：1.1、1.4、1.5
   - 事件驅動的迴圈（平行上限固定為 1）；單一實例鎖；租約與心跳；當掉重開的接回；GitHub 對帳與人的動作轉指令；`awkit stop` 兩種停止；`awkit detach` 啟動
   - 需求：R1、R14
@@ -116,6 +116,8 @@
   - 1.6a 完成：#286
   - 1.6b：細節在 `design.md` §5.1。與原本寫的不同：租約就是 run 檔裡「正在做的決定」，當掉重開的接回由 `Next` 的順序做（沒有另外的接回步驟）；鎖由 `awkit run` 持有（與主控同一把）；收件匣只接兩種停止，其他種類到 2.6
   - 1.6b 完成：#287
+  - 1.6c：細節在 `design.md` §5.1 與 §12。與原本寫的不同：人加 `needs-human-review` 在 P1 是轉人（整輪停），不是暫停那條線（P2 改）；人關掉、工作已落地的票記為 `merged`（新原因 `landed`）；`agents.*` 只加 `reviewer` 與 `resolver`，`implementer` 與 `helpers` 分別在 3.3 與 P5
+  - 1.6c 完成：#288
 - [ ] 1.7 影子模式與切換
   - 相依：1.6
   - `AWKIT_ENGINE=shadow`：engine 與現行主控對同一狀態算決定，逐筆比對寫事件；工作台與 `awkit status` 顯示分歧；測試專案跑完一份規劃無分歧後，預設改為 engine，保留 `AWKIT_ENGINE=principal` 一個版本；主控相關指令的 deprecation 事件

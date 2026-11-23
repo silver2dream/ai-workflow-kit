@@ -156,6 +156,7 @@ const (
 	CauseOwnerApproved  Cause = "owner_approved"
 	CauseOwnerReturned  Cause = "owner_returned"
 	CauseMerged         Cause = "merged"
+	CauseLanded         Cause = "landed"    // its work landed outside the lane's steps: a person merged it, or an earlier run did
 	CauseEscalated      Cause = "escalated" // it needs a person (Why says why)
 	CauseReleased       Cause = "released"  // a person took it out of NeedsYou
 	CausePaused         Cause = "paused"
@@ -234,6 +235,7 @@ var edges = []edge{
 	{Resolving, Reviewing, CauseResolved},
 
 	{anyLive, NeedsYou, CauseEscalated},
+	{anyLive, Merged, CauseLanded},
 	{NeedsYou, Ready, CauseReleased},
 	{NeedsYou, Rework, CauseReleased},
 	{NeedsYou, Reviewing, CauseReleased},
