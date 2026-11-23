@@ -34,7 +34,11 @@ func Prepare(pieces []Piece) *Prepared {
 			})
 			continue
 		}
-		text, changes := Sanitize(p.Text, MaxPieceChars)
+		max := MaxPieceChars
+		if p.Max > 0 {
+			max = p.Max
+		}
+		text, changes := Sanitize(p.Text, max)
 		if len(changes) > 0 {
 			result, class := Flag, Info
 			for _, change := range changes {

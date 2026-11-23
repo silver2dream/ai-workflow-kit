@@ -194,6 +194,16 @@
 - 片段的信任等級由 Context builder 依來源決定，不由內容決定；同一段內容引用了別的內容，信任等級取兩者中較低的。
 - 信封在送出前經過輸入 guardrail（§9.2）；送出後原樣存在 `runs/<issue>/<attempt>/envelope.json`（遮蔽後的版本）。
 
+實作在 `internal/agent/context.go`（任務 1.3）：
+
+- **片段的種類決定信任等級**：指示、engine 的測試結果、可選的處置、統計是 system；工單、工單摘要、人補的說明、人的白話指令是 owner；規則與程式碼地圖是 repo；審查、教訓、diff、衝突、審查案例、執行者的自述是 agent；log 與交給 judge 判讀的文字是 external。PR 上的留言看作者：engine 自己發的（記下的留言 id）是 agent；用 AWK 格式寫的（`AWK Review`、`<!-- AWK:` 等，engine 記 id 之前留下的）也是 agent；其他有寫入權限的人是 owner；其餘是 external。
+- **每個角色拿到的種類**是一份清單；清單外的種類是呼叫者的錯，直接報錯，不會進到 agent。執行者的自述不在任何角色的清單裡。
+- **遮蔽**：所有片段（不分信任等級）在送給模型前，把 0.6 那套憑證與個資樣式換成 `[REDACTED:<種類>]`，並記一筆 `redact` 判定（info）；遮蔽在注入偵測之前做，所以判定的證據裡也沒有原文。
+- **長度**：每段可以有自己的上限（審查要看的 diff 比一則留言長），沒給就是 12000 字。
+- **prompt 的順序**：可信的片段照給定的順序在前，然後是資料區塊的說明，最後是資料區塊。
+- **回報可疑的資料區塊**：答案有 schema 的角色，schema 由 `SuspiciousSchema` 加上 `suspicious` 欄位（資料區塊 id 的清單），說明也改成「把 id 放進這個欄位」；沒有 schema 的答案仍用最後一行的 `AWK_SUSPICIOUS:`。讀回時只接受真的是資料區塊的 id，agent 編不出不存在的。
+- 檢查擋下時（`Context.Blocked`），那段內容不送；由 engine 把那條線轉 `needs_you`（任務 1.6）。
+
 ### 5.7 Guardrail pipeline
 
 ```
