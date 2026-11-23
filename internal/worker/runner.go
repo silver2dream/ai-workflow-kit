@@ -605,6 +605,12 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		RetryDelay:  retryDelay,
 		Timeout:     resolveTimeout("AI_CODEX_TIMEOUT", opts.CodexTimeout),
 		Trace:       trace,
+		Guard: &WorkerGuard{
+			StateRoot:    stateRoot,
+			Protected:    []string{integrationBranch, releaseBranch},
+			AllowControl: meta.AllowScriptChanges,
+			SettingsFile: filepath.Join(runDir, "claude-settings.json"),
+		},
 	})
 	codexDuration := time.Since(codexStart)
 	logger.Log("AI worker 結束 (exit=%d, duration=%s, retries=%d)", codex.ExitCode, codexDuration.Truncate(time.Second), codex.RetryCount)

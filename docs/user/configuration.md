@@ -135,13 +135,15 @@ commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如
 
 | 鍵 | 預設 | 說明 |
 |---|---|---|
-| `backend` | `codex` | 誰來寫程式：`codex` 或 `claude-code`。對應的 CLI 必須裝好並登入，`awkit doctor` 會檢查 |
+| `backend` | `codex` | 誰來寫程式：`codex` 或 `claude-code`。對應的 CLI 必須裝好並登入，`awkit doctor` 會檢查。`claude-code` 需要支援 `--settings`、`--setting-sources` 與 `dontAsk` 權限模式的 Claude Code：Worker 只帶 awkit 為它寫的設定執行（見下方說明），太舊的 CLI 不會被執行 |
 | `codex.full_auto` | `true` | 用 `--full-auto` 執行 codex |
 | `claude_code.model` | `sonnet` | Claude Code 當 Worker 時用的模型 |
 | `claude_code.effort` | 不設 | Worker 想得多深：`low`、`medium`、`high`、`xhigh` 或 `max`，越高越仔細，也越慢、越花錢。不設就用 claude CLI 自己的預設。其他值是錯誤：CLI 遇到不認得的值只會警告、照預設跑，打錯了不會有人發現。CLI 太舊、沒有 `--effort` 時照常執行，並提醒一次 |
 | `claude_code.max_turns` | `50` | 一次嘗試最多幾輪 |
-| `claude_code.dangerously_skip_permissions` | `false` | 以 `--dangerously-skip-permissions` 執行。Worker 在自己的 worktree 裡工作，但這個旗標讓它不再受任何權限設定限制；只在隔離的機器上打開 |
+| `claude_code.dangerously_skip_permissions` | `false` | 以 `--dangerously-skip-permissions` 執行：Claude Code 不再問、也不再擋權限設定裡沒允許的工具。awkit 的工具檢查（下方說明）照樣執行。只在隔離的機器上打開 |
 | `knowledge_graph` | `auto` | `auto`：專案有 `.understand-anything/knowledge-graph.json` 時，把和這張票有關的一小段放進 Worker 的 prompt。`off`：不放 |
+
+**Worker 能做什麼。** Claude Code 當 Worker 時，只帶 awkit 為那一次寫的設定執行：不讀你的、也不讀專案的 Claude Code 設定；寫程式要用的工具直接允許，其他的不問就拒絕；每一個工具呼叫都先經過 `awkit guard tool` 檢查。它不能用 `gh`、不能 push 或 commit（那是 runner 的事）、不能連外（`curl`、`wget`、網頁工具）、不能讀放憑證的地方（`~/.ssh`、gh 與 Claude Code 的登入資料）、不能印出環境變數，也不能改 `.git/`；`.claude/` 與 `.ai/` 只有工單設了 `allow_script_changes: true` 才能改。兩種 backend 都只拿到建置與工具鏈需要的環境變數，以及它自己的登入變數：`GH_TOKEN` 這類 token 不會給它。被擋下的呼叫寫進事件（`awkit events --all --type guardrail_verdict`）。
 
 ## `review`
 

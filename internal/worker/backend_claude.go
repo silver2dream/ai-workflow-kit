@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
 // ClaudeCodeBackend implements WorkerBackend for Claude Code CLI.
@@ -88,6 +89,21 @@ func (b *ClaudeCodeBackend) Execute(ctx context.Context, opts BackendOptions) Ba
 		return result
 	}
 
+	args := b.args()
+	if opts.Guard != nil {
+		held, err := b.guardArgs(opts.Guard)
+		if err != nil {
+			// The Worker is not run unguarded.
+			result.ExitCode = 127
+			result.Attempts = 1
+			result.Duration = time.Since(start)
+			result.FailureStage = "claude_guard"
+			result.FailureReason = err.Error()
+			return result
+		}
+		args = append(args, held...)
+	}
+
 	for attempt := 1; attempt <= opts.MaxAttempts; attempt++ {
 		logFile := fmt.Sprintf("%s.attempt-%d.log", opts.LogBase, attempt)
 		result.LastLogFile = logFile
@@ -96,7 +112,7 @@ func (b *ClaudeCodeBackend) Execute(ctx context.Context, opts BackendOptions) Ba
 			opts.Trace.StepStart(fmt.Sprintf("claude_exec_attempt_%d", attempt))
 		}
 
-		exitCode := b.runAttempt(ctx, opts, logFile)
+		exitCode := b.runAttempt(ctx, opts, logFile, args)
 		result.ExitCode = exitCode
 		result.Attempts = attempt
 
@@ -144,7 +160,7 @@ func (b *ClaudeCodeBackend) Execute(ctx context.Context, opts BackendOptions) Ba
 	return result
 }
 
-func (b *ClaudeCodeBackend) runAttempt(ctx context.Context, opts BackendOptions, logFile string) int {
+func (b *ClaudeCodeBackend) runAttempt(ctx context.Context, opts BackendOptions, logFile string, args []string) int {
 	_ = os.MkdirAll(filepath.Dir(logFile), 0755)
 
 	prompt, err := os.Open(opts.PromptFile)
@@ -185,8 +201,9 @@ func (b *ClaudeCodeBackend) runAttempt(ctx context.Context, opts BackendOptions,
 	execCtx, cancel := withOptionalTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(execCtx, "claude", b.args()...)
+	cmd := exec.CommandContext(execCtx, "claude", args...)
 	cmd.Dir = opts.WorkDir
+	cmd.Env = guard.AgentEnv(os.Environ(), guard.ClaudeCredentialEnv...)
 	cmd.Stdin = prompt
 	cmd.Stdout = multiWriter
 	cmd.Stderr = multiWriter
