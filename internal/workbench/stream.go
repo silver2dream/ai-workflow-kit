@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -25,6 +26,9 @@ type area struct {
 	// only, when set, are the names of the files that count, wherever they
 	// are in dir; every other file, and every calls folder, is passed over.
 	only []string
+	// file, when set, is the one file of dir the area is: nothing else of
+	// dir is looked at.
+	file string
 }
 
 // areas are what a stream watches. The tickets are on GitHub, not on disk:
@@ -39,6 +43,8 @@ var areas = []area{
 	// A meeting that goes on: where it is, what was said, what the owner
 	// said. Not every prompt and answer it keeps, which grow all the time.
 	{name: "meeting", dir: layout.StateDir + "/council", only: []string{council.LiveFile, council.TranscriptFile, council.RecordFile, "owner.jsonl", "questions.json", council.ApprovalFile}},
+	// What the reviews taught: a new lesson, one held back, one decided on.
+	{name: "lessons", dir: layout.StateDir, file: "lessons.json"},
 }
 
 const (
@@ -108,6 +114,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, root strin
 func fingerprint(root string, a area) string {
 	hash := sha256.New()
 	base := filepath.Join(root, filepath.FromSlash(a.dir))
+	if a.file != "" {
+		if info, err := os.Stat(filepath.Join(base, a.file)); err == nil {
+			fmt.Fprintf(hash, "%s\x00%d\x00%d\n", a.file, info.Size(), info.ModTime().UnixNano())
+		}
+		return hex.EncodeToString(hash.Sum(nil))
+	}
 	count := 0
 	_ = filepath.WalkDir(base, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {

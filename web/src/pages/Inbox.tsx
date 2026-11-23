@@ -5,11 +5,13 @@ import { href } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { NeedsYouList } from "@/pages/Overview";
 import { headline, planStatus } from "@/pages/plans/status";
+import { heldBackWords } from "@/lib/guard";
 
 /** Inbox is what only the person can decide: what blocks the work first. */
 export function InboxPage() {
-  const { project, plans, status } = useProject();
+  const { project, plans, status, lessons } = useProject();
   const waiting = (plans.data?.plans ?? []).map((plan) => ({ plan, status: planStatus(plan) })).filter((p) => p.status.needsYou);
+  const held = (lessons.data?.lessons ?? []).filter((l) => l.status === "quarantined");
   const warnings = status.data?.warnings ?? [];
   const suggestions = status.data?.suggestions ?? [];
   return (
@@ -34,6 +36,30 @@ export function InboxPage() {
                         <Tag tone={s.tone}>{s.label}</Tag>
                       </div>
                       <p className="mt-0.5 text-[14px] text-ink2">{s.todo}</p>
+                    </div>
+                    <ArrowRight className="mt-1.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
+        {held.length > 0 && (
+          <Panel data-section="held-lessons">
+            <PanelHead title="教訓在等你決定" sub="給 AI 看之前的檢查擋下了它們：讀過全文，放行或不採用" />
+            <ul>
+              {held.map((lesson) => (
+                <li key={lesson.id} className="border-t border-border first:border-t-0">
+                  <a href={href({ project: project.id, page: "lessons", rest: [] })} className="group flex items-start gap-3.5 px-5 py-3.5 transition-colors hover:bg-muted/50">
+                    <span className={cn("mt-2 size-2.5 shrink-0 rounded-full", DOT.signal)} aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[15px] font-bold">
+                          教訓 {lesson.id} {lesson.title}
+                        </span>
+                        <Tag tone="signal">隔離中</Tag>
+                      </div>
+                      <p className="mt-0.5 text-[14px] text-ink2">被擋下的原因：{heldBackWords(lesson.held_back ?? "")}</p>
                     </div>
                     <ArrowRight className="mt-1.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
                   </a>

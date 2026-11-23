@@ -219,6 +219,32 @@ func formatVerdict(data any) string {
 	return line
 }
 
+// formatDecision prints what a person decided on what a guardrail held back:
+// "approve lesson-screen L-004 (in the workbench): <what the check said>".
+func formatDecision(data any) string {
+	d, ok := data.(map[string]any)
+	if !ok {
+		return ""
+	}
+	field := func(key string) string {
+		if s, ok := d[key].(string); ok {
+			return s
+		}
+		return ""
+	}
+	line := fmt.Sprintf("%s %s %s", field("decision"), field("rule"), field("piece"))
+	if by := field("by"); by != "" {
+		if by == "cli" {
+			by = "CLI"
+		}
+		line += " (in the " + by + ")"
+	}
+	if said := field("said"); said != "" {
+		line += ": " + said
+	}
+	return line
+}
+
 func colorizeLevel(level string) string {
 	switch level {
 	case "error":
@@ -281,6 +307,9 @@ func formatEventData(e trace.Event) string {
 	}
 	if e.Type == trace.TypeGuardrailVerdict {
 		return formatVerdict(e.Data)
+	}
+	if e.Type == trace.TypeGuardrailDecision {
+		return formatDecision(e.Data)
 	}
 
 	switch data := e.Data.(type) {

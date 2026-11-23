@@ -196,7 +196,7 @@ commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如
 
 被審查退回、後來終於通過的變更，會被濃縮成教訓，放進之後動到同樣檔案的 Worker 與審查者的 prompt。教訓存在 `.ai/state/lessons.json`：只在這份 checkout 裡，不進版控。
 
-新的教訓先以「未驗證」的身分試用，prompt 裡會這樣標明。濃縮出來的教訓在交給任何 Worker 之前都會先過篩檢，沒過的會被隔離，等你用 `awkit lessons approve` 放行（見[疑難排解](troubleshooting.md#被-guardrail-擋下blocked)）。
+新的教訓先以「未驗證」的身分試用，prompt 裡會這樣標明。濃縮出來的教訓在交給任何 Worker 之前都會先過篩檢，沒過的會被隔離，等你在工作台的「教訓」頁或用 `awkit lessons approve`、`reject` 決定（見[疑難排解](troubleshooting.md#被-guardrail-擋下blocked)）。
 
 | 鍵 | 預設 | 說明 |
 |---|---|---|

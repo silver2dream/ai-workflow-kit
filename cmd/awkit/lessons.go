@@ -44,6 +44,9 @@ Subcommands:
                          vouch for it. A lesson the distiller writes is
                          screened before any Worker reads it; one that fails
                          is quarantined, and 'list' says why
+  reject <L-xxx>         Turn a quarantined lesson down: it is retired and
+                         given to no one. Both decisions are recorded in the
+                         events (awkit events --all --type guardrail_decision)
 
 Options:
   --state-root <path>    Project root (default: current directory)
@@ -75,9 +78,9 @@ func cmdLessons(args []string) int {
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
-	// promote and approve take a positional lesson ID before flags.
+	// promote, approve and reject take a positional lesson ID before flags.
 	var promoteID string
-	if (sub == "promote" || sub == "approve") && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+	if (sub == "promote" || sub == "approve" || sub == "reject") && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		promoteID = rest[0]
 		rest = rest[1:]
 	}
@@ -102,7 +105,9 @@ func cmdLessons(args []string) int {
 	case "promote":
 		return lessonsPromote(*stateRoot, promoteID)
 	case "approve":
-		return lessonsApprove(*stateRoot, promoteID)
+		return lessonsDecide(*stateRoot, promoteID, guard.ApproveDecision)
+	case "reject":
+		return lessonsDecide(*stateRoot, promoteID, guard.RejectDecision)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", sub)
 		usageLessons()
@@ -126,6 +131,9 @@ func lessonsList(stateRoot string, all bool) int {
 			continue
 		}
 		fmt.Printf("%-7s %-11s %4d %4d  %s\n", l.ID, l.Status, l.Hits, l.Misses, l.Title)
+		if l.Status == lessons.StatusRetired && l.Quarantine != "" {
+			fmt.Printf("        turned down after it was held back: %s\n", l.Quarantine)
+		}
 		if l.Status == lessons.StatusQuarantined {
 			fmt.Printf("        held back: %s (awkit lessons approve %s, once you have read it)\n", l.Quarantine, l.ID)
 		}
@@ -134,25 +142,21 @@ func lessonsList(stateRoot string, all bool) int {
 }
 
 // lessonsApprove gives a quarantined lesson its trial.
-func lessonsApprove(stateRoot, id string) int {
+// lessonsDecide approves or rejects a quarantined lesson.
+func lessonsDecide(stateRoot, id, decision string) int {
 	if id == "" {
-		fmt.Fprintln(os.Stderr, "usage: awkit lessons approve <L-xxx>")
+		fmt.Fprintf(os.Stderr, "usage: awkit lessons %s <L-xxx>\n", decision)
 		return 2
 	}
-	s, err := lessons.Load(stateRoot)
-	if err != nil {
+	if _, err := lessons.Decide(stateRoot, id, decision, "cli"); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	if err := s.Approve(id); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return 1
+	if decision == guard.ApproveDecision {
+		fmt.Printf("%s is a candidate now: Workers get it on trial, as any new lesson.\n", id)
+	} else {
+		fmt.Printf("%s is retired: it is given to no one.\n", id)
 	}
-	if err := lessons.Save(stateRoot, s); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return 1
-	}
-	fmt.Printf("%s is a candidate now: Workers get it on trial, as any new lesson.\n", id)
 	return 0
 }
 

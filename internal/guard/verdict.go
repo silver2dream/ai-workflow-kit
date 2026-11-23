@@ -146,9 +146,50 @@ func Record(stateRoot string, verdicts []Verdict, issue int) {
 	}
 }
 
-// evidence shortens what matched for a verdict and makes characters a
-// person cannot see visible.
-func evidence(text string) string {
+// Decision is what a person decided on something a check held back, for
+// the record: what it was, what the check said, and what they did.
+type Decision struct {
+	Stage string `json:"stage"`
+	Rule  string `json:"rule"`
+	// Piece is what was held back: a lesson's id, say.
+	Piece string `json:"piece"`
+	// Said is the reason the check gave.
+	Said string `json:"said,omitempty"`
+	// Decision is ApproveDecision or RejectDecision.
+	Decision string `json:"decision"`
+	// By is where the person decided: "cli" or "workbench".
+	By string `json:"by"`
+}
+
+// The decisions a person makes on what a check held back.
+const (
+	ApproveDecision = "approve"
+	RejectDecision  = "reject"
+)
+
+// RecordDecision writes a person's decision to the event stream of the
+// process, or to the guard's own event file of the project at stateRoot:
+// every instruction of a person is kept, and one that releases what a check
+// held back most of all.
+func RecordDecision(stateRoot string, d Decision) {
+	w := trace.GetGlobalWriter()
+	if w == nil {
+		if stateRoot == "" {
+			return
+		}
+		own, err := trace.NewEventWriter(stateRoot, Session)
+		if err != nil {
+			return
+		}
+		defer own.Close()
+		w = own
+	}
+	_ = w.Write(trace.ComponentGuard, trace.TypeGuardrailDecision, trace.LevelInfo, trace.WithData(d))
+}
+
+// Reveal makes the characters a person cannot see visible, as <U+XXXX>: a
+// person who reads what a check held back reads all of it.
+func Reveal(text string) string {
 	var b strings.Builder
 	for _, r := range text {
 		if hidden(r) {
@@ -157,7 +198,13 @@ func evidence(text string) string {
 		}
 		b.WriteRune(r)
 	}
-	out := b.String()
+	return b.String()
+}
+
+// evidence shortens what matched for a verdict and makes characters a
+// person cannot see visible.
+func evidence(text string) string {
+	out := Reveal(text)
 	const max = 160
 	if runes := []rune(out); len(runes) > max {
 		out = string(runes[:max]) + "…"
