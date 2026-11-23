@@ -28,6 +28,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -160,6 +161,31 @@ func DefaultRoster(preset string, repos []Repo) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// PresetFor picks the roster a project starts with from its repos: the game
+// studio for a Go server with a C# (Godot) client, the generic one for
+// everything else.
+func PresetFor(repos []Repo) string {
+	var hasGo, hasDotnet bool
+	for _, entry := range repos {
+		switch repo.ToolchainOf(entry.Language) {
+		case repo.ToolchainGo:
+			hasGo = true
+		case repo.ToolchainDotnet:
+			hasDotnet = true
+		}
+	}
+	if hasGo && hasDotnet {
+		return "godot-go"
+	}
+	return "generic"
+}
+
+// StartingRoster returns the roster a project of these repos starts with: the
+// one its first plan writes when it has none.
+func StartingRoster(repos []Repo) ([]byte, error) {
+	return DefaultRoster(PresetFor(repos), repos)
+}
+
 // LoadRoster reads and checks a roster file.
 func LoadRoster(file string) (*Roster, error) {
 	data, err := os.ReadFile(file)
@@ -185,30 +211,43 @@ func ParseRoster(data []byte) (*Roster, error) {
 	return &roster, nil
 }
 
-func (r *Roster) applyDefaults() {
-	if r.Model == "" {
-		r.Model = "sonnet"
-	}
-	if r.Limits.Topics <= 0 {
-		r.Limits.Topics = 8
-	}
-	if r.Limits.Disputes <= 0 {
-		r.Limits.Disputes = 2
-	}
-	if r.Limits.DisputeRounds <= 0 {
-		r.Limits.DisputeRounds = 2
-	}
-	if r.Limits.Calls <= 0 {
+// DefaultModel answers for a roster that names no model.
+const DefaultModel = "sonnet"
+
+// DefaultLimits are the limits of a roster that names none.
+func DefaultLimits() Limits {
+	return Limits{
+		Topics:        8,
+		Disputes:      2,
+		DisputeRounds: 2,
 		// Eight topics of five roles, with their documents read against the
 		// project's rules, and the work list.
-		r.Limits.Calls = 200
-	}
-	if r.Limits.Parallel <= 0 {
-		r.Limits.Parallel = 3
-	}
-	if r.Limits.TimeoutSeconds <= 0 {
+		Calls:    200,
+		Parallel: 3,
 		// A role that writes two documents answers at length.
-		r.Limits.TimeoutSeconds = 600
+		TimeoutSeconds: 600,
+	}
+}
+
+func (r *Roster) applyDefaults() {
+	if r.Model == "" {
+		r.Model = DefaultModel
+	}
+	defaults := DefaultLimits()
+	for _, limit := range []struct {
+		value    *int
+		fallback int
+	}{
+		{&r.Limits.Topics, defaults.Topics},
+		{&r.Limits.Disputes, defaults.Disputes},
+		{&r.Limits.DisputeRounds, defaults.DisputeRounds},
+		{&r.Limits.Calls, defaults.Calls},
+		{&r.Limits.Parallel, defaults.Parallel},
+		{&r.Limits.TimeoutSeconds, defaults.TimeoutSeconds},
+	} {
+		if *limit.value <= 0 {
+			*limit.value = limit.fallback
+		}
 	}
 	for i := range r.Roles {
 		if r.Roles[i].Model == "" {

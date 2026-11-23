@@ -111,7 +111,8 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `generate` | 從設定產生的檔案：`CLAUDE.md`、`AGENTS.md`、kit 的 git 規則、自訂 subagent、CI workflow、Claude Code 的本機權限 |
 | `migrate` | 設定檔格式的版本轉換，以及舊目錄結構的搬遷 |
 | `council` | `awkit plan`：名冊、會議的每一步、文件、票券清單、核可前的修改與核可；會議中擁有者的話、暫停、議程與提問（owner.go）、重審（review.go）、給外部讀的即時狀態與紀錄（live.go、record_json.go）、核可走到哪的紀錄（approval.go） |
-| `landing` | `awkit plan approve --merge-docs`：把議會寫在工作目錄裡的文件送進整合分支。在另開的 worktree 裡從 origin 的整合分支開分支、commit、push、開 PR、等 checks、合併；之後只在工作目錄位在整合分支、每個檔案都和合併進去的一致時，才把工作目錄快轉到整合分支。不繞過分支保護 |
+| `landing` | 把替人做的修改送進整合分支：`awkit plan approve --merge-docs` 的議會文件（從工作目錄複製），與 `awkit settings apply` 的設定（`Edit`：直接改 worktree 裡整合分支版本的檔案）。在 `.ai/state/tmp/` 另開的 worktree 裡從 origin 的整合分支開分支、commit、push、開 PR、等 checks、合併；之後只在工作目錄位在整合分支、每個檔案都和合併進去的一致時，才把工作目錄快轉到整合分支。不繞過分支保護 |
+| `settings` | 工作台設定頁與 `awkit settings apply`：名冊與設定檔中人會改的部分。改 YAML 節點而不重寫檔案（註解、空行、引號、頁面不管的鍵都留著）；寫之前用議會與 `config` 自己的檢查驗過；以頁面讀到的版本做三方合併，整合分支上別人同時改的欄位不被蓋掉 |
 | `gamedata` | 遊戲資料（Luban）：從 `luban.conf` 找位置、讀 schema、表與文字表；Luban 擋不住的檢查；給人審的文案頁與表頁。`awkit gamedata` 與議會共用 |
 | `ticket`、`task` | `awk-ticket` 區塊的讀取與驗證；建立票券 |
 | `kickoff` | `awkit run`：啟動前的檢查、lock、PTY、log |
@@ -124,7 +125,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `hooks` | 設定檔的 `hooks` |
 | `trace`、`session` | 事件流；Principal 與 Worker 的 session 紀錄 |
 | `status`、`doctor`、`reset` | 同名的指令 |
-| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）；從頁面開的會議和核可（`meetings.go`）、教訓與人對隔離教訓的決定（`lessons.go`）、從頁面開始的工作（`runs.go`）由 `awkit detach` 另起一個不屬於工作台的程序來做，關掉工作台、甚至連子程序一起結束它，都照做；會議停只能靠暫停或開完，工作停靠停止標記（和 `awkit stop` 一樣），或立刻結束它的整個程序樹（`kill_windows.go` 用 `taskkill /T`，其他系統結束它的程序群組）。即時輸出直接讀 `.ai/state/logs/` 的主控與執行者 log，只讀那個資料夾裡的檔案。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
+| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）；從頁面開的會議和核可（`meetings.go`）、教訓與人對隔離教訓的決定（`lessons.go`）、從頁面開始的工作（`runs.go`）、設定的修改（`project_settings.go`，`awkit settings apply`）由 `awkit detach` 另起一個不屬於工作台的程序來做，關掉工作台、甚至連子程序一起結束它，都照做；會議停只能靠暫停或開完，工作停靠停止標記（和 `awkit stop` 一樣），或立刻結束它的整個程序樹（`kill_windows.go` 用 `taskkill /T`，其他系統結束它的程序群組）。即時輸出直接讀 `.ai/state/logs/` 的主控與執行者 log，只讀那個資料夾裡的檔案。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
 | `stopmark`、`workflow` | STOP 標記；停止原因、結束語、報告 |
 | `selfheal` | 修復結構性的壞狀態（integration branch 遺失骨架時補回去） |
 | `audit`、`evaluate` | `awkit evaluate`：給 CI 用的檢查 |

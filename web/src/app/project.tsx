@@ -19,6 +19,8 @@ export interface ProjectData {
   refreshTickets: () => void;
   /** Counts the times a meeting of the project moved: a page that shows one asks again when it changes. */
   meetingMoved: number;
+  /** Counts the times a change of the settings moved. */
+  settingsMoved: number;
 }
 
 const Context = createContext<ProjectData | null>(null);
@@ -35,6 +37,7 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
   const events = useResource(() => api.events(project.id), [project.id]);
   const plans = useResource(() => api.plans(project.id), [project.id]);
   const [meetingMoved, setMeetingMoved] = useState(0);
+  const [settingsMoved, setSettingsMoved] = useState(0);
   const roster = useResource(() => council.roster(project.id), [project.id]);
   const lessons = useResource(() => api.lessons(project.id), [project.id]);
 
@@ -48,6 +51,11 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
       // A project's first plan writes its roster.
       if (roster.data?.missing) roster.reload();
     }
+    if (areas.includes("settings")) {
+      setSettingsMoved((n) => n + 1);
+      // A change of the roster reaches the project folder at its end.
+      roster.reload();
+    }
     // What a run does to a ticket shows in its state and events first; the
     // server asks GitHub again once its answer is old.
     if (areas.includes("tickets") || areas.includes("status") || areas.includes("events")) tickets.reload();
@@ -60,8 +68,8 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
   }, [reloadTickets]);
 
   const value = useMemo<ProjectData>(
-    () => ({ project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved }),
-    [project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved],
+    () => ({ project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved }),
+    [project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

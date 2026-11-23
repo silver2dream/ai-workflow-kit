@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
+	projectconfig "github.com/silver2dream/ai-workflow-kit/internal/config"
 )
 
 // The local settings file of Claude Code (.claude/settings.local.json) is the
@@ -76,6 +77,19 @@ func commandTool(command string) string {
 // permissions it lacks appended to its list; a file that is not valid JSON is
 // left as it is and reported, since awkit cannot tell what the person meant
 // by it.
+// LocalSettings adds what a run of the project at stateRoot needs to Claude
+// Code's local settings, and writes nothing else: of what generate writes, it
+// is the one file git does not keep, so a working tree brought up to a
+// branch that has the rest is brought up to its configuration by it.
+func LocalSettings(stateRoot string) error {
+	config, err := loadConfig(projectconfig.Path(stateRoot))
+	if err != nil {
+		return err
+	}
+	_, err = generateClaudeSettings(filepath.Join(stateRoot, ".claude", "settings.local.json"), config)
+	return err
+}
+
 func generateClaudeSettings(path string, config *Config) (changed bool, err error) {
 	needed := neededPermissions(config)
 

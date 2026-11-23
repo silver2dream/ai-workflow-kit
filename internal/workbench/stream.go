@@ -14,6 +14,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	projectsettings "github.com/silver2dream/ai-workflow-kit/internal/settings"
 )
 
 // area is a part of a project a page is told has changed, and where on disk
@@ -37,12 +38,14 @@ var areas = []area{
 	// The run: its lock, its session, how many loops and failures, the
 	// result of each ticket. Not its logs and events, which grow all the
 	// time a run goes on.
-	{name: "status", dir: layout.StateDir, skip: []string{"logs", "events", "council", "tmp"}},
+	{name: "status", dir: layout.StateDir, skip: []string{"logs", "events", "council", "tmp", "settings"}},
 	{name: "events", dir: layout.StateDir + "/events"},
 	{name: "plans", dir: council.PlansDir},
 	// A meeting that goes on: where it is, what was said, what the owner
 	// said. Not every prompt and answer it keeps, which grow all the time.
 	{name: "meeting", dir: layout.StateDir + "/council", only: []string{council.LiveFile, council.TranscriptFile, council.RecordFile, "owner.jsonl", "questions.json", council.ApprovalFile}},
+	// A change of the settings on its way to the integration branch.
+	{name: "settings", dir: layout.StateDir + "/settings", only: []string{projectsettings.RecordFile}},
 	// What the reviews taught: a new lesson, one held back, one decided on.
 	{name: "lessons", dir: layout.StateDir, file: "lessons.json"},
 }
