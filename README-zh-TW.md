@@ -146,7 +146,7 @@ awkit run --issue 42   # 只做這一張票
 - **你的話比審查大。** run 進行中到 GitHub 上審 pull request（要有該 repository 的寫入權限）：有你未解決的審查意見就不會合併，Worker 會帶著這些意見被退回，這些意見也會留成教訓。合併不等你；合併之後你才寫下的意見，會在下一張票開工前被讀進來。
 - 選用：多個模型一起審並合併分數（`review.multi_model`）；審查時依 diff 產生測試（`review.jittest`）。
 
-被審查退回的事，等變更終於通過之後，會被濃縮成一條短的教訓；之後的 Worker 與審查者動到同樣的檔案時會看到它。教訓存在 `.ai/state/lessons.json`，只在這份 checkout 裡、不進版控；`awkit lessons list` 可以列出來，`awkit lessons promote` 會把一條已證實的教訓變成一張要求訂規則的 issue。濃縮出來的教訓在交給 Worker 之前會先過篩檢，沒過的會被隔離，等你讀過之後用 `awkit lessons approve` 放行。
+被審查退回的事，等變更終於通過之後，會被濃縮成一條短的教訓；之後的 Worker 與審查者動到同樣的檔案時會看到它。教訓存在 `.ai/state/lessons.json`，只在這份 checkout 裡、不進版控；`awkit lessons list` 可以列出來，`awkit lessons promote` 會把一條已證實的教訓變成一張要求訂規則的 issue。濃縮出來的教訓在交給 Worker 之前會先過篩檢，沒過的會被隔離，等你讀過之後在工作台的「教訓」頁，或用 `awkit lessons approve`、`reject` 決定。
 
 ## 它在你的專案裡放了什麼
 

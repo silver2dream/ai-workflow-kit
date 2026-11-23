@@ -9,6 +9,7 @@ import { OnboardingProvider } from "@/onboarding/state";
 import { Tour } from "@/onboarding/Tour";
 import { Welcome } from "@/onboarding/Welcome";
 import { ActivityPage } from "@/pages/Activity";
+import { LessonsPage } from "@/pages/lessons/LessonsPage";
 import { Board } from "@/pages/Board";
 import { HealthPage } from "@/pages/Health";
 import { InboxPage } from "@/pages/Inbox";
@@ -88,6 +89,8 @@ function ProjectPage({ route }: { route: Route }) {
     }
     case "activity":
       return <ActivityPage />;
+    case "lessons":
+      return <LessonsPage />;
     case "health":
       return <HealthPage />;
     case "settings":
@@ -97,7 +100,7 @@ function ProjectPage({ route }: { route: Route }) {
   }
 }
 
-const KNOWN = ["overview", "inbox", "plans", "board", "run", "activity", "settings", "health"];
+const KNOWN = ["overview", "inbox", "plans", "board", "run", "activity", "lessons", "settings", "health"];
 
 function Routes({ session, reload }: { session: Session; reload: () => void }) {
   const route = useRoute();

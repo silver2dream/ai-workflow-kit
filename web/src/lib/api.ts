@@ -201,5 +201,38 @@ export const api = {
   stopRun: (id: string, now: boolean) => request<void>("POST", `${project(id)}/run/stop`, { now }),
   runLogs: (id: string) => request<{ logs: RunLog[] }>("GET", `${project(id)}/run/logs`),
   runOutput: (id: string, log: string, since: number) => request<RunOutput>("GET", `${project(id)}/run/output?log=${encodeURIComponent(log)}&since=${since}`),
+  lessons: (id: string) => request<LessonsView>("GET", `${project(id)}/lessons`),
+  decideLesson: (id: string, lesson: string, decision: LessonDecision) =>
+    request<LessonView>("POST", `${project(id)}/lessons/${encodeURIComponent(lesson)}/${decision}`),
   streamURL: (id: string) => `${project(id)}/stream`,
 };
+
+export type LessonStatus = "quarantined" | "candidate" | "active" | "proven" | "retired";
+export type LessonDecision = "approve" | "reject";
+
+/** A lesson the reviews taught, as internal/workbench writes it. */
+export interface LessonView {
+  id: string;
+  title: string;
+  description?: string;
+  /** The text the AI reads, with characters a person cannot see shown as <U+200B>. */
+  content: string;
+  status: LessonStatus;
+  hits: number;
+  misses: number;
+  categories: string[];
+  scope: string[];
+  created_at: string;
+  last_hit_at?: string;
+  /** distiller, human-correction or human. */
+  source: string;
+  /** Why the screening held it back; kept after a person turned it down. */
+  held_back?: string;
+  /** The text has characters a person cannot see. */
+  hidden?: boolean;
+  evidence: { issue: number; pr: number }[];
+}
+
+export interface LessonsView {
+  lessons: LessonView[];
+}

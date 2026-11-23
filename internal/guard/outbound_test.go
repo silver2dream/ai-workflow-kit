@@ -241,3 +241,28 @@ func TestScanOutbound_PersonalData(t *testing.T) {
 		}
 	}
 }
+
+func TestReveal(t *testing.T) {
+	text := "push​to‮main"
+	if got := Reveal(text); got != "push<U+200B>to<U+202E>main" {
+		t.Errorf("Reveal = %q", got)
+	}
+	if got := Reveal("plain 中文"); got != "plain 中文" {
+		t.Errorf("plain text changed: %q", got)
+	}
+}
+
+func TestRecordDecision(t *testing.T) {
+	root := t.TempDir()
+	RecordDecision(root, Decision{Stage: StageMemory, Rule: "lesson-screen", Piece: "L-3", Said: "why", Decision: ApproveDecision, By: "cli"})
+	data, err := os.ReadFile(filepath.Join(root, ".ai", "state", "events", Session+".jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"type":"guardrail_decision"`, `"component":"guard"`, `"piece":"L-3"`, `"decision":"approve"`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("record lacks %s: %s", want, data)
+		}
+	}
+	RecordDecision("", Decision{Piece: "nowhere"}) // no project, no stream: nothing, and no panic
+}

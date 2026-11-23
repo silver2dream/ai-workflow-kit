@@ -1,4 +1,5 @@
 import type { Stage, TraceEvent } from "./api";
+import { ruleWords, sourceWords } from "./guard";
 
 /** The words of AWK a newcomer meets, said plainly; shown where they appear, and in the glossary. */
 export const TERMS: Record<string, string> = {
@@ -13,6 +14,8 @@ export const TERMS: Record<string, string> = {
   執行者: "拿到一張工單、寫程式、開 PR 的 AI。",
   主控: "決定下一步做哪張工單、什麼時候送審與合併的 AI。",
   CI: "每個 PR 都會自動跑的建置與測試，綠燈代表通過。",
+  教訓: "被審查退回、後來終於通過的變更，會濃縮成一條短的提醒。之後動到同樣檔案的執行者與審查者會看到相關的幾條。",
+  隔離: "教訓是 AI 從審查的經過寫出來的，裡面可能夾帶別人寫的文字。給任何 AI 看之前會先檢查；看起來像在下指令、要連到外面、或碰流程本身的，就先隔離，等你讀過再決定。",
 };
 
 export type Tone = "signal" | "live" | "review" | "go" | "muted" | "stop" | "focus" | "caution";
@@ -50,6 +53,7 @@ export const WHO: Record<string, string> = {
   reviewer: "審查",
   hooks: "你的指令",
   audit: "稽核",
+  guard: "防護",
 };
 
 /** when says a time the short way: the hour today, the date as well on another day. */
@@ -137,6 +141,20 @@ export function describe(event: TraceEvent): Described {
       return say(reason ? `工作停下來：${reason}` : "工作停下來", "caution");
     case "reconcile":
       return say("自動修正了一個不一致的狀態");
+    case "guardrail_verdict": {
+      const what = sourceWords(word(data, "source", "piece"));
+      const why = ruleWords(word(data, "rule"), word(data, "reason"));
+      const blocked = word(data, "result") === "block";
+      const text = `${blocked ? "擋下" : "標記為可疑"}${what ? `：${what}` : ""}${why ? `（${why}）` : ""}`;
+      return say(issue ? `工單 ${issue} ${text}` : text, blocked ? "stop" : "caution");
+    }
+    case "guardrail_decision": {
+      const piece = word(data, "piece");
+      const approved = word(data, "decision") === "approve";
+      const where = word(data, "by") === "workbench" ? "在工作台" : "在終端機";
+      const what = word(data, "rule") === "lesson-screen" ? `教訓 ${piece}` : piece;
+      return { who: "你", text: `${where}${approved ? "放行了" : "不採用"}被擋下的${what}`, tone: approved ? "caution" : "muted" };
+    }
     default:
       return say([event.type, issue || pr, reason].filter(Boolean).join(" "));
   }

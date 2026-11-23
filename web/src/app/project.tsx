@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, type EventsView, type PlanView, type ProjectView, type StatusReport, type TicketsView } from "@/lib/api";
+import { api, type EventsView, type LessonsView, type PlanView, type ProjectView, type StatusReport, type TicketsView } from "@/lib/api";
 import { useResource, useStream, type Area, type Resource } from "@/lib/resource";
 import { council, type RosterView } from "@/lib/council";
 
@@ -11,6 +11,8 @@ export interface ProjectData {
   plans: Resource<{ plans: PlanView[] }>;
   /** Who sits at the council's table. */
   roster: Resource<RosterView>;
+  /** What the reviews taught, the lessons held back first. */
+  lessons: Resource<LessonsView>;
   /** Whether the page hears the project's changes as they happen. */
   online: boolean;
   /** Ask GitHub again now, rather than when the server's answer gets old. */
@@ -37,9 +39,11 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
   const [meetingMoved, setMeetingMoved] = useState(0);
   const [settingsMoved, setSettingsMoved] = useState(0);
   const roster = useResource(() => council.roster(project.id), [project.id]);
+  const lessons = useResource(() => api.lessons(project.id), [project.id]);
 
   const online = useStream(api.streamURL(project.id), (areas: Area[]) => {
     if (areas.includes("status")) status.reload();
+    if (areas.includes("lessons")) lessons.reload();
     if (areas.includes("events")) events.reload();
     if (areas.includes("plans") || areas.includes("meeting")) plans.reload();
     if (areas.includes("meeting") || areas.includes("plans")) {
@@ -64,8 +68,8 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
   }, [reloadTickets]);
 
   const value = useMemo<ProjectData>(
-    () => ({ project, status, tickets, events, plans, roster, online, refreshTickets, meetingMoved, settingsMoved }),
-    [project, status, tickets, events, plans, roster, online, refreshTickets, meetingMoved, settingsMoved],
+    () => ({ project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved }),
+    [project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

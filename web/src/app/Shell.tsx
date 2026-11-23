@@ -83,11 +83,12 @@ function ProjectSwitcher({ current, projects, onGo }: { current?: ProjectView; p
 }
 
 function NavLinks({ onGo }: { onGo: Go }) {
-  const { project, tickets, plans } = useProject();
+  const { project, tickets, plans, lessons } = useProject();
   const route = useRoute();
   const needs = (tickets.data?.tickets?.open ?? []).filter((t) => t.stage === "needs_you").length;
   const all = plans.data?.plans ?? [];
-  const waiting = needs + all.filter((p) => planStatus(p).needsYou).length;
+  const heldBack = (lessons.data?.lessons ?? []).filter((l) => l.status === "quarantined").length;
+  const waiting = needs + all.filter((p) => planStatus(p).needsYou).length + heldBack;
   const meeting = all.some((p) => p.meeting?.state === "meeting");
   return (
     <nav aria-label="主要" className="flex-1 overflow-y-auto pb-3">

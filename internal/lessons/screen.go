@@ -125,3 +125,56 @@ func (s *Store) Approve(id string) error {
 	l.Source = SourceOwner
 	return nil
 }
+
+// Reject turns a quarantined lesson down: a person read it and will not have
+// it. It is retired, never given to anyone, and keeps the reason it was held
+// back, for the record.
+func (s *Store) Reject(id string) error {
+	l := s.FindByID(id)
+	if l == nil {
+		return fmt.Errorf("no lesson %s", id)
+	}
+	if l.Status != StatusQuarantined {
+		return fmt.Errorf("lesson %s is %s, not quarantined", id, l.Status)
+	}
+	l.Status = StatusRetired
+	return nil
+}
+
+// Decide applies a person's decision on a quarantined lesson (Approve or
+// Reject), saves the store and records the decision. by says where the
+// person decided ("cli", "workbench").
+//
+// The store has no lock: a distillation that loaded it before and saves
+// after can put the lesson back as it was. That fails safe, a quarantined
+// lesson stays held back, and the person decides again.
+func Decide(stateRoot, id, decision, by string) (*Lesson, error) {
+	s, err := Load(stateRoot)
+	if err != nil {
+		return nil, err
+	}
+	l := s.FindByID(id)
+	if l == nil {
+		return nil, fmt.Errorf("no lesson %s", id)
+	}
+	said := l.Quarantine
+	switch decision {
+	case guard.ApproveDecision:
+		err = s.Approve(id)
+	case guard.RejectDecision:
+		err = s.Reject(id)
+	default:
+		err = fmt.Errorf("no such decision %q (approve or reject)", decision)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := Save(stateRoot, s); err != nil {
+		return nil, err
+	}
+	guard.RecordDecision(stateRoot, guard.Decision{
+		Stage: guard.StageMemory, Rule: "lesson-screen", Piece: id, Said: said, Decision: decision, By: by,
+	})
+	decided := *s.FindByID(id)
+	return &decided, nil
+}

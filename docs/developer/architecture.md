@@ -121,11 +121,11 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `guard` | guardrail 共用的部分：判定（`Verdict`，寫成 `guardrail_verdict` 事件）、帶來源與信任等級的 context 片段、清理看不見的字元、規則層注入偵測（`injection.go`，含中英文；語料在 `testdata/injection/`）、把不可信的片段包成資料區塊。Worker 的 prompt 由它組成，被擋下的票不派出去（`blocked`）。工具政策（`policy.go`、`shell.go`：拆開組合指令與 `sh -c`、`cmd /c` 這類包裝，依角色決定）由 `awkit guard tool` 當作 Claude Code 的 PreToolUse hook 執行：主控的 session 由 `awkit generate` 寫進 `settings.local.json`，Claude 的 Worker 每一次都帶 awkit 寫的設定（`--settings`、`--setting-sources ""`、`dontAsk`）。`env.go` 決定 agent 拿到哪些環境變數。`outbound.go` 在每一個寫到 GitHub 的 `gh` 呼叫送出前掃描憑證與個資（`GHGate`：`ghutil.RunWithRetry`、`landing.GH` 與 `awkit lessons promote` 都經過它；被擋的錯誤包著 `ErrBlocked`，Worker 的 pull request 被擋時結果是 `blocked`、階段 `guard_output`）；呼叫屬於哪個專案與工單由 `context` 裡的 `Scope` 帶著。`diff.go` 在 Worker 的變更裡找可疑的模式，只記錄（`flag`）。教訓的篩檢與隔離在 `lessons/screen.go`。見 [Agent Engine](specs/agent-engine/design.md) §9 |
 | `reviewer` | `prepare-review`、`submit-review`、證據驗證、多模型審查、人的意見、合併 |
 | `jittest` | 審查時依 diff 產生並執行測試 |
-| `lessons` | 學習迴圈：記錄 → 濃縮 → 放進 prompt → 結算 |
+| `lessons` | 學習迴圈：記錄 → 濃縮 → 篩檢 → 放進 prompt → 結算；篩檢沒過的隔離，由人放行或不採用（`Decide`，決定寫成 `guardrail_decision` 事件） |
 | `hooks` | 設定檔的 `hooks` |
 | `trace`、`session` | 事件流；Principal 與 Worker 的 session 紀錄 |
 | `status`、`doctor`、`reset` | 同名的指令 |
-| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）；從頁面開的會議和核可（`meetings.go`）、從頁面開始的工作（`runs.go`）、設定的修改（`project_settings.go`，`awkit settings apply`）由 `awkit detach` 另起一個不屬於工作台的程序來做，關掉工作台、甚至連子程序一起結束它，都照做；會議停只能靠暫停或開完，工作停靠停止標記（和 `awkit stop` 一樣），或立刻結束它的整個程序樹（`kill_windows.go` 用 `taskkill /T`，其他系統結束它的程序群組）。即時輸出直接讀 `.ai/state/logs/` 的主控與執行者 log，只讀那個資料夾裡的檔案。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
+| `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）；從頁面開的會議和核可（`meetings.go`）、教訓與人對隔離教訓的決定（`lessons.go`）、從頁面開始的工作（`runs.go`）、設定的修改（`project_settings.go`，`awkit settings apply`）由 `awkit detach` 另起一個不屬於工作台的程序來做，關掉工作台、甚至連子程序一起結束它，都照做；會議停只能靠暫停或開完，工作停靠停止標記（和 `awkit stop` 一樣），或立刻結束它的整個程序樹（`kill_windows.go` 用 `taskkill /T`，其他系統結束它的程序群組）。即時輸出直接讀 `.ai/state/logs/` 的主控與執行者 log，只讀那個資料夾裡的檔案。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
 | `stopmark`、`workflow` | STOP 標記；停止原因、結束語、報告 |
 | `selfheal` | 修復結構性的壞狀態（integration branch 遺失骨架時補回去） |
 | `audit`、`evaluate` | `awkit evaluate`：給 CI 用的檢查 |

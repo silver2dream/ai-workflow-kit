@@ -13,6 +13,7 @@ const FILTERS = [
   { key: "principal", label: "主控" },
   { key: "worker", label: "執行者" },
   { key: "reviewer", label: "審查" },
+  { key: "guard", label: "防護" },
   { key: "attention", label: "只看要注意的" },
 ] as const;
 

@@ -16,6 +16,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/status"
 	"github.com/silver2dream/ai-workflow-kit/internal/trace"
@@ -51,6 +52,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/projects/{id}/run/logs", s.project(s.handleRunLogs))
 	s.mux.HandleFunc("GET /api/projects/{id}/run/output", s.project(s.handleRunOutput))
 	s.mux.HandleFunc("GET /api/projects/{id}/stream", s.project(s.handleStream))
+	s.mux.HandleFunc("GET /api/projects/{id}/lessons", s.project(s.handleLessons))
+	s.mux.HandleFunc("POST /api/projects/{id}/lessons/{lesson}/approve", s.project(s.handleLessonDecision(guard.ApproveDecision)))
+	s.mux.HandleFunc("POST /api/projects/{id}/lessons/{lesson}/reject", s.project(s.handleLessonDecision(guard.RejectDecision)))
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "the workbench has no "+r.Method+" "+r.URL.Path)
 	})

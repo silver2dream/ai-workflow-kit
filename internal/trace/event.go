@@ -72,6 +72,8 @@ const (
 
 	// Guard events: a check flagged or blocked something.
 	TypeGuardrailVerdict = "guardrail_verdict"
+	// A person decided on what a check held back: released or turned down.
+	TypeGuardrailDecision = "guardrail_decision"
 )
 
 // Event represents a single trace event in the unified event stream.

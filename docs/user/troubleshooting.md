@@ -109,7 +109,10 @@ awkit events --issue 42 --type guardrail_verdict   # 哪一條規則、哪一個
 ```bash
 awkit lessons list
 awkit lessons approve L-012   # 放行後當成新的教訓重新試用
+awkit lessons reject L-012    # 不採用：停用，不會再給任何 AI
 ```
+
+工作台的「教訓」頁做的是同一件事，被擋下的教訓也會出現在「需要你處理」。你的決定記在事件裡：`awkit events --all --type guardrail_decision`。
 
 你用 `awkit lessons add` 自己加的教訓不篩檢。
 
