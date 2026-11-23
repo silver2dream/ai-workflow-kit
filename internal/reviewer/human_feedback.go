@@ -588,7 +588,7 @@ PR: #%d`, opts.PRNumber, formatHumanFeedback(h.open), opts.PRNumber)
 	if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, comment); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
-	return &SubmitReviewResult{Result: "merge_failed", Reason: "maintainer review feedback is still open on the current commit", Next: NextNeedsYou}
+	return &SubmitReviewResult{Result: "merge_failed", Reason: "maintainer review feedback is still open on the current commit", Next: NextNeedsYou, NeedsYou: NeedsYouMaintainer}
 }
 
 // maintainerFeedbackForReviewer renders a pull request's maintainer feedback

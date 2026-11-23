@@ -103,6 +103,11 @@ func knownKeywords(raw json.RawMessage, at string) error {
 	return nil
 }
 
+// Validate checks a JSON value against a schema as the runtime checks an
+// answer: for the one who writes a schema, to hold it and its examples to
+// what the runtime will take.
+func Validate(schema, value json.RawMessage) error { return validate(schema, value) }
+
 // validate checks a JSON value against a schema; the error says where it
 // does not match.
 func validate(raw json.RawMessage, value json.RawMessage) error {

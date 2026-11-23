@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
 // recordingPublisher does nothing outside the test, and keeps what the
@@ -18,6 +20,7 @@ type recordingPublisher struct {
 	calls      []string
 	mergeErr   error
 	mergeState string
+	commentErr error
 }
 
 func (p *recordingPublisher) did(format string, args ...any) {
@@ -29,7 +32,7 @@ func (p *recordingPublisher) Ticket(ctx context.Context, issue int) (string, err
 }
 func (p *recordingPublisher) CommentPR(ctx context.Context, pr int, body string) error {
 	p.did("comment-pr %d", pr)
-	return nil
+	return p.commentErr
 }
 func (p *recordingPublisher) CommentIssue(ctx context.Context, issue int, body string) error {
 	first := strings.SplitN(body, "\n", 2)[0]
@@ -146,14 +149,15 @@ func TestSubmitReview_Merges(t *testing.T) {
 
 func TestSubmitReview_TheWaysItDoesNotMerge(t *testing.T) {
 	for name, c := range map[string]struct {
-		change func(*SubmitReviewOptions, *recordingPublisher)
-		result string
-		next   string
-		calls  []string
+		change   func(*SubmitReviewOptions, *recordingPublisher)
+		result   string
+		next     string
+		needsYou string
+		calls    []string
 	}{
 		"the checks failed": {
 			func(o *SubmitReviewOptions, p *recordingPublisher) { o.CIStatus = "failed" },
-			"changes_requested", NextReviewRetry,
+			"changes_requested", NextReviewRetry, "",
 			[]string{"approve 30 9", "comment-issue 12 ## AWK Review 通過，但 CI 未通過", "labels 12 +review-failed -pr-ready"},
 		},
 		"the score is too low": {
@@ -161,34 +165,43 @@ func TestSubmitReview_TheWaysItDoesNotMerge(t *testing.T) {
 				o.Score, o.Structured.Score = 4, 4
 				o.Structured.Improvements = []StructuredImprovement{{Severity: "critical", Location: "score.go:3", Text: "Score ignores b"}}
 			},
-			"changes_requested", NextRework,
+			"changes_requested", NextRework, "",
 			[]string{"request-changes 30 4", "labels 12 +ai-task -pr-ready", "comment-issue 12 ## AWK Review 不通過 (score: 4/10)"},
 		},
 		"the evidence does not hold": {
 			func(o *SubmitReviewOptions, p *recordingPublisher) { o.Structured.Criteria[0].TestName = "TestNothing" },
-			"review_blocked", NextReviewRetry,
+			"review_blocked", NextReviewRetry, "",
 			[]string{"labels 12 +review-failed -pr-ready", "comment-issue 12 ## AWK Review blocked"},
 		},
 		"the pull request conflicts": {
 			func(o *SubmitReviewOptions, p *recordingPublisher) {
 				p.mergeErr, p.mergeState = errors.New("not mergeable"), "DIRTY"
 			},
-			"merge_failed", NextResolveConflict,
+			"merge_failed", NextResolveConflict, "",
 			[]string{"merge 30 squash", "merge-state 30", "labels 12 +merge-conflict -pr-ready", "comment-issue 12 ## AWK Review: Merge Conflict"},
 		},
 		"the pull request is behind": {
 			func(o *SubmitReviewOptions, p *recordingPublisher) {
 				p.mergeErr, p.mergeState = errors.New("behind"), "BEHIND"
 			},
-			"merge_failed", NextResolveRebase,
+			"merge_failed", NextResolveRebase, "",
 			[]string{"merge 30 squash", "merge-state 30", "labels 12 +needs-rebase -pr-ready", "comment-issue 12 ## AWK Review: Branch Behind"},
 		},
 		"GitHub refuses the merge": {
 			func(o *SubmitReviewOptions, p *recordingPublisher) {
 				p.mergeErr, p.mergeState = errors.New("protected"), "BLOCKED"
 			},
-			"merge_failed", NextNeedsYou,
+			"merge_failed", NextNeedsYou, NeedsYouMergeBlocked,
 			[]string{"merge 30 squash", "merge-state 30", "labels 12 +needs-human-review -pr-ready", "comment-issue 12 ## AWK Review: 合併失敗（需要人工介入）"},
+		},
+		// The review's comment would have put a credential on GitHub: the
+		// guard kept it back, and a review with no record is not acted on.
+		"the guard keeps the comment back": {
+			func(o *SubmitReviewOptions, p *recordingPublisher) {
+				p.commentErr = fmt.Errorf("%w: what is about to be written to GitHub holds what looks like a credential (github-token); it was not sent (outbound/github-token)", guard.ErrBlocked)
+			},
+			"review_blocked", NextNeedsYou, NeedsYouGuardOutput,
+			[]string{"comment-pr 30", "labels 12 +needs-human-review -pr-ready", "comment-issue 12 ## AWK Review: 審查留言被擋下（需要人工介入）"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -196,7 +209,7 @@ func TestSubmitReview_TheWaysItDoesNotMerge(t *testing.T) {
 			opts := reviewCase(t, false, pub)
 			c.change(&opts, pub)
 			res, err := SubmitReview(context.Background(), opts)
-			if err != nil || res.Result != c.result || res.Next != c.next {
+			if err != nil || res.Result != c.result || res.Next != c.next || res.NeedsYou != c.needsYou {
 				t.Fatalf("result: %+v, %v\ncalls:\n%s", res, err, joined(pub))
 			}
 			got := joined(pub)
@@ -210,6 +223,9 @@ func TestSubmitReview_TheWaysItDoesNotMerge(t *testing.T) {
 			}
 			if strings.Contains(got, "close 12") || strings.Contains(got, "landed 12") {
 				t.Errorf("a review that did not merge closed the ticket:\n%s", got)
+			}
+			if pub.commentErr != nil && (strings.Contains(got, "approve") || strings.Contains(got, "merge 30")) {
+				t.Errorf("a review the guard held back was acted on:\n%s", got)
 			}
 		})
 	}
@@ -239,7 +255,7 @@ func TestSubmitReview_TheMaintainersWord(t *testing.T) {
 	opts2 := opts
 	opts2.Publisher = pub2
 	res, err = SubmitReview(context.Background(), opts2)
-	if err != nil || res.Next != NextNeedsYou || !strings.Contains(joined(pub2), "labels 12 +needs-human-review -pr-ready") {
+	if err != nil || res.Next != NextNeedsYou || res.NeedsYou != NeedsYouMaintainer || !strings.Contains(joined(pub2), "labels 12 +needs-human-review -pr-ready") {
 		t.Fatalf("result: %+v, %v\ncalls:\n%s", res, err, joined(pub2))
 	}
 }

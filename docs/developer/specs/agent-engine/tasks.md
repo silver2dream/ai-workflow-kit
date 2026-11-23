@@ -48,7 +48,7 @@
   - 相依：0.1
   - awkit 每一個帶文字的 gh 呼叫（`ghutil.RunWithRetry`、`landing.GH`、`awkit lessons promote`）送出前先過 `guard.GHGate`：標題、內文、`--body-file`、`gh api` 的欄位裡有憑證（各家的 key 與 token、私鑰、JWT）或高信心的個資（檢查碼對得上的卡號、身分證字號）就不送；判定只記規則與指令，不記內容
   - Worker 的 PR 被擋：結果 `blocked`（階段 `guard_output`），票轉 `needs-human-review` 並留言說明，不重試
-  - 其他指令被擋時失敗並說明原因；審查留言被擋時，審查 agent 看得到原因，但票不會自動轉人，等 1.4 由 engine 發表審查時處理
+  - 其他指令被擋時失敗並說明原因；審查留言被擋時，審查 agent 看得到原因，但票不會自動轉人，等 1.4 由 engine 發表審查時處理（1.4b 已處理：不核准、不合併，票轉人）
   - 更廣的個資（email、電話、姓名）在 4.4 與分類器一起做
   - 需求：R11
   - 完成：#278
@@ -94,12 +94,14 @@
   - 也做了 0.3 留下的兩件：PR 留言依作者分 owner／agent／external（engine 發的與 AWK 格式的算 agent），以及結構化的 `suspicious` 欄位；所有片段送給模型前遮蔽憑證與個資（`guard.Redact`）；每段可有自己的長度上限
   - 需求：R9
   - 完成：#282
-- [ ] 1.4 審查拆成獨立程序
+- [x] 1.4 審查拆成獨立程序
   - 相依：1.2、1.3
   - engine 做 prepare（含自己跑測試）→ reviewer（唯讀、無 Bash、預設不同模型）→ 證據關卡核對 engine 的測試結果 → 發表審查；合併從 `submit-review` 移出（P1 先由 engine 直接合併，P2 接合併佇列）
   - 需求：R2、R11
   - 分兩個 PR。1.4a：審查的判斷與對外動作分開（`Publisher`、結果的 `Next`、傳入的 `TestRun`），主控的行為不變——重構前後的 `awkit submit-review` 對同一份審查的五種結果（合併、退回、`DIRTY`、`BEHIND`、`BLOCKED`）送出的 gh 指令一字不差。1.4b：engine 的審查步驟
   - 1.4a 完成：#283
+  - 1.4b：`internal/engine/review.go` 的 `ReviewStep`，細節在 `design.md` §5.5。與原本寫的不同：合併仍在 `SubmitReview` 裡、經 engine 的 publisher 做（等於「P1 由 engine 直接合併」），P2 把 publisher 的合併換成進佇列；轉換由步驟回傳、由 1.6 的主迴圈記下；`JiT` 與 `multi_model`（預設關閉）仍各自呼叫自己的 CLI，還沒改走 agent runtime。順帶：審查留言被對外檢查擋下時兩條路都轉人（0.6 留下的）；`SubmitReview` 收下呼叫者已有的 diff，不再抓一次；`agent.Envelope.Awkit` 讓測試指定 hook 用哪一個 awkit
+  - 1.4b 完成：#284
 - [ ] 1.5 解衝突拆成獨立程序
   - 相依：1.2
   - resolver 的結果 schema；engine 檢查沒有衝突標記、改動只在衝突檔案；標籤由 engine 改

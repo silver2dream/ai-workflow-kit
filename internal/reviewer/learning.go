@@ -48,7 +48,10 @@ func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learning
 	// The pull request's file list anchors the feedback entry to a scope and
 	// tells settlement which lessons applied to this pull request.
 	var changed []string
-	diff, diffErr := fetchPRDiffFunc(ctx, opts.PRNumber, opts.GHTimeout)
+	diff, diffErr := opts.Diff, error(nil)
+	if diff == "" {
+		diff, diffErr = fetchPRDiffFunc(ctx, opts.PRNumber, opts.GHTimeout)
+	}
 	pathsKnown := diffErr == nil
 	if pathsKnown {
 		changed = ChangedPaths(diff)

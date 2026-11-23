@@ -39,6 +39,10 @@ type Envelope struct {
 	// ticket's allow_script_changes does.
 	Protected    []string
 	AllowControl bool
+	// Awkit is the awkit whose `guard tool` is the command-policy hook; ""
+	// is this one. It is another only where this program is not awkit: a
+	// test, run against a build of awkit.
+	Awkit string
 }
 
 // Status is how a run ended.
