@@ -1,18 +1,12 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
@@ -97,38 +91,8 @@ func cmdGuard(args []string) int {
 	}
 	root := *stateRoot
 	if root == "" {
-		root = projectRootOf(in.Cwd)
+		root = guard.ProjectRoot(in.Cwd)
 	}
-	guard.Record(root, []guard.Verdict{verdict}, issueOfWorktree(in.Cwd))
+	guard.Record(root, []guard.Verdict{verdict}, guard.IssueOfDir(in.Cwd))
 	return refuse(verdict.Reason + " (" + verdict.Rule + "). If the task needs it, say so in your answer instead.")
-}
-
-// projectRootOf finds the project a directory belongs to: the folder that
-// holds the repository's own .git, also from a worktree of it.
-func projectRootOf(dir string) string {
-	if dir == "" {
-		return ""
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--git-common-dir").Output()
-	if err != nil {
-		return ""
-	}
-	common := strings.TrimSpace(string(out))
-	if !filepath.IsAbs(common) {
-		common = filepath.Join(dir, common)
-	}
-	return filepath.Dir(filepath.Clean(common))
-}
-
-var worktreeIssue = regexp.MustCompile(`[/\\]issue-(\d+)([/\\]|$)`)
-
-// issueOfWorktree reads the issue from a Worker's worktree (.worktrees/issue-N).
-func issueOfWorktree(dir string) int {
-	if m := worktreeIssue.FindStringSubmatch(dir); m != nil {
-		n, _ := strconv.Atoi(m[1])
-		return n
-	}
-	return 0
 }

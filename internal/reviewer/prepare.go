@@ -116,7 +116,7 @@ func PrepareReview(ctx context.Context, opts PrepareReviewOptions) (*ReviewConte
 
 	// 9. Reviewer-facing lessons: past review-process failures (blocked
 	// verifications, severity inconsistencies) distilled into checks.
-	rc.LessonsSection = loadReviewerLessons(opts.StateRoot)
+	rc.LessonsSection = loadReviewerLessons(opts.StateRoot, opts.IssueNumber)
 
 	// 10. Maintainer review feedback. The Worker may have pushed since it was
 	// written; whether it was addressed is for the reviewer to verify.
@@ -332,9 +332,10 @@ func fetchPRCommits(ctx context.Context, prNumber int, timeout time.Duration) st
 var reviewerLessonCategories = []string{"severity-consistency", "criteria-mapping", "assertion", "jittest"}
 
 // loadReviewerLessons selects lessons about the review process itself for
-// injection into the review context. Best-effort; "" on any failure.
-func loadReviewerLessons(stateRoot string) string {
-	store, err := lessons.Load(stateRoot)
+// injection into the review context; a lesson that fails the screening is
+// quarantined, not given. Best-effort; "" on any failure.
+func loadReviewerLessons(stateRoot string, issue int) string {
+	store, err := lessons.LoadForPrompt(stateRoot, issue)
 	if err != nil || len(store.Lessons) == 0 {
 		return ""
 	}

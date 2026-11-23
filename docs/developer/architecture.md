@@ -117,7 +117,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `kickoff` | `awkit run`：啟動前的檢查、lock、PTY、log |
 | `analyzer` | 決策引擎：從 GitHub 的狀態決定下一步，計數迴圈與連續失敗 |
 | `worker` | 派工、runner、backend、安全檢查、結果檢查 |
-| `guard` | guardrail 共用的部分：判定（`Verdict`，寫成 `guardrail_verdict` 事件）、帶來源與信任等級的 context 片段、清理看不見的字元、規則層注入偵測（`injection.go`，含中英文；語料在 `testdata/injection/`）、把不可信的片段包成資料區塊。Worker 的 prompt 由它組成，被擋下的票不派出去（`blocked`）。工具政策（`policy.go`、`shell.go`：拆開組合指令與 `sh -c`、`cmd /c` 這類包裝，依角色決定）由 `awkit guard tool` 當作 Claude Code 的 PreToolUse hook 執行：主控的 session 由 `awkit generate` 寫進 `settings.local.json`，Claude 的 Worker 每一次都帶 awkit 寫的設定（`--settings`、`--setting-sources ""`、`dontAsk`）。`env.go` 決定 agent 拿到哪些環境變數。見 [Agent Engine](specs/agent-engine/design.md) §9 |
+| `guard` | guardrail 共用的部分：判定（`Verdict`，寫成 `guardrail_verdict` 事件）、帶來源與信任等級的 context 片段、清理看不見的字元、規則層注入偵測（`injection.go`，含中英文；語料在 `testdata/injection/`）、把不可信的片段包成資料區塊。Worker 的 prompt 由它組成，被擋下的票不派出去（`blocked`）。工具政策（`policy.go`、`shell.go`：拆開組合指令與 `sh -c`、`cmd /c` 這類包裝，依角色決定）由 `awkit guard tool` 當作 Claude Code 的 PreToolUse hook 執行：主控的 session 由 `awkit generate` 寫進 `settings.local.json`，Claude 的 Worker 每一次都帶 awkit 寫的設定（`--settings`、`--setting-sources ""`、`dontAsk`）。`env.go` 決定 agent 拿到哪些環境變數。`outbound.go` 在每一個寫到 GitHub 的 `gh` 呼叫送出前掃描憑證與個資（`GHGate`：`ghutil.RunWithRetry`、`landing.GH` 與 `awkit lessons promote` 都經過它；被擋的錯誤包著 `ErrBlocked`，Worker 的 pull request 被擋時結果是 `blocked`、階段 `guard_output`）；呼叫屬於哪個專案與工單由 `context` 裡的 `Scope` 帶著。`diff.go` 在 Worker 的變更裡找可疑的模式，只記錄（`flag`）。教訓的篩檢與隔離在 `lessons/screen.go`。見 [Agent Engine](specs/agent-engine/design.md) §9 |
 | `reviewer` | `prepare-review`、`submit-review`、證據驗證、多模型審查、人的意見、合併 |
 | `jittest` | 審查時依 diff 產生並執行測試 |
 | `lessons` | 學習迴圈：記錄 → 濃縮 → 放進 prompt → 結算 |

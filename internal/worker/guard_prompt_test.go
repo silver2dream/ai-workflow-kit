@@ -86,10 +86,18 @@ func TestWritePrompt_ABlockedPromptIsNotWritten(t *testing.T) {
 // the source but not the text.
 func TestBlockedComment(t *testing.T) {
 	summary := "guardrail blocked: " + guard.RulesVersion + "#override-en in review comments on issue #12"
-	got := BlockedComment(12, summary)
-	for _, want := range []string{summary, "awkit events --issue 12 --type guardrail_verdict", "needs-human-review"} {
+	got := BlockedComment(12, "guard", summary)
+	for _, want := range []string{summary, "awkit events --issue 12 --type guardrail_verdict", "needs-human-review", "交給執行者"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the comment lacks %q:\n%s", want, got)
+		}
+	}
+
+	out := "AWK guard: what is about to be written to GitHub holds what looks like a credential (github-token); it was not sent (" + guard.OutboundVersion + "#github-token)"
+	got = BlockedComment(12, FailureStageGuardOutput, out)
+	for _, want := range []string{out, "awkit events --issue 12 --type guardrail_verdict", "needs-human-review", "沒有開這張工單的 PR", "撤銷"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the output comment lacks %q:\n%s", want, got)
 		}
 	}
 }

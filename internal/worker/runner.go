@@ -117,6 +117,9 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		}
 		stateRoot = root
 	}
+	// What the guard stops on the way to GitHub is recorded in this project,
+	// against this issue.
+	ctx = guard.WithScope(ctx, guard.Scope{StateRoot: stateRoot, Issue: opts.IssueID})
 
 	ticketBody, err := os.ReadFile(opts.TicketFile)
 	if err != nil {
@@ -709,6 +712,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	if len(secretMatches) > 0 {
 		logger.Log("sensitive patterns allowed: %s", strings.Join(secretMatches, ", "))
 	}
+	recordDiffSignals(ctx, wtDir, stateRoot, opts.IssueID, logger.Log)
 
 	if trace != nil {
 		_ = trace.StepEnd("success", "", nil)
@@ -967,14 +971,23 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	planContent := resolvePlanContent(workDir, runDir, opts.IssueID)
 	prURL, err := createOrFindPR(ctx, branch, prBase, commitMsg, opts.IssueID, opts.GHTimeout, ghRetryConfig, planContent)
 	if err != nil {
-		runErr = err
 		result.Error = err.Error()
+		status, stage := "failed", "create_pr"
+		if errors.Is(err, guard.ErrBlocked) {
+			// The pull request would carry a credential or a person's data
+			// to GitHub; another attempt would write it again. This waits
+			// for a person, who finds the verdict in the issue's events.
+			status, stage = "blocked", FailureStageGuardOutput
+			result.Status = status
+		} else {
+			runErr = err
+		}
 		if trace != nil {
 			_ = trace.StepEnd("failed", "PR not created", nil)
 		}
 		_ = writeIssueResult(ctx, stateRoot, issueResultContext{
 			IssueID:               opts.IssueID,
-			Status:                "failed",
+			Status:                status,
 			RepoName:              repoName,
 			RepoType:              repoType,
 			RepoPath:              repoPath,
@@ -984,7 +997,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 			BaseBranch:            prBase,
 			SummaryFile:           summaryFile,
 			ErrorMessage:          result.Error,
-			FailureStage:          "create_pr",
+			FailureStage:          stage,
 			WorkerSessionID:       workerSessionID,
 			AttemptNumber:         attemptInfo.AttemptNumber,
 			PreviousSessionIDs:    attemptInfo.PreviousSessionIDs,
@@ -997,7 +1010,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 			ConsistencyStatus:     consistencyStatus,
 		})
 		resultWritten = true
-		return result, err
+		return result, runErr
 	}
 	if trace != nil {
 		_ = trace.StepEnd("success", "", nil)

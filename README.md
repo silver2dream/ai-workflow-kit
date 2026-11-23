@@ -146,7 +146,7 @@ Tickets are taken in the order of their numbers, each once the issues it depends
 - **Your word outranks the review.** Review a pull request on GitHub while a run is going (with write access to the repository): it is not merged over your open review comments, the Worker is sent back with them, and they are kept as lessons. A merge never waits for you; what you write after it is picked up before the next ticket.
 - Optional: several models review and their scores are combined (`review.multi_model`); tests are generated from the diff at review time (`review.jittest`).
 
-What a review turned back is distilled, once the change is finally approved, into a short lesson that later Workers and reviewers are shown when they touch the same files. Lessons are kept in `.ai/state/lessons.json`, which is local to a checkout and not committed; `awkit lessons list` shows them, and `awkit lessons promote` turns a proven one into an issue that asks for a rule.
+What a review turned back is distilled, once the change is finally approved, into a short lesson that later Workers and reviewers are shown when they touch the same files. Lessons are kept in `.ai/state/lessons.json`, which is local to a checkout and not committed; `awkit lessons list` shows them, and `awkit lessons promote` turns a proven one into an issue that asks for a rule. A distilled lesson is screened before any Worker sees it; one that fails is quarantined until you read it and run `awkit lessons approve`.
 
 ## What it keeps in your project
 

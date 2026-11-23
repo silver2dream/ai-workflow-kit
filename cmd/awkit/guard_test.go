@@ -67,16 +67,3 @@ func TestGuardTool_RefusesWhatItCannotRead(t *testing.T) {
 		t.Errorf("no subcommand: %d", code)
 	}
 }
-
-func TestIssueOfWorktree(t *testing.T) {
-	for dir, want := range map[string]int{
-		`C:\games\rally\.worktrees\issue-7`:       7,
-		"/games/rally/.worktrees/issue-31/server": 31,
-		"/games/rally": 0,
-		"":             0,
-	} {
-		if got := issueOfWorktree(dir); got != want {
-			t.Errorf("%q: %d, want %d", dir, got, want)
-		}
-	}
-}
