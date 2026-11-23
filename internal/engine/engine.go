@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/agent"
@@ -66,6 +67,9 @@ type Engine struct {
 	Watch func(*analyzer.Decision)
 
 	now func() time.Time
+	// logMu keeps what the run and its inbox say from running into each
+	// other (Serve takes commands while a step runs).
+	logMu sync.Mutex
 }
 
 // Options are what `awkit run` gives the engine.
@@ -138,6 +142,8 @@ func override(r config.AgentRole) agent.Override {
 }
 
 func (e *Engine) logf(format string, args ...any) {
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
 	w := e.Log
 	if w == nil {
 		w = os.Stderr

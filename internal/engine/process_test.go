@@ -94,19 +94,21 @@ func TestServe_StopNow(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	})
-	var c Command
+	sent := make(chan Command, 1)
 	go func() {
 		<-started
 		// The run file says what it is at.
 		if r, ok := ReadRun(f.e.Root); !ok || r.Step == nil || r.Step.Action != analyzer.ActionDispatchWorker || r.Step.Issue != 12 || !r.Alive(time.Now()) {
 			t.Errorf("run file while at work: %+v, %v", r, ok)
 		}
-		c, _ = Send(f.e.Root, Command{Kind: CommandStopNow, By: "awkit stop --now"})
+		c, _ := Send(f.e.Root, Command{Kind: CommandStopNow, By: "awkit stop --now"})
+		sent <- c
 	}()
 	end, err := Serve(context.Background(), f.e, quick)
 	if end != EndInterrupted || err != nil {
 		t.Fatalf("ended %q, %v", end, err)
 	}
+	c := <-sent
 	if r, ok := ReplyOf(f.e.Root, c.ID); !ok || r.Result != Applied {
 		t.Errorf("reply: %+v, %v", r, ok)
 	}
