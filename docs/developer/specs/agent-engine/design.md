@@ -221,21 +221,29 @@
 
 ## 6. 線的狀態機
 
+標籤欄是現行主控流程已經在用的標籤（名稱可由設定檔的 `github.labels` 改），所以人與流程的其他指令看到的是同一件事。實作在 `internal/engine`：`lane.go`（狀態與轉換）、`labels.go`（投影，以及從標籤讀回狀態，用於匯入與對帳）、`journal.go`（事件與快照）。
+
 | 狀態 | 意思 | GitHub 標籤（投影） |
 |---|---|---|
 | `blocked` | 依賴還沒合併 | 工作標籤 |
 | `ready` | 可以開工，等名額或避撞 | 工作標籤 |
-| `implementing` | implementer 在寫 | `in-progress` |
+| `implementing` | implementer 在寫，或在解它的 PR 與 base 的衝突（`resolve` 說是哪種） | `in-progress` |
 | `checking` | engine 在做確定性檢查（diff 政策、建置、測試） | `in-progress` |
 | `reviewing` | reviewer 在審 | `pr-ready` |
-| `rework` | 審查或檢查不過，等重新派工 | `review-failed`（審查）或 `in-progress` |
+| `review_retry` | 審查沒做成（CI 沒過、證據對不上、審查者出錯），要再審一次 | `review-failed` |
+| `rework` | 審查要求修改，或執行者失敗，等重新派工 | 工作標籤 |
 | `awaiting_approval` | 高風險，等人核可 | `needs-human-review`＋說明留言 |
 | `queued` | 在合併佇列 | `pr-ready` |
-| `resolving` | resolver 在解衝突 | `merge-conflict` |
-| `merged` | 已合併 | `completed`，issue 關閉 |
-| `needs_you` | guardrail 觸發、次數或預算用完、分診轉人 | `needs-human-review` 或 `worker-failed`＋說明留言 |
-| `paused` | 人暫停 | 不變，另加留言 |
-| `cancelled` | 人取消或 issue 被關 | 移除工作相關標籤 |
+| `resolving` | PR 與 base 衝突（`conflict`）或落後（`rebase`），等著解 | `merge-conflict` 或 `needs-rebase` |
+| `merged` | 已合併 | 拿掉狀態標籤，issue 關閉 |
+| `completed` | 執行者發現不用改，沒有東西要合併 | 只剩 `completed`，issue 關閉 |
+| `needs_you` | guardrail 觸發、次數或預算用完、分診轉人（`why` 說原因） | `worker-failed`（執行者失敗次數用完）或 `needs-human-review`＋說明留言 |
+| `paused` | 人暫停 | 不變（暫停前的標籤），另加留言 |
+| `cancelled` | 人取消或 issue 被關 | 拿掉工作標籤與狀態標籤，不再是工單；開或關維持人留下的樣子 |
+
+這張表與 2026-11-23 核可時的版本不同的地方，都是照現行主控的實際行為改的（P1 要求行為等同）：`review-failed` 在現行流程是「換一個審查者重審」，不是退回執行者，所以獨立成 `review_retry`；審查要求修改時，現行流程把標籤改回工作標籤，所以 `rework` 的投影是工作標籤；合併時現行流程只關 issue、拿掉 `pr-ready`，`completed` 標籤只用在「不用改」；`needs-rebase` 也是解衝突的一種。
+
+線的計數照現行流程的算法：`failures` 是執行者自上次成功後失敗的次數，`reviews` 是重審的次數，`conflicts` 是把 PR 的衝突送去解的次數（rebase 不算）；上限的判斷在 engine 的主迴圈（任務 1.6）。
 
 ```
  blocked ─依賴合併→ ready ─名額＆避撞→ implementing ─結果→ checking ─過→ reviewing ─過→ [高風險?]
@@ -249,7 +257,8 @@
                                                                                過 → merged
 ```
 
-- 每個轉換都是一個事件；快照只是事件的投影。
+- 每個轉換都是一個事件；快照只是事件的投影。事件寫在 `.ai/state/events/engine.jsonl`（`awkit events` 讀得到，類型 `lane_transition`），先寫事件、再寫快照；engine 開啟時從事件重建每條線並重寫快照，事件加不起來（某個轉換套不上它的線）就拒絕開啟，不去猜。
+- 轉換帶著它的起點（`from`）：根據已經變了的狀態做出的決定會被拒絕，不會套到新的狀態上。
 - `needs_you` 與 `paused` 只影響那一條線（R5）。P1 為了與現行行為等同，`needs_you` 仍會停止整輪派新工作；P2 移除這個行為。
 
 ## 7. 工單 schema v2 與議會
