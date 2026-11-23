@@ -176,7 +176,12 @@ func formatLessonLine(n int, l Lesson) string {
 	content := strings.TrimSpace(l.Content)
 	// Collapse the content bullets into one line for the prompt.
 	content = strings.Join(strings.Fields(content), " ")
-	line := fmt.Sprintf("%d. [%s] %s — %s\n", n, l.ID, strings.TrimSpace(l.Title), content)
+	id := l.ID
+	if l.Status == StatusCandidate {
+		// On trial: the Worker weighs it as such.
+		id += ", unverified"
+	}
+	line := fmt.Sprintf("%d. [%s] %s — %s\n", n, id, strings.TrimSpace(l.Title), content)
 	return line
 }
 

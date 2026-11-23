@@ -32,6 +32,10 @@ const (
 	StatusActive    = "active"    // validated by at least one clean outcome
 	StatusProven    = "proven"    // repeatedly effective; promotion candidate
 	StatusRetired   = "retired"   // evicted, decayed, or repeatedly missed
+	// StatusQuarantined is a lesson held back before it was ever given to a
+	// Worker: its text failed the guard's screening (Screen). It is never
+	// injected; a person approves it (awkit lessons approve) or leaves it.
+	StatusQuarantined = "quarantined"
 )
 
 // Lesson kinds.
@@ -81,6 +85,8 @@ type Lesson struct {
 	CreatedAt   string     `json:"created_at"`
 	LastHitAt   string     `json:"last_hit_at,omitempty"`
 	Source      string     `json:"source,omitempty"` // distiller | human | post-mortem
+	// Quarantine says why the lesson is quarantined.
+	Quarantine string `json:"quarantine,omitempty"`
 }
 
 // Watermark tracks how much of the feedback log has been distilled.

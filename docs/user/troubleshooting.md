@@ -77,7 +77,7 @@ awkit run
 
 ### 需要人處理（`needs-human-review`）
 
-流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改；Worker 要讀的內容被 guardrail 擋下（見下一節）。issue 上的留言會說是哪一種。
+流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改；Worker 要讀的內容，或它的 pull request 要寫到 GitHub 的內容，被 guardrail 擋下（見下一節）。issue 上的留言會說是哪一種。
 
 處理完之後拿掉標籤，票就回到佇列：
 
@@ -95,6 +95,25 @@ awkit events --issue 42 --type guardrail_verdict   # 被擋下的原文與原因
 ```
 
 那段文字如果沒問題（例如是在討論注入的例子），到留言寫的來源把它改掉或刪掉，再拿掉標籤。只是可疑、不到擋下的內容，會照樣交給 Worker，但包在標明來源的資料區塊裡，並記一筆在同一個地方。
+
+**要寫到 GitHub 的內容被擋下。** awkit 每一次用 `gh` 寫到 GitHub（開 pull request、留言、開 issue、送審查），送出之前都會掃過要寫的標題與內文：看起來像憑證的（GitHub、Anthropic、OpenAI、AWS、Slack、Google 的金鑰與 token、私鑰、JWT），或個人資料（檢查碼對得上的信用卡號、身分證字號）就不送。Worker 的 pull request 被擋時，分支已經推上去、但 pull request 沒開，票標上 `needs-human-review`；其他指令被擋時，指令失敗並印出 `AWK guard:` 開頭的原因。記錄裡只有規則與欄位，沒有內容本身：
+
+```bash
+awkit events --issue 42 --type guardrail_verdict   # 哪一條規則、哪一個 gh 指令
+```
+
+把憑證或個資從分支與 Worker 的摘要拿掉；真的寫出去過的憑證，撤銷換新。付款服務公開的測試卡號（例如 `4242 4242 4242 4242`）與表單上的範例身分證字號不會被擋。
+
+**教訓被隔離（`quarantined`）。** 教訓由 agent 從審查的案例濃縮出來，而案例裡可能有別人寫的文字。所以一條教訓在交給 Worker 之前會先過篩檢：注入的寫法，或講到流程的權限與檢查（`--no-verify`、`permission_mode`）、連外（`curl`、網址）、流程自己的檔案與指令（`.ai/state`、`awkit submit-review`）的，會被隔離，不再給任何 Worker，並記一筆在 `awkit events`。`awkit lessons list` 會列出隔離的原因；讀過、確定沒問題，就放行：
+
+```bash
+awkit lessons list
+awkit lessons approve L-012   # 放行後當成新的教訓重新試用
+```
+
+你用 `awkit lessons add` 自己加的教訓不篩檢。
+
+**可疑的變更（只記錄）。** Worker 的變更通過密鑰檢查之後，AWK 會看它新增的內容有沒有這些情況：新的對外連線、執行期才決定的指令或程式碼、改了 CI 或建置、改了相依套件或安裝時執行的腳本、二進位檔、大量刪除。有的話記一筆 `flag`（規則是 `diff-signals/1#…`，只記檔名，不記內容），變更照樣去跑測試與審查；審查一個 pull request 時可以用同一個指令看它有沒有這些記錄。
 
 ### 審查一直退回
 

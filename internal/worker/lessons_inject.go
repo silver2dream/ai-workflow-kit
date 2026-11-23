@@ -16,7 +16,9 @@ func loadLessonsSection(stateRoot string, issueID int, ticket string, cfg *workf
 	if cfg != nil && !cfg.IsEnabled() {
 		return ""
 	}
-	store, err := lessons.Load(stateRoot)
+	// What fails the screening is held back before it reaches the Worker,
+	// and stays held back until a person approves it.
+	store, err := lessons.LoadForPrompt(stateRoot, issueID)
 	if err != nil || len(store.Lessons) == 0 {
 		return ""
 	}

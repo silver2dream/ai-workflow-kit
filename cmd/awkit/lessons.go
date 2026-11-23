@@ -13,6 +13,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
@@ -39,6 +40,10 @@ Subcommands:
                          later approved (at most N cases per run, default 5)
   promote <L-xxx>        Open a GitHub issue proposing to harden a proven
                          lesson into a rule/audit check (human-gated)
+  approve <L-xxx>        Give a quarantined lesson its trial: you read it and
+                         vouch for it. A lesson the distiller writes is
+                         screened before any Worker reads it; one that fails
+                         is quarantined, and 'list' says why
 
 Options:
   --state-root <path>    Project root (default: current directory)
@@ -70,9 +75,9 @@ func cmdLessons(args []string) int {
 	showHelp := fs.Bool("help", false, "")
 	showHelpShort := fs.Bool("h", false, "")
 
-	// promote takes a positional lesson ID before flags.
+	// promote and approve take a positional lesson ID before flags.
 	var promoteID string
-	if sub == "promote" && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+	if (sub == "promote" || sub == "approve") && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		promoteID = rest[0]
 		rest = rest[1:]
 	}
@@ -96,6 +101,8 @@ func cmdLessons(args []string) int {
 		return lessonsDistill(*stateRoot, *maxEntries)
 	case "promote":
 		return lessonsPromote(*stateRoot, promoteID)
+	case "approve":
+		return lessonsApprove(*stateRoot, promoteID)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", sub)
 		usageLessons()
@@ -113,13 +120,39 @@ func lessonsList(stateRoot string, all bool) int {
 		fmt.Println("No lessons yet. They are distilled when a rejected PR is later approved (or add one with 'awkit lessons add').")
 		return 0
 	}
-	fmt.Printf("%-7s %-10s %4s %4s  %s\n", "ID", "STATUS", "HIT", "MISS", "TITLE")
+	fmt.Printf("%-7s %-11s %4s %4s  %s\n", "ID", "STATUS", "HIT", "MISS", "TITLE")
 	for _, l := range s.Lessons {
 		if !all && l.Status == lessons.StatusRetired {
 			continue
 		}
-		fmt.Printf("%-7s %-10s %4d %4d  %s\n", l.ID, l.Status, l.Hits, l.Misses, l.Title)
+		fmt.Printf("%-7s %-11s %4d %4d  %s\n", l.ID, l.Status, l.Hits, l.Misses, l.Title)
+		if l.Status == lessons.StatusQuarantined {
+			fmt.Printf("        held back: %s (awkit lessons approve %s, once you have read it)\n", l.Quarantine, l.ID)
+		}
 	}
+	return 0
+}
+
+// lessonsApprove gives a quarantined lesson its trial.
+func lessonsApprove(stateRoot, id string) int {
+	if id == "" {
+		fmt.Fprintln(os.Stderr, "usage: awkit lessons approve <L-xxx>")
+		return 2
+	}
+	s, err := lessons.Load(stateRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	if err := s.Approve(id); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	if err := lessons.Save(stateRoot, s); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	fmt.Printf("%s is a candidate now: Workers get it on trial, as any new lesson.\n", id)
 	return 0
 }
 
@@ -134,9 +167,9 @@ func lessonsStats(stateRoot string) int {
 	for _, l := range s.Lessons {
 		counts[l.Status]++
 	}
-	fmt.Printf("Lessons: %d total — candidate: %d, active: %d, proven: %d, retired: %d\n",
+	fmt.Printf("Lessons: %d total — candidate: %d, active: %d, proven: %d, retired: %d, quarantined: %d\n",
 		len(s.Lessons), counts[lessons.StatusCandidate], counts[lessons.StatusActive],
-		counts[lessons.StatusProven], counts[lessons.StatusRetired])
+		counts[lessons.StatusProven], counts[lessons.StatusRetired], counts[lessons.StatusQuarantined])
 	fmt.Printf("Feedback watermark: line %d (updated %s)\n", s.Watermark.FeedbackLine, s.Watermark.UpdatedAt)
 	printPendingRejections(stateRoot)
 	fmt.Println()
@@ -190,7 +223,7 @@ func lessonsAdd(stateRoot, title, content, categories, scope string, issue, pr i
 		Fingerprint: lessons.FingerprintOf(title, cats, scopes),
 		Status:      lessons.StatusCandidate,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
-		Source:      "human",
+		Source:      lessons.SourceOwner,
 	}
 	if issue > 0 {
 		l.Evidence = []lessons.Evidence{{Issue: issue, PR: pr}}
@@ -327,7 +360,12 @@ _Source: awkit lessons promote %s_`,
 		l.Hits, l.Misses, evidence.String(), l.ID)
 
 	titleArg := fmt.Sprintf("[feat] promote lesson %s to enforced gate: %s", l.ID, l.Title)
-	cmd := exec.Command("gh", "issue", "create", "--title", titleArg, "--body", body, "--label", "enhancement")
+	ghArgs := []string{"issue", "create", "--title", titleArg, "--body", body, "--label", "enhancement"}
+	if err := guard.GHGate(guard.WithScope(context.Background(), guard.Scope{StateRoot: stateRoot}), ghArgs); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	cmd := exec.Command("gh", ghArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

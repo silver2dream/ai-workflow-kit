@@ -219,7 +219,9 @@ type DistillReport struct {
 	Matched   []string // upvoted lesson IDs
 	// Recurred lists matched lessons that were already in the Worker's
 	// prompt when the pull request was rejected. They are not upvoted.
-	Recurred     []string
+	Recurred []string
+	// Quarantined lists new lessons held back by the screening.
+	Quarantined  []string
 	Skipped      int // NOOP or unparseable
 	RunnerErrors int // LLM invocation failures (CLI missing, timeout)
 }
@@ -562,7 +564,9 @@ func clipLines(s string, max int) (string, bool) {
 func buildDistillPrompt(ev caseEvidence, s *Store) string {
 	var digest strings.Builder
 	for _, l := range s.Lessons {
-		if l.Status == StatusRetired {
+		// A quarantined lesson's words reach no model, the distiller's
+		// included.
+		if l.Status == StatusRetired || l.Status == StatusQuarantined {
 			continue
 		}
 		digest.WriteString(fmt.Sprintf("- %s: %s [categories: %s]\n",
@@ -893,6 +897,12 @@ func applyDecision(s *Store, d *DistillDecision, ev caseEvidence, repoRoot strin
 			// retired by misses like any other lesson.
 			l.Status = StatusActive
 			l.Source = SourceHumanCorrection
+		}
+		// Whoever the case came from, the distiller wrote the lesson: it is
+		// screened before any Worker reads it.
+		if reason := Screen(l); reason != "" {
+			Quarantine(&l, reason)
+			report.Quarantined = append(report.Quarantined, l.ID)
 		}
 		s.Lessons = append(s.Lessons, l)
 		report.Created = append(report.Created, l.ID)

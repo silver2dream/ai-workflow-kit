@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
 // GH is GitHub through the gh CLI, run in the project's repository: the
@@ -19,6 +21,11 @@ type GH struct {
 func (g GH) gh(ctx context.Context, root string, args ...string) (string, error) {
 	if g.Repo != "" {
 		args = append(args, "--repo", g.Repo)
+	}
+	// What would be written to GitHub is scanned first: a credential in it
+	// stops the call.
+	if err := guard.GHGate(guard.WithScope(ctx, guard.Scope{StateRoot: root}), args); err != nil {
+		return "", err
 	}
 	run := g.Run
 	if run == nil {
