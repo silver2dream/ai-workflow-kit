@@ -45,6 +45,14 @@ type SubmitReviewOptions struct {
 	// severity counts and criteria verifications come straight from it
 	// (no prose parsing), and ReviewBody carries its rendered markdown.
 	Structured *StructuredReview
+	// Publisher does what the review does outside itself; nil is the
+	// Principal's workflow's (the gh CLI and the labels).
+	Publisher Publisher
+	// TestRun, when non-nil, is the run of the tests the evidence is checked
+	// against: one the caller made in the worktree (the engine runs the
+	// tests before the review, and gives the reviewer their results). nil
+	// runs them here.
+	TestRun *TestRun
 
 	// headSHA is the commit checked out in the worktree when the review
 	// started: the version this review judges. SubmitReview fills it in
@@ -56,6 +64,9 @@ type SubmitReviewOptions struct {
 type SubmitReviewResult struct {
 	Result string // merged, changes_requested, review_blocked, merge_failed
 	Reason string
+	// Next is what the ticket does now (the Next constants): what the
+	// Principal's workflow reads from the labels the review set.
+	Next string
 }
 
 // fillDefaults sets what the caller left open. The tests are run again with
@@ -176,7 +187,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 
 	// Fetch ticket if not provided
 	if opts.Ticket == "" {
-		ticket, err := fetchIssueBody(ctx, opts.IssueNumber, opts.GHTimeout)
+		ticket, err := opts.publisher().Ticket(ctx, opts.IssueNumber)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch ticket: %w", err)
 		}
@@ -233,6 +244,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	if opts.Structured != nil {
 		verifyOpts.Verifications = opts.Structured.ToVerifications()
 	}
+	verifyOpts.TestRun = opts.TestRun
 	verifyReport, verifyErr := VerifyTestEvidenceWithReport(ctx, verifyOpts)
 
 	if verifyErr != nil {
@@ -320,7 +332,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	}
 
 	// Post PR comment (non-critical, log warning if failed)
-	if err := postPRComment(ctx, opts.PRNumber, commentBody, opts.GHTimeout); err != nil {
+	if err := opts.publisher().CommentPR(ctx, opts.PRNumber, commentBody); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post PR comment: %v\n", err)
 	}
 
@@ -340,13 +352,13 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 	// Submit GitHub Review
 	if opts.Score >= opts.ScoreThreshold {
 		// Approve (critical operation - must succeed)
-		if err := approvePR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout); err != nil {
+		if err := opts.publisher().Approve(ctx, opts.PRNumber, opts.Score); err != nil {
 			return nil, fmt.Errorf("failed to approve PR #%d: %w", opts.PRNumber, err)
 		}
 
 		if opts.CIStatus == "passed" {
 			// Try to merge
-			if err := mergePR(ctx, opts.PRNumber, opts.GHTimeout, opts.MergeStrategy); err != nil {
+			if err := opts.publisher().Merge(ctx, opts.PRNumber, opts.MergeStrategy); err != nil {
 				return handleMergeFailure(ctx, opts, sessionID, err)
 			}
 
@@ -361,16 +373,16 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 
 			// The work landed: the decision engine reads this instead of asking
 			// GitHub whether the closed issue has a merged pull request.
-			analyzer.MarkLanded(opts.StateRoot, opts.IssueNumber)
+			opts.publisher().Landed(opts.StateRoot, opts.IssueNumber)
 
 			// Merge successful - cleanup operations (non-critical, log warnings)
-			if err := closeIssue(ctx, opts.IssueNumber, opts.GHTimeout); err != nil {
+			if err := opts.publisher().CloseIssue(ctx, opts.IssueNumber); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to close issue #%d: %v\n", opts.IssueNumber, err)
 			}
-			if err := removeLabel(ctx, opts.IssueNumber, "pr-ready", opts.GHTimeout); err != nil {
+			if err := opts.publisher().Labels(ctx, opts.IssueNumber, nil, []string{"pr-ready"}); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to remove pr-ready label from issue #%d: %v\n", opts.IssueNumber, err)
 			}
-			if err := cleanupWorktree(opts.StateRoot, opts.IssueNumber); err != nil {
+			if err := opts.publisher().Cleanup(opts.StateRoot, opts.IssueNumber); err != nil {
 				fmt.Fprintf(os.Stderr, "[REVIEW] warning: %v\n", err)
 			}
 
@@ -378,7 +390,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			// and distill the rejections this merge resolved.
 			closeLearningLoop(ctx, opts, learningOutcome{Outcome: lessons.OutcomeMerged})
 
-			return &SubmitReviewResult{Result: "merged"}, nil
+			return &SubmitReviewResult{Result: "merged", Next: NextMerged}, nil
 		}
 
 		// CI not passed - treat as changes_requested so Worker fixes CI issues
@@ -390,7 +402,7 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 			ciStatusDisplay = "⚠️ 無法確認（未自動合併以確保安全）"
 		}
 
-		if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 未通過
+		if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 通過，但 CI 未通過
 
 審查評分: %d/10 ✅
 
@@ -400,11 +412,11 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 **CI 狀態**: %s
 
 請檢查 CI 日誌並修復問題後重新提交。
-PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHTimeout); err != nil {
+PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber)); err != nil {
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 		}
 
-		if err := editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+		if err := opts.publisher().Labels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}); err != nil {
 			fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 		}
 
@@ -415,14 +427,14 @@ PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHT
 			Findings:   ciReason,
 		})
 
-		return &SubmitReviewResult{Result: "changes_requested", Reason: ciReason}, nil
+		return &SubmitReviewResult{Result: "changes_requested", Reason: ciReason, Next: NextReviewRetry}, nil
 	}
 
 	// Request changes (critical operation - must succeed)
-	if err := requestChangesPR(ctx, opts.PRNumber, opts.Score, opts.GHTimeout); err != nil {
+	if err := opts.publisher().RequestChanges(ctx, opts.PRNumber, opts.Score); err != nil {
 		return nil, fmt.Errorf("failed to request changes on PR #%d: %w", opts.PRNumber, err)
 	}
-	if err := editIssueLabels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+	if err := opts.publisher().Labels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 	}
 
@@ -430,13 +442,13 @@ PR: #%d`, opts.Score, opts.ReviewBody, ciStatusDisplay, opts.PRNumber), opts.GHT
 	// of the automated findings.
 	humanSection := human.sectionForRejection(opts)
 
-	if err := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 不通過 (score: %d/10)
+	if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review 不通過 (score: %d/10)
 
 %s%s
 
 ---
 **Worker 請根據以上意見修改後重新提交。**
-PR: #%d`, opts.Score, humanSection, opts.ReviewBody, opts.PRNumber), opts.GHTimeout); err != nil {
+PR: #%d`, opts.Score, humanSection, opts.ReviewBody, opts.PRNumber)); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 
@@ -446,11 +458,11 @@ PR: #%d`, opts.Score, humanSection, opts.ReviewBody, opts.PRNumber), opts.GHTime
 		Findings: rejectionFindings(opts),
 	})
 
-	return &SubmitReviewResult{Result: "changes_requested"}, nil
+	return &SubmitReviewResult{Result: "changes_requested", Next: NextRework}, nil
 }
 
 func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, sessionID string, err *EvidenceError) (*SubmitReviewResult, error) {
-	if labelErr := editIssueLabels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}, opts.GHTimeout); labelErr != nil {
+	if labelErr := opts.publisher().Labels(ctx, opts.IssueNumber, []string{"review-failed"}, []string{"pr-ready"}); labelErr != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", labelErr)
 	}
 
@@ -497,7 +509,7 @@ func handleVerificationFailure(ctx context.Context, opts SubmitReviewOptions, se
 		failureType = "severity consistency"
 	}
 
-	if commentErr := postIssueComment(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
+	if commentErr := opts.publisher().CommentIssue(ctx, opts.IssueNumber, fmt.Sprintf(`## AWK Review blocked
 
 審查驗證失敗（%s）。
 
@@ -506,7 +518,7 @@ PR: #%d
 錯誤: %s
 %s
 已標記 review-failed。下一個 session 的 subagent 將重新審查。
-**當前 session 不應重試。**`, failureType, opts.PRNumber, err.Message, details), opts.GHTimeout); commentErr != nil {
+**當前 session 不應重試。**`, failureType, opts.PRNumber, err.Message, details)); commentErr != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", commentErr)
 	}
 
@@ -516,22 +528,23 @@ PR: #%d
 		reason += ": " + strings.Join(err.Details, ", ")
 	}
 
-	return &SubmitReviewResult{Result: "review_blocked", Reason: reason}, nil
+	return &SubmitReviewResult{Result: "review_blocked", Reason: reason, Next: NextReviewRetry}, nil
 }
 
 func handleMergeFailure(ctx context.Context, opts SubmitReviewOptions, sessionID string, mergeErr error) (*SubmitReviewResult, error) {
 	// Get merge state status
-	mergeState := getMergeStateStatus(ctx, opts.PRNumber, opts.GHTimeout)
+	mergeState := opts.publisher().MergeState(ctx, opts.PRNumber)
 
 	// Log the original merge error for debugging
 	fmt.Fprintf(os.Stderr, "[REVIEW] merge failed: err=%v, mergeStateStatus=%s, PR=#%d\n", mergeErr, mergeState, opts.PRNumber)
 
-	var label, result, message string
+	var label, result, message, next string
 
 	switch mergeState {
 	case "DIRTY":
 		label = "merge-conflict"
 		result = "merge_failed"
+		next = NextResolveConflict
 		message = fmt.Sprintf(`## AWK Review: Merge Conflict
 
 PR: #%d
@@ -542,6 +555,7 @@ PR 有 merge conflict。Worker 將自動解決衝突後重新提交。`, opts.PR
 	case "BEHIND":
 		label = "needs-rebase"
 		result = "merge_failed"
+		next = NextResolveRebase
 		message = fmt.Sprintf(`## AWK Review: Branch Behind
 
 PR: #%d
@@ -552,6 +566,7 @@ PR 分支落後 base branch。Worker 將自動 rebase 後重新提交。`, opts.
 	default: // BLOCKED or other
 		label = "needs-human-review"
 		result = "merge_failed"
+		next = NextNeedsYou
 		message = fmt.Sprintf(`## AWK Review: 合併失敗（需要人工介入）
 
 PR: #%d
@@ -561,10 +576,10 @@ mergeError: `+"`%v`"+`
 PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumber, mergeState, mergeErr)
 	}
 
-	if err := editIssueLabels(ctx, opts.IssueNumber, []string{label}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+	if err := opts.publisher().Labels(ctx, opts.IssueNumber, []string{label}, []string{"pr-ready"}); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 	}
-	if err := postIssueComment(ctx, opts.IssueNumber, message, opts.GHTimeout); err != nil {
+	if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, message); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 
@@ -572,7 +587,7 @@ PR 被保護規則擋住或有其他問題，需要人工處理。`, opts.PRNumb
 	if mergeErr != nil {
 		reason = fmt.Sprintf("%s: %v", mergeState, mergeErr)
 	}
-	return &SubmitReviewResult{Result: result, Reason: reason}, nil
+	return &SubmitReviewResult{Result: result, Reason: reason, Next: next}, nil
 }
 
 // fetchIssueBody fetches the issue body from GitHub
@@ -663,15 +678,6 @@ func closeIssue(ctx context.Context, issueNumber int, timeout time.Duration) err
 	defer cancel()
 
 	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "close", strconv.Itoa(issueNumber))
-	return err
-}
-
-func removeLabel(ctx context.Context, issueNumber int, label string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "issue", "edit", strconv.Itoa(issueNumber),
-		"--remove-label", label)
 	return err
 }
 
@@ -787,7 +793,7 @@ func handleJiTTestBlock(ctx context.Context, opts SubmitReviewOptions, sessionID
 	// Post comment on issue
 	comment := fmt.Sprintf("## AWK Review blocked (JiT Test)\n\nJiT tests failed with block policy.\n\nPR: #%d\n\n%s\n\nMarked review-failed. Worker will be re-dispatched.",
 		opts.PRNumber, result.FormatComment())
-	if err := postIssueComment(ctx, opts.IssueNumber, comment, opts.GHTimeout); err != nil {
+	if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, comment); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 
@@ -797,10 +803,11 @@ func handleJiTTestBlock(ctx context.Context, opts SubmitReviewOptions, sessionID
 	if cfg != nil && cfg.GitHub.Labels.ReviewFailed != "" {
 		reviewFailedLabel = cfg.GitHub.Labels.ReviewFailed
 	}
-	_ = editIssueLabels(ctx, opts.IssueNumber, []string{reviewFailedLabel}, nil, opts.GHTimeout)
+	_ = opts.publisher().Labels(ctx, opts.IssueNumber, []string{reviewFailedLabel}, nil)
 
 	return &SubmitReviewResult{
 		Result: "review_blocked",
 		Reason: fmt.Sprintf("JiT test failed: %d/%d tests failed", result.Failed, result.Generated),
+		Next:   NextReviewRetry,
 	}, nil
 }

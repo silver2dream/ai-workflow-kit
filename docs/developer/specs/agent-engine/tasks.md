@@ -98,6 +98,8 @@
   - 相依：1.2、1.3
   - engine 做 prepare（含自己跑測試）→ reviewer（唯讀、無 Bash、預設不同模型）→ 證據關卡核對 engine 的測試結果 → 發表審查；合併從 `submit-review` 移出（P1 先由 engine 直接合併，P2 接合併佇列）
   - 需求：R2、R11
+  - 分兩個 PR。1.4a：審查的判斷與對外動作分開（`Publisher`、結果的 `Next`、傳入的 `TestRun`），主控的行為不變——重構前後的 `awkit submit-review` 對同一份審查的五種結果（合併、退回、`DIRTY`、`BEHIND`、`BLOCKED`）送出的 gh 指令一字不差。1.4b：engine 的審查步驟
+  - 1.4a 完成：#283
 - [ ] 1.5 解衝突拆成獨立程序
   - 相依：1.2
   - resolver 的結果 schema；engine 檢查沒有衝突標記、改動只在衝突檔案；標籤由 engine 改

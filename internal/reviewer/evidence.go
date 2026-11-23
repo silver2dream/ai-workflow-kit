@@ -49,6 +49,9 @@ type VerifyOptions struct {
 	// path) and ReviewBody is NOT parsed — the lossy markdown/regex path is
 	// bypassed entirely.
 	Verifications []CriteriaVerification
+	// TestRun, when non-nil, is a run of the tests made before: the gate
+	// checks the evidence against it instead of running them again.
+	TestRun *TestRun
 }
 
 // TestNameValidator defines interface for language-specific test name validation
@@ -276,13 +279,17 @@ func VerifyTestEvidenceWithReport(ctx context.Context, opts VerifyOptions) (*Ver
 
 	fmt.Printf("[VERIFY] ✓ All criteria have complete verifications\n")
 
-	// 4. Execute tests in worktree with verbose output for individual test names
-	verboseCmd := EnhanceTestCommandForVerbose(opts.TestCommand, opts.Language)
-	if verboseCmd != opts.TestCommand {
-		fmt.Printf("[VERIFY] Enhanced test command for verbose: %s\n", verboseCmd)
+	// 4. Execute tests in worktree with verbose output for individual test
+	// names, unless the caller ran them already (the engine runs them before
+	// the review, and gives the reviewer their results).
+	run := opts.TestRun
+	if run == nil {
+		r := RunTests(ctx, opts.WorktreePath, opts.TestCommand, opts.Language, opts.TestTimeout)
+		run = &r
+	} else {
+		fmt.Printf("[VERIFY] Using the run of the tests made before the review: %s\n", run.Command)
 	}
-	fmt.Printf("[VERIFY] Executing tests: %s\n", verboseCmd)
-	testOutput, testErr := ExecuteTests(ctx, opts.WorktreePath, verboseCmd, opts.TestTimeout)
+	testOutput, testErr := run.Output, run.Err
 
 	// 5. Parse test results
 	passedTests, failedTests := ParseTestResults(testOutput)
@@ -709,6 +716,31 @@ func ValidateCompleteness(criteria []string, verifications []CriteriaVerificatio
 	}
 
 	return nil
+}
+
+// TestRun is a run of a worktree's tests: the command, as the evidence gate
+// runs it (verbose, for the names of the tests), what it printed, and how it
+// ended.
+type TestRun struct {
+	Command string
+	Output  string
+	Err     error
+}
+
+// RunTests runs the tests of a worktree as the evidence gate checks them:
+// the test command made verbose for the language, so that each test's name
+// is in the output, within the time limit.
+func RunTests(ctx context.Context, worktreePath, testCommand, language string, timeout time.Duration) TestRun {
+	if timeout == 0 {
+		timeout = 5 * time.Minute
+	}
+	verboseCmd := EnhanceTestCommandForVerbose(testCommand, language)
+	if verboseCmd != testCommand {
+		fmt.Printf("[VERIFY] Enhanced test command for verbose: %s\n", verboseCmd)
+	}
+	fmt.Printf("[VERIFY] Executing tests: %s\n", verboseCmd)
+	output, err := ExecuteTests(ctx, worktreePath, verboseCmd, timeout)
+	return TestRun{Command: verboseCmd, Output: output, Err: err}
 }
 
 // ExecuteTests runs the test command in the worktree and returns what it
