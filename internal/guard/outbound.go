@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -68,6 +70,44 @@ func ScanOutbound(text, source string) []Verdict {
 		}
 	}
 	return verdicts
+}
+
+// Redact masks the credentials and personal data of a text, each as
+// [REDACTED:<kind>], before the text is given to a model: what a model is
+// shown it may repeat. It returns the kinds it masked.
+func Redact(text string) (string, []string) {
+	type hit struct {
+		span []int
+		id   string
+	}
+	var hits []hit
+	var taken [][]int
+	for _, p := range outboundPatterns {
+		for _, span := range p.pattern.FindAllStringIndex(text, -1) {
+			if overlaps(taken, span) || (p.valid != nil && !p.valid(text[span[0]:span[1]])) {
+				continue
+			}
+			taken = append(taken, span)
+			hits = append(hits, hit{span, p.id})
+		}
+	}
+	if len(hits) == 0 {
+		return text, nil
+	}
+	sort.Slice(hits, func(a, b int) bool { return hits[a].span[0] < hits[b].span[0] })
+	var b strings.Builder
+	last := 0
+	var kinds []string
+	for _, h := range hits {
+		b.WriteString(text[last:h.span[0]])
+		b.WriteString("[REDACTED:" + h.id + "]")
+		last = h.span[1]
+		if !slices.Contains(kinds, h.id) {
+			kinds = append(kinds, h.id)
+		}
+	}
+	b.WriteString(text[last:])
+	return b.String(), kinds
 }
 
 func overlaps(spans [][]int, span []int) bool {

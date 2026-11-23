@@ -25,8 +25,8 @@
 - [x] 0.3 執行者 prompt 的來源標記與資料區塊
   - 相依：0.2
   - Worker 的 prompt 由片段組成，每段帶 source／author／trust：工單（owner）、程式碼地圖（repo）、審查意見與教訓（agent）、統計（system）；不可信片段以資料區塊放入並過規則層，明顯的注入擋下（結果 `blocked`）
-  - PR 上的意見：有寫入權限者的以 agent 等級放入，因為審查 agent 用同一個帳號發言，分不出是人寫的；沒有寫入權限者的不放。依作者細分的信任等級移到 1.3
-  - 可疑片段由 Worker 在回答最後一行 `AWK_SUSPICIOUS:` 回報，寫 flag 判定；現行 Worker 沒有結果 schema，結構化的 `suspicious` 欄位移到 1.2
+  - PR 上的意見：有寫入權限者的以 agent 等級放入，因為審查 agent 用同一個帳號發言，分不出是人寫的；沒有寫入權限者的不放。依作者細分的信任等級在 1.3 做（#282）
+  - 可疑片段由 Worker 在回答最後一行 `AWK_SUSPICIOUS:` 回報，寫 flag 判定；現行 Worker 沒有結果 schema，結構化的 `suspicious` 欄位在 1.3 做（#282）
   - 需求：R9
   - 完成：#276
 - [x] 0.4 指令政策 hook
@@ -88,10 +88,12 @@
   - `.ai/config.yaml` 的 `agents.*` 鍵移到 1.6，engine 實際讀它們時一起加上
   - 需求：R2
   - 完成：#281
-- [ ] 1.3 Context builder 與任務信封
+- [x] 1.3 Context builder 與任務信封
   - 相依：0.3、1.2
   - 每個角色的最少 context 清單；片段信任等級的推導；信封存檔（遮蔽後）
+  - 也做了 0.3 留下的兩件：PR 留言依作者分 owner／agent／external（engine 發的與 AWK 格式的算 agent），以及結構化的 `suspicious` 欄位；所有片段送給模型前遮蔽憑證與個資（`guard.Redact`）；每段可有自己的長度上限
   - 需求：R9
+  - 完成：#282
 - [ ] 1.4 審查拆成獨立程序
   - 相依：1.2、1.3
   - engine 做 prepare（含自己跑測試）→ reviewer（唯讀、無 Bash、預設不同模型）→ 證據關卡核對 engine 的測試結果 → 發表審查；合併從 `submit-review` 移出（P1 先由 engine 直接合併，P2 接合併佇列）

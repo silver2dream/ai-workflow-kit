@@ -266,3 +266,20 @@ func TestRecordDecision(t *testing.T) {
 	}
 	RecordDecision("", Decision{Piece: "nowhere"}) // no project, no stream: nothing, and no panic
 }
+
+func TestRedact(t *testing.T) {
+	gh := fakeSecrets()["github-token"]
+	ant := fakeSecrets()["anthropic-key"]
+	text := "use " + gh + " and " + ant + " then " + gh + "; card 4242 4242 4242 4242 is a test card"
+	got, kinds := Redact(text)
+	want := "use [REDACTED:github-token] and [REDACTED:anthropic-key] then [REDACTED:github-token]; card 4242 4242 4242 4242 is a test card"
+	if got != want {
+		t.Errorf("Redact:\n%s\nwant\n%s", got, want)
+	}
+	if strings.Join(kinds, ",") != "github-token,anthropic-key" {
+		t.Errorf("kinds = %v (an Anthropic key is no OpenAI key too)", kinds)
+	}
+	if got, kinds := Redact("nothing to hide"); got != "nothing to hide" || kinds != nil {
+		t.Errorf("plain: %q %v", got, kinds)
+	}
+}
