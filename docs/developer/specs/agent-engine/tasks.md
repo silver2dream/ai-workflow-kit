@@ -81,10 +81,13 @@
   - 狀態表依現行主控的實際行為更正（`review_retry`、`completed`、`rework` 的投影、`resolving` 的兩種）；標籤除了投影，也能讀回狀態（匯入與對帳用，順序同 `analyzer`）；轉換帶起點，依舊狀態做的決定會被拒絕；事件加不起來就拒絕開啟
   - 需求：R1、R13、R14
   - 完成：#280
-- [ ] 1.2 Agent runtime 與角色設定
+- [x] 1.2 Agent runtime 與角色設定
   - 相依：0.5
   - 契約 `Run(ctx, envelope) → Result`；Claude Code 與 Codex 轉接器（§5.5 的展開表）；能力探測；結構化輸出（`--json-schema`／`--output-schema`）；預算；展開結果寫事件；角色設定的預設值與上限
+  - 實測確認後的做法寫在 `design.md` §5.5：工具分四級、`StructuredOutput` 經過 hook 要放行、Codex 在 Windows 帶入使用者設定的 Windows 沙箱（只讀這一項）、Claude Code 2.1.321 沒有 `--max-turns`、Codex 沒有 hook 與金額，沒被 CLI 強制的限制寫進每次派工的事件
+  - `.ai/config.yaml` 的 `agents.*` 鍵移到 1.6，engine 實際讀它們時一起加上
   - 需求：R2
+  - 完成：#281
 - [ ] 1.3 Context builder 與任務信封
   - 相依：0.3、1.2
   - 每個角色的最少 context 清單；片段信任等級的推導；信封存檔（遮蔽後）

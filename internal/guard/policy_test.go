@@ -164,6 +164,7 @@ func TestPolicy_FileTools(t *testing.T) {
 		{tool("WebFetch", "url", "https://example.com"), Block, Block},
 		{tool("WebSearch", "query", "golang"), Block, Block},
 		{tool("TodoWrite", "todos", ""), Pass, Pass},
+		{tool("StructuredOutput", "count", ""), Pass, Pass},
 		{tool("Task", "prompt", "do it"), Block, Block},
 		{tool("mcp__github__merge_pull_request", "pr", "41"), Block, Block},
 	}

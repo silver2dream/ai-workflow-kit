@@ -88,7 +88,9 @@ func (p Policy) Check(call ToolCall) Verdict {
 	}
 	if role == RoleImplementer {
 		switch call.Tool {
-		case "TodoWrite", "BashOutput", "KillShell", "KillBash", "Monitor":
+		// StructuredOutput is how the CLI hands back an answer it was given
+		// a schema for (--json-schema): it reads and writes nothing.
+		case "TodoWrite", "BashOutput", "KillShell", "KillBash", "Monitor", "StructuredOutput":
 			return allow()
 		}
 		return deny("tool", "a Worker is not given the tool "+call.Tool)

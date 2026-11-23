@@ -151,6 +151,19 @@
 
 每個轉接器在第一次使用時做**能力探測**（沿用 effort 的做法：讀 `--help`），支援的旗標記在事件裡；必要的限制無法展開時 fail closed，不降級執行。
 
+實作在 `internal/agent`（任務 1.2），以下是對 Claude Code 2.1.321 與 Codex 0.171 實測確認過的做法：
+
+- **工具等級**：角色的工具分四級（`none`、`read`、`edit`、`shell`），每一級包含前一級。Claude Code 以 `--tools` 給該級的工具清單（清單裡這版 CLI 沒有的名稱會被略過，不會出錯），`--settings` 的 allow／deny 同一份；Codex 以沙箱表達：`none`、`read` 是 `read-only`，`edit`、`shell` 是 `workspace-write`。
+- **結構化輸出經過 hook**：Claude Code 以 `--json-schema` 交出答案時，會呼叫一個名為 `StructuredOutput` 的工具，PreToolUse hook 也會看到它；指令政策明確放行這個工具（它不讀也不寫任何東西）。答案在結果 JSON 的 `structured_output`。
+- **不留 session**：Claude Code `--no-session-persistence`，Codex `--ephemeral`；每次派工都是新的程序。
+- **Codex 不讀使用者的設定**：`--ignore-user-config`、`--ignore-rules`，核准政策 `-a never`。唯一例外是 Windows：Codex 在 Windows 上只在它自己的沙箱裡執行指令，那個沙箱由使用者設定一次、記在 `~/.codex/config.toml` 的 `[windows] sandbox`（`CODEX_HOME` 另有指定時在那裡）。runtime 只讀這一項，以 `-c windows.sandbox="…"` 帶給每次執行；沒有設定時，有工具的角色拒絕在 Codex 上執行並說明怎麼設定（實測：沒有這個沙箱時，`-a never` 下連讀檔的指令都會被擋）。值只接受由英數、底線、連字號組成的字。
+- **Claude Code 2.1.321 沒有 `--max-turns`**：回合數只記錄，不限制；時間由 runtime 的 timeout 限制（逾時連同它開出的程序一起結束），花費由 `--max-budget-usd` 限制，CLI 沒有這個旗標時在執行後核對。
+- **Codex 沒有 hook、也不回報金額**：指令政策由它的沙箱負責（P3 起加上容器與 proxy），花費只能以時間限制；這些「這次沒有被 CLI 強制的限制」寫在每次派工的事件裡（`unenforced`）。
+- **事件**：每次派工寫一筆 `agent_run`：角色、backend、模型、工具等級、結束原因、用量、展開後的實際參數、設定檔內容、環境變數的名稱（不含值）與 `unenforced`；不寫 prompt 與答案。
+- **schema**：不論 backend 有沒有拿到 schema，runtime 都自己核對答案。核對的範圍是 engine 自己的 schema 用得到的部分（type、properties、required、additionalProperties: false、enum、const、items、長度與數值範圍）；schema 用了範圍外的關鍵字就拒絕執行，而不是只檢查一半。答案不符合時，以新的程序、附上哪裡不符合再問一次（次數依角色設定），次數用完就算失敗。
+- **換 backend 不帶模型**：覆寫成另一個 backend 而沒有指定模型時，用該 backend 自己的預設，不沿用原本那家的模型名稱。
+- 角色設定的覆寫目前由呼叫者傳入；`.ai/config.yaml` 的 `agents.*` 鍵在 engine 實際讀它們時（任務 1.6）一起加上，以免出現寫了卻沒有作用的設定。
+
 **預設的角色設定**（設定檔可以覆寫，但不能超出「上限」欄）：
 
 | 角色 | 預設 backend／模型 | 工具 | 檔案系統 | 網路 | 環境變數 | 上限 |
