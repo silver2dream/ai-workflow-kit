@@ -187,6 +187,13 @@
   - 審查的留言被對外檢查擋下時（兩條路都一樣）：不核准、不合併，票轉人並說明原因，判定記在那張工單下。
   - engine 的 `Publisher`（`EnginePublisher`）就是主控的，只是不改標籤。P1 的合併仍由它在 `SubmitReview` 裡做（engine 直接合併）；P2 把它換成進合併佇列。
 - 解衝突：engine 在 rebase 停住的 worktree 啟動 resolver → 拿到 `{result: RESOLVED|TOO_COMPLEX|FAILED, files, reason}` → engine 檢查沒有衝突標記、改動只在衝突檔案、驗證通過 → 繼續 rebase、push。現在由主控用 `gh issue edit` 改標籤的步驟（`references/conflict-resolution.md`）改由 engine 做。
+- engine 的解衝突步驟（1.5，`internal/engine/resolve.go`）：`ResolveStep.Resolve(ctx, lane)` 處理一條派去解 PR 的線（`implementing`，`resolve` 有值），回傳線要怎麼走的轉換，由主迴圈（1.6）記下。
+  - 先把 worktree 準備好（不在 rebase 中、在線的分支上、乾淨），`git fetch` 後把遠端分支 fast-forward 進來（有人推到 PR 的東西不會被蓋掉；兩邊分岔就轉人）。push 用 `--force-with-lease=<分支>:<fetch 當時的 sha>`，只取代 worktree 出發時的那個版本。
+  - `git rebase origin/<base>`（base 從 PR 讀，讀不到用整合分支）。沒有衝突就直接 push → `reviewing`，不叫 resolver。
+  - rebase 停在衝突上時，每個停住的 commit 叫一次 resolver（上限 8 個 commit，超過轉人）。它拿到：指示（`resolve_instructions.md`）、工單摘要（owner）、衝突檔案適用的規則（repo）、每個衝突檔案連同標記、base 最近改過它的 commit、正在重放的 PR commit（agent）。它只改衝突檔案，可以跑檢查用的指令，不 stage、不 commit、不繼續或中止 rebase、不 push。答案 `{result: RESOLVED|TOO_COMPLEX|FAILED, files, reason}`。
+  - engine 不信它的話，自己檢查：HEAD 沒動（動了 → 失敗）；索引與工作區裡衝突檔案以外的已追蹤檔案沒變（manifest 衝突時它的 lockfile 可以一起變，例如 `go.mod` 與 `go.sum`）——變了是 security，記 `resolver-scope` 的 block 判定、什麼都不 push、轉人（`guard_output`）；沒有留下衝突標記（單獨一行 `=======` 不算，那是 Markdown 標題）——留下是 quality，失敗。過了才 `git add` 衝突檔案與 lockfile、清掉它的檢查留下的未追蹤檔案（不 commit，也不讓接著的審查跑到）、`git rebase --continue`，下一個 commit 再衝突就再一輪。
+  - 結果：push 成功 → `reviewing`（`resolved`）；`TOO_COMPLEX` → `needs_you`（`needs_human_review`，說明哪些檔案、為什麼）；`FAILED`、resolver 沒跑完、檢查沒過、git 失敗 → 回 `resolving`（`resolve_failed`，再派一次，次數由主迴圈管）；後端達不到角色設定 → `needs_you`（`agent_refused`）；輸入檢查擋下 → `needs_you`（`guard_blocked`）。不論結果，worktree 都不會留在 rebase 中途。
+  - 「驗證通過」：push 前做的是上面這些確定性檢查；建置與測試在接著的審查（1.4）由 engine 跑。
 
 ### 5.6 Context builder 與任務信封
 

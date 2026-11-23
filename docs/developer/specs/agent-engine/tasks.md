@@ -102,10 +102,12 @@
   - 1.4a 完成：#283
   - 1.4b：`internal/engine/review.go` 的 `ReviewStep`，細節在 `design.md` §5.5。與原本寫的不同：合併仍在 `SubmitReview` 裡、經 engine 的 publisher 做（等於「P1 由 engine 直接合併」），P2 把 publisher 的合併換成進佇列；轉換由步驟回傳、由 1.6 的主迴圈記下；`JiT` 與 `multi_model`（預設關閉）仍各自呼叫自己的 CLI，還沒改走 agent runtime。順帶：審查留言被對外檢查擋下時兩條路都轉人（0.6 留下的）；`SubmitReview` 收下呼叫者已有的 diff，不再抓一次；`agent.Envelope.Awkit` 讓測試指定 hook 用哪一個 awkit
   - 1.4b 完成：#284
-- [ ] 1.5 解衝突拆成獨立程序
+- [x] 1.5 解衝突拆成獨立程序
   - 相依：1.2
   - resolver 的結果 schema；engine 檢查沒有衝突標記、改動只在衝突檔案；標籤由 engine 改
   - 需求：R2、R11
+  - `internal/engine/resolve.go` 的 `ResolveStep`，細節在 `design.md` §5.5。與原本寫的不同或多做的：rebase 也由 engine 做（resolver 只改檔）；push 前不跑建置與測試，交給接著的審查；manifest 衝突時它的 lockfile 可以一起改；resolver 的檢查留下的未追蹤檔案清掉而不算越界；先把有人推到 PR 的 commit 收進來、push 指定 lease（現行 worker 的流程 fetch 後再 `--force-with-lease`，會蓋掉別人剛推的）。標籤仍由 1.6 的投影寫。P0 的指令政策仍允許 agent push 自己的票分支（給主控時代的 conflict-resolver）；engine 的 resolver 被告知不要 push，政策依角色收緊留到 4.x
+  - 完成：#285
 - [ ] 1.6 Engine 主迴圈、鎖、租約、對帳、停止
   - 相依：1.1、1.4、1.5
   - 事件驅動的迴圈（平行上限固定為 1）；單一實例鎖；租約與心跳；當掉重開的接回；GitHub 對帳與人的動作轉指令；`awkit stop` 兩種停止；`awkit detach` 啟動
