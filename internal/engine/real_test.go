@@ -105,3 +105,65 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 	}
 	return string(out)
 }
+
+const (
+	rallyStart = "package rally\n\n// Serve starts a rally.\nfunc Serve() string { return \"serve\" }\n"
+	rallyScore = "\n// Score is the difference of two players' points.\nfunc Score(a, b int) int { return a - b }\n"
+	rallyLet   = "\n// Let calls a let.\nfunc Let() string { return \"let\" }\n"
+)
+
+// TestRealResolve has a real resolver (claude, then codex, each with the
+// resolver's defaults for that backend) resolve a conflict in a project of
+// its own: the pull request and the base each added a function at the end
+// of the same file, and both are to be kept. The remote is a repository on
+// disk; no GitHub is reached. It is skipped unless AWKIT_REAL_AGENTS names
+// an awkit built from this tree.
+func TestRealResolve(t *testing.T) {
+	awkit := os.Getenv("AWKIT_REAL_AGENTS")
+	if awkit == "" {
+		t.Skip("set AWKIT_REAL_AGENTS to an awkit built from this tree to run the real resolver")
+	}
+	for _, backend := range []string{agent.ClaudeCode, agent.Codex} {
+		t.Run(backend, func(t *testing.T) {
+			program := map[string]string{agent.ClaudeCode: "claude", agent.Codex: "codex"}[backend]
+			if _, err := exec.LookPath(program); err != nil {
+				t.Skipf("%s is not on the PATH", program)
+			}
+			f := newRepoFixture(t,
+				map[string]string{"go.mod": "module example.com/rally\n\ngo 1.22\n", "rally.go": rallyStart},
+				map[string]string{"rally.go": rallyStart + rallyScore},
+				map[string]string{"rally.go": rallyStart + rallyLet})
+			p, err := agent.Resolve(agent.Resolver, agent.Profile{Backend: backend}, agent.Override{Minutes: 10, USD: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.step.Profile = p
+			f.step.Agents = withAwkit{agent.NewRunner(), awkit}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			defer cancel()
+			tr, err := f.step.Resolve(ctx, f.lane)
+			if err != nil {
+				t.Fatal(err)
+			}
+			answer, _ := os.ReadFile(filepath.Join(agent.RunDir(f.root, 12, 50), "round-1", "resolver", "try-1", "answer.json"))
+			t.Logf("the resolver (%s %s) moved the lane to %s (%s): %s\nits answer:\n%.3000s", p.Backend, p.Model, tr.To, tr.Cause, tr.Note, answer)
+			t.Logf("its run:\n%s", strings.Join(eventsWith(t, f.root, `"role":"resolver"`), "\n"))
+			if tr.To != Reviewing {
+				t.Fatalf("not resolved: %+v", tr)
+			}
+			got := f.remote("rally.go")
+			if !strings.Contains(got, "func Score(a, b int) int") || !strings.Contains(got, "func Let() string") || hasMarker([]byte(got)) {
+				t.Fatalf("the remote has:\n%s", got)
+			}
+			// What was pushed builds.
+			check := t.TempDir()
+			gitIn(t, check, "clone", "-q", "-b", "feat/ai-issue-12", f.origin, ".")
+			build := exec.Command("go", "build", "./...")
+			build.Dir = check
+			if out, err := build.CombinedOutput(); err != nil {
+				t.Errorf("the resolution does not build: %v\n%s", err, out)
+			}
+		})
+	}
+}
