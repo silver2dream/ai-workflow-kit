@@ -26,7 +26,9 @@ func stubClaudeCLI(t *testing.T, options []string, mentions []string, atLeast bo
 	claudeSupports = func(option string) bool { return has(options, option) }
 	claudeMentions = func(word string) bool { return has(mentions, word) }
 	claudeAtLeast = func(int, int, int) bool { return atLeast }
-	awkitExecutable = func() (string, error) { return `C:\tools\awkit.exe`, nil }
+	// The path as the platform writes it: the hook command writes it with
+	// forward slashes on every platform.
+	awkitExecutable = func() (string, error) { return filepath.FromSlash("C:/tools/awkit.exe"), nil }
 }
 
 // The Worker's claude runs with settings of its own for the run, none of the
@@ -35,7 +37,7 @@ func stubClaudeCLI(t *testing.T, options []string, mentions []string, atLeast bo
 func TestGuardArgs(t *testing.T) {
 	stubClaudeCLI(t, []string{"--settings", "--setting-sources", "--strict-mcp-config"}, []string{"dontAsk"}, true)
 	settingsFile := filepath.Join(t.TempDir(), "run", "claude-settings.json")
-	g := &WorkerGuard{StateRoot: `D:\games\rally`, Protected: []string{"develop", "main", ""}, AllowControl: true, SettingsFile: settingsFile}
+	g := &WorkerGuard{StateRoot: filepath.FromSlash("D:/games/rally"), Protected: []string{"develop", "main", ""}, AllowControl: true, SettingsFile: settingsFile}
 
 	args, err := (&ClaudeCodeBackend{Model: "sonnet"}).guardArgs(g)
 	if err != nil {
