@@ -236,7 +236,7 @@ function RunChip() {
   if (status.data?.run.state !== "running") return null;
   const target = status.data.target.issue_id;
   return (
-    <a href={href({ project: project.id, page: "activity", rest: [] })} className="hidden items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13.5px] font-bold text-live hover:bg-live/10 sm:flex">
+    <a href={href({ project: project.id, page: "run", rest: [] })} className="hidden items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13.5px] font-bold text-live hover:bg-live/10 sm:flex">
       <span className="relative flex size-2" aria-hidden>
         <span className="absolute inset-0 animate-ping rounded-full bg-live opacity-60" />
         <span className="relative size-2 rounded-full bg-live" />

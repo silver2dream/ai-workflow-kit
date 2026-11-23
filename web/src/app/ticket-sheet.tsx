@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ExternalLink, GitPullRequest, Hand, History, Link2, Ticket as TicketIcon } from "lucide-react";
+import { ExternalLink, GitPullRequest, Hand, History, Link2, Play, Ticket as TicketIcon } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DOT, Empty, Tag, TONE } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useOnboarding } from "@/onboarding/state";
 import { describe, STAGES, when } from "@/lib/words";
-import { useRoute } from "@/lib/router";
+import { href, useRoute } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 interface SheetApi {
@@ -55,7 +55,7 @@ export function TicketSheetProvider({ children }: { children: ReactNode }) {
 }
 
 function TicketDetail({ number, onOpen }: { number: number; onOpen: (n: number) => void }) {
-  const { tickets, events } = useProject();
+  const { project, tickets, events, status } = useProject();
   const ticket = tickets.data?.tickets?.open.find((t) => t.number === number);
   const history = (events.data?.events ?? []).filter((e) => e.issue_id === number);
   const prs = [...new Set(history.map((e) => e.pr_number).filter((n): n is number => !!n))];
@@ -88,6 +88,18 @@ function TicketDetail({ number, onOpen }: { number: number; onOpen: (n: number) 
                 到 GitHub 看工單上的留言：可以補充說明，再把它交回執行者；也可以改工單的內容，或關掉它。在工作台裡直接處理，會在之後的版本加上。
               </p>
             </div>
+          </div>
+        )}
+        {ticket && (ticket.stage === "ready" || ticket.stage === "rework") && status.data?.run.state !== "running" && (
+          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-border p-3.5">
+            <p className="min-w-0 flex-1 text-[14px] text-ink2">現在沒有在工作。可以只讓執行者做這一張，做完就停。</p>
+            <a
+              href={href({ project: project.id, page: "run", rest: [String(number)] })}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+            >
+              <Play className="size-4" aria-hidden />
+              只做這張
+            </a>
           </div>
         )}
         {ticket?.waits_for && ticket.waits_for.length > 0 && (
