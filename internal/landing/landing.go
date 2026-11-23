@@ -1,13 +1,14 @@
-// Package landing brings the documents a meeting of the council wrote onto
-// the project's integration branch. They are in the project's working tree
-// and nowhere else: a Worker, which starts from the integration branch, would
-// not see them, and a run, which starts only from a clean working tree, would
-// not start. They get there the way every change of the project does: on a
-// branch of their own, through a pull request that is merged once its checks
-// pass. The working tree is then brought up to the branch.
+// Package landing brings a change the workflow made for a person onto the
+// project's integration branch: the documents a meeting of the council wrote,
+// or the settings changed in the workbench. A Worker starts from the
+// integration branch, and a run only from a clean working tree: a change that
+// is only in the working tree is seen by neither. It gets there the way every
+// change of the project does: on a branch of its own, through a pull request
+// that is merged once its checks pass. The working tree is then brought up to
+// the branch.
 //
-// Nothing of the person's working tree is touched until the documents are on
-// the integration branch, and then only a file that is there exactly as it is
+// Nothing of the person's working tree is touched until the change is on the
+// integration branch, and then only a file that is there exactly as it is
 // here: what cannot be brought up is left as it is, and said.
 package landing
 
@@ -135,7 +136,7 @@ type GitHub interface {
 type Options struct {
 	// Root is the root of the project's repository.
 	Root string
-	// Integration is the branch the documents go to.
+	// Integration is the branch the change goes to.
 	Integration string
 	// Branch is the branch they go on, which is theirs: it is made again
 	// from the integration branch every time.
@@ -147,6 +148,10 @@ type Options struct {
 	Strategy string
 	// Changes are the files to land, as the working tree has them.
 	Changes []Change
+	// Edit makes the change in the worktree itself, after the Changes are
+	// copied in: what is edited is then the file as the integration branch
+	// has it, not as the working tree does. It is given the worktree's root.
+	Edit func(ctx context.Context, work string) error
 
 	Run    Runner // git; Exec when nil
 	GitHub GitHub // gh when nil
@@ -167,20 +172,20 @@ type Options struct {
 
 // Landed is what Land did.
 type Landed struct {
-	// PR is the pull request the documents went through; nil when there was
+	// PR is the pull request the change went through; nil when there was
 	// nothing to land, the integration branch having them already.
 	PR *PR
 }
 
-// ChecksFailed says the checks of the pull request did not pass: the
-// documents are not on the integration branch.
+// ChecksFailed says the checks of the pull request did not pass: the change
+// is not on the integration branch.
 type ChecksFailed struct {
 	PR     PR
 	Failed []string
 }
 
 func (e *ChecksFailed) Error() string {
-	return fmt.Sprintf("the checks of pull request #%d did not pass (%s): the documents are not on the integration branch; see %s", e.PR.Number, strings.Join(e.Failed, ", "), e.PR.URL)
+	return fmt.Sprintf("the checks of pull request #%d did not pass (%s): the change is not on the integration branch; see %s", e.PR.Number, strings.Join(e.Failed, ", "), e.PR.URL)
 }
 
 // ChecksAbsent says the project has CI for pull requests into the
@@ -192,7 +197,7 @@ type ChecksAbsent struct {
 }
 
 func (e *ChecksAbsent) Error() string {
-	return fmt.Sprintf("the project has CI for pull requests into the integration branch, and GitHub started none for pull request #%d in %s: see whether GitHub Actions runs for the repository, or merge it on GitHub yourself, then approve again (%s)", e.PR.Number, e.Wait, e.PR.URL)
+	return fmt.Sprintf("the project has CI for pull requests into the integration branch, and GitHub started none for pull request #%d in %s: see whether GitHub Actions runs for the repository, or merge it on GitHub yourself, then try again (%s)", e.PR.Number, e.Wait, e.PR.URL)
 }
 
 // ChecksTooLong says the checks did not end in the time they were given.
@@ -202,7 +207,7 @@ type ChecksTooLong struct {
 }
 
 func (e *ChecksTooLong) Error() string {
-	return fmt.Sprintf("the checks of pull request #%d did not end within %s: approve again once they have (%s)", e.PR.Number, e.Wait, e.PR.URL)
+	return fmt.Sprintf("the checks of pull request #%d did not end within %s: try again once they have (%s)", e.PR.Number, e.Wait, e.PR.URL)
 }
 
 // MergeRefused says GitHub would not merge the pull request: a review the
@@ -213,7 +218,7 @@ type MergeRefused struct {
 }
 
 func (e *MergeRefused) Error() string {
-	return fmt.Sprintf("GitHub did not merge pull request #%d (%v): merge it on GitHub, then approve again (%s)", e.PR.Number, e.Err, e.PR.URL)
+	return fmt.Sprintf("GitHub did not merge pull request #%d (%v): merge it on GitHub, then try again (%s)", e.PR.Number, e.Err, e.PR.URL)
 }
 
 func (e *MergeRefused) Unwrap() error { return e.Err }
@@ -258,21 +263,23 @@ func (o *Options) defaults() {
 func Land(ctx context.Context, opts Options) (*Landed, error) {
 	opts.defaults()
 	git := func(dir string, args ...string) (string, error) { return opts.Run(ctx, dir, "git", args...) }
-	if len(opts.Changes) == 0 {
+	if len(opts.Changes) == 0 && opts.Edit == nil {
 		return &Landed{}, nil
 	}
 	if _, err := git(opts.Root, "fetch", "--quiet", "origin", opts.Integration); err != nil {
 		return nil, fmt.Errorf("the integration branch %s cannot be fetched from origin: %w", opts.Integration, err)
 	}
 
-	work, err := os.MkdirTemp(filepath.Join(opts.Root, ".ai", "state"), "land-")
+	// In the state's folder for what lives for one step: git ignores it,
+	// and the workbench does not take a checkout made in it for a change of
+	// the run.
+	temp := filepath.Join(opts.Root, ".ai", "state", "tmp")
+	if err := os.MkdirAll(temp, 0o755); err != nil {
+		return nil, err
+	}
+	work, err := os.MkdirTemp(temp, "land-")
 	if err != nil {
-		if err := os.MkdirAll(filepath.Join(opts.Root, ".ai", "state"), 0o755); err != nil {
-			return nil, err
-		}
-		if work, err = os.MkdirTemp(filepath.Join(opts.Root, ".ai", "state"), "land-"); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	// The worktree is made in the folder MkdirTemp made, which must be empty
 	// for git, and taken away whatever happens.
@@ -293,6 +300,11 @@ func Land(ctx context.Context, opts Options) (*Landed, error) {
 			return nil, err
 		}
 	}
+	if opts.Edit != nil {
+		if err := opts.Edit(ctx, work); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := git(work, "add", "--all", "--", "."); err != nil {
 		return nil, err
 	}
@@ -301,18 +313,18 @@ func Land(ctx context.Context, opts Options) (*Landed, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(staged) == "" {
-		opts.Progress("The integration branch has the documents already: nothing to land")
+		opts.Progress("The integration branch has the change already: nothing to land")
 		return &Landed{}, nil
 	}
 	// The workflows a pull request runs are the integration branch's.
 	expect := ExpectsChecks(work, opts.Integration)
 	if _, err := git(work, "commit", "--quiet", "-m", opts.Title, "-m", opts.Body); err != nil {
-		return nil, fmt.Errorf("the documents cannot be committed: %w", err)
+		return nil, fmt.Errorf("the change cannot be committed: %w", err)
 	}
 	if _, err := git(work, "push", "--quiet", "--force", "origin", "HEAD:refs/heads/"+opts.Branch); err != nil {
 		return nil, fmt.Errorf("branch %s cannot be pushed to origin: %w", opts.Branch, err)
 	}
-	opts.Progress(fmt.Sprintf("Pushed the documents to branch %s", opts.Branch))
+	opts.Progress(fmt.Sprintf("Pushed the change to branch %s", opts.Branch))
 
 	pr, err := opts.GitHub.OpenPR(ctx, opts.Root, opts.Branch)
 	if err != nil {
@@ -320,11 +332,11 @@ func Land(ctx context.Context, opts Options) (*Landed, error) {
 	}
 	if pr == nil {
 		if pr, err = opts.GitHub.CreatePR(ctx, opts.Root, opts.Integration, opts.Branch, opts.Title, opts.Body); err != nil {
-			return nil, fmt.Errorf("the pull request of the documents cannot be opened: %w", err)
+			return nil, fmt.Errorf("the pull request of the change cannot be opened: %w", err)
 		}
 		opts.Progress(fmt.Sprintf("Opened pull request #%d: %s", pr.Number, pr.URL))
 	} else {
-		opts.Progress(fmt.Sprintf("Pull request #%d is open already, and has the documents as they are now: %s", pr.Number, pr.URL))
+		opts.Progress(fmt.Sprintf("Pull request #%d is open already, and has the change as it is now: %s", pr.Number, pr.URL))
 	}
 
 	if opts.OnPR != nil {
@@ -476,7 +488,7 @@ func Sync(ctx context.Context, run Runner, root, integration string, changes []C
 		}
 	}
 	if _, err := git("merge", "--quiet", "--ff-only", "origin/"+integration); err != nil {
-		return Synced{Why: fmt.Sprintf("%s here cannot be moved forward to origin (%v): the documents are on origin", integration, err)}, nil
+		return Synced{Why: fmt.Sprintf("%s here cannot be moved forward to origin (%v): the change is on origin", integration, err)}, nil
 	}
 	return Synced{Updated: true}, nil
 }

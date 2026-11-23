@@ -22,8 +22,9 @@ Usage:
 
 The workbench is a page on this computer for following the work: where
 every ticket is, what needs you, what each run did, and what awkit doctor
-finds. It listens on 127.0.0.1 only, with a new token each time it starts.
-Planning and runs are started with awkit plan and awkit run.
+finds. Plans are made, runs started and stopped, and the settings changed
+on it too, as awkit plan, awkit run, awkit stop and awkit settings do. It
+listens on 127.0.0.1 only, with a new token each time it starts.
 
 The project of the folder it starts in, or the one named, is added to it;
 others are added from the page. Closing the workbench does not stop work

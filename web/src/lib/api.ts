@@ -135,11 +135,12 @@ export interface RunOutput {
   fresh: boolean;
 }
 
-/** An answer the server gave with an error: what it said, and its status. */
+/** An answer the server gave with an error: what it said, its status, and the code it tells the error apart by, when it gave one. */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -178,7 +179,8 @@ export async function request<T>(method: string, path: string, body?: unknown): 
       throw new ApiError("工作台不認得這個瀏覽器了：請用終端機裡 awkit ui 最後印出的網址重新打開。", 401);
     }
     const said = data && typeof data === "object" && "error" in data ? String((data as { error: unknown }).error) : "";
-    throw new ApiError(said || `工作台回答 ${response.status}`, response.status);
+    const code = data && typeof data === "object" && "code" in data ? String((data as { code: unknown }).code) : undefined;
+    throw new ApiError(said || `工作台回答 ${response.status}`, response.status, code);
   }
   return data as T;
 }

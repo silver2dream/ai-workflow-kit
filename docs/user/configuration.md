@@ -3,6 +3,7 @@
 `.ai/config.yaml` 是專案對 AWK 說的話：有哪些 repo、往哪個分支合併、用什麼指令建置與測試。`awkit init` 寫下第一份。
 
 - 改過之後執行 `awkit generate`：`CLAUDE.md`、`AGENTS.md`、`.claude/rules/_kit/` 與 CI workflow 都是從這份檔案產生的。
+- 常改的部分也可以在工作台（`awkit ui`）的「設定」頁改：它會連同 `awkit generate` 產生的檔案開成 PR，CI 過了就合併，見[工作台](workbench.md#設定)。
 - `awkit validate` 檢查這份檔案，並列出**檔案裡有、但沒有任何程式會讀的鍵**：舊版寫下而現在不用的、拼錯的。那些鍵不會有任何作用，可以刪掉。
 - 沒寫的鍵用預設值。必填的只有 `project.name`、`project.type`、`git.integration_branch`，以及每個 repo 的 `name` 與 `path`。
 

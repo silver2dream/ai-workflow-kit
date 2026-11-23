@@ -224,3 +224,31 @@ func TestGenerate_KeepsTheLocalSettings(t *testing.T) {
 		t.Errorf("Warnings = %q, want the one about the settings", result.Warnings)
 	}
 }
+
+// LocalSettings writes Claude Code's local settings from the configuration,
+// and nothing that git keeps.
+func TestLocalSettings_WritesOnlyTheLocalSettings(t *testing.T) {
+	root := t.TempDir()
+	config := "project:\n  name: game\n  type: single-repo\nrepos:\n  - name: root\n    path: ./\n    type: root\n    language: go\n    verify:\n      build: go build ./...\n      test: go test ./...\ngit:\n  integration_branch: develop\n"
+	if err := os.MkdirAll(filepath.Join(root, ".ai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".ai", "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := LocalSettings(root); err != nil {
+		t.Fatal(err)
+	}
+	allow := allowOf(t, filepath.Join(root, ".claude", "settings.local.json"))
+	if !strings.Contains(strings.Join(allow, " "), "Bash(go:*)") {
+		t.Errorf("allow = %v", allow)
+	}
+	for _, other := range []string{"CLAUDE.md", "AGENTS.md", ".claude/agents", ".github"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(other))); !os.IsNotExist(err) {
+			t.Errorf("%s was written", other)
+		}
+	}
+	if err := LocalSettings(t.TempDir()); err == nil {
+		t.Error("a project without a configuration was not refused")
+	}
+}

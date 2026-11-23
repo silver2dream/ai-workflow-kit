@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * transit map has: the colour says who speaks before the name is read. None
  * of them is the signal's yellow, which is kept for what needs the owner.
  */
-const LINE = ["#0E7C86", "#B4235A", "#2F6FDE", "#7A5AF8", "#C2410C", "#15803D", "#8A5A00", "#475569"];
+export const LINE = ["#0E7C86", "#B4235A", "#2F6FDE", "#7A5AF8", "#C2410C", "#15803D", "#8A5A00", "#475569"];
 
 export interface Seat {
   id: string;

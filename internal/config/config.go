@@ -370,9 +370,15 @@ func LoadFile(path string) (*Config, error) {
 		}
 		return nil, err
 	}
+	return Parse(filepath.ToSlash(path), data)
+}
+
+// Parse reads a configuration from what its file holds, as LoadFile does;
+// file names it in an error.
+func Parse(file string, data []byte) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, &ParseError{File: filepath.ToSlash(path), Err: err}
+		return nil, &ParseError{File: file, Err: err}
 	}
 	if cfg.GitHub.Labels.ReviewFailed == "" && cfg.GitHub.Labels.ReviewFail != "" {
 		cfg.GitHub.Labels.ReviewFailed = cfg.GitHub.Labels.ReviewFail
