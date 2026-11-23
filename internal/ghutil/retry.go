@@ -6,7 +6,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"path"
 	"strings"
 	"time"
 
@@ -124,8 +124,9 @@ func RunWithRetry(ctx context.Context, cfg RetryConfig, name string, args ...str
 	return lastOutput, fmt.Errorf("gh command failed after %d attempts: %w", cfg.MaxAttempts, lastErr)
 }
 
-// isGH says whether a program is the gh CLI, by name or path.
+// isGH says whether a program is the gh CLI, by name or path. A backslash
+// separates on every platform: a name that might be gh is checked.
 func isGH(name string) bool {
-	base := strings.ToLower(filepath.Base(name))
+	base := strings.ToLower(path.Base(strings.ReplaceAll(name, `\`, "/")))
 	return base == "gh" || base == "gh.exe"
 }
