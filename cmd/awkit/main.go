@@ -133,6 +133,9 @@ func run() int {
 	case "detach":
 		// How the workbench starts work that outlives it; not for a person.
 		return cmdDetach(os.Args[2:])
+	case "guard":
+		// The hook that checks an agent's tool calls; not for a person.
+		return cmdGuard(os.Args[2:])
 	case "run", "kickoff":
 		// kickoff is the former name of run.
 		return cmdRun(os.Args[2:])

@@ -29,14 +29,21 @@
   - 可疑片段由 Worker 在回答最後一行 `AWK_SUSPICIOUS:` 回報，寫 flag 判定；現行 Worker 沒有結果 schema，結構化的 `suspicious` 欄位移到 1.2
   - 需求：R9
   - 完成：#276
-- [ ] 0.4 指令政策 hook
+- [x] 0.4 指令政策 hook
   - 相依：0.1
-  - `awkit guard tool --role <role>`（PreToolUse；exit 2＋原因；`onFailure: block`）；組合指令的解析；P0 的政策：主控 session 是主控、審查、解衝突需求的聯集，禁止 `gh pr merge`、推到整合與發版分支、讀家目錄的憑證、列印環境變數、對白名單以外主機的下載；`awkit generate` 把 hook 寫進 `settings.local.json`
+  - `awkit guard tool --role <role>`（PreToolUse；exit 2＋原因；Claude Code 2.1.295 起加 `onFailure: block`，更舊的版本 hook 出錯或逾時會放行，Worker 啟動時印出提醒）；組合指令與 `sh -c`、`cmd /c`、`powershell -Command`、`env`、`sudo`、`xargs` 等包裝的解析，讀不懂的指令一律擋
+  - P0 的政策：主控 session 是主控、審查、解衝突需求的聯集，禁止 `gh pr merge`、`gh issue create`、寫入類的 `gh api`、推到整合與發版分支（含 `main`、`master`、`develop`、`trunk`、`release/*`）、沒有 lease 的強制推送、刪分支、讀家目錄的憑證、列印環境變數、寫 `.git/`
+  - 連外：P0 沒有白名單，兩個角色都不能用 `curl`、`wget`、`ssh` 這類連外程式與 WebFetch、WebSearch；依角色的主機白名單由 3.2 的 egress proxy 提供
+  - `awkit generate` 把 hook 寫進 `settings.local.json`，保留人自己的 hook
   - 需求：R10
-- [ ] 0.5 Claude 執行者的角色設定與環境變數清理
+  - 完成：#277
+- [x] 0.5 Claude 執行者的角色設定與環境變數清理
   - 相依：0.4
-  - Claude 執行者帶 engine 產生的 `--settings`、`--setting-sources`、`--permission-mode dontAsk`、允許與禁止清單、hook；兩種執行者都以清過的環境變數啟動（不給 gh 憑證）
+  - Claude 執行者每次都帶 awkit 產生的 `--settings`、`--setting-sources ""`、`--strict-mcp-config`、`--permission-mode dontAsk`、允許與禁止清單、hook；CLI 缺這些旗標就不執行
+  - 兩種執行者都以清過的環境變數啟動（白名單；名稱像密鑰的變數與 gh 憑證不給，只留 backend 自己的登入變數）
+  - Codex 執行者沒有 hook 可掛，工具層的限制靠它自己的 sandbox，容器模式（P3）補上
   - 需求：R10
+  - 完成：#277
 - [ ] 0.6 對外文字掃描
   - 相依：0.1
   - awkit 送到 GitHub 的 PR 描述、留言、issue 內容先掃密鑰與個資；觸發就不送並轉人
