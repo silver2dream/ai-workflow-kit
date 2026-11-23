@@ -10,18 +10,25 @@
 
 ## P0 在現有架構上先補安全
 
-- [ ] 0.1 `internal/guard`：判定模型與事件
+- [x] 0.1 `internal/guard`：判定模型與事件
   - 相依：—
-  - `Verdict`、`Check` 介面、`guardrail_verdict` 事件類型；fail closed 的共用處理
+  - `Verdict`、`guardrail_verdict` 事件類型；沒有事件串流的程序（Worker 單獨執行、hook）寫到 `.ai/state/events/guard.jsonl`
+  - P0 的檢查是各自執行點上的函式，各自 fail closed（`Prepare` 遇到沒有信任等級的片段就擋、hook 讀不懂的呼叫就擋、CLI 太舊就不執行）；§5.7 的共用 `Check` 介面移到 4.1，組 pipeline 時建立
   - 需求：R0、R13
-- [ ] 0.2 規則層注入偵測與紅隊語料
+  - 完成：#276
+- [x] 0.2 規則層注入偵測與紅隊語料
   - 相依：0.1
-  - 有版本的規則檔（中英文、簡繁）；清理（零寬、雙向控制字元、HTML 註解、長度）；`internal/guard/testdata/` 的語料與召回率／誤報率報告
+  - 有版本的規則（`injection-rules/1`，中英文、簡繁）；清理（零寬、雙向控制字元、HTML 註解、長度）；`internal/guard/testdata/injection/` 的語料與召回率／誤報率測試
+  - 完成時的語料結果：block 19/19、flag 13/13、正常內容誤報 0/20；已知漏網 5 則記在 `known-misses`，留給 P4 的分類器
   - 需求：R9
-- [ ] 0.3 執行者 prompt 的來源標記與資料區塊
+  - 完成：#276
+- [x] 0.3 執行者 prompt 的來源標記與資料區塊
   - 相依：0.2
-  - `writePromptFile` 改由片段組成，每段帶 source／author／trust；工單（owner）、審查意見（agent）、PR 上人的意見（依寫入權限分 owner／external）、教訓（依狀態）；不可信片段以資料區塊放入並過規則層；結果的 `suspicious` 欄位
+  - Worker 的 prompt 由片段組成，每段帶 source／author／trust：工單（owner）、程式碼地圖（repo）、審查意見與教訓（agent）、統計（system）；不可信片段以資料區塊放入並過規則層，明顯的注入擋下（結果 `blocked`）
+  - PR 上的意見：有寫入權限者的以 agent 等級放入，因為審查 agent 用同一個帳號發言，分不出是人寫的；沒有寫入權限者的不放。依作者細分的信任等級移到 1.3
+  - 可疑片段由 Worker 在回答最後一行 `AWK_SUSPICIOUS:` 回報，寫 flag 判定；現行 Worker 沒有結果 schema，結構化的 `suspicious` 欄位移到 1.2
   - 需求：R9
+  - 完成：#276
 - [ ] 0.4 指令政策 hook
   - 相依：0.1
   - `awkit guard tool --role <role>`（PreToolUse；exit 2＋原因；`onFailure: block`）；組合指令的解析；P0 的政策：主控 session 是主控、審查、解衝突需求的聯集，禁止 `gh pr merge`、推到整合與發版分支、讀家目錄的憑證、列印環境變數、對白名單以外主機的下載；`awkit generate` 把 hook 寫進 `settings.local.json`
@@ -137,6 +144,7 @@
 - [ ] 4.1 分類器介面與 sidecar
   - 相依：0.2、3.3
   - `Classify` 介面、切段、快取、門檻、fail closed；`judge`、`prompt-guard-2-86m`、`qwen3guard-0.6b` 三種實作（後兩者為 sidecar 容器）
+  - §5.7 的 `Check` 介面，把 P0 的各項檢查（注入規則、工具政策、對外文字、diff 訊號、教訓篩檢）接成一條 pipeline
   - 需求：R9.4
 - [ ] 4.2 分類器評估與預設
   - 相依：4.1

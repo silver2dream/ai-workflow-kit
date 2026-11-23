@@ -173,7 +173,7 @@
 
 | 角色 | 拿到 | 拿不到 |
 |---|---|---|
-| implementer | 系統指示（system）、工單（owner）、`AGENTS.md` 與適用的規則（repo）、上一輪的審查意見（agent）、人在 PR 上的意見（owner：有寫入權限者；external：其他人）、人補的說明（owner）、教訓（依狀態） | 其他工單、engine 的狀態、其他線的任何東西 |
+| implementer | 系統指示（system）、工單（owner）、`AGENTS.md` 與適用的規則（repo）、上一輪的審查意見（agent）、人在 PR 上的意見（owner：有寫入權限者；external：其他人；engine 記下自己發過的留言 id，那些是 agent——agent 與人用同一個帳號發言，只看作者分不出來）、人補的說明（owner）、教訓（依狀態） | 其他工單、engine 的狀態、其他線的任何東西 |
 | reviewer | 系統指示、工單與驗收條件（owner）、diff（agent）、engine 的測試結果（system）、適用的規則（repo） | 執行者的自我評價與對話紀錄 |
 | resolver | 系統指示、衝突的檔案與兩邊的版本（repo／agent）、兩張相關工單的摘要（owner） | 其他 |
 | triage | 系統指示、錯誤與相關 log（external）、可選的處置清單（system） | 任何憑證、任何工單內容以外的資料 |
