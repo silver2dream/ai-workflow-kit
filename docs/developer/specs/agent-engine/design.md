@@ -178,6 +178,7 @@
 
 **審查與解衝突拆成獨立程序**：
 - 審查：engine 做 `prepare-review` 的事（收集 diff、工單、驗收條件、測試結果）→ 啟動 reviewer → 拿到 `StructuredReview`（schema 現有）→ engine 做 `submit-review` 的證據關卡與發表審查 → 通過的進合併佇列（合併從 `submit-review` 移到合併佇列）。
+- 審查的判斷與對外動作分開（1.4a）：`internal/reviewer` 的 `SubmitReview` 做全部判斷（CI、證據關卡、JiT 測試、分數門檻、合併失敗的原因），對外的動作（取工單、留言、核准或要求修改、合併、問合併狀態、關 issue、改標籤、記下已落地、清 worktree）都經過 `Publisher`。主控用 `ghPublisher`，照舊用 gh 與標籤；engine 給自己的 `Publisher`，不改標籤（狀態在線裡，標籤由 §6 的投影寫）。結果多一個 `Next`（`merged`、`rework`、`review_retry`、`resolve_conflict`、`resolve_rebase`、`needs_you`），engine 依它轉線，不讀標籤。engine 自己跑的測試以 `TestRun` 傳入，證據關卡核對它，不再跑一次。兩條路共用一套判斷，1.7 的影子模式才比得出分歧。
 - 解衝突：engine 在 rebase 停住的 worktree 啟動 resolver → 拿到 `{result: RESOLVED|TOO_COMPLEX|FAILED, files, reason}` → engine 檢查沒有衝突標記、改動只在衝突檔案、驗證通過 → 繼續 rebase、push。現在由主控用 `gh issue edit` 改標籤的步驟（`references/conflict-resolution.md`）改由 engine 做。
 
 ### 5.6 Context builder 與任務信封

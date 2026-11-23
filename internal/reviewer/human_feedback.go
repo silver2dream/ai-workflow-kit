@@ -538,7 +538,7 @@ var (
 func sendBackForHumanFeedback(ctx context.Context, opts SubmitReviewOptions, h humanReview) *SubmitReviewResult {
 	fmt.Printf("[REVIEW] Maintainer review feedback is open on the current commit — not merging, sending the Worker back\n")
 
-	if err := labelIssueFunc(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+	if err := opts.publisher().Labels(ctx, opts.IssueNumber, []string{"ai-task"}, []string{"pr-ready"}); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 	}
 	comment := fmt.Sprintf(`## AWK Review: 維護者的審查意見待處理
@@ -550,7 +550,7 @@ PR #%d 目前的 commit 上有維護者留下的審查意見。它們優先於�
 ---
 **Worker 請根據以上意見修改後重新提交。**
 PR: #%d`, opts.PRNumber, formatHumanFeedback(h.open), opts.PRNumber)
-	if err := commentIssueFunc(ctx, opts.IssueNumber, comment, opts.GHTimeout); err != nil {
+	if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, comment); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
 
@@ -561,7 +561,7 @@ PR: #%d`, opts.PRNumber, formatHumanFeedback(h.open), opts.PRNumber)
 		Source:   sourceHuman,
 		Refs:     feedbackRefs(fresh),
 	})
-	return &SubmitReviewResult{Result: "changes_requested", Reason: "maintainer review feedback is open on the current commit"}
+	return &SubmitReviewResult{Result: "changes_requested", Reason: "maintainer review feedback is open on the current commit", Next: NextRework}
 }
 
 // escalateOpenHumanFeedback stops short of merging when the Worker was
@@ -570,7 +570,7 @@ PR: #%d`, opts.PRNumber, formatHumanFeedback(h.open), opts.PRNumber)
 func escalateOpenHumanFeedback(ctx context.Context, opts SubmitReviewOptions, h humanReview) *SubmitReviewResult {
 	fmt.Printf("[REVIEW] Maintainer review feedback is still open and nothing was pushed since — needs a person\n")
 
-	if err := labelIssueFunc(ctx, opts.IssueNumber, []string{"needs-human-review"}, []string{"pr-ready"}, opts.GHTimeout); err != nil {
+	if err := opts.publisher().Labels(ctx, opts.IssueNumber, []string{"needs-human-review"}, []string{"pr-ready"}); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to edit issue labels: %v\n", err)
 	}
 	comment := fmt.Sprintf(`## AWK Review: 維護者的審查意見仍未處理（需要人工介入）
@@ -585,10 +585,10 @@ PR #%d 目前的 commit 上仍有維護者的審查意見，而 Worker 上一輪
 - 自行推送修正，或直接合併
 
 PR: #%d`, opts.PRNumber, formatHumanFeedback(h.open), opts.PRNumber)
-	if err := commentIssueFunc(ctx, opts.IssueNumber, comment, opts.GHTimeout); err != nil {
+	if err := opts.publisher().CommentIssue(ctx, opts.IssueNumber, comment); err != nil {
 		fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to post issue comment: %v\n", err)
 	}
-	return &SubmitReviewResult{Result: "merge_failed", Reason: "maintainer review feedback is still open on the current commit"}
+	return &SubmitReviewResult{Result: "merge_failed", Reason: "maintainer review feedback is still open on the current commit", Next: NextNeedsYou}
 }
 
 // maintainerFeedbackForReviewer renders a pull request's maintainer feedback
