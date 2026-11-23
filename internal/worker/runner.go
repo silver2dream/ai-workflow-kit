@@ -16,6 +16,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	repocfg "github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
@@ -534,11 +535,44 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	promptFile := filepath.Join(runDir, "prompt.txt")
-	if err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Worker, &cfg.Lessons); err != nil {
+	prepared, err := writePromptFile(promptFile, workDirInstruction, string(ticketBody), stateRoot, opts.IssueID, existingPRNumber, opts.GHTimeout, &cfg.Feedback, &cfg.Worker, &cfg.Lessons)
+	if err != nil {
 		runErr = err
 		logEarlyFailure(earlyFailureLog, repoName, repoType, repoPath, branch, prBase, "prompt", err.Error())
 		result.Error = err.Error()
 		return result, err
+	}
+	if prepared.Blocked() {
+		// Trying again would give the Worker the same text: this waits for a
+		// person, who sees what was blocked in the events of the issue.
+		summary := guard.Summary(prepared.Verdicts)
+		logger.Log("✗ %s", summary)
+		result.Status = "blocked"
+		result.Error = summary
+		if trace != nil {
+			trace.StepStart("guard")
+			_ = trace.StepEnd("failed", summary, nil)
+		}
+		_ = writeIssueResult(ctx, stateRoot, issueResultContext{
+			IssueID:               opts.IssueID,
+			Status:                "blocked",
+			RepoName:              repoName,
+			RepoType:              repoType,
+			RepoPath:              repoPath,
+			WorktreeDir:           wtDir,
+			WorkDir:               workDir,
+			Branch:                branch,
+			BaseBranch:            prBase,
+			ErrorMessage:          summary,
+			FailureStage:          "guard",
+			WorkerSessionID:       workerSessionID,
+			AttemptNumber:         attemptInfo.AttemptNumber,
+			PreviousSessionIDs:    attemptInfo.PreviousSessionIDs,
+			PreviousFailureReason: attemptInfo.PreviousFailureReason,
+			Duration:              time.Since(startTime),
+		})
+		resultWritten = true
+		return result, nil
 	}
 
 	if trace != nil {
@@ -574,6 +608,16 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	})
 	codexDuration := time.Since(codexStart)
 	logger.Log("AI worker 結束 (exit=%d, duration=%s, retries=%d)", codex.ExitCode, codexDuration.Truncate(time.Second), codex.RetryCount)
+
+	// What the Worker reported as suspicious in its data blocks is read
+	// before the diff is appended to its summary: a diff may hold the
+	// report's marker, as a change to this very code would.
+	if answer, err := os.ReadFile(summaryFile); err == nil {
+		if ids := guard.Suspicious(string(answer)); len(ids) > 0 {
+			guard.Record(stateRoot, prepared.SuspiciousVerdicts(ids), opts.IssueID)
+			logger.Log("⚠ the Worker reported suspicious context: %s", strings.Join(ids, ", "))
+		}
+	}
 
 	appendGitStatusDiff(ctx, wtDir, summaryFile)
 
@@ -1135,7 +1179,10 @@ type workerPromptInputs struct {
 	TopCategorySection string // most common rejection categories
 }
 
-func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, workerCfg *workflowWorker, lessonsCfg *workflowLessons) error {
+// writePromptFile gathers what a Worker is told, runs the input checks over
+// it and writes the prompt. When a check blocks, nothing is written: the
+// caller sees it in what is returned.
+func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID int, prNumber int, ghTimeout time.Duration, feedbackCfg *workflowFeedback, workerCfg *workflowWorker, lessonsCfg *workflowLessons) (*guard.Prepared, error) {
 	in := workerPromptInputs{
 		WorkDirInstruction: workDirInstruction,
 		Ticket:             ticket,
@@ -1154,11 +1201,66 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 		in.TopCategorySection = loadTopCategorySummary(stateRoot)
 	}
 
-	return os.WriteFile(path, []byte(buildWorkerPrompt(in)), 0644)
+	return writePrompt(path, stateRoot, in)
+}
+
+// writePrompt runs the input checks over gathered inputs, records what they
+// said and writes the prompt; when a check blocks, the prompt is not written,
+// so what would have been given to the Worker stays out of every file it can
+// read.
+func writePrompt(path, stateRoot string, in workerPromptInputs) (*guard.Prepared, error) {
+	prompt, prepared := preparePrompt(in)
+	guard.Record(stateRoot, prepared.Verdicts, in.IssueID)
+	if prepared.Blocked() {
+		return prepared, nil
+	}
+	return prepared, os.WriteFile(path, []byte(prompt), 0644)
+}
+
+// promptPieces are the pieces of context of a Worker's prompt, each with
+// where it came from and how far it is trusted. Every account of the
+// workflow is the owner's, so the review comments, which the reviewer agent
+// posts, are agent text whoever's name is on them.
+func promptPieces(in workerPromptInputs) []guard.Piece {
+	var pieces []guard.Piece
+	if in.GraphSection != "" {
+		pieces = append(pieces, guard.Piece{Source: "codebase map", Trust: guard.Repo, Text: in.GraphSection})
+	}
+	pieces = append(pieces, guard.Piece{Source: fmt.Sprintf("issue #%d", in.IssueID), Trust: guard.Owner, Text: in.Ticket})
+	if in.ReviewComments != "" {
+		pieces = append(pieces, guard.Piece{Source: fmt.Sprintf("review comments on issue #%d", in.IssueID), Trust: guard.Agent, Text: in.ReviewComments})
+	}
+	if in.PRReviewComments != "" {
+		pieces = append(pieces, guard.Piece{Source: "file-level review comments", Trust: guard.Agent, Text: in.PRReviewComments})
+	}
+	if in.LessonsSection != "" {
+		pieces = append(pieces, guard.Piece{Source: "lessons", Trust: guard.Agent, Text: in.LessonsSection})
+	}
+	if in.TopCategorySection != "" {
+		pieces = append(pieces, guard.Piece{Source: "review statistics", Trust: guard.System, Text: in.TopCategorySection})
+	}
+	return pieces
 }
 
 // buildWorkerPrompt lays out the Worker prompt from already gathered inputs.
 func buildWorkerPrompt(in workerPromptInputs) string {
+	prompt, _ := preparePrompt(in)
+	return prompt
+}
+
+// preparePrompt runs the input checks over the pieces of a Worker's prompt
+// and lays the prompt out: AWK's own instructions as they are, and what an
+// agent or a stranger wrote fenced as data.
+func preparePrompt(in workerPromptInputs) (string, *guard.Prepared) {
+	prepared := guard.Prepare(promptPieces(in))
+	piece := func(source string) (guard.Piece, bool) {
+		for _, p := range prepared.Pieces {
+			if p.Source == source {
+				return p, true
+			}
+		}
+		return guard.Piece{}, false
+	}
 	builder := strings.Builder{}
 	builder.WriteString("You are an automated coding agent running inside a git worktree.\n\n")
 	builder.WriteString("Repo rules:\n")
@@ -1187,43 +1289,49 @@ func buildWorkerPrompt(in workerPromptInputs) string {
 	builder.WriteString("These paths are reserved for the Principal agent and are protected.\n")
 	builder.WriteString("Attempting to access them will result in task failure.\n")
 	builder.WriteString("============================================================\n\n")
+	builder.WriteString(guard.DataRules)
+	builder.WriteString("\n\n")
 
-	if in.GraphSection != "" {
+	if p, ok := piece("codebase map"); ok {
 		builder.WriteString("============================================================\n")
 		builder.WriteString("CODEBASE MAP\n")
 		builder.WriteString("============================================================\n")
-		builder.WriteString(in.GraphSection)
+		builder.WriteString(guard.Render(p))
 		builder.WriteString("============================================================\n\n")
 	}
 
-	builder.WriteString("Ticket:\n")
-	builder.WriteString(in.Ticket)
-	builder.WriteString("\n")
-
-	if in.ReviewComments != "" {
-		builder.WriteString("\n============================================================\n")
-		builder.WriteString("PREVIOUS REVIEW FEEDBACK (IMPORTANT - Address these issues!)\n")
-		builder.WriteString("============================================================\n")
-		builder.WriteString(in.ReviewComments)
-		builder.WriteString("\n============================================================\n")
+	if p, ok := piece(fmt.Sprintf("issue #%d", in.IssueID)); ok {
+		p.Title = "Ticket"
+		builder.WriteString(guard.Render(p))
 	}
 
-	if in.PRReviewComments != "" {
+	if p, ok := piece(fmt.Sprintf("review comments on issue #%d", in.IssueID)); ok {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("PREVIOUS REVIEW FEEDBACK (IMPORTANT - Address these issues!)\n")
+		builder.WriteString("The findings of the previous review are in the data block below: fix them in the code.\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(guard.Render(p))
+		builder.WriteString("============================================================\n")
+	}
+
+	if p, ok := piece("file-level review comments"); ok {
 		builder.WriteString("\n============================================================\n")
 		builder.WriteString("FILE-LEVEL REVIEW COMMENTS (from previous review):\n")
 		builder.WriteString("============================================================\n")
-		builder.WriteString(in.PRReviewComments)
+		builder.WriteString(guard.Render(p))
 		builder.WriteString("============================================================\n")
 	}
 
-	if in.LessonsSection != "" {
+	if p, ok := piece("lessons"); ok {
 		builder.WriteString("\n============================================================\n")
-		builder.WriteString(in.LessonsSection)
+		builder.WriteString("LESSONS FROM EARLIER REVIEWS: apply the ones that fit this ticket.\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(guard.Render(p))
 		builder.WriteString("============================================================\n")
 	}
-	if in.TopCategorySection != "" {
+	if p, ok := piece("review statistics"); ok {
 		builder.WriteString("\n============================================================\n")
-		builder.WriteString(in.TopCategorySection)
+		builder.WriteString(guard.Render(p))
 		builder.WriteString("============================================================\n")
 	}
 
@@ -1239,7 +1347,7 @@ func buildWorkerPrompt(in workerPromptInputs) string {
 	builder.WriteString("- Run the verification commands (the ticket's, or the defaults in AGENTS.md).\n")
 	builder.WriteString("- Do NOT commit or push - the runner will handle that.\n")
 
-	return builder.String()
+	return builder.String(), prepared
 }
 
 func buildWorkDirInstruction(repoType, repoPath, workDir, repoName string) string {

@@ -8,11 +8,13 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 )
 
-// Review feedback is pasted into the Worker prompt as instructions, and the
-// Worker runs unattended with write access to the worktree. On a public
-// repository anyone can comment on an issue or a pull request, so feedback is
-// taken only from the account running the workflow or from accounts with
-// write access. The text of a comment proves nothing about who wrote it.
+// Review feedback goes into the Worker prompt, and the Worker runs unattended
+// with write access to the worktree. On a public repository anyone can
+// comment on an issue or a pull request, so feedback is taken only from the
+// account running the workflow or from accounts with write access. The text
+// of a comment proves nothing about who wrote it, and the reviewer agent
+// posts under the owner's account: what is taken is agent text, which the
+// prompt fences as data and the guard screens first (see promptPieces).
 
 // issueComment is the part of `gh issue view --json comments` used here.
 type issueComment struct {

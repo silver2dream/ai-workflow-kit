@@ -117,6 +117,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `kickoff` | `awkit run`：啟動前的檢查、lock、PTY、log |
 | `analyzer` | 決策引擎：從 GitHub 的狀態決定下一步，計數迴圈與連續失敗 |
 | `worker` | 派工、runner、backend、安全檢查、結果檢查 |
+| `guard` | guardrail 共用的部分：判定（`Verdict`，寫成 `guardrail_verdict` 事件）、帶來源與信任等級的 context 片段、清理看不見的字元、規則層注入偵測（`injection.go`，含中英文；語料在 `testdata/injection/`）、把不可信的片段包成資料區塊。Worker 的 prompt 由它組成，被擋下的票不派出去（`blocked`）。見 [Agent Engine](specs/agent-engine/design.md) §9 |
 | `reviewer` | `prepare-review`、`submit-review`、證據驗證、多模型審查、人的意見、合併 |
 | `jittest` | 審查時依 diff 產生並執行測試 |
 | `lessons` | 學習迴圈：記錄 → 濃縮 → 放進 prompt → 結算 |

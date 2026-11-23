@@ -77,7 +77,7 @@ awkit run
 
 ### 需要人處理（`needs-human-review`）
 
-流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改。issue 上的留言會說是哪一種。
+流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改；Worker 要讀的內容被 guardrail 擋下（見下一節）。issue 上的留言會說是哪一種。
 
 處理完之後拿掉標籤，票就回到佇列：
 
@@ -85,6 +85,16 @@ awkit run
 gh issue edit 42 --remove-label needs-human-review
 awkit run
 ```
+
+### 被 guardrail 擋下（`blocked`）
+
+Worker 開工前，AWK 會檢查它要讀的內容。工單是你寫的或核可過的，照原樣給；審查意見、教訓這些由 agent 寫的內容，會先拿掉看不見的字元與 HTML 註解，再比對注入的寫法（例如「ignore all previous instructions」「忽略之前的所有指示」、假的對話或工具呼叫格式、把密鑰送到外部的指令）。明顯是注入的會擋下：這張票不派出去，標上 `needs-human-review`，issue 上的留言寫出是哪條規則、內容來自哪裡，但不貼原文（Worker 會讀 GitHub）。
+
+```bash
+awkit events --issue 42 --type guardrail_verdict   # 被擋下的原文與原因，只在這台電腦上
+```
+
+那段文字如果沒問題（例如是在討論注入的例子），到留言寫的來源把它改掉或刪掉，再拿掉標籤。只是可疑、不到擋下的內容，會照樣交給 Worker，但包在標明來源的資料區塊裡，並記一筆在同一個地方。
 
 ### 審查一直退回
 
