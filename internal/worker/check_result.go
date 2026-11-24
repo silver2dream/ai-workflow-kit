@@ -108,7 +108,7 @@ func handleMissingResult(ctx context.Context, opts CheckResultOptions) (*CheckRe
 
 	if err != nil {
 		// No trace file either - worker hasn't started or very early failure
-		return waitAndReturnNotFound(opts.WaitDuration)
+		return waitAndReturnNotFound(ctx, opts.WaitDuration)
 	}
 
 	// Check if worker is still running via PID
@@ -130,7 +130,7 @@ func handleMissingResult(ctx context.Context, opts CheckResultOptions) (*CheckRe
 	}
 
 	// Worker is still running - wait and return not_found
-	return waitAndReturnNotFound(opts.WaitDuration)
+	return waitAndReturnNotFound(ctx, opts.WaitDuration)
 }
 
 // handleCrashedWorker handles a crashed worker (dead process, no result)
@@ -181,9 +181,15 @@ func handleTimeoutWorker(ctx context.Context, opts CheckResultOptions, trace *Ex
 	}, nil
 }
 
-// waitAndReturnNotFound waits for the specified duration and returns not_found
-func waitAndReturnNotFound(duration time.Duration) (*CheckResultOutput, error) {
-	time.Sleep(duration)
+// waitAndReturnNotFound waits for the specified duration, or until ctx is
+// done, and returns not_found
+func waitAndReturnNotFound(ctx context.Context, duration time.Duration) (*CheckResultOutput, error) {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
 	return &CheckResultOutput{
 		Status: "not_found",
 	}, nil

@@ -267,3 +267,16 @@ func ReadLanes(root string) ([]Lane, error) {
 	sort.Slice(lanes, func(a, b int) bool { return lanes[a].Issue < lanes[b].Issue })
 	return lanes, nil
 }
+
+// Note writes an event of the engine that is no transition (a command, a
+// run's start and end) to its log, beside the transitions. Rebuild passes
+// it over.
+func (j *Journal) Note(eventType, level string, issue int, data any) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	opts := []trace.EventOption{trace.WithData(data)}
+	if issue != 0 {
+		opts = append(opts, trace.WithIssue(issue))
+	}
+	return j.writer.Write(Component, eventType, level, opts...)
+}

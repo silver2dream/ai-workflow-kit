@@ -40,6 +40,7 @@ func IsRetryable(output string, exitCode int) bool {
 		"could not resolve to", // GraphQL's "not found": no such issue, PR or repository
 		"422", "validation failed",
 		"already exists",
+		"your own pull request", // no approval or request for changes from a pull request's author
 	}
 	lower := strings.ToLower(output)
 	for _, s := range nonRetryable {

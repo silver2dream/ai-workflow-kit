@@ -139,6 +139,24 @@ type Rules struct {
 type Agents struct {
 	Builtin []string      `yaml:"builtin"`
 	Custom  []CustomAgent `yaml:"custom"`
+	// Reviewer and Resolver are the settings of the engine's reviewer and
+	// resolver (internal/agent), when the engine runs the workflow: what is
+	// left empty keeps the role's default. The engine refuses settings that
+	// go past what the role may do.
+	Reviewer AgentRole `yaml:"reviewer"`
+	Resolver AgentRole `yaml:"resolver"`
+}
+
+// AgentRole is the settings of one of the engine's agents.
+type AgentRole struct {
+	// Backend is claude-code or codex.
+	Backend string `yaml:"backend"`
+	// Model and Effort are the backend's own names.
+	Model  string `yaml:"model"`
+	Effort string `yaml:"effort"`
+	// Minutes is how long one run may take; USD how much it may spend.
+	Minutes int     `yaml:"minutes"`
+	USD     float64 `yaml:"usd"`
 }
 
 // CustomAgent is a subagent the project defines itself.

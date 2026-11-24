@@ -2,10 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/engine"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
@@ -79,7 +83,7 @@ func TestStopRun(t *testing.T) {
 	dir := inNewDir(t)
 
 	var out bytes.Buffer
-	if code := stopRun(&out, dir, false); code != 0 || !strings.Contains(out.String(), "No run is going") {
+	if code := stopRun(&out, dir, stopAsk{}); code != 0 || !strings.Contains(out.String(), "No run is going") {
 		t.Errorf("no run: code = %d, says %q", code, out.String())
 	}
 	if _, present := stopmark.Read(dir); present {
@@ -87,7 +91,7 @@ func TestStopRun(t *testing.T) {
 	}
 
 	out.Reset()
-	if code := stopRun(&out, dir, true); code != 0 || !strings.Contains(out.String(), "Asked the run to stop") || !strings.Contains(out.String(), "finishes first") {
+	if code := stopRun(&out, dir, stopAsk{running: true}); code != 0 || !strings.Contains(out.String(), "Asked the run to stop") || !strings.Contains(out.String(), "finishes first") {
 		t.Errorf("a run is going: code = %d, says %q", code, out.String())
 	}
 	if reason, present := stopmark.Read(dir); !present || reason != "user_stopped" {
@@ -105,5 +109,72 @@ func TestStopRun(t *testing.T) {
 	})
 	if !strings.Contains(said, "No run is going") {
 		t.Errorf("awkit stop without a run says %q", said)
+	}
+}
+
+// standInEngine answers the commands in a project's inbox as the engine
+// does, until the test ends.
+func standInEngine(t *testing.T, root string) {
+	t.Helper()
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+			pending, _ := engine.Pending(root)
+			for _, c := range pending {
+				r := engine.Reply{ID: c.ID, Kind: c.Kind, Result: engine.Applied, Reason: "taken as " + c.Kind, At: time.Now()}
+				data, _ := json.Marshal(r)
+				_ = os.MkdirAll(filepath.Join(root, filepath.FromSlash(engine.OutboxDir)), 0o755)
+				_ = os.WriteFile(filepath.Join(root, filepath.FromSlash(engine.OutboxDir), c.ID+".json"), data, 0o644)
+				_ = os.Remove(filepath.Join(root, filepath.FromSlash(engine.InboxDir), c.ID+".json"))
+			}
+		}
+	}()
+}
+
+// A run of the engine is given the stop through its inbox, and says what it
+// did with it; --now ends it at once, and only a run of the engine.
+func TestStopRun_TheEngine(t *testing.T) {
+	dir := inNewDir(t)
+	var out bytes.Buffer
+	if code := stopRun(&out, dir, stopAsk{running: true, now: true}); code != 1 {
+		t.Errorf("--now for the Principal's run: code = %d", code)
+	}
+	if _, present := stopmark.Read(dir); present {
+		t.Error("--now for the Principal's run wrote a marker")
+	}
+
+	standInEngine(t, dir)
+	out.Reset()
+	if code := stopRun(&out, dir, stopAsk{running: true, engine: true, wait: 5 * time.Second}); code != 0 || !strings.Contains(out.String(), "taken as stop") {
+		t.Errorf("stop: code = %d, says %q", code, out.String())
+	}
+	if _, present := stopmark.Read(dir); !present {
+		t.Error("the marker was not written for the engine's run")
+	}
+	out.Reset()
+	if code := stopRun(&out, dir, stopAsk{running: true, engine: true, now: true, wait: 5 * time.Second}); code != 0 || !strings.Contains(out.String(), "taken as stop_now") || !strings.Contains(out.String(), "The run has stopped.") {
+		t.Errorf("stop --now: code = %d, says %q", code, out.String())
+	}
+	// A run that still beats is not said to have stopped.
+	run, _ := json.Marshal(engine.RunInfo{PID: os.Getpid(), Beat: time.Now().Add(time.Minute)})
+	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(engine.RunFile)), run, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := stopRun(&out, dir, stopAsk{running: true, engine: true, now: true, wait: 300 * time.Millisecond}); code != 0 || !strings.Contains(out.String(), "still ending") {
+		t.Errorf("stop --now of a run that goes on: code = %d, says %q", code, out.String())
+	}
+
+	// An engine that does not answer in time is said to have been asked.
+	quiet := inNewDir(t)
+	out.Reset()
+	if code := stopRun(&out, quiet, stopAsk{running: true, engine: true, now: true, wait: 50 * time.Millisecond}); code != 0 || !strings.Contains(out.String(), "has not answered yet") {
+		t.Errorf("no answer: code = %d, says %q", code, out.String())
 	}
 }

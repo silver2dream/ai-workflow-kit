@@ -183,3 +183,26 @@ func TestCheckResult_NoTraceReturnsNotFound(t *testing.T) {
 		t.Fatalf("Status = %q, want not_found (no trace yet)", out.Status)
 	}
 }
+
+// The wait for a result ends when the caller is done waiting: a run stopped
+// at once does not sit out the rest of it.
+func TestCheckResult_WaitEndsWithTheContext(t *testing.T) {
+	stubGH(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	out, err := CheckResult(ctx, CheckResultOptions{
+		IssueNumber:  7,
+		StateRoot:    t.TempDir(),
+		WaitDuration: time.Minute,
+	})
+	if err != nil || out.Status != "not_found" {
+		t.Fatalf("CheckResult: %+v, %v", out, err)
+	}
+	if waited := time.Since(start); waited > 10*time.Second {
+		t.Errorf("waited %s after the context was done", waited)
+	}
+}

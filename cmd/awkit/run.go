@@ -219,6 +219,12 @@ func cmdRun(args []string) int {
 	// '<label> not found'. Best-effort — a permission failure is just a warning.
 	ensureWorkflowLabels(configPath, output)
 
+	// The engine runs the workflow in the Principal's place when it is asked
+	// to (AWKIT_ENGINE=engine), in the same lock and session.
+	if engineMode() {
+		return runEngine(*issue, logger, output, endPrincipalSession)
+	}
+
 	// Build Claude CLI command
 	// Use stream-json format for real-time streaming output
 	// Use principal-workflow Skill for deterministic workflow execution

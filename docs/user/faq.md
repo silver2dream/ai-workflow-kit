@@ -56,7 +56,7 @@ Worker 在 `.worktrees/` 下自己的 worktree 裡工作，只能透過 pull req
 
 ### 怎麼讓它停下來？
 
-`awkit stop`：做完手上這一步就停。要立刻停，在啟動 `awkit run` 的終端機按 Ctrl-C。之後 `awkit run` 會從停下的地方接著做。
+`awkit stop`：做完手上這一步就停。要立刻停，在啟動 `awkit run` 的終端機按 Ctrl-C；以預覽中的 engine 跑的（`AWKIT_ENGINE=engine awkit run`）也可以在任何終端機用 `awkit stop --now`。之後 `awkit run` 會從停下的地方接著做。
 
 ### `awkit run --dry-run` 做什麼？
 
