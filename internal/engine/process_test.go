@@ -98,7 +98,7 @@ func TestServe_StopNow(t *testing.T) {
 	go func() {
 		<-started
 		// The run file says what it is at.
-		if r, ok := ReadRun(f.e.Root); !ok || r.Step == nil || r.Step.Action != analyzer.ActionDispatchWorker || r.Step.Issue != 12 || !r.Alive(time.Now()) {
+		if r, ok := ReadRun(f.e.Root); !ok || r.Step == nil || r.Step.Action != analyzer.ActionDispatchWorker || r.Step.Issue != 12 || !r.Alive(f.e.clock()) {
 			t.Errorf("run file while at work: %+v, %v", r, ok)
 		}
 		c, _ := Send(f.e.Root, Command{Kind: CommandStopNow, By: "awkit stop --now"})
@@ -113,7 +113,7 @@ func TestServe_StopNow(t *testing.T) {
 		t.Errorf("reply: %+v, %v", r, ok)
 	}
 	r, _ := ReadRun(f.e.Root)
-	if r.Ended.IsZero() || r.Reason != EndInterrupted || r.Step != nil || r.Alive(time.Now()) {
+	if r.Ended.IsZero() || r.Reason != EndInterrupted || r.Step != nil || r.Alive(f.e.clock()) {
 		t.Errorf("run file after: %+v", r)
 	}
 	if l := f.lane(12); l.State != Implementing {
