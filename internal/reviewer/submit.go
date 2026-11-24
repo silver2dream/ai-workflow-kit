@@ -661,21 +661,40 @@ func postIssueComment(ctx context.Context, issueNumber int, body string, timeout
 }
 
 func approvePR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", strconv.Itoa(prNumber),
-		"--approve", "--body", fmt.Sprintf("AWK Review: APPROVED (score: %d/10)", score))
-	return err
+	return reviewPR(ctx, ghutil.RunWithRetry, prNumber, "--approve", fmt.Sprintf("AWK Review: APPROVED (score: %d/10)", score), timeout)
 }
 
 func requestChangesPR(ctx context.Context, prNumber, score int, timeout time.Duration) error {
+	return reviewPR(ctx, ghutil.RunWithRetry, prNumber, "--request-changes", fmt.Sprintf("AWK Review: CHANGES REQUESTED (score: %d/10)", score), timeout)
+}
+
+// ghRunner runs a gh command as ghutil.RunWithRetry does: what it printed
+// comes back with its error.
+type ghRunner func(ctx context.Context, cfg ghutil.RetryConfig, name string, args ...string) ([]byte, error)
+
+// reviewPR submits the review's verdict on a pull request. GitHub takes
+// neither an approval nor a request for changes from a pull request's own
+// author, and the Worker and the review often work as one account: the
+// verdict is then left as a review comment that says the same. The merge
+// that follows an approval says whether the branch wants one from someone
+// else (handleMergeFailure).
+func reviewPR(ctx context.Context, run ghRunner, prNumber int, verdict, body string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", strconv.Itoa(prNumber),
-		"--request-changes", "--body", fmt.Sprintf("AWK Review: CHANGES REQUESTED (score: %d/10)", score))
+	pr := strconv.Itoa(prNumber)
+	out, err := run(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", pr, verdict, "--body", body)
+	if err != nil && ownPullRequest(out) {
+		fmt.Fprintf(os.Stderr, "[REVIEW] GitHub takes no %s from the author of PR #%d: the review is left as a comment\n", strings.TrimPrefix(verdict, "--"), prNumber)
+		_, err = run(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "review", pr, "--comment", "--body", body)
+	}
 	return err
+}
+
+// ownPullRequest reports whether GitHub refused a review because its
+// account wrote the pull request.
+func ownPullRequest(output []byte) bool {
+	return strings.Contains(strings.ToLower(string(output)), "your own pull request")
 }
 
 func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStrategy ...string) error {

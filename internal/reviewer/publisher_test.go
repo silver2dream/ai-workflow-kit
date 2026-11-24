@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
@@ -281,5 +282,38 @@ func TestVerifyEvidence_RunsTheTestsWhenNotGiven(t *testing.T) {
 	opts.TestRun = &TestRun{Command: "given", Output: "--- PASS: TestScore (0.00s)\n"}
 	if _, err := VerifyTestEvidenceWithReport(context.Background(), opts); err != nil {
 		t.Errorf("a given run is used, not the command: %+v", err)
+	}
+}
+
+// GitHub takes no approval or request for changes from a pull request's
+// author: the verdict is left as a comment that says the same. Other
+// failures are failures.
+func TestReviewPR_OneAccount(t *testing.T) {
+	for _, c := range []struct {
+		name, verdict, refusal string
+		want                   []string
+		fails                  bool
+	}{
+		{"approved", "--approve", "", []string{"--approve"}, false},
+		{"own pull request approved", "--approve", "GraphQL: Review Can not approve your own pull request (addPullRequestReview)", []string{"--approve", "--comment"}, false},
+		{"own pull request, changes wanted", "--request-changes", "GraphQL: Review Can not request changes on your own pull request (addPullRequestReview)", []string{"--request-changes", "--comment"}, false},
+		{"another refusal", "--approve", "HTTP 404: Not Found", []string{"--approve"}, true},
+	} {
+		var calls []string
+		run := func(ctx context.Context, cfg ghutil.RetryConfig, name string, args ...string) ([]byte, error) {
+			verdict := args[3]
+			calls = append(calls, verdict)
+			if args[4] != "--body" || args[5] != "AWK Review: APPROVED (score: 9/10)" {
+				t.Errorf("%s: gh %v", c.name, args)
+			}
+			if verdict == c.verdict && c.refusal != "" {
+				return []byte(c.refusal), errors.New("exit status 1")
+			}
+			return nil, nil
+		}
+		err := reviewPR(context.Background(), run, 30, c.verdict, "AWK Review: APPROVED (score: 9/10)", time.Second)
+		if (err != nil) != c.fails || strings.Join(calls, " ") != strings.Join(c.want, " ") {
+			t.Errorf("%s: calls %v, err %v", c.name, calls, err)
+		}
 	}
 }
