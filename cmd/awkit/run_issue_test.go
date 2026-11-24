@@ -54,3 +54,36 @@ func TestCmdRunIssue_TimeoutsComeFromTheConfiguration(t *testing.T) {
 		t.Errorf("the help does not name the configuration:\n%s", help)
 	}
 }
+
+// The dispatch passes the issue's title as "--title=…", which the Worker
+// titles the commit and the pull request with; a title that starts with a
+// hyphen is still the title. Run by hand without it, the Worker is given none.
+func TestCmdRunIssue_TheTitle(t *testing.T) {
+	orig := runIssue
+	t.Cleanup(func() { runIssue = orig })
+	var got worker.RunIssueOptions
+	runIssue = func(ctx context.Context, opts worker.RunIssueOptions) (*worker.RunIssueResult, error) {
+		got = opts
+		return &worker.RunIssueResult{Status: "success"}, nil
+	}
+	dir := t.TempDir()
+
+	for _, title := range []string{"[feat] say who wins a game", "-[feat] a title like a flag"} {
+		_ = captureStdout(t, func() {
+			if code := cmdRunIssue([]string{"--issue", "5", "--ticket", "ticket.md", "--state-root", dir, "--title=" + title}); code != 0 {
+				t.Errorf("run-issue = %d", code)
+			}
+		})
+		if got.Title != title {
+			t.Errorf("the Worker was given the title %q, want %q", got.Title, title)
+		}
+	}
+
+	_ = captureStdout(t, func() { cmdRunIssue([]string{"--issue", "5", "--ticket", "ticket.md", "--state-root", dir}) })
+	if got.Title != "" {
+		t.Errorf("without --title the Worker was given %q", got.Title)
+	}
+	if help := captureStderr(usageRunIssue); !strings.Contains(help, "--title") {
+		t.Errorf("the help does not name --title:\n%s", help)
+	}
+}

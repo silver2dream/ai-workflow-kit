@@ -26,7 +26,10 @@ import (
 
 // RunIssueOptions controls worker execution for a single issue.
 type RunIssueOptions struct {
-	IssueID      int
+	IssueID int
+	// Title is the issue's title, which the commit and the pull request are
+	// titled with (see prTitle).
+	Title        string
 	TicketFile   string
 	RepoOverride string
 	StateRoot    string
@@ -519,11 +522,7 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 		logger.Log("  ✓ 依賴安裝完成")
 	}
 
-	titleLine := extractTitleLine(string(ticketBody))
-	if titleLine == "" {
-		titleLine = fmt.Sprintf("issue-%d", opts.IssueID)
-	}
-	commitMsg := BuildCommitMessage(titleLine)
+	commitMsg := BuildCommitMessage(prTitle(opts.Title, ticketText, opts.IssueID))
 
 	workDirInstruction := buildWorkDirInstruction(repoType, repoPath, workDir, repoName)
 
@@ -1169,15 +1168,33 @@ func inferSetupCommand(language, packageManager string) string {
 	}
 }
 
+// prTitle is what the commit and the pull request of a ticket are titled:
+// the issue's title, which the dispatch read from GitHub. A Worker run by hand
+// without it takes the ticket's own title heading, and without one
+// `issue-<n>`. The body of a ticket written to ticket.md has no title heading:
+// it starts with "## Summary", which titled every pull request
+// "[chore] summary" while the title was taken from the body.
+func prTitle(issueTitle, ticket string, issueID int) string {
+	if title := strings.TrimSpace(issueTitle); title != "" {
+		return title
+	}
+	if title := extractTitleLine(ticket); title != "" {
+		return title
+	}
+	return fmt.Sprintf("issue-%d", issueID)
+}
+
+// extractTitleLine returns the first title heading of a text, a line
+// "# …". A section heading ("## Summary") titles a part of the text, not the
+// text.
 func extractTitleLine(content string) string {
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, "#") {
-			trimmed := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-			if trimmed != "" {
-				return trimmed
-			}
+		if !strings.HasPrefix(line, "# ") && !strings.HasPrefix(line, "#\t") {
+			continue
+		}
+		if title := strings.TrimSpace(line[1:]); title != "" {
+			return title
 		}
 	}
 	return ""

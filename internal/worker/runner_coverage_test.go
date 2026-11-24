@@ -777,7 +777,9 @@ func TestCov_ExtractTitleLine_Additional(t *testing.T) {
 		{"empty content", "", ""},
 		{"no header", "line1\nline2", ""},
 		{"leading hash only", "#\nrest", ""},
-		{"nested header", "text\n## Subtitle\nmore", "# Subtitle"},
+		// A section heading titles a part of the text, not the text.
+		{"section header", "text\n## Subtitle\nmore", ""},
+		{"no space after the hash", "#hashtag\n# Title", "Title"},
 		{"carriage return", "# Title\r\nMore", "Title"},
 	}
 	for _, tt := range tests {
@@ -943,7 +945,7 @@ func TestCov_WithOptionalTimeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCov_IsAllowedCommitRune(t *testing.T) {
-	allowed := []rune{'a', 'z', '0', '9', ' ', '_', '-'}
+	allowed := []rune{'a', 'z', '0', '9', ' ', '_', '-', '比', 'é', '٣'}
 	for _, r := range allowed {
 		if !isAllowedCommitRune(r) {
 			t.Errorf("expected %q to be allowed", string(r))
@@ -969,6 +971,7 @@ func TestCov_NormalizeCommitSubject(t *testing.T) {
 		{"UPPERCASE", "uppercase"},
 		{"with-dashes_and_underscores", "with-dashes_and_underscores"},
 		{"special@chars#removed", "special chars removed"},
+		{"顯示比分（Score）", "顯示比分 score"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
