@@ -118,6 +118,7 @@
   - 1.6b 完成：#287
   - 1.6c：細節在 `design.md` §5.1 與 §12。與原本寫的不同：人加 `needs-human-review` 在 P1 是轉人（整輪停），不是暫停那條線（P2 改）；人關掉、工作已落地的票記為 `merged`（新原因 `landed`）；`agents.*` 只加 `reviewer` 與 `resolver`，`implementer` 與 `helpers` 分別在 3.3 與 P5
   - 1.6c 完成：#288
+  - 1.6 實跑（私人測試 repo，兩張有相依的票，codex 實作、Claude 審查）第一次卡住：engine 派工前先投影了 `in-progress`，worker 當成別人在做而什麼都沒做，engine 等結果等了 8 小時。修正放在 #288：派工那一步不投影；沒有結果時看工單上有沒有 `in-progress`，沒有就再派，有而超過時限就轉人（`worker_lost`）；`check_result` 的等待跟著取消結束，`awkit stop --now` 等 run 真的結束才說已停。細節在 `design.md` §5.1
 - [ ] 1.7 影子模式與切換
   - 相依：1.6
   - `AWKIT_ENGINE=shadow`：engine 與現行主控對同一狀態算決定，逐筆比對寫事件；工作台與 `awkit status` 顯示分歧；測試專案跑完一份規劃無分歧後，預設改為 engine，保留 `AWKIT_ENGINE=principal` 一個版本；主控相關指令的 deprecation 事件

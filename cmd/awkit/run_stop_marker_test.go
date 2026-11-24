@@ -158,8 +158,17 @@ func TestStopRun_TheEngine(t *testing.T) {
 		t.Error("the marker was not written for the engine's run")
 	}
 	out.Reset()
-	if code := stopRun(&out, dir, stopAsk{running: true, engine: true, now: true, wait: 5 * time.Second}); code != 0 || !strings.Contains(out.String(), "taken as stop_now") {
+	if code := stopRun(&out, dir, stopAsk{running: true, engine: true, now: true, wait: 5 * time.Second}); code != 0 || !strings.Contains(out.String(), "taken as stop_now") || !strings.Contains(out.String(), "The run has stopped.") {
 		t.Errorf("stop --now: code = %d, says %q", code, out.String())
+	}
+	// A run that still beats is not said to have stopped.
+	run, _ := json.Marshal(engine.RunInfo{PID: os.Getpid(), Beat: time.Now().Add(time.Minute)})
+	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(engine.RunFile)), run, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := stopRun(&out, dir, stopAsk{running: true, engine: true, now: true, wait: 300 * time.Millisecond}); code != 0 || !strings.Contains(out.String(), "still ending") {
+		t.Errorf("stop --now of a run that goes on: code = %d, says %q", code, out.String())
 	}
 
 	// An engine that does not answer in time is said to have been asked.

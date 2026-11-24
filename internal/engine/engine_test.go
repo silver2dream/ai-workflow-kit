@@ -137,6 +137,11 @@ func newEngineFixture(t *testing.T, tickets ...Ticket) *engineFixture {
 	answer := func(name string, answers *[]func(Lane) Transition) Step {
 		return func(ctx context.Context, l Lane) (Transition, error) {
 			f.steps = append(f.steps, fmt.Sprintf("%s #%d", name, l.Issue))
+			// The Worker takes a ticket it is given labeled in-progress for
+			// one another Worker is at work on, and does nothing.
+			if t := f.gh.tickets[l.Issue]; name == "implement" && t != nil && slices.Contains(t.Labels, "in-progress") {
+				f.t.Errorf("#%d is given to the Worker labeled %v", l.Issue, t.Labels)
+			}
 			if len(*answers) == 0 {
 				return Transition{}, fmt.Errorf("no answer for %s", name)
 			}
@@ -490,10 +495,155 @@ func TestWorkerSteps(t *testing.T) {
 			t.Errorf("check %s: %s (%v), want %s", status, tr.To, err, want)
 		}
 	}
+
+	// No result yet: the ticket says whether a Worker is at work.
+	now := time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		name   string
+		labels []string
+		since  time.Duration // before now
+		status string
+		want   string
+	}{
+		{"at work", []string{"ai-task", "in-progress"}, 10 * time.Minute, "not_found", ""},
+		{"at work a long while", []string{"ai-task", "in-progress"}, 70 * time.Minute, "not_found", ""},
+		{"none at work", []string{"ai-task"}, time.Minute, "not_found", "rework/implement_failed"},
+		{"a result it cannot read", []string{"ai-task"}, time.Minute, "error", "rework/implement_failed"},
+		{"said at work, none for too long", []string{"ai-task", "in-progress"}, 80 * time.Minute, "not_found", "needs_you/escalated/worker_lost"},
+	} {
+		w := steps(worker.DispatchOutput{}, worker.CheckResultOutput{Status: c.status}, 0, "")
+		w.GitHub = newFakeGitHub(Ticket{Number: 12, Labels: c.labels})
+		at := lane
+		at.Since = now.Add(-c.since)
+		tr, err := w.Check(context.Background(), at)
+		got := ""
+		if tr.To != "" {
+			got = string(tr.To) + "/" + string(tr.Cause)
+			if tr.Why != "" {
+				got += "/" + tr.Why
+			}
+		}
+		if err != nil || got != c.want || (got != "" && !Allowed(tr.From, tr.To, tr.Cause)) {
+			t.Errorf("%s: %q (%v), want %q", c.name, got, err, c.want)
+		}
+	}
+	// A ticket that cannot be read is looked at again.
+	w := steps(worker.DispatchOutput{}, worker.CheckResultOutput{Status: "not_found"}, 0, "")
+	w.GitHub = newFakeGitHub()
+	if tr, err := w.Check(context.Background(), lane); err != nil || tr.To != "" {
+		t.Errorf("an unreadable ticket: %+v (%v)", tr, err)
+	}
 	if _, err := steps(worker.DispatchOutput{}, worker.CheckResultOutput{}, 0, "").Implement(context.Background(), Lane{Issue: 12, State: Ready}); err == nil {
 		t.Error("implemented a lane that was not dispatched")
 	}
 
+}
+
+// theWorker stands in for the Worker as the engine meets it: it labels its
+// ticket in-progress while it works, takes a ticket labeled so for one
+// another Worker is at work on and does nothing, and takes the label off
+// when it ends without a result. idle is how many dispatches find nothing
+// to do though the ticket is not labeled (the first of the run that found
+// the engine's bug, as the engine saw it).
+type theWorker struct {
+	f                *engineFixture
+	idle             int
+	dispatched, seen int // dispatches, and those that found the ticket labeled
+	checked          int
+	advance          time.Duration // the clock moves by it on each check
+	clock            time.Time
+}
+
+func (tw *theWorker) steps() *WorkerSteps {
+	gh := tw.f.gh
+	return &WorkerSteps{
+		Root: tw.f.e.Root, GitHub: gh, MaxRetries: 3, Log: &tw.f.log, WorkerTimeout: time.Hour,
+		now: func() time.Time { return tw.clock },
+		dispatch: func(ctx context.Context, o worker.DispatchOptions) (*worker.DispatchOutput, error) {
+			tw.dispatched++
+			if slices.Contains(gh.tickets[o.IssueNumber].Labels, "in-progress") {
+				tw.seen++
+				_ = gh.Edit(ctx, o.IssueNumber, Ops{Remove: []string{"in-progress"}})
+				return &worker.DispatchOutput{Status: "in_progress"}, nil
+			}
+			if tw.idle > 0 {
+				tw.idle--
+				return &worker.DispatchOutput{Status: "in_progress"}, nil
+			}
+			_ = gh.Edit(ctx, o.IssueNumber, Ops{Add: []string{"pr-ready"}})
+			return &worker.DispatchOutput{Status: "success", PRURL: "https://github.com/o/r/pull/30"}, nil
+		},
+		check: func(ctx context.Context, o worker.CheckResultOptions) (*worker.CheckResultOutput, error) {
+			tw.checked++
+			tw.clock = tw.clock.Add(tw.advance)
+			return &worker.CheckResultOutput{Status: "not_found"}, nil
+		},
+		learn:     func(context.Context, string, time.Duration, io.Writer) {},
+		failCount: func(string, int) int { return 0 },
+		stage:     func(string, int) string { return "" },
+	}
+}
+
+func withTheWorker(f *engineFixture, idle int, advance time.Duration) *theWorker {
+	tw := &theWorker{f: f, idle: idle, advance: advance, clock: time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC)}
+	f.e.now = func() time.Time { return tw.clock }
+	w := tw.steps()
+	f.e.Implement, f.e.Check = w.Implement, w.Check
+	return tw
+}
+
+// The run that found it: the engine gives the Worker its ticket as it is
+// (not labeled in-progress), and a lane its Worker left without a result
+// and is not at work on is dispatched again, not waited on.
+func TestEngine_AWorkerThatDidNothing(t *testing.T) {
+	f := newEngineFixture(t, task(12))
+	f.an.next = []*analyzer.Decision{dispatch(12), dispatch(12), {NextAction: analyzer.ActionAllComplete}}
+	f.review = []func(Lane) Transition{goTo(Merged, CauseMerged)}
+	tw := withTheWorker(f, 1, time.Minute)
+
+	if end := f.run(); end != EndComplete {
+		t.Fatalf("ended %q\n%s", end, f.log.String())
+	}
+	if tw.dispatched != 2 || tw.seen != 0 || tw.checked != 1 {
+		t.Errorf("dispatched %d (%d found it labeled), checked %d\n%s", tw.dispatched, tw.seen, tw.checked, f.log.String())
+	}
+	if l := f.lane(12); l.State != Merged || l.PR != 30 {
+		t.Errorf("lane: %+v", l)
+	}
+	if !strings.Contains(f.log.String(), "implementing → rework (implement_failed): no Worker is at work on it") {
+		t.Errorf("log:\n%s", f.log.String())
+	}
+}
+
+// A ticket labeled in-progress that no Worker of this engine is at work on
+// is waited on as long as a Worker may take, then handed to a person, who
+// is told; once they take the label off, it is dispatched.
+func TestEngine_AWorkerNoneIsAtWork(t *testing.T) {
+	f := newEngineFixture(t, task(12, "in-progress"))
+	f.an.next = []*analyzer.Decision{dispatch(12), {NextAction: analyzer.ActionAllComplete}}
+	f.review = []func(Lane) Transition{goTo(Merged, CauseMerged)}
+	tw := withTheWorker(f, 0, 40*time.Minute)
+
+	if end := f.run(); end != analyzer.ReasonNeedsHumanReview {
+		t.Fatalf("ended %q\n%s", end, f.log.String())
+	}
+	if l := f.lane(12); l.State != NeedsYou || l.Why != WhyWorkerLost || tw.checked != 2 || tw.dispatched != 0 {
+		t.Errorf("lane: %+v, checked %d, dispatched %d", l, tw.checked, tw.dispatched)
+	}
+	if got := f.gh.labels(12); got != "ai-task,needs-human-review" {
+		t.Errorf("labels: %s", got)
+	}
+	if len(f.gh.comments) != 1 || !strings.Contains(f.gh.comments[0], "none has left a result") {
+		t.Errorf("comments: %v", f.gh.comments)
+	}
+
+	f.gh.tickets[12].Labels = []string{"ai-task"}
+	if end := f.run(); end != EndComplete {
+		t.Fatalf("the next run ended %q\n%s", end, f.log.String())
+	}
+	if l := f.lane(12); l.State != Merged || tw.dispatched != 1 || tw.seen != 0 {
+		t.Errorf("lane: %+v, dispatched %d (%d found it labeled)", l, tw.dispatched, tw.seen)
+	}
 }
 
 func TestImportedLanes(t *testing.T) {

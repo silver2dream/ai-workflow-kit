@@ -107,12 +107,13 @@ func New(opts Options) (*Engine, error) {
 	if maxReviews <= 0 {
 		maxReviews = analyzer.DefaultMaxReviewAttempts
 	}
-	work := &WorkerSteps{Root: opts.Root, Log: opts.Log}
+	gh := NewGitHub(cfg.GitHub.Labels.Task, 30*time.Second)
+	work := &WorkerSteps{Root: opts.Root, Log: opts.Log, GitHub: gh, InProgress: cfg.GitHub.Labels.InProgress}
 	review := &ReviewStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: reviewer}
 	resolve := &ResolveStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: resolver}
 	e := &Engine{
 		Root: opts.Root, Journal: journal,
-		GitHub: NewGitHub(cfg.GitHub.Labels.Task, 30*time.Second), Analyzer: a,
+		GitHub: gh, Analyzer: a,
 		Names: cfg.GitHub.Labels, MaxReviews: maxReviews, Only: opts.Only,
 		Implement: work.Implement, Check: work.Check, Review: review.Review, Resolve: resolve.Resolve,
 		Log: opts.Log,
@@ -437,7 +438,9 @@ func (e *Engine) Step(ctx context.Context, d *analyzer.Decision) (string, error)
 		if err != nil {
 			return "", err
 		}
-		return "", e.apply(ctx, t, true)
+		// The Worker's result tells a person what it hands them; a Worker
+		// that left none does not.
+		return "", e.apply(ctx, t, t.Why != WhyWorkerLost)
 	case analyzer.ActionReviewPR:
 		return "", e.review(ctx, d)
 	case analyzer.ActionDispatchWorker:
@@ -475,17 +478,34 @@ func (e *Engine) apply(ctx context.Context, t Transition, told bool) error {
 // record writes a transition to the event log, shows the lane on GitHub,
 // and tells a person when it needs one and its step did not already.
 func (e *Engine) record(ctx context.Context, t Transition, told bool) (*Lane, error) {
-	lane, err := e.Journal.Record(t)
+	lane, err := e.write(t)
 	if err != nil {
 		return nil, err
 	}
-	e.logf("#%d: %s → %s (%s)%s", t.Issue, show(t.From), t.To, t.Cause, noteOf(t.Note))
 	e.project(ctx, *lane)
 	if lane.State == NeedsYou && !told {
 		if err := e.GitHub.Comment(ctx, lane.Issue, needsYouComment(*lane, e.Names)); err != nil {
 			e.logf("#%d: the comment that says why it needs a person could not be posted: %v", lane.Issue, err)
 		}
 	}
+	return lane, nil
+}
+
+// dispatched records the Worker taking a lane, and leaves its ticket as it
+// is: the Worker labels the ticket in-progress itself, and a ticket that is
+// labeled so when it is dispatched it takes for one another Worker is at
+// work on, and does nothing.
+func (e *Engine) dispatched(l *Lane) (*Lane, error) {
+	return e.write(Transition{Issue: l.Issue, From: l.State, To: Implementing, Cause: CauseDispatched, At: e.clock()})
+}
+
+// write writes a transition to the event log, and says it.
+func (e *Engine) write(t Transition) (*Lane, error) {
+	lane, err := e.Journal.Record(t)
+	if err != nil {
+		return nil, err
+	}
+	e.logf("#%d: %s → %s (%s)%s", t.Issue, show(t.From), t.To, t.Cause, noteOf(t.Note))
 	return lane, nil
 }
 
@@ -525,6 +545,7 @@ var whyText = map[string]string{
 	WhyGuardOutput:      "a guardrail stopped what was to be written to GitHub",
 	WhyInvalidTicket:    "its awk-ticket block cannot be used",
 	WhyAgentRefused:     "an agent's backend cannot be held to its role's settings",
+	WhyWorkerLost:       "its ticket says a Worker is at work on it, but none has left a result in the time a Worker may take",
 }
 
 func needsYouComment(l Lane, names config.Labels) string {
@@ -594,7 +615,7 @@ func (e *Engine) implement(ctx context.Context, d *analyzer.Decision) error {
 	if l.State != Ready && l.State != Rework {
 		return fmt.Errorf("lane #%d is %s: the analyzer picked it as a ticket to write", l.Issue, l.State)
 	}
-	if l, err = e.move(ctx, l, Implementing, CauseDispatched, ""); err != nil {
+	if l, err = e.dispatched(l); err != nil {
 		return err
 	}
 	t, err := e.Implement(ctx, *l)

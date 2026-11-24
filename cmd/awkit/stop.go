@@ -116,6 +116,14 @@ func sendStop(w io.Writer, root, kind string, wait time.Duration) int {
 				return 1
 			}
 			fmt.Fprintf(w, "The engine took the stop: %s.\n", r.Reason)
+			if kind == engine.CommandStopNow {
+				// What was running is ended: said once the run has.
+				if ended(root, deadline) {
+					fmt.Fprintln(w, "The run has stopped.")
+				} else {
+					fmt.Fprintln(w, "The run is still ending what was running.")
+				}
+			}
 			fmt.Fprintln(w, "awkit status shows where it is. awkit run goes on from there later.")
 			return 0
 		}
@@ -126,4 +134,19 @@ func sendStop(w io.Writer, root, kind string, wait time.Duration) int {
 	}
 	fmt.Fprintf(w, "Gave the engine the stop (%s); it has not answered yet. awkit status shows when it has stopped.\n", c.ID)
 	return 0
+}
+
+// ended waits, until deadline, for the engine's run to end: its run file
+// says so, or it no longer beats.
+func ended(root string, deadline time.Time) bool {
+	for {
+		r, ok := engine.ReadRun(root)
+		if !ok || !r.Alive(time.Now()) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
