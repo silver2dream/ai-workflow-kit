@@ -30,6 +30,12 @@ func TestIsRetryable_NonRetryableErrors(t *testing.T) {
 			want:     false,
 		},
 		{
+			name:     "approval of one's own pull request",
+			output:   "failed to create review: GraphQL: Review Can not approve your own pull request (addPullRequestReview)",
+			exitCode: 1,
+			want:     false,
+		},
+		{
 			// What gh prints for an issue number that does not exist.
 			name:     "graphql could not resolve",
 			output:   "GraphQL: Could not resolve to an issue or pull request with the number of 999999. (repository.issue)",

@@ -85,6 +85,16 @@ func New(opts Options) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The agents' settings: the roles' defaults, the project's on them.
+	worker := Implementer(cfg)
+	reviewer, err := agent.Resolve(agent.Reviewer, worker, override(cfg.Agents.Reviewer))
+	if err != nil {
+		return nil, fmt.Errorf("agents.reviewer in %s: %w", config.Path(""), err)
+	}
+	resolver, err := agent.Resolve(agent.Resolver, worker, override(cfg.Agents.Resolver))
+	if err != nil {
+		return nil, fmt.Errorf("agents.resolver in %s: %w", config.Path(""), err)
+	}
 	journal, err := OpenJournal(opts.Root)
 	if err != nil {
 		return nil, err
@@ -97,16 +107,39 @@ func New(opts Options) (*Engine, error) {
 	if maxReviews <= 0 {
 		maxReviews = analyzer.DefaultMaxReviewAttempts
 	}
-	work := &WorkerSteps{Root: opts.Root, Log: opts.Log}
-	review := &ReviewStep{Root: opts.Root, Agents: agent.NewRunner()}
-	resolve := &ResolveStep{Root: opts.Root, Agents: agent.NewRunner()}
-	return &Engine{
+	gh := NewGitHub(cfg.GitHub.Labels.Task, 30*time.Second)
+	work := &WorkerSteps{Root: opts.Root, Log: opts.Log, GitHub: gh, InProgress: cfg.GitHub.Labels.InProgress}
+	review := &ReviewStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: reviewer}
+	resolve := &ResolveStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: resolver}
+	e := &Engine{
 		Root: opts.Root, Journal: journal,
-		GitHub: NewGitHub(cfg.GitHub.Labels.Task, 30*time.Second), Analyzer: a,
+		GitHub: gh, Analyzer: a,
 		Names: cfg.GitHub.Labels, MaxReviews: maxReviews, Only: opts.Only,
 		Implement: work.Implement, Check: work.Check, Review: review.Review, Resolve: resolve.Resolve,
 		Log: opts.Log,
-	}, nil
+	}
+	// A review is independent when another model makes it (design.md §9.4).
+	if reviewer.Backend == worker.Backend && reviewer.Model != "" && reviewer.Model == worker.Model {
+		e.logf("the reviewer is the same model as the Worker (%s %s): its review is less independent; agents.reviewer sets another", reviewer.Backend, reviewer.Model)
+	}
+	return e, nil
+}
+
+// Implementer is the Worker's settings, as the roles that follow it read
+// them: its backend, and, for Claude Code, its model and effort.
+func Implementer(cfg *config.Config) agent.Profile {
+	p := agent.Profile{Role: agent.Implementer, Backend: cfg.Worker.Backend}
+	if p.Backend == "" {
+		p.Backend = agent.Codex
+	}
+	if p.Backend == agent.ClaudeCode {
+		p.Model, p.Effort = cfg.Worker.ClaudeCode.Model, cfg.Worker.ClaudeCode.Effort
+	}
+	return p
+}
+
+func override(r config.AgentRole) agent.Override {
+	return agent.Override{Backend: r.Backend, Model: r.Model, Effort: r.Effort, Minutes: r.Minutes, USD: r.USD}
 }
 
 func (e *Engine) logf(format string, args ...any) {
@@ -131,15 +164,16 @@ func (e *Engine) clock() time.Time {
 // error is one the run cannot go on from (the event log refused a move);
 // the reason then says how it is reported.
 func (e *Engine) Run(ctx context.Context) (string, error) {
-	if err := e.Import(ctx); err != nil {
-		if ctx.Err() != nil {
-			return EndInterrupted, nil
-		}
-		return analyzer.ReasonGitHubAPIError, err
-	}
 	for {
 		if ctx.Err() != nil {
 			return EndInterrupted, nil
+		}
+		// What a person did on GitHub since the last step is taken in first.
+		if err := e.Reconcile(ctx); err != nil {
+			if ctx.Err() != nil {
+				return EndInterrupted, nil
+			}
+			return analyzer.ReasonGitHubAPIError, err
 		}
 		d, err := e.Next(ctx)
 		if err != nil {
@@ -182,30 +216,115 @@ func describe(d *analyzer.Decision) string {
 	return s
 }
 
-// Import makes a lane of each open ticket that has none, where its labels
-// left it: a project the Principal's workflow ran, or a ticket a person
-// made, is taken up where it is.
-func (e *Engine) Import(ctx context.Context) error {
+// Reconcile brings the lanes to what GitHub says (design.md §5.2). GitHub
+// shows the lanes; what a person changes there is an instruction, not an
+// error to put back:
+//
+//   - an open ticket without a lane is taken up where its labels left it (a
+//     project the Principal's workflow ran, a ticket made since);
+//   - a ticket that ended and is open again, with the task label, is done
+//     again;
+//   - a lane that waits for a person whose label the person took off goes
+//     on, where the labels left it;
+//   - needs-human-review put on a lane hands it to the person (P1: the run
+//     stops, as the Principal's does; P2 pauses that lane only);
+//   - a ticket closed by a person ends its lane: merged when its work is
+//     known to have landed, cancelled otherwise; one that is no longer a
+//     ticket (its task label taken off) is cancelled.
+//
+// Any other change to the labels is left as the person left it.
+func (e *Engine) Reconcile(ctx context.Context) error {
 	tickets, err := e.GitHub.Tickets(ctx)
 	if err != nil {
 		return err
 	}
 	sort.Slice(tickets, func(i, j int) bool { return tickets[i].Number < tickets[j].Number })
+	open := map[int]bool{}
 	for _, t := range tickets {
-		if (e.Only != 0 && t.Number != e.Only) || e.Journal.Lane(t.Number) != nil {
+		if e.Only != 0 && t.Number != e.Only {
 			continue
 		}
-		in, ok := Infer(t.Labels, t.Closed, false, e.Names)
-		if !ok {
+		open[t.Number] = true
+		l := e.Journal.Lane(t.Number)
+		switch {
+		case l == nil:
+			in, ok := Infer(t.Labels, t.Closed, false, e.Names)
+			if !ok {
+				continue
+			}
+			tr := Transition{
+				Issue: t.Number, To: in.State, Cause: CauseImported, Resolve: in.Resolve, Why: in.Why,
+				PR: e.Analyzer.PRNumber(t.Number, t.Body), Note: "taken up where its labels left it", At: e.clock(),
+			}
+			if _, err := e.Journal.Record(tr); err != nil {
+				return err
+			}
+		case l.State.Terminal():
+			if _, err := e.record(ctx, Transition{Issue: l.Issue, From: l.State, To: Ready, Cause: CauseReopened, Note: "open again on GitHub, as a ticket", At: e.clock()}, true); err != nil {
+				return err
+			}
+		default:
+			if err := e.byPerson(ctx, *l, t); err != nil {
+				return err
+			}
+		}
+	}
+
+	// The lanes whose ticket is no longer an open ticket.
+	for _, l := range e.live() {
+		if open[l.Issue] {
 			continue
 		}
-		tr := Transition{
-			Issue: t.Number, To: in.State, Cause: CauseImported, Resolve: in.Resolve, Why: in.Why,
-			PR: e.Analyzer.PRNumber(t.Number, t.Body), Note: "taken up where its labels left it", At: e.clock(),
+		t, err := e.GitHub.Ticket(ctx, l.Issue)
+		if err != nil {
+			e.logf("#%d: it is not in the list of open tickets, and could not be read: %v", l.Issue, err)
+			continue
 		}
-		if _, err := e.Journal.Record(tr); err != nil {
+		tr := Transition{Issue: l.Issue, From: l.State, At: e.clock()}
+		switch {
+		case t.Closed && analyzer.KnownLanded(e.Root, l.Issue):
+			tr.To, tr.Cause, tr.Note = Merged, CauseLanded, "closed on GitHub, its work landed"
+		case t.Closed:
+			tr.To, tr.Cause, tr.Note = Cancelled, CauseCancelled, "closed on GitHub"
+		default:
+			tr.To, tr.Cause, tr.Note = Cancelled, CauseCancelled, "no longer a ticket: its task label was taken off on GitHub"
+		}
+		if _, err := e.record(ctx, tr, true); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// byPerson moves a lane for what a person changed of its labels.
+func (e *Engine) byPerson(ctx context.Context, l Lane, t Ticket) error {
+	has := map[string]bool{}
+	for _, label := range t.Labels {
+		has[label] = true
+	}
+	stops := has[e.Names.NeedsHumanReview] || has[e.Names.WorkerFailed]
+	switch {
+	case l.State == NeedsYou && !stops:
+		// The person took the label off: the lane goes on from where the
+		// labels say.
+		in, ok := Infer(t.Labels, false, false, e.Names)
+		if !ok {
+			return nil
+		}
+		to := in.State
+		if to == Ready && l.PR != 0 {
+			to = Rework
+		}
+		if !Allowed(NeedsYou, to, CauseReleased) {
+			e.logf("#%d: its person's label is off, and its labels say %s, which a lane that waits for a person does not go to; it waits on", l.Issue, to)
+			return nil
+		}
+		_, err := e.record(ctx, Transition{Issue: l.Issue, From: NeedsYou, To: to, Cause: CauseReleased, Resolve: in.Resolve, Note: "a person took its label off on GitHub", At: e.clock()}, true)
+		return err
+	case has[e.Names.NeedsHumanReview] && l.State != NeedsYou && l.State != AwaitingApproval && l.State != Paused:
+		t := Transition{Issue: l.Issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: WhyPerson, Note: "a person marked it on GitHub", At: e.clock()}
+		_, err := e.record(ctx, t, true)
+		return err
 	}
 	return nil
 }
@@ -319,7 +438,9 @@ func (e *Engine) Step(ctx context.Context, d *analyzer.Decision) (string, error)
 		if err != nil {
 			return "", err
 		}
-		return "", e.apply(ctx, t, true)
+		// The Worker's result tells a person what it hands them; a Worker
+		// that left none does not.
+		return "", e.apply(ctx, t, t.Why != WhyWorkerLost)
 	case analyzer.ActionReviewPR:
 		return "", e.review(ctx, d)
 	case analyzer.ActionDispatchWorker:
@@ -357,17 +478,34 @@ func (e *Engine) apply(ctx context.Context, t Transition, told bool) error {
 // record writes a transition to the event log, shows the lane on GitHub,
 // and tells a person when it needs one and its step did not already.
 func (e *Engine) record(ctx context.Context, t Transition, told bool) (*Lane, error) {
-	lane, err := e.Journal.Record(t)
+	lane, err := e.write(t)
 	if err != nil {
 		return nil, err
 	}
-	e.logf("#%d: %s → %s (%s)%s", t.Issue, show(t.From), t.To, t.Cause, noteOf(t.Note))
 	e.project(ctx, *lane)
 	if lane.State == NeedsYou && !told {
 		if err := e.GitHub.Comment(ctx, lane.Issue, needsYouComment(*lane, e.Names)); err != nil {
 			e.logf("#%d: the comment that says why it needs a person could not be posted: %v", lane.Issue, err)
 		}
 	}
+	return lane, nil
+}
+
+// dispatched records the Worker taking a lane, and leaves its ticket as it
+// is: the Worker labels the ticket in-progress itself, and a ticket that is
+// labeled so when it is dispatched it takes for one another Worker is at
+// work on, and does nothing.
+func (e *Engine) dispatched(l *Lane) (*Lane, error) {
+	return e.write(Transition{Issue: l.Issue, From: l.State, To: Implementing, Cause: CauseDispatched, At: e.clock()})
+}
+
+// write writes a transition to the event log, and says it.
+func (e *Engine) write(t Transition) (*Lane, error) {
+	lane, err := e.Journal.Record(t)
+	if err != nil {
+		return nil, err
+	}
+	e.logf("#%d: %s → %s (%s)%s", t.Issue, show(t.From), t.To, t.Cause, noteOf(t.Note))
 	return lane, nil
 }
 
@@ -407,6 +545,7 @@ var whyText = map[string]string{
 	WhyGuardOutput:      "a guardrail stopped what was to be written to GitHub",
 	WhyInvalidTicket:    "its awk-ticket block cannot be used",
 	WhyAgentRefused:     "an agent's backend cannot be held to its role's settings",
+	WhyWorkerLost:       "its ticket says a Worker is at work on it, but none has left a result in the time a Worker may take",
 }
 
 func needsYouComment(l Lane, names config.Labels) string {
@@ -476,7 +615,7 @@ func (e *Engine) implement(ctx context.Context, d *analyzer.Decision) error {
 	if l.State != Ready && l.State != Rework {
 		return fmt.Errorf("lane #%d is %s: the analyzer picked it as a ticket to write", l.Issue, l.State)
 	}
-	if l, err = e.move(ctx, l, Implementing, CauseDispatched, ""); err != nil {
+	if l, err = e.dispatched(l); err != nil {
 		return err
 	}
 	t, err := e.Implement(ctx, *l)

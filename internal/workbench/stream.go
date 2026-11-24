@@ -66,6 +66,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, root strin
 		writeError(w, http.StatusInternalServerError, "this server cannot stream")
 		return
 	}
+	// What the project is now is taken before the page hears it is
+	// connected: a change it makes, or sees made, after that is a change.
+	seen := map[string]string{}
+	for _, a := range areas {
+		seen[a.name] = fingerprint(root, a)
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
@@ -76,10 +82,6 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, root strin
 		data, _ := json.Marshal(map[string][]string{"areas": changed})
 		fmt.Fprintf(w, "event: change\ndata: %s\n\n", data)
 		flusher.Flush()
-	}
-	seen := map[string]string{}
-	for _, a := range areas {
-		seen[a.name] = fingerprint(root, a)
 	}
 	poll := time.NewTicker(s.opts.Poll)
 	tickets := time.NewTicker(ticketsEvery)

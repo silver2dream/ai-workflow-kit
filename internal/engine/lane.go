@@ -90,6 +90,7 @@ const (
 	WhyDependencyCycle  = "dependency_cycle"     // its dependencies go round in a circle
 	WhyPerson           = "person"               // a person marked it on GitHub
 	WhyAgentRefused     = "agent_refused"        // an agent's backend cannot be held to its role's settings: it was not run
+	WhyWorkerLost       = "worker_lost"          // its ticket says a Worker is at work, and none has left a result in the time a Worker may take
 )
 
 // Attempts are the counts a lane's limits are checked against, as the
@@ -156,6 +157,7 @@ const (
 	CauseOwnerApproved  Cause = "owner_approved"
 	CauseOwnerReturned  Cause = "owner_returned"
 	CauseMerged         Cause = "merged"
+	CauseLanded         Cause = "landed"    // its work landed outside the lane's steps: a person merged it, or an earlier run did
 	CauseEscalated      Cause = "escalated" // it needs a person (Why says why)
 	CauseReleased       Cause = "released"  // a person took it out of NeedsYou
 	CausePaused         Cause = "paused"
@@ -234,6 +236,7 @@ var edges = []edge{
 	{Resolving, Reviewing, CauseResolved},
 
 	{anyLive, NeedsYou, CauseEscalated},
+	{anyLive, Merged, CauseLanded},
 	{NeedsYou, Ready, CauseReleased},
 	{NeedsYou, Rework, CauseReleased},
 	{NeedsYou, Reviewing, CauseReleased},

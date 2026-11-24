@@ -95,6 +95,8 @@ agents:
   builtin: [pr-reviewer]
   custom:
     - {name: sec, description: Security, tools: Read, model: haiku, trigger: review_pr, condition: always}
+  reviewer: {backend: codex, model: gpt-5, effort: high, minutes: 30, usd: 2.5}
+  resolver: {backend: claude-code, model: sonnet, effort: low, minutes: 15, usd: 1}
 review:
   score_threshold: 9
   merge_strategy: rebase
@@ -145,8 +147,10 @@ func TestLoad_WhatTheFileSays(t *testing.T) {
 		Git: Git{IntegrationBranch: "trunk", ReleaseBranch: "stable"},
 		GitHub: GitHub{Repo: "someone/demo", Labels: Labels{Task: "todo", InProgress: "doing", PRReady: "ready", WorkerFailed: "broke",
 			NeedsHumanReview: "human", ReviewFailed: "rejected", MergeConflict: "conflict", NeedsRebase: "rebase", Completed: "done"}},
-		Rules:  Rules{Kit: []string{"git-workflow", "extra"}, Custom: []string{"mine"}},
-		Agents: Agents{Builtin: []string{"pr-reviewer"}, Custom: []CustomAgent{{Name: "sec", Description: "Security", Tools: "Read", Model: "haiku", Trigger: "review_pr", Condition: "always"}}},
+		Rules: Rules{Kit: []string{"git-workflow", "extra"}, Custom: []string{"mine"}},
+		Agents: Agents{Builtin: []string{"pr-reviewer"}, Custom: []CustomAgent{{Name: "sec", Description: "Security", Tools: "Read", Model: "haiku", Trigger: "review_pr", Condition: "always"}},
+			Reviewer: AgentRole{Backend: "codex", Model: "gpt-5", Effort: "high", Minutes: 30, USD: 2.5},
+			Resolver: AgentRole{Backend: "claude-code", Model: "sonnet", Effort: "low", Minutes: 15, USD: 1}},
 		Review: Review{ScoreThreshold: 9, MergeStrategy: "rebase", MultiModel: true,
 			SecondaryReviewers:  []SecondaryReviewer{{Backend: "codex", Model: "o3", FocusArea: "security"}},
 			JiTTest:             JiTTest{Enabled: &yes, MaxTests: 2, TimeoutSeconds: 30, FailurePolicy: "block", Model: "haiku"},

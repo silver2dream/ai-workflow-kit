@@ -190,7 +190,7 @@ func (e *Engine) takeCommands(stopNow func()) {
 		case CommandStopNow:
 			if stopNow != nil {
 				stopNow()
-				reason = "the run is stopped, and what was running with it"
+				reason = "the run stops at once, and what is running with it"
 			} else {
 				reason = "the run had ended"
 			}
