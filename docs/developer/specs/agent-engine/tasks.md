@@ -120,6 +120,8 @@
   - 1.6c 完成：#288
   - 1.6 實跑（私人測試 repo，兩張有相依的票，codex 實作、Claude 審查）第一次卡住：engine 派工前先投影了 `in-progress`，worker 當成別人在做而什麼都沒做，engine 等結果等了 8 小時。修正放在 #288：派工那一步不投影；沒有結果時看工單上有沒有 `in-progress`，沒有就再派，有而超過時限就轉人（`worker_lost`）；`check_result` 的等待跟著取消結束，`awkit stop --now` 等 run 真的結束才說已停。細節在 `design.md` §5.1
   - 第二次實跑：派工、codex 開 PR、審查都走到了，卡在核准——GitHub 不讓開 PR 的帳號核准自己的 PR，而 worker 與審查用同一個 gh 帳號（主控一樣會卡）。修正也放在 #288：被拒時改用留言形式的審查，內容相同，接著照常合併；分支保護若要求別人核准，合併會被拒而轉人（`merge_blocked`）。這個拒絕不再重試。人放行轉人的線後，審查次數不歸零（只再試一次），與 analyzer 的做法相同
+  - 第三次實跑卡在 CI：測試 repo 的 Actions 一次都沒跑（API 一直說已啟用，要在 repo 的 Actions 頁面啟用一次），engine 照設計不合併而轉人。啟用後的第四次實跑走完：放行的 #1 審查、合併，接著派 #2、codex 開 PR、審查、合併，整輪以 `all_tasks_complete` 結束；兩張票的七次審查共 $0.75
+  - 實跑看到一個既有的錯，不在 1.6 修：worker 拿工單內文的第一個標題當 PR 標題，而照 `ticket.md` 寫的工單第一個標題是 `## Summary`，所以兩個 PR 與合併後的 commit 都叫 `[chore] summary`（主控走同一段程式，一樣）
 - [ ] 1.7 影子模式與切換
   - 相依：1.6
   - `AWKIT_ENGINE=shadow`：engine 與現行主控對同一狀態算決定，逐筆比對寫事件；工作台與 `awkit status` 顯示分歧；測試專案跑完一份規劃無分歧後，預設改為 engine，保留 `AWKIT_ENGINE=principal` 一個版本；主控相關指令的 deprecation 事件
