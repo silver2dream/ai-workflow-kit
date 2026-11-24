@@ -24,10 +24,10 @@ Usage:
   awkit stop --now
 
 Options:
-  --now   End a run of the engine (AWKIT_ENGINE=engine) at once: what is
-          running is ended with it, and taken up again by the next run.
-          A run of the Principal is ended at once by interrupting it
-          (Ctrl-C) where it was started.
+  --now   End the run at once: what is running is ended with it, and
+          taken up again by the next run. A run of the Principal's
+          workflow (AWKIT_ENGINE=principal) is ended at once by
+          interrupting it (Ctrl-C) where it was started.
 `)
 }
 

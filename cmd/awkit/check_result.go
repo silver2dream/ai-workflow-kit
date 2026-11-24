@@ -107,6 +107,7 @@ func cmdCheckResult(args []string) int {
 			defer trace.CloseGlobalWriter()
 		}
 	}
+	noteDeprecated(*stateRoot, "awkit check-result")
 
 	// Run the check
 	ctx := context.Background()

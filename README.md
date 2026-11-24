@@ -6,7 +6,7 @@
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
-AWK turns a brief into merged pull requests. A council of model-played roles argues the brief into documents and a list of tickets; you approve the list; then a **Principal** (Claude Code) hands each ticket to a **Worker** (Codex or Claude Code), has the pull request reviewed, and merges what passes. The tickets are GitHub issues, and what counts as "passes" is checked by code, not taken from a model's word.
+AWK turns a brief into merged pull requests. A council of model-played roles argues the brief into documents and a list of tickets; you approve the list; then awkit's **engine**, a program and not a model, hands each ticket to a **Worker** (Codex or Claude Code), has the pull request reviewed, and merges what passes. The tickets are GitHub issues, and what counts as "passes" is checked by code, not taken from a model's word.
 
 ```
 awkit plan "…"  ──►  documents + decisions + proposed tickets  ──►  you approve
@@ -22,7 +22,7 @@ awkit run  ──►  next ticket ──► Worker writes the change ──► r
 |---|---|
 | `git`, and a GitHub repository as the project's `origin` | |
 | [`gh`](https://cli.github.com/), logged in with write access to that repository | the workflow lives in its issues and pull requests |
-| [`claude`](https://claude.com/claude-code) (Claude Code) | plays the Principal, the reviewer and the council |
+| [`claude`](https://claude.com/claude-code) (Claude Code) | plays the reviewer and the council |
 | `codex`, or `claude` again | plays the Worker (`worker.backend`, `codex` unless you change it) |
 | On Windows: Git for Windows | Claude Code needs its Git Bash, and the build and test commands run through it |
 
@@ -158,8 +158,9 @@ What a review turned back is distilled, once the change is finally approved, int
 .claude/
   rules/_kit/        the kit's rule (branches, commits, pull requests), generated
   rules/             your project's rules; awkit init starts you with a set to tighten
-  skills/            what the Principal follows: the loop, the ticket format
-  agents/            the subagents it hands reviews and conflicts to
+  skills/            the ticket format, and the loop of the Principal's workflow
+                     (AWKIT_ENGINE=principal; the next version removes it)
+  agents/            the subagents that workflow hands reviews and conflicts to
 CLAUDE.md, AGENTS.md   what agents are told, generated from the configuration
 docs/                  what the council writes: documents, decisions.md, plans/
 <repo>/docs/           the engineering documents of a repo, written by the council too

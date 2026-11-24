@@ -4,7 +4,7 @@
 
 ### AWK 在我的專案裡做什麼？
 
-它把 GitHub issue 當票券：一個 Principal（Claude Code）依序把每張票交給 Worker（Codex 或 Claude Code）在獨立的 worktree 裡寫變更、開 pull request，再由審查決定合併或退回。票券可以由議會（`awkit plan`）從一句需求辯出來，也可以自己開。
+它把 GitHub issue 當票券：awkit 的 engine（程式，不是模型）依序把每張票交給 Worker（Codex 或 Claude Code）在獨立的 worktree 裡寫變更、開 pull request，再由審查決定合併或退回。票券可以由議會（`awkit plan`）從一句需求辯出來，也可以自己開。
 
 ### 可以不用 GitHub 嗎？
 
@@ -56,7 +56,7 @@ Worker 在 `.worktrees/` 下自己的 worktree 裡工作，只能透過 pull req
 
 ### 怎麼讓它停下來？
 
-`awkit stop`：做完手上這一步就停。要立刻停，在啟動 `awkit run` 的終端機按 Ctrl-C；以預覽中的 engine 跑的（`AWKIT_ENGINE=engine awkit run`）也可以在任何終端機用 `awkit stop --now`。之後 `awkit run` 會從停下的地方接著做。
+`awkit stop`：做完手上這一步就停。要立刻停，在任何終端機用 `awkit stop --now`；以舊的主控流程跑的（`AWKIT_ENGINE=principal awkit run`），在啟動它的終端機按 Ctrl-C。之後 `awkit run` 會從停下的地方接著做。
 
 ### `awkit run --dry-run` 做什麼？
 
@@ -97,7 +97,7 @@ Worker 在 `.worktrees/` 下自己的 worktree 裡工作，只能透過 pull req
 | 一張票的完整經過 | `awkit events --issue 42` |
 | 一張票留下的檔案 | `awkit status --issue 42` |
 | Worker 的 log | `.ai/state/logs/issue-42.worker.log` |
-| Principal 的 log | `.ai/state/logs/principal.log` |
+| 派工的 log | `.ai/state/logs/principal.log` |
 | 流程在 GitHub 上說了什麼 | `gh issue view 42 --comments` |
 
 ### 怎麼更新？

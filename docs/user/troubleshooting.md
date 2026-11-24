@@ -131,8 +131,8 @@ awkit lessons reject L-012    # 不採用：停用，不會再給任何 AI
 - **Too many attempts failed in a row.** 連續 5 次失敗。通常是環境問題（登入過期、網路、建置指令壞了），不是某一張票的問題。`awkit events --level error` 看這幾次失敗的共同點；修好之後 `awkit reset`，再 `awkit run`。
 - **The run reached the limit of its loop.** 迴圈跑了太多次，表示有票在繞圈。`awkit events --level decision` 看是哪一張；處理之後 `awkit reset`。
 - **Claude Code 停下來問你要不要允許某個指令。** `awkit generate` 會把 run 需要的權限補進 `.claude/settings.local.json`；設定檔的建置或測試指令換了工具之後，再執行一次 `awkit generate`。
-- **出現 `AWK guard:` 開頭的拒絕。** 主控的 session 與 Worker 的每一個工具呼叫都先經過 `awkit guard tool`：不能自己合併 pull request（那是審查通過後 `awkit submit-review` 的事）、不能推到整合或發版分支、不能讀放憑證的地方、不能連外、不能印出環境變數、不能用 `gh issue create` 開票。`awkit events --all --type guardrail_verdict` 看是哪一條規則擋下了什麼。這個 hook 由 `awkit generate` 寫進 `.claude/settings.local.json`，改了分支設定之後重新執行一次。
-- **想讓它停。** `awkit stop`：做完手上這一步就停，不會留下做到一半的東西。要立刻停，在啟動它的終端機按 Ctrl-C。
+- **出現 `AWK guard:` 開頭的拒絕。** Worker、審查者與解衝突者（還有 `AWKIT_ENGINE=principal` 時主控的 session）的每一個工具呼叫都先經過 `awkit guard tool`：不能自己合併 pull request（那是審查通過後 `awkit submit-review` 的事）、不能推到整合或發版分支、不能讀放憑證的地方、不能連外、不能印出環境變數、不能用 `gh issue create` 開票。`awkit events --all --type guardrail_verdict` 看是哪一條規則擋下了什麼。這個 hook 由 `awkit generate` 寫進 `.claude/settings.local.json`，改了分支設定之後重新執行一次。
+- **想讓它停。** `awkit stop`：做完手上這一步就停，不會留下做到一半的東西。要立刻停，用 `awkit stop --now`。
 
 ## 設定檔
 

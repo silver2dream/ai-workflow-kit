@@ -8,13 +8,16 @@
 
 **模型做判斷，程式做決定。** 寫程式、審查、辯論交給模型；「下一步做什麼」「這算不算通過」「能不能合併」由 Go 程式依 GitHub 上的狀態與實際跑出來的結果決定。模型交回來的是表單，不是結論。
 
-三個角色，都是外部的 CLI：
+派工的是 awkit 自己的 engine（Go 程式）；模型扮演的角色都是外部的 CLI：
 
 | 角色 | 誰扮演 | 做什麼 | 不做什麼 |
 |---|---|---|---|
-| Principal | Claude Code（`awkit run` 啟動的 session） | 照 `principal-workflow` skill 的迴圈，把 awkit 的指令接起來 | 不寫程式、不審查、不合併、不決定下一步 |
+| Engine | awkit（`awkit run` 預設） | 依線的狀態決定下一步，派工、送審、解衝突、合併，把線投影成標籤 | 不寫程式、不審查內容 |
 | Worker | `codex` 或 `claude`（`worker.backend`） | 在自己的 worktree 裡改檔案、跑驗證 | 不碰 git、不開 pull request（runner 做） |
-| Reviewer | Claude Code 的 `pr-reviewer` subagent | 讀 diff、交一份結構化的 `review.json` | 不決定合併（`awkit submit-review` 驗證之後決定） |
+| Reviewer | engine 啟動的唯讀審查者（`agents.reviewer`，預設 Claude Code） | 讀 diff 與 engine 跑的測試結果，交一份結構化的審查 | 不決定合併（`reviewer.SubmitReview` 驗證之後決定） |
+| Resolver | engine 啟動的解衝突者（`agents.resolver`） | 在 rebase 停住的 worktree 裡只改衝突的檔案 | 不 commit、不 push（engine 檢查後才做） |
+
+`AWKIT_ENGINE=principal` 改用原本的主控：一個 Claude Code session 照 `principal-workflow` skill 的迴圈把 awkit 的指令接起來，審查與解衝突交給 `pr-reviewer`、`conflict-resolver` subagent。這個做法保留一個版本，下一版移除。
 
 規劃是另一條線：`awkit plan` 由程式主持一場會議，每個角色只回答一個問題、交回一段文字；寫檔的只有程式。
 
@@ -33,6 +36,18 @@ awkit plan approve <plan>
 
 awkit run
   ├─ kickoff：啟動前的檢查（PreflightChecker.steps）、lock、建立標籤、清掉上次的 STOP 標記
+  └─ engine.Serve：run 檔的心跳、收件匣的停止指令；迴圈（Engine.Run）重複：
+       Reconcile                 → 人在 GitHub 上做的事轉成線的轉換、匯入新票
+       Next                      → Precheck（analyzer）→ 手上的線 → NextTicket（analyzer）
+       Step
+         ├─ dispatch_worker → worker.DispatchWorker → worker.RunIssue（實作者）
+         ├─ check_result    → worker.CheckResult
+         ├─ review_pr       → ReviewStep：engine 跑測試 → 唯讀的 reviewer → reviewer.SubmitReview（驗證、合併或退回）
+         ├─ dispatch_worker（解衝突）→ ResolveStep：engine rebase → resolver 改檔 → engine 檢查、push
+         └─ none / all_complete → workflow.StopWorkflow（寫 STOP 標記與報告）
+       每個轉換寫進事件（events/engine.jsonl），再把工單的標籤改成線的投影
+
+AWKIT_ENGINE=principal awkit run（保留一個版本）
   └─ 迴圈：啟動一個 Principal session（claude），結束後看 STOP 標記；沒有就再開一個
        Principal 在 session 裡重複：
          awkit analyze-next        → next_action（analyzer.Decide）
@@ -50,14 +65,15 @@ awkit run
 
 | 狀態 | 放在哪 | 誰寫 |
 |---|---|---|
-| 有哪些工作、各走到哪一步 | GitHub：issue 的標籤、pull request | `worker`、`reviewer`、`analyzer` |
+| 有哪些工作、各走到哪一步 | engine 的線：轉換在 `.ai/state/events/engine.jsonl`，快照在 `.ai/state/engine/lanes/`；GitHub 的標籤是線的投影 | `engine`（主控模式下是 `worker`、`reviewer`、`analyzer` 直接改標籤） |
+| engine 的 run 與收件匣 | `.ai/state/engine/run.json`、`inbox/`、`outbox/` | `engine` |
 | 一張票的結果、prompt、log | `.ai/state/results/`、`runs/issue-N/`、`logs/` | `worker` |
 | 發生過的每件事 | `.ai/state/events/`（`awkit events` 讀） | `trace` |
 | 迴圈次數、連續失敗次數、STOP 標記、lock | `.ai/state/` | `analyzer`、`worker`、`stopmark`、`kickoff` |
 | 審查紀錄與教訓 | `.ai/state/review_feedback.jsonl`、`lessons.json` | `reviewer`、`lessons` |
 | 一場規劃的每次模型呼叫，以及會議走到哪（`live.json`）、逐句紀錄（`transcript.jsonl`）、整理成資料的紀錄（`record.json`）、擁有者說的話（`owner.jsonl`）與暫停、議程、提問的標記、核可走到哪（`approval.json`） | `.ai/state/council/<plan>/` | `council`；擁有者的話與標記由 `awkit plan say`、`pause` 與工作台寫 |
 
-Principal 的對話不是狀態：session 隨時可以結束再開，下一個 session 從 `awkit analyze-next` 重新得知一切。`.ai/state/` 整個被 git 忽略。
+engine 當掉重開，線從事件重建，接著做手上那一步。主控模式下 Principal 的對話也不是狀態：session 隨時可以結束再開，下一個 session 從 `awkit analyze-next` 重新得知一切。`.ai/state/` 整個被 git 忽略。
 
 標籤就是狀態機：
 
@@ -117,7 +133,7 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 | `ticket`、`task` | `awk-ticket` 區塊的讀取與驗證；建立票券 |
 | `kickoff` | `awkit run`：啟動前的檢查、lock、PTY、log |
 | `analyzer` | 決策引擎：從 GitHub 的狀態決定下一步，計數迴圈與連續失敗 |
-| `engine` | 取代 LLM 主控的確定性 engine（[Agent Engine](specs/agent-engine/README.md) P1，建置中，還沒接進 `awkit run`）：線的狀態機（`lane.go`）、狀態與 GitHub 標籤的對照（`labels.go`，投影與讀回）、事件與快照（`journal.go`，事件在 `events/engine.jsonl`，快照在 `.ai/state/engine/lanes/`）、審查步驟（`review.go`：自己跑測試、組 reviewer 的 context、唯讀的 reviewer、經 `reviewer.SubmitReview` 做決定，回傳線的轉換）、解衝突步驟（`resolve.go`：engine 自己 rebase 與 push，resolver 只改衝突檔案，engine 檢查標記與範圍）、主迴圈（`engine.go`：依線決定下一步，順序照 analyzer，挑票問 analyzer 的 `NextTicket`；投影標籤、轉人留言；每一輪先對帳，人在 GitHub 上做的事轉成線的轉換）、實作者步驟（`implement.go`：P1 沿用 worker）、GitHub 讀寫（`github.go`）、當作專案的 run 執行（`process.go`：心跳與正在做的事寫進 `.ai/state/engine/run.json`）、指令的收件匣與回覆（`inbox.go`）、影子（`shadow.go`：每一步讓主控的 analyzer 對同一份狀態只算不做，比對兩邊的決定，寫 `engine_shadow` 事件；`awkit status` 顯示最近一次的比對）。`AWKIT_ENGINE=engine awkit run` 由它跑，`AWKIT_ENGINE=shadow` 另外開著影子（`cmd/awkit/run_engine.go`） |
+| `engine` | 取代 LLM 主控的確定性 engine（[Agent Engine](specs/agent-engine/README.md) P1；`awkit run` 預設由它跑）：線的狀態機（`lane.go`）、狀態與 GitHub 標籤的對照（`labels.go`，投影與讀回）、事件與快照（`journal.go`，事件在 `events/engine.jsonl`，快照在 `.ai/state/engine/lanes/`）、審查步驟（`review.go`：自己跑測試、組 reviewer 的 context、唯讀的 reviewer、經 `reviewer.SubmitReview` 做決定，回傳線的轉換）、解衝突步驟（`resolve.go`：engine 自己 rebase 與 push，resolver 只改衝突檔案，engine 檢查標記與範圍）、主迴圈（`engine.go`：依線決定下一步，順序照 analyzer，挑票問 analyzer 的 `NextTicket`；投影標籤、轉人留言；每一輪先對帳，人在 GitHub 上做的事轉成線的轉換）、實作者步驟（`implement.go`：P1 沿用 worker）、GitHub 讀寫（`github.go`）、當作專案的 run 執行（`process.go`：心跳與正在做的事寫進 `.ai/state/engine/run.json`）、指令的收件匣與回覆（`inbox.go`）、影子（`shadow.go`：每一步讓主控的 analyzer 對同一份狀態只算不做，比對兩邊的決定，寫 `engine_shadow` 事件；`awkit status` 顯示最近一次的比對）。`awkit run` 預設由它跑，`AWKIT_ENGINE=shadow` 另外開著影子，`AWKIT_ENGINE=principal` 改用主控（保留一個版本，`cmd/awkit/run_engine.go`） |
 | `agent` | engine 的 agent runtime（建置中，還沒有呼叫者）：角色設定的預設與上限（`role.go`）、`Run(ctx, envelope) → Result`、schema 核對與重問、逾時連同子程序一起結束、每次派工的 `agent_run` 事件（`runtime.go`）、Claude Code 與 Codex 的轉接器（`claude.go`、`codex.go`）、每個角色的最少 context、依來源推導的信任等級、遮蔽、資料區塊與信封存檔（`context.go`） |
 | `worker` | 派工、runner、backend、安全檢查、結果檢查 |
 | `guard` | guardrail 共用的部分：判定（`Verdict`，寫成 `guardrail_verdict` 事件）、帶來源與信任等級的 context 片段、清理看不見的字元、規則層注入偵測（`injection.go`，含中英文；語料在 `testdata/injection/`）、把不可信的片段包成資料區塊。Worker 的 prompt 由它組成，被擋下的票不派出去（`blocked`）。工具政策（`policy.go`、`shell.go`：拆開組合指令與 `sh -c`、`cmd /c` 這類包裝，依角色決定）由 `awkit guard tool` 當作 Claude Code 的 PreToolUse hook 執行：主控的 session 由 `awkit generate` 寫進 `settings.local.json`，Claude 的 Worker 每一次都帶 awkit 寫的設定（`--settings`、`--setting-sources ""`、`dontAsk`）。`env.go` 決定 agent 拿到哪些環境變數。`outbound.go` 在每一個寫到 GitHub 的 `gh` 呼叫送出前掃描憑證與個資（`GHGate`：`ghutil.RunWithRetry`、`landing.GH` 與 `awkit lessons promote` 都經過它；被擋的錯誤包著 `ErrBlocked`，Worker 的 pull request 被擋時結果是 `blocked`、階段 `guard_output`）；呼叫屬於哪個專案與工單由 `context` 裡的 `Scope` 帶著。`diff.go` 在 Worker 的變更裡找可疑的模式，只記錄（`flag`）。教訓的篩檢與隔離在 `lessons/screen.go`。見 [Agent Engine](specs/agent-engine/design.md) §9 |
@@ -161,5 +177,5 @@ Principal 的對話不是狀態：session 隨時可以結束再開，下一個 s
 
 - [貢獻](contributing.md)：建置、測試、commit 與發版
 - [學習迴圈的設計](specs/learning-loop/design.md)
-- [Agent Engine](specs/agent-engine/README.md)：以確定性的 engine 取代 LLM 主控、平行的線與合併佇列、角色設定、分層的 guardrail、容器隔離（已核可，分階段實作中；完成前，本頁描述的仍是現行架構）
+- [Agent Engine](specs/agent-engine/README.md)：以確定性的 engine 取代 LLM 主控、平行的線與合併佇列、角色設定、分層的 guardrail、容器隔離（已核可，分階段實作中；本頁描述的是已經做到的部分：P1 起 `awkit run` 由 engine 跑，平行的線、合併佇列與容器還沒有）
 - [Skills 與規則](../user/skills.md)：kit 的 skill 怎麼寫

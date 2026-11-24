@@ -10,7 +10,7 @@
 |---|---|
 | `git`，專案的 `origin` 是一個 GitHub repository | 票券是 issue，Worker 把分支推到 `origin` 再開 pull request |
 | [`gh`](https://cli.github.com/)，`gh auth login` 完成，對該 repository 有寫入權限 | 建 issue、改標籤、審查與合併 |
-| [`claude`](https://claude.com/claude-code)（Claude Code CLI） | 扮演 Principal、審查者與議會 |
+| [`claude`](https://claude.com/claude-code)（Claude Code CLI） | 扮演審查者與議會 |
 | `codex` 或 `claude` | 扮演 Worker；用哪個由 `worker.backend` 決定，預設 `codex` |
 | Windows：Git for Windows | Claude Code 需要它的 Git Bash，建置與測試指令也透過它執行 |
 
@@ -104,7 +104,7 @@ awkit run --issue 42   # 只做一張
 awkit run --dry-run    # 只跑啟動前的檢查
 ```
 
-`awkit run` 會在這個終端機裡啟動 Claude Code 當 Principal。每張票的流程：Worker 在自己的 worktree 裡寫變更並開 pull request → 審查（重跑測試、逐條核對驗收條件；CI 要通過）→ 通過就合併並關閉 issue，不通過就帶著意見退回給 Worker。票券依編號由小到大處理，依賴沒完成的會先跳過。
+`awkit run` 在這個終端機裡由 awkit 的 engine（程式，不是模型）派工。每張票的流程：Worker 在自己的 worktree 裡寫變更並開 pull request → 審查（重跑測試、逐條核對驗收條件；CI 要通過）→ 通過就合併並關閉 issue，不通過就帶著意見退回給 Worker。票券依編號由小到大處理，依賴沒完成的會先跳過。設了環境變數 `AWKIT_ENGINE=principal` 時改用舊的做法：啟動 Claude Code 當 Principal 來派工。這個做法下一版移除。
 
 另一個終端機可以看進度或請它停下：
 

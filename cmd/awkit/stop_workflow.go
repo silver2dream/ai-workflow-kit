@@ -96,6 +96,8 @@ func cmdStopWorkflow(args []string) int {
 		*stateRoot = root
 	}
 
+	noteDeprecated(*stateRoot, "awkit stop-workflow")
+
 	// Run Go implementation
 	ctx := context.Background()
 	result, err := workflow.StopWorkflow(ctx, workflow.StopWorkflowOptions{
