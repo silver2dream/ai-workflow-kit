@@ -23,6 +23,8 @@ Usage:
 Options:
   --issue         Required: Issue number
   --ticket        Required: Ticket file path
+  --title         Optional: The issue's title, which the commit and the pull request
+                  are titled with (default: the ticket's "# " heading, then issue-<number>)
   --repo          Optional: Repo override (root/backend/frontend)
   --state-root    Optional: Override state root (default: git root)
   --gh-timeout    Optional: GitHub CLI timeout (default: timeouts.gh_seconds of `+layout.ConfigFile+`, 60s)
@@ -50,6 +52,7 @@ func cmdRunIssue(args []string) int {
 
 	issueNumber := fs.Int("issue", 0, "")
 	ticketFile := fs.String("ticket", "", "")
+	title := fs.String("title", "", "")
 	repo := fs.String("repo", "", "")
 	stateRoot := fs.String("state-root", "", "")
 	// Not given, a timeout is the configuration's: the Worker fills it in.
@@ -113,6 +116,7 @@ func cmdRunIssue(args []string) int {
 	ctx := context.Background()
 	result, err := runIssue(ctx, worker.RunIssueOptions{
 		IssueID:      *issueNumber,
+		Title:        *title,
 		TicketFile:   *ticketFile,
 		RepoOverride: *repo,
 		StateRoot:    *stateRoot,

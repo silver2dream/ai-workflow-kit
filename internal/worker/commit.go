@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 )
 
 var commitPrefixPattern = regexp.MustCompile(`^\[([a-z]+)\]\s+`)
@@ -48,16 +49,18 @@ func normalizeCommitSubject(value string) string {
 	return strings.Join(strings.Fields(buf.String()), " ")
 }
 
+// isAllowedCommitRune says whether a rune is kept in a commit's subject: a
+// lower-case letter, a mark or a digit of any script, a space, an underscore
+// or a hyphen. Punctuation and symbols become spaces. Only ASCII used to be
+// kept, and a ticket titled in Chinese lost every word of its title.
 func isAllowedCommitRune(r rune) bool {
 	switch {
-	case r >= 'a' && r <= 'z':
-		return true
-	case r >= '0' && r <= '9':
-		return true
 	case r == ' ' || r == '_' || r == '-':
 		return true
-	default:
+	case unicode.IsUpper(r):
 		return false
+	default:
+		return unicode.IsLetter(r) || unicode.IsMark(r) || unicode.IsDigit(r)
 	}
 }
 

@@ -323,7 +323,7 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 	workerCtx, workerCancel := context.WithTimeout(ctx, opts.WorkerTimeout)
 	defer workerCancel()
 
-	workerExitCode := runWorkerScript(workerCtx, opts.StateRoot, opts.IssueNumber, ticketPath, meta.Repo, opts.MergeIssue, opts.PRNumber)
+	workerExitCode := runWorkerScript(workerCtx, opts.StateRoot, opts.IssueNumber, issue.Title, ticketPath, meta.Repo, opts.MergeIssue, opts.PRNumber)
 	logger.Log("Worker 執行完成 (exit code: %d)", workerExitCode)
 
 	// Check for timeout
@@ -674,13 +674,13 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 }
 
 // runWorkerScript runs the worker using awkit run-issue command
-func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo, mergeIssue string, prNumber int) int {
-	exitCode, _ := runWorkerCommand(ctx, stateRoot, issueNumber, ticketPath, repo, mergeIssue, prNumber)
+func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, title, ticketPath, repo, mergeIssue string, prNumber int) int {
+	exitCode, _ := runWorkerCommand(ctx, stateRoot, issueNumber, title, ticketPath, repo, mergeIssue, prNumber)
 	return exitCode
 }
 
 // runWorkerCommand runs the worker using awkit run-issue command
-func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ticketPath, repo, mergeIssue string, prNumber int) (int, bool) {
+func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, title, ticketPath, repo, mergeIssue string, prNumber int) (int, bool) {
 	// Use the same binary as the current process to avoid PATH mismatches
 	// (e.g. ~/.local/bin/awkit vs $GOPATH/bin/awkit)
 	awkitPath, err := os.Executable()
@@ -688,23 +688,7 @@ func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ti
 		return 1, false
 	}
 
-	args := []string{"run-issue",
-		"--issue", fmt.Sprintf("%d", issueNumber),
-		"--ticket", ticketPath,
-		"--state-root", stateRoot,
-	}
-	if repo != "" {
-		args = append(args, "--repo", strings.TrimSpace(repo))
-	}
-	// Pass merge issue parameters
-	if mergeIssue != "" {
-		args = append(args, "--merge-issue", mergeIssue)
-		if prNumber > 0 {
-			args = append(args, "--pr-number", fmt.Sprintf("%d", prNumber))
-		}
-	}
-
-	cmd := exec.CommandContext(ctx, awkitPath, args...)
+	cmd := exec.CommandContext(ctx, awkitPath, runIssueArgs(stateRoot, issueNumber, title, ticketPath, repo, mergeIssue, prNumber)...)
 	cmd.Dir = stateRoot
 	cmd.Stdout = os.Stderr // Worker output goes to stderr
 	cmd.Stderr = os.Stderr
@@ -717,6 +701,32 @@ func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ti
 		return 1, true
 	}
 	return 0, true
+}
+
+// runIssueArgs are the arguments of the `awkit run-issue` a ticket is
+// dispatched to. The issue's title is passed as one argument with its flag
+// ("--title=…"), so that a title that starts with a hyphen is not read as a
+// flag.
+func runIssueArgs(stateRoot string, issueNumber int, title, ticketPath, repo, mergeIssue string, prNumber int) []string {
+	args := []string{"run-issue",
+		"--issue", fmt.Sprintf("%d", issueNumber),
+		"--ticket", ticketPath,
+		"--state-root", stateRoot,
+	}
+	if title = strings.TrimSpace(title); title != "" {
+		args = append(args, "--title="+title)
+	}
+	if repo != "" {
+		args = append(args, "--repo", strings.TrimSpace(repo))
+	}
+	// Pass merge issue parameters
+	if mergeIssue != "" {
+		args = append(args, "--merge-issue", mergeIssue)
+		if prNumber > 0 {
+			args = append(args, "--pr-number", fmt.Sprintf("%d", prNumber))
+		}
+	}
+	return args
 }
 
 // getSessionID gets the current principal session ID
