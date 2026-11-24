@@ -30,8 +30,16 @@ type Analyzer struct {
 	Config    *Config
 	GHClient  GitHubClientInterface
 	GHTimeout time.Duration
-	only      int        // the one issue the run is limited to, 0 for every ticket (see LimitTo)
-	mu        sync.Mutex // protects loop counter updates
+	// ReadOnly decides without acting on the decision: no label is
+	// changed and no attempt is counted. The engine's shadow decides so
+	// (LabelDecision; design.md §5.1).
+	ReadOnly bool
+	// AttemptsOf, when it is set, counts the attempts in the place of the
+	// state files: the engine's shadow gives the counts of its lanes. ok
+	// false is no count there, and the file is read.
+	AttemptsOf func(kind string, pr int) (count int, ok bool)
+	only       int        // the one issue the run is limited to, 0 for every ticket (see LimitTo)
+	mu         sync.Mutex // protects loop counter updates
 }
 
 // New creates a new Analyzer
@@ -56,6 +64,26 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 	if d := a.Precheck(); d != nil {
 		return d, nil
 	}
+	d, apiErrors, err := a.labelDecision(ctx)
+	if d != nil || err != nil {
+		return d, err
+	}
+	return a.pickTicket(ctx, apiErrors)
+}
+
+// LabelDecision is what Decide decides from the labels of the tickets in
+// the workflow's hands: a ticket a Worker is at work on, then one in review,
+// one whose review is tried again, one to resolve, one that needs a person.
+// nil is none in its hands: the next ticket is picked (NextTicket). It is
+// what the engine's shadow compares with the engine's lanes.
+func (a *Analyzer) LabelDecision(ctx context.Context) (*Decision, error) {
+	d, _, err := a.labelDecision(ctx)
+	return d, err
+}
+
+// labelDecision is LabelDecision, and the lookups of it that failed (which
+// picking a ticket is told).
+func (a *Analyzer) labelDecision(ctx context.Context) (*Decision, int, error) {
 	labels := a.Config.GitHub.Labels
 
 	// Step 1: Check in-progress issues
@@ -67,13 +95,13 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		return &Decision{
 			NextAction: ActionNone,
 			ExitReason: ReasonGitHubAPIError,
-		}, nil
+		}, 0, nil
 	}
 	if len(inProgressIssues) > 0 {
 		return &Decision{
 			NextAction:  ActionCheckResult,
 			IssueNumber: inProgressIssues[0].Number,
-		}, nil
+		}, 0, nil
 	}
 
 	return a.decideFromLabels(ctx)
@@ -143,8 +171,9 @@ func (a *Analyzer) Precheck() *Decision {
 }
 
 // decideFromLabels reads the labels of the tickets in the workflow's hands
-// (steps 2 to 2.7), then picks the next ticket (NextTicket).
-func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
+// (steps 2 to 2.7). nil is none in its hands; the lookups that failed are
+// counted for picking the next ticket (NextTicket).
+func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, int, error) {
 	labels := a.Config.GitHub.Labels
 
 	// Track API errors for subsequent non-critical checks
@@ -178,7 +207,7 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 						IssueNumber: issue.Number,
 						PRNumber:    prNumber,
 						ExitReason:  ReasonNeedsHumanReview,
-					}, nil
+					}, apiErrors, nil
 				}
 				if err := a.incrementAttempts("conflict", prNumber); err != nil {
 					a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.PRReady})
@@ -187,20 +216,20 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 						IssueNumber: issue.Number,
 						PRNumber:    prNumber,
 						ExitReason:  ReasonNeedsHumanReview,
-					}, nil
+					}, apiErrors, nil
 				}
 				return &Decision{
 					NextAction:  ActionDispatchWorker,
 					IssueNumber: issue.Number,
 					PRNumber:    prNumber,
 					MergeIssue:  MergeIssueConflict,
-				}, nil
+				}, apiErrors, nil
 			}
 			return &Decision{
 				NextAction:  ActionReviewPR,
 				IssueNumber: issue.Number,
 				PRNumber:    prNumber,
-			}, nil
+			}, apiErrors, nil
 		}
 		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
 		a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.PRReady})
@@ -208,7 +237,7 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 			NextAction:  ActionNone,
 			IssueNumber: issue.Number,
 			ExitReason:  ReasonNeedsHumanReview,
-		}, nil
+		}, apiErrors, nil
 	}
 
 	// Step 2.3: Check review-failed issues (retry with new subagent)
@@ -234,7 +263,7 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 						IssueNumber: issue.Number,
 						PRNumber:    prNumber,
 						ExitReason:  ReasonNeedsHumanReview,
-					}, nil
+					}, apiErrors, nil
 				}
 				// Allow new subagent to retry
 				a.updateIssueLabels(ctx, issue.Number, []string{labels.PRReady}, []string{labels.ReviewFailed})
@@ -242,7 +271,7 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 					NextAction:  ActionReviewPR,
 					IssueNumber: issue.Number,
 					PRNumber:    prNumber,
-				}, nil
+				}, apiErrors, nil
 			}
 			// Max retries exceeded, escalate to human
 			a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.ReviewFailed})
@@ -251,7 +280,7 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 				IssueNumber: issue.Number,
 				PRNumber:    prNumber,
 				ExitReason:  ReasonReviewMaxRetries,
-			}, nil
+			}, apiErrors, nil
 		}
 		// Can't extract PR number - mark as needs-human-review to prevent infinite loop
 		a.updateIssueLabels(ctx, issue.Number, []string{labels.NeedsHumanReview}, []string{labels.ReviewFailed})
@@ -259,7 +288,7 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 			NextAction:  ActionNone,
 			IssueNumber: issue.Number,
 			ExitReason:  ReasonNeedsHumanReview,
-		}, nil
+		}, apiErrors, nil
 	}
 
 	// Step 2.5: Check merge-conflict label (Worker needs to fix conflict)
@@ -280,14 +309,14 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 				NextAction:  ActionNone,
 				IssueNumber: issue.Number,
 				ExitReason:  ReasonNeedsHumanReview,
-			}, nil
+			}, apiErrors, nil
 		}
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,
 			PRNumber:    prNumber,
 			MergeIssue:  MergeIssueConflict,
-		}, nil
+		}, apiErrors, nil
 	}
 
 	// Step 2.6: Check needs-rebase label (Worker needs to rebase)
@@ -307,14 +336,14 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 				NextAction:  ActionNone,
 				IssueNumber: issue.Number,
 				ExitReason:  ReasonNeedsHumanReview,
-			}, nil
+			}, apiErrors, nil
 		}
 		return &Decision{
 			NextAction:  ActionDispatchWorker,
 			IssueNumber: issue.Number,
 			PRNumber:    prNumber,
 			MergeIssue:  MergeIssueRebase,
-		}, nil
+		}, apiErrors, nil
 	}
 
 	// Step 2.7: Check for blocking labels
@@ -328,7 +357,7 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 			NextAction:  ActionNone,
 			IssueNumber: workerFailedIssues[0].Number,
 			ExitReason:  ReasonWorkerFailed,
-		}, nil
+		}, apiErrors, nil
 	}
 
 	needsReviewIssues, err := a.GHClient.ListIssuesByLabel(ctx, labels.NeedsHumanReview)
@@ -341,10 +370,10 @@ func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
 			NextAction:  ActionNone,
 			IssueNumber: needsReviewIssues[0].Number,
 			ExitReason:  ReasonNeedsHumanReview,
-		}, nil
+		}, apiErrors, nil
 	}
 
-	return a.pickTicket(ctx, apiErrors)
+	return nil, apiErrors, nil
 }
 
 // NextTicket is the decision once no ticket is in the workflow's hands: the
@@ -535,6 +564,11 @@ func (a *Analyzer) attemptFile(kind string, prNumber int) string {
 
 // getAttempts returns the recorded attempt count for (kind, PR).
 func (a *Analyzer) getAttempts(kind string, prNumber int) int {
+	if a.AttemptsOf != nil {
+		if count, ok := a.AttemptsOf(kind, prNumber); ok {
+			return count
+		}
+	}
 	data, err := os.ReadFile(a.attemptFile(kind, prNumber))
 	if err != nil {
 		return 0
@@ -547,6 +581,9 @@ func (a *Analyzer) getAttempts(kind string, prNumber int) int {
 // if it cannot be persisted, so the caller can escalate rather than risk an
 // unbounded retry loop.
 func (a *Analyzer) incrementAttempts(kind string, prNumber int) error {
+	if a.ReadOnly {
+		return nil
+	}
 	count := a.getAttempts(kind, prNumber) + 1
 	if err := writeFileAtomic(a.attemptFile(kind, prNumber), []byte(strconv.Itoa(count)), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "[analyzer] error: failed to persist %s attempt count for PR #%d: %v\n", kind, prNumber, err)
@@ -569,6 +606,9 @@ func (a *Analyzer) incrementReviewAttempts(prNumber int) error {
 // updateIssueLabels is a helper that logs warnings if label operations fail.
 // Label operations are non-critical - we log warnings but don't fail the workflow.
 func (a *Analyzer) updateIssueLabels(ctx context.Context, issueNumber int, addLabels, removeLabels []string) {
+	if a.ReadOnly {
+		return
+	}
 	for _, label := range removeLabels {
 		if err := a.GHClient.RemoveLabel(ctx, issueNumber, label); err != nil {
 			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to remove label %q from issue #%d: %v\n", label, issueNumber, err)

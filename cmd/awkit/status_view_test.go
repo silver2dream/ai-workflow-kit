@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/engine"
 	status "github.com/silver2dream/ai-workflow-kit/internal/status"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
@@ -298,5 +300,43 @@ func TestCmdStatus_NotSetUp(t *testing.T) {
 	})
 	if !strings.Contains(out, "Next      awkit init sets this directory up.") {
 		t.Errorf("awkit status in a directory that is not set up:\n%s", out)
+	}
+}
+
+// How the last run compared with the Principal's workflow, when it had a
+// shadow: how many decisions, how many differed, and the latest of those.
+func TestPrintStatus_Shadow(t *testing.T) {
+	at := time.Date(2026, 11, 24, 10, 5, 0, 0, time.Local)
+	differs := func(i int) engine.ShadowDifference {
+		return engine.ShadowDifference{At: at.Add(time.Duration(i) * time.Minute), Comparison: engine.Comparison{
+			Engine:   &analyzer.Decision{NextAction: analyzer.ActionReviewPR, IssueNumber: i, PRNumber: 30},
+			Analyzer: &analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: i, PRNumber: 30, MergeIssue: analyzer.MergeIssueConflict},
+		}}
+	}
+	run := &engine.ShadowRun{Steps: 42, Same: 39, Known: 1, Failed: 1, Differences: []engine.ShadowDifference{differs(3)}}
+	out := statusText(statusView{Shadow: run})
+	for _, want := range []string{
+		"Shadow    the last run compared 42 of the engine's decisions with the Principal's workflow's: 39 the same, 1 as is known, 1 different, 1 not compared\n",
+		"          10:08 the engine: review_pr #3 (PR #30)\n",
+		"                the Principal's workflow: dispatch_worker #3 (PR #30) to resolve its conflict\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status does not show %q:\n%s", want, out)
+		}
+	}
+
+	// Many differences: the latest are listed, the rest counted.
+	run = &engine.ShadowRun{Steps: 9, Same: 2}
+	for i := 1; i <= 7; i++ {
+		run.Differences = append(run.Differences, differs(i))
+	}
+	out = statusText(statusView{Shadow: run})
+	if !strings.Contains(out, "2 earlier differences are in awkit events") || strings.Contains(out, "#2 (PR") || !strings.Contains(out, "review_pr #7 (PR #30)") {
+		t.Errorf("the latest differences are not the ones listed:\n%s", out)
+	}
+
+	// A run without a shadow says nothing of one.
+	if out := statusText(statusView{}); strings.Contains(out, "Shadow") {
+		t.Errorf("status speaks of a shadow there was not:\n%s", out)
 	}
 }

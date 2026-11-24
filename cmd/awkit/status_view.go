@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/engine"
 	status "github.com/silver2dream/ai-workflow-kit/internal/status"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/workflow"
@@ -34,6 +35,10 @@ type statusView struct {
 
 	Tickets   *status.Tickets
 	NoTickets string // why there is no word on the tickets
+
+	// Shadow is how the last run of the engine compared its decisions with
+	// the Principal's workflow's, when it had a shadow (AWKIT_ENGINE=shadow).
+	Shadow *engine.ShadowRun
 
 	Warnings []string
 }
@@ -61,6 +66,11 @@ func collectStatusView(ctx context.Context, report status.Report, cfg *config.Co
 		view.Warnings = append(view.Warnings, "the lock of a run cannot be read ("+filepath.ToSlash(report.Run.LockFile)+"); awkit reset --lock removes it")
 	}
 	view.StopReason, view.Stopped = stopmark.Read(".")
+	if run, ok, err := engine.LastShadow("."); err != nil {
+		view.Warnings = append(view.Warnings, fmt.Sprintf("how the engine's last run compared with the Principal's workflow cannot be read: %v", err))
+	} else if ok {
+		view.Shadow = &run
+	}
 
 	if cfg == nil {
 		return view
@@ -113,6 +123,7 @@ func printStatus(w io.Writer, v statusView) {
 	if v.StaleLock {
 		fmt.Fprintf(w, "%-9s a run died and left its lock; the next run clears it\n", "")
 	}
+	printShadow(w, v.Shadow)
 
 	// The tickets.
 	switch {
@@ -144,6 +155,38 @@ func printStatus(w io.Writer, v statusView) {
 	}
 
 	fmt.Fprintf(w, "\n%-9s %s\n", "Next", nextStep(v))
+}
+
+// maxShownDifferences is how many of the shadow's differences are listed,
+// the latest, before the rest are counted.
+const maxShownDifferences = 5
+
+// printShadow says how the last run's decisions compared with the
+// Principal's workflow's.
+func printShadow(w io.Writer, run *engine.ShadowRun) {
+	if run == nil {
+		return
+	}
+	parts := []string{fmt.Sprintf("%d the same", run.Same)}
+	if run.Known > 0 {
+		parts = append(parts, fmt.Sprintf("%d as is known", run.Known))
+	}
+	if len(run.Differences) > 0 {
+		parts = append(parts, fmt.Sprintf("%d different", len(run.Differences)))
+	}
+	if run.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d not compared", run.Failed))
+	}
+	fmt.Fprintf(w, "%-9s the last run compared %d of the engine's decisions with the Principal's workflow's: %s\n", "Shadow", run.Steps, strings.Join(parts, ", "))
+	shown := run.Differences
+	if len(shown) > maxShownDifferences {
+		fmt.Fprintf(w, "%-9s %d earlier differences are in awkit events\n", "", len(shown)-maxShownDifferences)
+		shown = shown[len(shown)-maxShownDifferences:]
+	}
+	for _, d := range shown {
+		fmt.Fprintf(w, "%-9s %s the engine: %s\n", "", d.At.Local().Format("15:04"), engine.Decided(d.Comparison.Engine))
+		fmt.Fprintf(w, "%-9s       the Principal's workflow: %s\n", "", engine.Decided(d.Comparison.Analyzer))
+	}
 }
 
 // nextStep is the one thing a person does next.

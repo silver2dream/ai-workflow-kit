@@ -158,6 +158,7 @@ func newEngineFixture(t *testing.T, tickets ...Ticket) *engineFixture {
 		Review: answer("review", &f.review), Resolve: answer("resolve", &f.resolve),
 		Log: &f.log, now: func() time.Time { return time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC) },
 	}
+	shadowed(f)
 	return f
 }
 

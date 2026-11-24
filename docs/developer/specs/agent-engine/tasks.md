@@ -126,6 +126,8 @@
   - 相依：1.6
   - `AWKIT_ENGINE=shadow`：engine 與現行主控對同一狀態算決定，逐筆比對寫事件；工作台與 `awkit status` 顯示分歧；測試專案跑完一份規劃無分歧後，預設改為 engine，保留 `AWKIT_ENGINE=principal` 一個版本；主控相關指令的 deprecation 事件
   - 需求：R1
+  - 分兩步。1.7a 影子與比對：`AWKIT_ENGINE=shadow`、每一步的比對事件、`awkit status` 的顯示、窮舉比對的測試。1.7b 切換：在測試專案以影子模式跑完一份規劃，沒有說不出原因的分歧後，預設改為 engine，加上 `AWKIT_ENGINE=principal` 與主控指令的 deprecation 事件
+  - 1.7a：細節在 `design.md` §5.1。與原本寫的不同：影子模式改成 engine 執行、主控的判斷在旁邊算（使用者 2026-11-24 同意，理由在 design）；另加窮舉比對的測試；工作台的顯示放到 1.8。比對找到一個 engine 與主控不同的地方並改了 engine：需要人的線，決定不再帶 PR 編號
 - [ ] 1.8 工作台與 `awkit status` 讀 engine 的狀態
   - 相依：1.6
   - 執行頁改顯示線（P1 只有一條）；串流的 `engine` 區塊
