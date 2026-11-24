@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/agent"
@@ -61,8 +62,14 @@ type Engine struct {
 	Implement, Check, Review, Resolve Step
 	// Log is where the engine says what it does; nil is stderr.
 	Log io.Writer
+	// Watch, when set, is told each decision before the engine acts on it
+	// (Serve keeps the run file with it).
+	Watch func(*analyzer.Decision)
 
 	now func() time.Time
+	// logMu keeps what the run and its inbox say from running into each
+	// other (Serve takes commands while a step runs).
+	logMu sync.Mutex
 }
 
 // Options are what `awkit run` gives the engine.
@@ -103,6 +110,8 @@ func New(opts Options) (*Engine, error) {
 }
 
 func (e *Engine) logf(format string, args ...any) {
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
 	w := e.Log
 	if w == nil {
 		w = os.Stderr
@@ -140,6 +149,9 @@ func (e *Engine) Run(ctx context.Context) (string, error) {
 			return analyzer.ReasonGitHubAPIError, err
 		}
 		e.logf("next: %s%s", d.NextAction, describe(d))
+		if e.Watch != nil {
+			e.Watch(d)
+		}
 		end, err := e.Step(ctx, d)
 		if ctx.Err() != nil {
 			return EndInterrupted, nil

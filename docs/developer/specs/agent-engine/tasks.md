@@ -114,6 +114,8 @@
   - 需求：R1、R14
   - 分三個 PR。1.6a 引擎核心：依線決定下一步（順序照 analyzer）、實作者沿用 worker、審查與解衝突的次數上限、送審前問可不可合併、標籤投影與轉人的說明留言、開始時依標籤匯入工單；analyzer 的 `Decide` 拆出 `Precheck` 與 `NextTicket` 給 engine 用。1.6b 程序：單一實例鎖、租約與心跳、當掉重開接回、收件匣與回覆、`awkit stop` 兩種停止、`awkit detach`、`AWKIT_ENGINE=engine` 讓 `awkit run` 改由 engine 跑。1.6c 對帳與設定：人在 GitHub 上的動作轉成指令（含移除 `needs-human-review` 放行）、`agents.*` 設定鍵
   - 1.6a 完成：#286
+  - 1.6b：細節在 `design.md` §5.1。與原本寫的不同：租約就是 run 檔裡「正在做的決定」，當掉重開的接回由 `Next` 的順序做（沒有另外的接回步驟）；鎖由 `awkit run` 持有（與主控同一把）；收件匣只接兩種停止，其他種類到 2.6
+  - 1.6b 完成：#287
 - [ ] 1.7 影子模式與切換
   - 相依：1.6
   - `AWKIT_ENGINE=shadow`：engine 與現行主控對同一狀態算決定，逐筆比對寫事件；工作台與 `awkit status` 顯示分歧；測試專案跑完一份規劃無分歧後，預設改為 engine，保留 `AWKIT_ENGINE=principal` 一個版本；主控相關指令的 deprecation 事件
