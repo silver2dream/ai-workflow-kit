@@ -128,6 +128,37 @@
   - 人關了工單：工作已知落地（`analyzer.KnownLanded`）→ `merged`（新原因 `landed`，可以從任何進行中的狀態來）；否則 → `cancelled`；工單拿掉了工作標籤 → `cancelled`。
 - `Import` 併進 `Reconcile`。
 
+實作（1.7a，`internal/engine/shadow.go`，`analyzer.LabelDecision`）：
+
+- **影子模式是 engine 執行、主控的判斷在旁邊算**（2026-11-24 改；原本寫的是主控執行、engine 在旁邊算）：`AWKIT_ENGINE=shadow` 照 `engine` 跑，另外在每一步決定之前，讓主控用的 analyzer 對同一份 GitHub 狀態算出它的決定，只算不做，逐筆比對並寫事件。改的理由：
+  - 要驗的是之後會上線的 engine 本身，包括它自己記的次數與它真的執行的步驟；
+  - 主控執行時，engine 只能從標籤反推線，拿不到自己的次數，次數上限那一段比不到；
+  - 比對用的那次實跑就是 engine 的實跑，不必另外跑一整份規劃的 LLM 主控。
+- **比哪一段**：開始前的檢查（`Precheck`）與挑票（`NextTicket`）兩邊本來就是同一段程式，不比。比的是「手上的票下一步做什麼」：
+  - engine 從線決定的那段（`inHand`）；
+  - analyzer 從標籤決定的那段（`LabelDecision`）：有 `in-progress` 的票，然後 `pr-ready`、`review-failed`、`merge-conflict`、`needs-rebase`、`worker-failed`、`needs-human-review`。
+  - 兩邊都說「手上沒有票」也算一致。
+  - `Decide` 拆成 `Precheck` → `LabelDecision` → 挑票，行為不變。
+- **同一份狀態**：
+  - analyzer 不自己問 GitHub 的標籤，改讀 engine 這一步讀到的工單快照（一次 `gh issue list`，順序照 gh）；
+  - PR 可不可合併，用 engine 這一步問到的答案（同一步每個 PR 只問一次，engine 自己的決定也用這個答案）；
+  - 審查重試與解衝突的次數用 engine 線上的次數：analyzer 原本讀自己的檔案，engine 執行時沒有人寫它們；
+  - 找 PR 編號照 analyzer 自己的做法（結果檔、工單內文、分支），所以 engine 記的 PR 與 analyzer 找到的不同也比得出來。
+- **只算不做**：影子裡的 analyzer（`ReadOnly`）不改標籤、不加次數、不留言、不開關工單；它試著寫 GitHub 時會被拒絕。
+- **事件**：每一步一筆 `engine_shadow`，內容是兩邊的決定（動作、工單、PR、解哪種衝突、結束原因）、一致與否、已知差異的種類，以及 analyzer 算不出來時的原因。不一致而且不是已知差異的是 warn，engine 的 log 也會說。
+- **已知的差異**（有理由，不算分歧）：
+  - `order`：analyzer 分不出來的兩張票（工作流程的標籤完全相同），engine 取編號最小的，analyzer 取 `gh issue list` 給的第一張（新的在前）。
+  - `check_first`：engine 派出去的票，工單上沒有 `in-progress`（worker 還沒加上，或沒留結果就結束並拿掉了）。engine 先查 worker 有沒有留下結果再重派；analyzer 只看標籤，手上沒有票，直接把那張票再挑一次。
+- **engine 為了一致而改的**：需要人的線，決定只帶工單、不帶 PR 編號，與 analyzer 相同（原本 engine 會帶上線的 PR）。
+- **窮舉比對**（`shadow_test.go`，共 4,642 種狀況，每次 CI 都跑）：
+  - 每一種 P1 的線（狀態、解哪種衝突、為什麼要人、有沒有 PR、兩種次數各在上限之下／剛好／之上、PR 可以合併／衝突／不確定／問不到），投影成標籤後兩邊各算一次；派出去的線用派工時實際的標籤（派工那一步不投影）。
+  - 每一種標籤組合（工作標籤加上其他七個標籤的所有子集，有沒有 PR、PR 有沒有衝突），依 `Infer` 匯入成線後兩邊各算一次。
+  - 每兩種線同時在手上（兩種編號順序），看先處理哪一張。
+  - 答案必須一致，或是上面的已知差異。另外故意把 engine 改壞（上限差一、先 rebase 再衝突、把不確定當衝突、`Infer` 的順序、不給 analyzer 次數等八種），每一種都會被抓到。
+  - engine 既有的流程測試（一張票做到合併、審查重試、先解衝突、人放行等）也都開著影子跑，每一步都必須一致。
+  - P1 的線不會進入的狀態不比：`checking`（檢查在審查裡）、`awaiting_approval`（P2 的關卡）、`queued`（P2 的合併佇列）、`paused`（P2 的指令）。
+- **看得到**：`awkit status` 顯示最近一次有影子的 run 比了幾步、幾步一樣、幾步是已知差異、幾步不同、幾步沒比成，列出最近五個不同的步驟；`--json` 有同樣的內容（`shadow`）。工作台的顯示放到 1.8，與 engine 的其他狀態一起做。
+
 ### 5.2 狀態
 
 | 資料 | 位置 | 誰寫 | 用途 |
@@ -545,7 +576,7 @@ guardrails:
 | 階段 | 相容方式 | 移除 |
 |---|---|---|
 | P0 | 在現有的主控架構上加 hook、角色設定、清理與規則層，不改流程 | — |
-| P1 | `awkit run` 預設仍是主控；`AWKIT_ENGINE=shadow` 讓 engine 在旁邊算決定並記錄分歧；在測試專案完整跑過一份規劃、沒有分歧後，預設改為 engine，主控路徑保留一個版本（`AWKIT_ENGINE=principal`） | P1 之後的下一個版本移除主控路徑、`principal-workflow` skill、`analyze-next`、`check-result`、`stop-workflow` |
+| P1 | `awkit run` 預設仍是主控；`AWKIT_ENGINE=shadow` 讓 engine 執行、主控的判斷在旁邊算，並記錄分歧（§5.1）；在測試專案完整跑過一份規劃、沒有說不出原因的分歧後，預設改為 engine，主控路徑保留一個版本（`AWKIT_ENGINE=principal`） | P1 之後的下一個版本移除主控路徑、`principal-workflow` skill、`analyze-next`、`check-result`、`stop-workflow` |
 | P2 | `engine.max_parallel` 預設 1；`needs_you` 改為只停那條線 | — |
 | P2 | awk-ticket schema 1 照讀（§7） | 兩個版本後 |
 | P3 | 預設 `isolation: container`；沒有 Docker 時 `awkit doctor` 報錯，可以明確改成 `host` | — |

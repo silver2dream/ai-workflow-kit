@@ -220,9 +220,9 @@ func cmdRun(args []string) int {
 	ensureWorkflowLabels(configPath, output)
 
 	// The engine runs the workflow in the Principal's place when it is asked
-	// to (AWKIT_ENGINE=engine), in the same lock and session.
-	if engineMode() {
-		return runEngine(*issue, logger, output, endPrincipalSession)
+	// to (AWKIT_ENGINE=engine, or shadow), in the same lock and session.
+	if mode := engineMode(); mode != "" {
+		return runEngine(mode, *issue, logger, output, endPrincipalSession)
 	}
 
 	// Build Claude CLI command

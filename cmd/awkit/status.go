@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/engine"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/migrate"
@@ -80,8 +81,9 @@ func cmdStatus(args []string) int {
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(struct {
 			status.Report
-			Tickets *status.Tickets `json:"tickets,omitempty"`
-		}{report, view.Tickets}); err != nil {
+			Tickets *status.Tickets   `json:"tickets,omitempty"`
+			Shadow  *engine.ShadowRun `json:"shadow,omitempty"`
+		}{report, view.Tickets, view.Shadow}); err != nil {
 			output.Error(fmt.Sprintf("Failed to write JSON: %v", err))
 			return 1
 		}

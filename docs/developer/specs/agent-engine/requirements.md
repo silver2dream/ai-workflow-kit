@@ -31,7 +31,7 @@
 - `principal-workflow` skill 與 `awkit analyze-next`、`check-result`、`stop-workflow` 這些只給主控用的指令，在切換後的下一個版本移除；移除前每次被呼叫都寫一筆 deprecation 事件。
 - engine 在背景程序中執行（`awkit detach`），關掉工作台或終端機不會停止它；停止只能經由停止指令或做完。
 
-R1.4 影子模式：engine 讀同樣的狀態、算出決定但不執行，與實際的決定逐筆比對並寫事件；分歧在工作台與 `awkit status` 看得到。
+R1.4 影子模式：engine 照常執行；主控的判斷（`analyze-next` 用的 analyzer）讀同樣的狀態、算出決定但不執行，與 engine 的決定逐筆比對並寫事件；分歧在工作台與 `awkit status` 看得到。實跑碰不到的狀態，另以窮舉比對的測試涵蓋。（2026-11-24 改：原本是主控執行、engine 在旁邊算。改的理由在 design.md §5.1 的 1.7a。）
 
 ## R2 角色與 agent runtime
 

@@ -65,6 +65,10 @@ type Engine struct {
 	// Watch, when set, is told each decision before the engine acts on it
 	// (Serve keeps the run file with it).
 	Watch func(*analyzer.Decision)
+	// Shadow, when set, is asked before each step what the Principal's
+	// analyzer would do with the tickets in hand, and the engine's decision
+	// is compared with it (shadow.go, task 1.7).
+	Shadow Shadow
 
 	now func() time.Time
 	// logMu keeps what the run and its inbox say from running into each
@@ -77,6 +81,9 @@ type Options struct {
 	Root string
 	Only int
 	Log  io.Writer
+	// Shadow compares each decision with the Principal's analyzer's
+	// (AWKIT_ENGINE=shadow).
+	Shadow bool
 }
 
 // New is the engine of a project, with its steps.
@@ -117,6 +124,9 @@ func New(opts Options) (*Engine, error) {
 		Names: cfg.GitHub.Labels, MaxReviews: maxReviews, Only: opts.Only,
 		Implement: work.Implement, Check: work.Check, Review: review.Review, Resolve: resolve.Resolve,
 		Log: opts.Log,
+	}
+	if opts.Shadow {
+		e.Shadow = NewShadow(opts.Root, cfg, opts.Only, analyzer.NewGitHubClient(30*time.Second))
 	}
 	// A review is independent when another model makes it (design.md §9.4).
 	if reviewer.Backend == worker.Backend && reviewer.Model != "" && reviewer.Model == worker.Model {
@@ -348,11 +358,28 @@ func resolving(l Lane, kind string) bool {
 }
 
 // Next is what to do next, as the analyzer would decide it (Decide), read
-// from the lanes.
+// from the lanes. With a shadow, the decision on the lanes is compared with
+// the analyzer's on the labels (shadow.go).
 func (e *Engine) Next(ctx context.Context) (*analyzer.Decision, error) {
 	if d := e.Analyzer.Precheck(); d != nil {
 		return d, nil
 	}
+	mergeable := e.mergeability()
+	d := e.inHand(ctx, mergeable)
+	if e.Shadow != nil {
+		e.compare(ctx, d, mergeable)
+	}
+	if d != nil {
+		return d, nil
+	}
+	return e.Analyzer.NextTicket(ctx)
+}
+
+// inHand is what to do with the lanes in the workflow's hands: a lane at
+// work, in review, to be reviewed again, to be resolved, waiting for a
+// person, in that order (the analyzer's LabelDecision). nil is none in
+// hand: the next ticket is picked.
+func (e *Engine) inHand(ctx context.Context, mergeable Mergeability) *analyzer.Decision {
 	lanes := e.live()
 	first := func(match func(Lane) bool) *Lane {
 		for i := range lanes {
@@ -368,51 +395,55 @@ func (e *Engine) Next(ctx context.Context) (*analyzer.Decision, error) {
 
 	// A Worker at work, or one an engine before this one left.
 	if l := first(func(l Lane) bool { return l.State == Implementing && l.Resolve == "" }); l != nil {
-		return &analyzer.Decision{NextAction: analyzer.ActionCheckResult, IssueNumber: l.Issue}, nil
+		return &analyzer.Decision{NextAction: analyzer.ActionCheckResult, IssueNumber: l.Issue}
 	}
 	// A pull request to review. One that conflicts with its base is
 	// resolved first: reviewing it would end in a merge that fails.
 	if l := first(func(l Lane) bool { return l.State == Reviewing }); l != nil {
 		if l.PR == 0 {
-			return none(l, analyzer.ReasonNeedsHumanReview), nil
+			return none(l, analyzer.ReasonNeedsHumanReview)
 		}
-		if state, err := e.GitHub.Mergeable(ctx, l.PR); err == nil && state == "CONFLICTING" {
+		if state, err := mergeable(ctx, l.PR); err == nil && state == "CONFLICTING" {
 			if l.Attempts.Conflicts >= e.MaxReviews {
-				return none(l, analyzer.ReasonNeedsHumanReview), nil
+				return none(l, analyzer.ReasonNeedsHumanReview)
 			}
-			return &analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: l.Issue, PRNumber: l.PR, MergeIssue: analyzer.MergeIssueConflict}, nil
+			return &analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: l.Issue, PRNumber: l.PR, MergeIssue: analyzer.MergeIssueConflict}
 		}
-		return &analyzer.Decision{NextAction: analyzer.ActionReviewPR, IssueNumber: l.Issue, PRNumber: l.PR}, nil
+		return &analyzer.Decision{NextAction: analyzer.ActionReviewPR, IssueNumber: l.Issue, PRNumber: l.PR}
 	}
 	// A review that could not be completed is tried again, as often as it
 	// may be.
 	if l := first(func(l Lane) bool { return l.State == ReviewRetry }); l != nil {
 		if l.PR == 0 {
-			return none(l, analyzer.ReasonNeedsHumanReview), nil
+			return none(l, analyzer.ReasonNeedsHumanReview)
 		}
 		if l.Attempts.Reviews >= e.MaxReviews {
-			return none(l, analyzer.ReasonReviewMaxRetries), nil
+			return none(l, analyzer.ReasonReviewMaxRetries)
 		}
-		return &analyzer.Decision{NextAction: analyzer.ActionReviewPR, IssueNumber: l.Issue, PRNumber: l.PR}, nil
+		return &analyzer.Decision{NextAction: analyzer.ActionReviewPR, IssueNumber: l.Issue, PRNumber: l.PR}
 	}
 	// A pull request to resolve: a conflict, then one that is behind.
 	for _, kind := range []string{ResolveConflict, ResolveRebase} {
 		if l := first(func(l Lane) bool { return resolving(l, kind) }); l != nil {
 			if l.PR == 0 {
-				return none(l, analyzer.ReasonNeedsHumanReview), nil
+				return none(l, analyzer.ReasonNeedsHumanReview)
 			}
-			return &analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: l.Issue, PRNumber: l.PR, MergeIssue: kind}, nil
+			return &analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: l.Issue, PRNumber: l.PR, MergeIssue: kind}
 		}
 	}
 	// A lane that needs a person stops the run (P1; P2 stops that lane
-	// only).
+	// only). The decision names the ticket, not its pull request, as the
+	// analyzer's does.
+	waits := func(l *Lane, reason string) *analyzer.Decision {
+		return &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: l.Issue, ExitReason: reason}
+	}
 	if l := first(func(l Lane) bool { return l.State == NeedsYou && l.Why == WhyWorkerFailed }); l != nil {
-		return none(l, analyzer.ReasonWorkerFailed), nil
+		return waits(l, analyzer.ReasonWorkerFailed)
 	}
 	if l := first(func(l Lane) bool { return l.State == NeedsYou }); l != nil {
-		return none(l, analyzer.ReasonNeedsHumanReview), nil
+		return waits(l, analyzer.ReasonNeedsHumanReview)
 	}
-	return e.Analyzer.NextTicket(ctx)
+	return nil
 }
 
 // Step does what a decision says. It says the run's end when the decision
