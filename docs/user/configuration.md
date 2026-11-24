@@ -120,8 +120,8 @@ commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如
 |---|---|---|
 | `builtin` | `[pr-reviewer, conflict-resolver]` | kit 的 subagent |
 | `custom` | `[]` | 專案自己的 subagent，`awkit generate` 會把每一個寫成 `.claude/agents/<name>.md` |
-| `reviewer.backend`、`reviewer.model`、`reviewer.effort`、`reviewer.minutes`、`reviewer.usd` | `claude-code`；模型與執行者不同（執行者是 Claude Code 的 `opus` 時用 `sonnet`，否則用 `opus`）；20 分鐘；不限金額 | engine 的審查者（預覽中，`AWKIT_ENGINE=engine` 時才用到）。它只能讀檔，不能執行指令；`minutes` 最多 120。換 backend 時模型與 effort 從那個 backend 的預設開始 |
-| `resolver.backend`、`resolver.model`、`resolver.effort`、`resolver.minutes`、`resolver.usd` | 跟執行者一樣（`worker.backend` 與 Claude Code 的模型、effort）；20 分鐘；不限金額 | engine 的解衝突者（預覽中，`AWKIT_ENGINE=engine` 時才用到）：在 rebase 停住的 worktree 裡只改衝突的檔案，engine 檢查後才繼續、push。`minutes` 最多 120 |
+| `reviewer.backend`、`reviewer.model`、`reviewer.effort`、`reviewer.minutes`、`reviewer.usd` | `claude-code`；模型與執行者不同（執行者是 Claude Code 的 `opus` 時用 `sonnet`，否則用 `opus`）；20 分鐘；不限金額 | engine 的審查者（`awkit run` 用它；`AWKIT_ENGINE=principal` 時不用）。它只能讀檔，不能執行指令；`minutes` 最多 120。換 backend 時模型與 effort 從那個 backend 的預設開始 |
+| `resolver.backend`、`resolver.model`、`resolver.effort`、`resolver.minutes`、`resolver.usd` | 跟執行者一樣（`worker.backend` 與 Claude Code 的模型、effort）；20 分鐘；不限金額 | engine 的解衝突者（`awkit run` 用它；`AWKIT_ENGINE=principal` 時不用）：在 rebase 停住的 worktree 裡只改衝突的檔案，engine 檢查後才繼續、push。`minutes` 最多 120 |
 
 這兩組設定超出角色允許的範圍（例如審查者設了 backend 沒有的值、`minutes` 超過上限）時，engine 不會啟動，並說明是哪一項。
 

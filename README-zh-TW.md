@@ -6,7 +6,7 @@
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
-AWK 把一句需求變成合併進去的 pull request。先由一桌模型扮演的角色（議會）把需求辯成文件與一份票券清單；你核可清單之後，**Principal**（Claude Code）把每張票交給 **Worker**（Codex 或 Claude Code）、送審 pull request、合併通過的。票券就是 GitHub issue；「通過」由程式檢查，不是模型說了算。
+AWK 把一句需求變成合併進去的 pull request。先由一桌模型扮演的角色（議會）把需求辯成文件與一份票券清單；你核可清單之後，awkit 的 **engine**（程式，不是模型）把每張票交給 **Worker**（Codex 或 Claude Code）、送審 pull request、合併通過的。票券就是 GitHub issue；「通過」由程式檢查，不是模型說了算。
 
 ```
 awkit plan "…"  ──►  文件 + 決策 + 票券提案  ──►  你核可
@@ -22,7 +22,7 @@ awkit run  ──►  下一張票 ──► Worker 寫變更 ──► 審查 �
 |---|---|
 | `git`，而且專案的 `origin` 是一個 GitHub repository | |
 | [`gh`](https://cli.github.com/)，已登入且對該 repository 有寫入權限 | 工作流程就活在它的 issue 與 pull request 裡 |
-| [`claude`](https://claude.com/claude-code)（Claude Code） | 扮演 Principal、審查者與議會 |
+| [`claude`](https://claude.com/claude-code)（Claude Code） | 扮演審查者與議會 |
 | `codex`，或再一次 `claude` | 扮演 Worker（`worker.backend`，預設 `codex`） |
 | Windows：Git for Windows | Claude Code 需要它的 Git Bash，建置與測試指令也透過它執行 |
 
@@ -158,8 +158,8 @@ awkit run --issue 42   # 只做這一張票
 .claude/
   rules/_kit/        kit 的規則（分支、commit、pull request），產生的
   rules/             專案自己的規則；awkit init 先寫下一套，之後由你收緊
-  skills/            Principal 照著走的流程：主迴圈、票券格式
-  agents/            它把審查與衝突交出去的 subagent
+  skills/            票券格式，以及主控流程的主迴圈（AWKIT_ENGINE=principal；下一版移除）
+  agents/            那個流程把審查與衝突交出去的 subagent
 CLAUDE.md, AGENTS.md   告訴 agent 的事，由設定檔產生
 docs/                  議會寫的東西：文件、decisions.md、plans/
 <repo>/docs/           各 repo 的工程文件，也由議會寫

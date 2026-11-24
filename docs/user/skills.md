@@ -18,7 +18,7 @@ AWK 告訴 agent 的事分成三種檔案，各管一件事：
 
 ### `principal-workflow`
 
-`awkit run` 啟動的 Principal 用它跑主迴圈：問 `awkit analyze-next` 下一步 → 派工、檢查結果或交付審查 → 再問，直到沒有工作或需要人處理。你不需要自己呼叫它。
+以 `AWKIT_ENGINE=principal awkit run` 啟動的 Principal 用它跑主迴圈：問 `awkit analyze-next` 下一步 → 派工、檢查結果或交付審查 → 再問，直到沒有工作或需要人處理。預設的 engine 不用它；下一版會連同這個做法一起移除。你不需要自己呼叫它。
 
 它的 `references/ticket.md` 是票券格式的定義處。在 Claude Code 裡說「幫我補一張票」時，agent 會照那份文件寫，再用 `awkit create-task` 建立。一批新工作用 `awkit plan` 規劃。
 
@@ -82,7 +82,7 @@ AWK 告訴 agent 的事分成三種檔案，各管一件事：
 
 - 只放規則（要求、禁止、檢查清單），不寫現況。需要事實就指向定義處。
 - 理由寫在句子裡，讀的人才知道邊界在哪。
-- 開頭用 `paths:` 說明它管哪些檔案。Claude Code 只在動到那些檔案時才載入它，Principal 的對話不會被它佔掉：
+- 開頭用 `paths:` 說明它管哪些檔案。Claude Code 只在動到那些檔案時才載入它，agent 的對話不會被它佔掉：
 
 ```markdown
 ---

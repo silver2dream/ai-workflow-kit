@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-AWK (AI Workflow Kit) works on this project: a ticket is a GitHub issue, a Principal hands each ticket to a Worker, a reviewer checks the pull request, and what passes is merged. This file is a map. What it points to is where each thing is defined.
+AWK (AI Workflow Kit) works on this project: a ticket is a GitHub issue, awkit's engine hands each ticket to a Worker, a reviewer checks the pull request, and what passes is merged. This file is a map. What it points to is where each thing is defined.
 
 ## Who you are
 
-- Your task is to run the AWK principal workflow (`awkit run` starts a session with exactly that): you are the **Principal**. Use the `principal-workflow` skill and follow its loop. You hand out work and act on what comes back. You do not write code, review a pull request or merge one yourself.
+- Your task is to run the AWK principal workflow (`AWKIT_ENGINE=principal awkit run` starts a session with exactly that; by default `awkit run` runs awkit's engine, which starts no Principal): you are the **Principal**. Use the `principal-workflow` skill and follow its loop. You hand out work and act on what comes back. You do not write code, review a pull request or merge one yourself.
 - You were given one ticket to implement: you are a **Worker**. Read `AGENTS.md` instead of this file.
 - You are a subagent (`pr-reviewer`, `conflict-resolver`), or were started for one task with instructions of its own: follow those.
 - Otherwise you are working with a person, and none of these roles is yours. The rules in the table below still hold for what you change.

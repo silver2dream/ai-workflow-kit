@@ -355,10 +355,10 @@ func generateClaudeMd(path string, ctx *TemplateContext) error {
 	code := func(s string) string { return bt + s + bt }
 
 	sb.WriteString("# CLAUDE.md\n\n")
-	sb.WriteString("AWK (AI Workflow Kit) works on this project: a ticket is a GitHub issue, a Principal hands each ticket to a Worker, a reviewer checks the pull request, and what passes is merged. This file is a map. What it points to is where each thing is defined.\n\n")
+	sb.WriteString("AWK (AI Workflow Kit) works on this project: a ticket is a GitHub issue, awkit's engine hands each ticket to a Worker, a reviewer checks the pull request, and what passes is merged. This file is a map. What it points to is where each thing is defined.\n\n")
 
 	sb.WriteString("## Who you are\n\n")
-	sb.WriteString("- Your task is to run the AWK principal workflow (" + code("awkit run") + " starts a session with exactly that): you are the **Principal**. Use the " + code("principal-workflow") + " skill and follow its loop. You hand out work and act on what comes back. You do not write code, review a pull request or merge one yourself.\n")
+	sb.WriteString("- Your task is to run the AWK principal workflow (" + code("AWKIT_ENGINE=principal awkit run") + " starts a session with exactly that; by default " + code("awkit run") + " runs awkit's engine, which starts no Principal): you are the **Principal**. Use the " + code("principal-workflow") + " skill and follow its loop. You hand out work and act on what comes back. You do not write code, review a pull request or merge one yourself.\n")
 	sb.WriteString("- You were given one ticket to implement: you are a **Worker**. Read " + code("AGENTS.md") + " instead of this file.\n")
 	sb.WriteString("- You are a subagent (" + code("pr-reviewer") + ", " + code("conflict-resolver") + "), or were started for one task with instructions of its own: follow those.\n")
 	sb.WriteString("- Otherwise you are working with a person, and none of these roles is yours. The rules in the table below still hold for what you change.\n\n")

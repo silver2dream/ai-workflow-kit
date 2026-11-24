@@ -110,6 +110,7 @@ func cmdAnalyzeNext(args []string) int {
 			defer trace.CloseGlobalWriter()
 		}
 	}
+	noteDeprecated(*stateRoot, "awkit analyze-next")
 
 	// Self-heal structural bad states before deciding, so a repaired base is in
 	// place before any worker is dispatched. Most importantly this restores an

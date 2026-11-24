@@ -34,6 +34,14 @@ of their numbers, each one once the issues it depends on are done: a Worker
 writes the change, the review checks it, and what passes is merged. It stops
 when no ticket is left, or when something needs a person.
 
+AWKIT_ENGINE says what runs the workflow:
+  (unset), engine  awkit's engine
+  shadow           the engine, and each of its decisions is compared with the
+                   one the Principal's workflow would make; awkit status says
+                   how they compared
+  principal        the Principal's workflow, in a Claude Code session; the
+                   next version removes it
+
 Usage:
   awkit run [options]
 
@@ -219,11 +227,17 @@ func cmdRun(args []string) int {
 	// '<label> not found'. Best-effort — a permission failure is just a warning.
 	ensureWorkflowLabels(configPath, output)
 
-	// The engine runs the workflow in the Principal's place when it is asked
-	// to (AWKIT_ENGINE=engine, or shadow), in the same lock and session.
-	if mode := engineMode(); mode != "" {
+	// The engine runs the workflow, in the run's lock and session, unless
+	// AWKIT_ENGINE=principal asks for the Principal's workflow.
+	mode, unknown := engineMode()
+	if unknown != "" {
+		output.Warning(fmt.Sprintf("AWKIT_ENGINE=%s is not a way to run the workflow (engine, shadow or principal): the engine runs it.", unknown))
+	}
+	if mode != modePrincipal {
 		return runEngine(mode, *issue, logger, output, endPrincipalSession)
 	}
+	output.Warning("AWKIT_ENGINE=principal: the Principal's workflow runs this time, in a Claude Code session. The next version removes it; without AWKIT_ENGINE the engine runs the workflow.")
+	noteDeprecated(".", "AWKIT_ENGINE=principal")
 
 	// Build Claude CLI command
 	// Use stream-json format for real-time streaming output

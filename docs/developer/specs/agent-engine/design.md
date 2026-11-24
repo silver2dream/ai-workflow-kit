@@ -159,6 +159,13 @@
   - P1 的線不會進入的狀態不比：`checking`（檢查在審查裡）、`awaiting_approval`（P2 的關卡）、`queued`（P2 的合併佇列）、`paused`（P2 的指令）。
 - **看得到**：`awkit status` 顯示最近一次有影子的 run 比了幾步、幾步一樣、幾步是已知差異、幾步不同、幾步沒比成，列出最近五個不同的步驟；`--json` 有同樣的內容（`shadow`）。工作台的顯示放到 1.8，與 engine 的其他狀態一起做。
 
+實作（1.7b，`cmd/awkit/run_engine.go`、`run.go`）：
+
+- **`awkit run` 預設由 engine 跑**：`AWKIT_ENGINE` 沒設或是 `engine` 都是 engine；`shadow` 是 1.7a 的影子；`principal` 改用主控（Claude Code session 跑 `principal-workflow`），保留這一個版本，下一版移除。其他值當作沒設，由 engine 跑，並在終端機說那個值不是一種跑法。
+- **deprecation 事件**：`AWKIT_ENGINE=principal`，以及只有主控會呼叫的 `awkit analyze-next`、`check-result`、`stop-workflow`，每次被用到都寫一筆 `deprecated_path`（寫進當時 run 的 session）。不在 run 裡被呼叫時沒有 session 可寫，改在 stderr 告訴人。`principal-workflow` skill 本身看不見，它每一圈都呼叫 `analyze-next`，所以也記得到。engine 用的是這些指令背後的函式（`worker.CheckResult`、`workflow.StopWorkflow`），不會被記成 deprecation。
+- **文件**：使用者文件、README、`CLAUDE.md` 的範本，都改成由 engine 派工；`claude` 的角色剩審查者與議會（`AWKIT_ENGINE=principal` 時也是主控）；`awkit stop --now` 是立刻停的方法（主控的 run 仍是 Ctrl-C）。`awkit run --help` 說明 `AWKIT_ENGINE` 的三種值。
+- **還沒處理的**：`awkit generate` 仍然把主控的指令政策 hook 寫進專案的 `.claude/settings.local.json`，套用在專案裡每一個 Claude Code session，包括人自己開的。engine 成為預設之後，一般已經沒有主控 session，這個 hook 只剩限制人的作用。要不要改成只在 `AWKIT_ENGINE=principal` 時裝，等決定。
+
 ### 5.2 狀態
 
 | 資料 | 位置 | 誰寫 | 用途 |
