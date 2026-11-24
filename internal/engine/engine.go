@@ -1,0 +1,520 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"slices"
+	"sort"
+	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/agent"
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
+)
+
+// The engine runs the workflow in the Principal's place (design.md §5.1,
+// task 1.6). It decides what to do next as the Principal's analyzer
+// decides, in the same order, from its lanes where the analyzer reads
+// labels: a lane at work, in review, to be reviewed again, to be resolved,
+// waiting for a person, and only then the next ticket. What is decided
+// before any lane is looked at (a stop, too many rounds, too many failures)
+// and which ticket comes next (its dependencies, a ticket that cannot be
+// used, a run that is complete) it asks the analyzer itself. Its decisions
+// are the analyzer's (analyzer.Decision), so that the two can be compared
+// (task 1.7). One lane at a time, as in P1.
+
+// Analyzer is what the engine asks the Principal's analyzer
+// (*analyzer.Analyzer).
+type Analyzer interface {
+	Precheck() *analyzer.Decision
+	NextTicket(ctx context.Context) (*analyzer.Decision, error)
+	PRNumber(issue int, body string) int
+}
+
+// Step does a lane's work and says where the lane goes. A zero transition
+// is no move.
+type Step func(ctx context.Context, lane Lane) (Transition, error)
+
+// How a run ends, beside the analyzer's reasons.
+const (
+	EndComplete    = "all_tasks_complete"
+	EndInterrupted = "interrupted"
+)
+
+// Engine runs the workflow of a project.
+type Engine struct {
+	Root     string
+	Journal  *Journal
+	GitHub   GitHub
+	Analyzer Analyzer
+	Names    config.Labels
+	// MaxReviews bounds how often a pull request is reviewed again, and how
+	// often its conflict is sent to be resolved (escalation.max_review_attempts,
+	// as the analyzer bounds both).
+	MaxReviews int
+	// Only limits the run to one ticket; 0 is every ticket.
+	Only int
+	// The steps: the Worker writes and checks (WorkerSteps), the reviewer
+	// reviews (ReviewStep), the resolver resolves (ResolveStep).
+	Implement, Check, Review, Resolve Step
+	// Log is where the engine says what it does; nil is stderr.
+	Log io.Writer
+
+	now func() time.Time
+}
+
+// Options are what `awkit run` gives the engine.
+type Options struct {
+	Root string
+	Only int
+	Log  io.Writer
+}
+
+// New is the engine of a project, with its steps.
+func New(opts Options) (*Engine, error) {
+	cfg, err := config.Load(opts.Root)
+	if err != nil {
+		return nil, err
+	}
+	journal, err := OpenJournal(opts.Root)
+	if err != nil {
+		return nil, err
+	}
+	a := analyzer.New(opts.Root, cfg)
+	if opts.Only > 0 {
+		a.LimitTo(opts.Only)
+	}
+	maxReviews := cfg.Escalation.MaxReviewAttempts
+	if maxReviews <= 0 {
+		maxReviews = analyzer.DefaultMaxReviewAttempts
+	}
+	work := &WorkerSteps{Root: opts.Root, Log: opts.Log}
+	review := &ReviewStep{Root: opts.Root, Agents: agent.NewRunner()}
+	resolve := &ResolveStep{Root: opts.Root, Agents: agent.NewRunner()}
+	return &Engine{
+		Root: opts.Root, Journal: journal,
+		GitHub: NewGitHub(cfg.GitHub.Labels.Task, 30*time.Second), Analyzer: a,
+		Names: cfg.GitHub.Labels, MaxReviews: maxReviews, Only: opts.Only,
+		Implement: work.Implement, Check: work.Check, Review: review.Review, Resolve: resolve.Resolve,
+		Log: opts.Log,
+	}, nil
+}
+
+func (e *Engine) logf(format string, args ...any) {
+	w := e.Log
+	if w == nil {
+		w = os.Stderr
+	}
+	fmt.Fprintf(w, "[engine] "+format+"\n", args...)
+}
+
+func (e *Engine) clock() time.Time {
+	if e.now != nil {
+		return e.now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+// Run runs the workflow until it ends, and says why it ended: one of the
+// analyzer's reasons, EndComplete, or EndInterrupted when ctx is done. An
+// error is one the run cannot go on from (the event log refused a move);
+// the reason then says how it is reported.
+func (e *Engine) Run(ctx context.Context) (string, error) {
+	if err := e.Import(ctx); err != nil {
+		if ctx.Err() != nil {
+			return EndInterrupted, nil
+		}
+		return analyzer.ReasonGitHubAPIError, err
+	}
+	for {
+		if ctx.Err() != nil {
+			return EndInterrupted, nil
+		}
+		d, err := e.Next(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return EndInterrupted, nil
+			}
+			return analyzer.ReasonGitHubAPIError, err
+		}
+		e.logf("next: %s%s", d.NextAction, describe(d))
+		end, err := e.Step(ctx, d)
+		if ctx.Err() != nil {
+			return EndInterrupted, nil
+		}
+		if err != nil {
+			return "error_exit", err
+		}
+		if end != "" {
+			return end, nil
+		}
+	}
+}
+
+func describe(d *analyzer.Decision) string {
+	s := ""
+	if d.IssueNumber > 0 {
+		s += fmt.Sprintf(" #%d", d.IssueNumber)
+	}
+	if d.PRNumber > 0 {
+		s += fmt.Sprintf(" (PR #%d)", d.PRNumber)
+	}
+	if d.MergeIssue != "" {
+		s += " to resolve its " + d.MergeIssue
+	}
+	if d.ExitReason != "" {
+		s += ": " + d.ExitReason
+	}
+	return s
+}
+
+// Import makes a lane of each open ticket that has none, where its labels
+// left it: a project the Principal's workflow ran, or a ticket a person
+// made, is taken up where it is.
+func (e *Engine) Import(ctx context.Context) error {
+	tickets, err := e.GitHub.Tickets(ctx)
+	if err != nil {
+		return err
+	}
+	sort.Slice(tickets, func(i, j int) bool { return tickets[i].Number < tickets[j].Number })
+	for _, t := range tickets {
+		if (e.Only != 0 && t.Number != e.Only) || e.Journal.Lane(t.Number) != nil {
+			continue
+		}
+		in, ok := Infer(t.Labels, t.Closed, false, e.Names)
+		if !ok {
+			continue
+		}
+		tr := Transition{
+			Issue: t.Number, To: in.State, Cause: CauseImported, Resolve: in.Resolve, Why: in.Why,
+			PR: e.Analyzer.PRNumber(t.Number, t.Body), Note: "taken up where its labels left it", At: e.clock(),
+		}
+		if _, err := e.Journal.Record(tr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// live are the lanes in the run that are not over, by issue number.
+func (e *Engine) live() []Lane {
+	var lanes []Lane
+	for _, l := range e.Journal.Lanes() {
+		if !l.State.Terminal() && (e.Only == 0 || l.Issue == e.Only) {
+			lanes = append(lanes, l)
+		}
+	}
+	sort.Slice(lanes, func(i, j int) bool { return lanes[i].Issue < lanes[j].Issue })
+	return lanes
+}
+
+// resolving says whether a lane waits for, or is at, the resolution of its
+// pull request, and of which kind.
+func resolving(l Lane, kind string) bool {
+	return (l.State == Resolving || (l.State == Implementing && l.Resolve != "")) && l.Resolve == kind
+}
+
+// Next is what to do next, as the analyzer would decide it (Decide), read
+// from the lanes.
+func (e *Engine) Next(ctx context.Context) (*analyzer.Decision, error) {
+	if d := e.Analyzer.Precheck(); d != nil {
+		return d, nil
+	}
+	lanes := e.live()
+	first := func(match func(Lane) bool) *Lane {
+		for i := range lanes {
+			if match(lanes[i]) {
+				return &lanes[i]
+			}
+		}
+		return nil
+	}
+	none := func(l *Lane, reason string) *analyzer.Decision {
+		return &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: l.Issue, PRNumber: l.PR, ExitReason: reason}
+	}
+
+	// A Worker at work, or one an engine before this one left.
+	if l := first(func(l Lane) bool { return l.State == Implementing && l.Resolve == "" }); l != nil {
+		return &analyzer.Decision{NextAction: analyzer.ActionCheckResult, IssueNumber: l.Issue}, nil
+	}
+	// A pull request to review. One that conflicts with its base is
+	// resolved first: reviewing it would end in a merge that fails.
+	if l := first(func(l Lane) bool { return l.State == Reviewing }); l != nil {
+		if l.PR == 0 {
+			return none(l, analyzer.ReasonNeedsHumanReview), nil
+		}
+		if state, err := e.GitHub.Mergeable(ctx, l.PR); err == nil && state == "CONFLICTING" {
+			if l.Attempts.Conflicts >= e.MaxReviews {
+				return none(l, analyzer.ReasonNeedsHumanReview), nil
+			}
+			return &analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: l.Issue, PRNumber: l.PR, MergeIssue: analyzer.MergeIssueConflict}, nil
+		}
+		return &analyzer.Decision{NextAction: analyzer.ActionReviewPR, IssueNumber: l.Issue, PRNumber: l.PR}, nil
+	}
+	// A review that could not be completed is tried again, as often as it
+	// may be.
+	if l := first(func(l Lane) bool { return l.State == ReviewRetry }); l != nil {
+		if l.PR == 0 {
+			return none(l, analyzer.ReasonNeedsHumanReview), nil
+		}
+		if l.Attempts.Reviews >= e.MaxReviews {
+			return none(l, analyzer.ReasonReviewMaxRetries), nil
+		}
+		return &analyzer.Decision{NextAction: analyzer.ActionReviewPR, IssueNumber: l.Issue, PRNumber: l.PR}, nil
+	}
+	// A pull request to resolve: a conflict, then one that is behind.
+	for _, kind := range []string{ResolveConflict, ResolveRebase} {
+		if l := first(func(l Lane) bool { return resolving(l, kind) }); l != nil {
+			if l.PR == 0 {
+				return none(l, analyzer.ReasonNeedsHumanReview), nil
+			}
+			return &analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: l.Issue, PRNumber: l.PR, MergeIssue: kind}, nil
+		}
+	}
+	// A lane that needs a person stops the run (P1; P2 stops that lane
+	// only).
+	if l := first(func(l Lane) bool { return l.State == NeedsYou && l.Why == WhyWorkerFailed }); l != nil {
+		return none(l, analyzer.ReasonWorkerFailed), nil
+	}
+	if l := first(func(l Lane) bool { return l.State == NeedsYou }); l != nil {
+		return none(l, analyzer.ReasonNeedsHumanReview), nil
+	}
+	return e.Analyzer.NextTicket(ctx)
+}
+
+// Step does what a decision says. It says the run's end when the decision
+// is one (a reason), and "" to go on.
+func (e *Engine) Step(ctx context.Context, d *analyzer.Decision) (string, error) {
+	switch d.NextAction {
+	case analyzer.ActionAllComplete:
+		return EndComplete, nil
+	case analyzer.ActionNone:
+		if err := e.settle(ctx, d); err != nil {
+			return "", err
+		}
+		if d.ExitReason == "" {
+			return analyzer.ActionNone, nil
+		}
+		return d.ExitReason, nil
+	case analyzer.ActionCheckResult:
+		lane, err := e.laneOf(d.IssueNumber)
+		if err != nil {
+			return "", err
+		}
+		t, err := e.Check(ctx, *lane)
+		if err != nil {
+			return "", err
+		}
+		return "", e.apply(ctx, t, true)
+	case analyzer.ActionReviewPR:
+		return "", e.review(ctx, d)
+	case analyzer.ActionDispatchWorker:
+		if d.MergeIssue != "" {
+			return "", e.resolve(ctx, d)
+		}
+		return "", e.implement(ctx, d)
+	}
+	return "", fmt.Errorf("the engine has no step for %q", d.NextAction)
+}
+
+func (e *Engine) laneOf(issue int) (*Lane, error) {
+	l := e.Journal.Lane(issue)
+	if l == nil {
+		return nil, fmt.Errorf("#%d has no lane", issue)
+	}
+	return l, nil
+}
+
+// move records a transition of a lane from where it is.
+func (e *Engine) move(ctx context.Context, l *Lane, to State, cause Cause, note string) (*Lane, error) {
+	t := Transition{Issue: l.Issue, From: l.State, To: to, Cause: cause, Note: note, At: e.clock()}
+	return e.record(ctx, t, true)
+}
+
+// apply records what a step said, when it said to move.
+func (e *Engine) apply(ctx context.Context, t Transition, told bool) error {
+	if t.To == "" {
+		return nil
+	}
+	_, err := e.record(ctx, t, told)
+	return err
+}
+
+// record writes a transition to the event log, shows the lane on GitHub,
+// and tells a person when it needs one and its step did not already.
+func (e *Engine) record(ctx context.Context, t Transition, told bool) (*Lane, error) {
+	lane, err := e.Journal.Record(t)
+	if err != nil {
+		return nil, err
+	}
+	e.logf("#%d: %s → %s (%s)%s", t.Issue, show(t.From), t.To, t.Cause, noteOf(t.Note))
+	e.project(ctx, *lane)
+	if lane.State == NeedsYou && !told {
+		if err := e.GitHub.Comment(ctx, lane.Issue, needsYouComment(*lane, e.Names)); err != nil {
+			e.logf("#%d: the comment that says why it needs a person could not be posted: %v", lane.Issue, err)
+		}
+	}
+	return lane, nil
+}
+
+func noteOf(note string) string {
+	if note == "" {
+		return ""
+	}
+	return ": " + note
+}
+
+// project brings a lane's ticket on GitHub to what the lane is. A failure is
+// said and left: the next move projects again, and reconciliation looks.
+func (e *Engine) project(ctx context.Context, lane Lane) {
+	t, err := e.GitHub.Ticket(ctx, lane.Issue)
+	if err != nil {
+		e.logf("#%d: its labels could not be read: %v", lane.Issue, err)
+		return
+	}
+	ops := Diff(lane, t.Labels, t.Closed, e.Names)
+	if ops.Empty() {
+		return
+	}
+	if err := e.GitHub.Edit(ctx, lane.Issue, ops); err != nil {
+		e.logf("#%d: its labels could not be changed: %v", lane.Issue, err)
+	}
+}
+
+// whyText says, for a person, why a lane needs them.
+var whyText = map[string]string{
+	WhyWorkerFailed:     "the Worker failed as often as it may",
+	WhyNeedsHumanReview: "the workflow handed it to a person",
+	WhyReviewMaxRetries: "the review could not be completed as often as it may be tried",
+	WhyConflictRetries:  "the conflict of its pull request could not be resolved as often as it may be tried",
+	WhyNoPR:             "its pull request cannot be found",
+	WhyMergeBlocked:     "GitHub refused the merge",
+	WhyGuardBlocked:     "a guardrail stopped what an agent was to read",
+	WhyGuardOutput:      "a guardrail stopped what was to be written to GitHub",
+	WhyInvalidTicket:    "its awk-ticket block cannot be used",
+	WhyAgentRefused:     "an agent's backend cannot be held to its role's settings",
+}
+
+func needsYouComment(l Lane, names config.Labels) string {
+	why := whyText[l.Why]
+	if why == "" {
+		why = l.Why
+	}
+	label := names.NeedsHumanReview
+	if l.Why == WhyWorkerFailed {
+		label = names.WorkerFailed
+	}
+	return fmt.Sprintf("## AWK：這張工單需要你處理\n\n%s。\n\n%s\n\n處理好之後移除 `%s` 標籤，下一輪會接著做。細節在這台電腦的 `awkit events --issue %d`。",
+		why, l.Note, label, l.Issue)
+}
+
+// settle moves the lane a decision to stop gave up on, when it gave up on
+// one that is not already waiting for a person: a limit reached, a pull
+// request that cannot be found, a ticket that cannot be used, one that
+// waits for its dependencies.
+func (e *Engine) settle(ctx context.Context, d *analyzer.Decision) error {
+	l := e.Journal.Lane(d.IssueNumber)
+	if l == nil || l.State.Terminal() || l.State == NeedsYou || l.State == Paused {
+		return nil
+	}
+	needsYou := func(why, note string) error {
+		t := Transition{Issue: l.Issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: why, Note: note, At: e.clock()}
+		_, err := e.record(ctx, t, false)
+		return err
+	}
+	switch {
+	case d.ExitReason == analyzer.ReasonReviewMaxRetries && l.State == ReviewRetry:
+		return needsYou(WhyReviewMaxRetries, fmt.Sprintf("the review of PR #%d was tried %d times", l.PR, l.Attempts.Reviews))
+	case d.ExitReason == analyzer.ReasonNeedsHumanReview && l.PR == 0 && slices.Contains([]State{Reviewing, ReviewRetry, Resolving}, l.State):
+		return needsYou(WhyNoPR, "the lane's pull request is not known")
+	case d.ExitReason == analyzer.ReasonNeedsHumanReview && l.State == Reviewing:
+		return needsYou(WhyConflictRetries, fmt.Sprintf("PR #%d still conflicts with its base after %d resolutions", l.PR, l.Attempts.Conflicts))
+	case d.ExitReason == analyzer.ReasonInvalidTicket:
+		return needsYou(WhyInvalidTicket, "the analyzer says the ticket cannot be used; its comment on the issue says why")
+	case d.ExitReason == analyzer.ReasonNeedsHumanReview && (l.State == Ready || l.State == Rework):
+		// The analyzer handed the ticket to a person (and told them).
+		t := Transition{Issue: l.Issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: WhyNeedsHumanReview, At: e.clock()}
+		_, err := e.record(ctx, t, true)
+		return err
+	case d.ExitReason == analyzer.ReasonBlockedByDependencies && l.State == Ready:
+		_, err := e.move(ctx, l, Blocked, CauseBlocked, "it waits for a ticket it depends on")
+		return err
+	}
+	return nil
+}
+
+// implement has the Worker write a ticket the analyzer picked.
+func (e *Engine) implement(ctx context.Context, d *analyzer.Decision) error {
+	l := e.Journal.Lane(d.IssueNumber)
+	var err error
+	switch {
+	case l == nil:
+		l, err = e.record(ctx, Transition{Issue: d.IssueNumber, To: Ready, Cause: CauseOpened, At: e.clock()}, true)
+	case l.State.Terminal():
+		// Closed without its work landing: the analyzer opened it again.
+		l, err = e.move(ctx, l, Ready, CauseReopened, "closed without its work landing")
+	case l.State == Blocked:
+		l, err = e.move(ctx, l, Ready, CauseUnblocked, "")
+	}
+	if err != nil {
+		return err
+	}
+	if l.State != Ready && l.State != Rework {
+		return fmt.Errorf("lane #%d is %s: the analyzer picked it as a ticket to write", l.Issue, l.State)
+	}
+	if l, err = e.move(ctx, l, Implementing, CauseDispatched, ""); err != nil {
+		return err
+	}
+	t, err := e.Implement(ctx, *l)
+	if err != nil {
+		return err
+	}
+	return e.apply(ctx, t, true)
+}
+
+// review has a lane's pull request reviewed.
+func (e *Engine) review(ctx context.Context, d *analyzer.Decision) error {
+	l, err := e.laneOf(d.IssueNumber)
+	if err != nil {
+		return err
+	}
+	if l.State == ReviewRetry {
+		if l, err = e.move(ctx, l, Reviewing, CauseReviewRetried, ""); err != nil {
+			return err
+		}
+	}
+	t, err := e.Review(ctx, *l)
+	if err != nil {
+		return err
+	}
+	// The review's own decision (reviewer.SubmitReview) comments when it
+	// hands a ticket to a person; the review step does not.
+	told := t.Why != WhyGuardBlocked && t.Why != WhyAgentRefused
+	return e.apply(ctx, t, told)
+}
+
+// resolve has a lane's pull request rebased, and its conflict resolved.
+func (e *Engine) resolve(ctx context.Context, d *analyzer.Decision) error {
+	l, err := e.laneOf(d.IssueNumber)
+	if err != nil {
+		return err
+	}
+	if l.State == Reviewing {
+		t := Transition{Issue: l.Issue, From: Reviewing, To: Resolving, Cause: CauseConflicting, Resolve: d.MergeIssue, Note: "the pull request conflicts with its base", At: e.clock()}
+		if l, err = e.record(ctx, t, true); err != nil {
+			return err
+		}
+	}
+	if l.State == Resolving {
+		if l, err = e.move(ctx, l, Implementing, CauseDispatched, ""); err != nil {
+			return err
+		}
+	}
+	t, err := e.Resolve(ctx, *l)
+	if err != nil {
+		return err
+	}
+	return e.apply(ctx, t, false)
+}

@@ -100,6 +100,15 @@
 - 主迴圈是事件驅動：agent 程序結束、CI 狀態變化（輪詢 `gh pr checks`，間隔可設定）、收件匣有新指令、對帳發現 GitHub 有變化、租約到期，都會讓對應的線前進一步。
 - 停止：`awkit stop`（收尾後停：不再派新工作，進行中的線做完目前這一步）與「立刻停」（結束所有 agent 程序樹，沿用 `kill_windows.go`／`kill_other.go`）。兩者都經由收件匣送達，也保留停止標記檔以相容。
 
+實作（1.6a，`internal/engine/engine.go`、`implement.go`、`github.go`）：
+
+- **決定的順序照 analyzer**：`Next` 依線的狀態決定下一步——正在實作的（`check_result`）、等審查的（先問 GitHub 可不可合併，衝突就先解，次數到上限轉人）、要重審的（次數到上限轉人）、要解衝突的、落後的、需要人的（P1 整輪停下）——都沒有才問 analyzer 的 `NextTicket`。開始前的檢查（停止、輪數、連續失敗）也問 analyzer（`Precheck`）。決定用 analyzer 的型別（`analyzer.Decision`），1.7 的影子模式拿兩邊的決定直接比。
+- **analyzer 自己留著的部分**：挑下一張票（依賴、不能用的票、PR 已合併但票沒關的、關了卻沒落地的要重開、限定一張工單的執行）與「全部完成」的判斷都在 GitHub 上，不在線上；engine 直接用，不另寫一份。為此把 `Decide` 拆成 `Precheck`、讀標籤的那段、`NextTicket`，行為不變。
+- **實作者**：P1 沿用 worker（`worker.DispatchWorker`／`CheckResult`，派工前先 `reviewer.LearnBeforeDispatch`，與 `awkit dispatch-worker` 相同）。worker 照舊自己改標籤與留言，那些標籤就是線的投影，所以之後的投影不再改動。worker 的結果對到線：成功 → 審查；沒有改動 → 完成；失敗 → 重做，失敗次數到上限 → 轉人（`worker_failed`）；被防護擋下 → 轉人（`guard_blocked` 或 `guard_output`，看 worker 結果的階段）。實作者改走 agent runtime 放到 P3（任務 3.3）。
+- **匯入**：開始時把每張還沒有線的開著的工單，依標籤（`Infer`）建成線（新原因 `imported`，可以從標籤所在的任何狀態開始），PR 編號照 analyzer 找。主控跑到一半的專案可以接著跑。
+- **投影與告知**：每個轉換都寫事件，再把工單的標籤改成線的投影（§6）。線轉 `needs_you` 而產生它的那一步沒有留言（engine 自己的上限、審查步驟的 `guard_blocked`／`agent_refused`、解衝突步驟的一切）時，engine 在 issue 留言說為什麼、要移除哪個標籤；worker 與 `SubmitReview` 已經留言的不重複。
+- **同一個狀態有多條線時**取編號最小的；analyzer 取 `gh issue list` 給的第一個。1.7 比對時把這點列為已知的差異。
+
 ### 5.2 狀態
 
 | 資料 | 位置 | 誰寫 | 用途 |

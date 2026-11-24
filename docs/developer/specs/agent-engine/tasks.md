@@ -112,6 +112,8 @@
   - 相依：1.1、1.4、1.5
   - 事件驅動的迴圈（平行上限固定為 1）；單一實例鎖；租約與心跳；當掉重開的接回；GitHub 對帳與人的動作轉指令；`awkit stop` 兩種停止；`awkit detach` 啟動
   - 需求：R1、R14
+  - 分三個 PR。1.6a 引擎核心：依線決定下一步（順序照 analyzer）、實作者沿用 worker、審查與解衝突的次數上限、送審前問可不可合併、標籤投影與轉人的說明留言、開始時依標籤匯入工單；analyzer 的 `Decide` 拆出 `Precheck` 與 `NextTicket` 給 engine 用。1.6b 程序：單一實例鎖、租約與心跳、當掉重開接回、收件匣與回覆、`awkit stop` 兩種停止、`awkit detach`、`AWKIT_ENGINE=engine` 讓 `awkit run` 改由 engine 跑。1.6c 對帳與設定：人在 GitHub 上的動作轉成指令（含移除 `needs-human-review` 放行）、`agents.*` 設定鍵
+  - 1.6a 完成：#286
 - [ ] 1.7 影子模式與切換
   - 相依：1.6
   - `AWKIT_ENGINE=shadow`：engine 與現行主控對同一狀態算決定，逐筆比對寫事件；工作台與 `awkit status` 顯示分歧；測試專案跑完一份規劃無分歧後，預設改為 engine，保留 `AWKIT_ENGINE=principal` 一個版本；主控相關指令的 deprecation 事件
@@ -165,6 +167,7 @@
 - [ ] 3.3 Docker runtime
   - 相依：3.1、3.2
   - 每次派工一個容器（非 root、只掛 worktree 與快取、資源上限、結束即刪）；驗證指令也在容器裡；作業系統憑證儲存區讀取無法代填的認證；`isolation: host` 的提醒
+  - 實作者改走 agent runtime（1.6a 時決定）：P1 的實作者是 worker（`internal/worker`），在容器裡跑時改由 `agent.Runner` 執行，prompt 由 context builder 組，驗證、commit、push、開 PR 由 engine 做
   - 需求：R10.5
 - [ ] 3.4 `sbx` runtime 評估
   - 相依：3.3

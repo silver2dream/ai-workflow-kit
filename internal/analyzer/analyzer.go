@@ -48,64 +48,15 @@ func New(stateRoot string, config *Config) *Analyzer {
 	}
 }
 
-// Decide determines the next action based on workflow state
+// Decide determines the next action based on workflow state. It is
+// Precheck, then the labels of the tickets in the workflow's hands, then
+// NextTicket: the engine (internal/engine) asks Precheck and NextTicket the
+// same, and reads its own lanes in the place of the labels.
 func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
-	// Check for config
-	if a.Config == nil {
-		configPath := config.Path(a.StateRoot)
-		config, err := LoadConfig(configPath)
-		if err != nil {
-			// A file that is not there is created; a file that cannot be used
-			// is corrected. The run stops either way, and says which.
-			reason := ReasonConfigNotFound
-			if !os.IsNotExist(err) {
-				reason = ReasonConfigInvalid
-				fmt.Fprintf(os.Stderr, "[analyzer] error: %v\n", err)
-			}
-			return &Decision{
-				NextAction: ActionNone,
-				ExitReason: reason,
-			}, nil
-		}
-		a.Config = config
+	if d := a.Precheck(); d != nil {
+		return d, nil
 	}
-
 	labels := a.Config.GitHub.Labels
-
-	// A stop was asked for: nothing more is handed out. This is how a stop
-	// reaches a Principal in the middle of its session; the run's own loop
-	// looks for the marker only between sessions. The reason is the marker's
-	// when `awkit stop-workflow` knows it, and the user's otherwise.
-	if reason, stopped := stopmark.Read(a.StateRoot); stopped {
-		if !workflow.IsValidExitReason(reason) {
-			reason = ReasonStopRequested
-		}
-		return &Decision{NextAction: ActionNone, ExitReason: reason}, nil
-	}
-
-	// Step 0: Loop safety check
-	loopCount, err := a.updateLoopCount()
-	if err != nil {
-		// If we can't update/read loop count, stop to prevent infinite loop
-		return &Decision{
-			NextAction: ActionNone,
-			ExitReason: ReasonLoopCountError,
-		}, nil
-	}
-	if loopCount >= MaxLoop {
-		return &Decision{
-			NextAction: ActionNone,
-			ExitReason: ReasonMaxLoopReached,
-		}, nil
-	}
-
-	consecutiveFailures := a.readConsecutiveFailures()
-	if consecutiveFailures >= MaxConsecutiveFailures {
-		return &Decision{
-			NextAction: ActionNone,
-			ExitReason: ReasonMaxConsecutiveFailures,
-		}, nil
-	}
 
 	// Step 1: Check in-progress issues
 	// CRITICAL: This check MUST succeed. If it fails, we might double-dispatch a worker
@@ -124,6 +75,77 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 			IssueNumber: inProgressIssues[0].Number,
 		}, nil
 	}
+
+	return a.decideFromLabels(ctx)
+}
+
+// Precheck is what is decided before any ticket is looked at: a
+// configuration that cannot be read, a stop that was asked for, too many
+// rounds, too many failures in a row. nil is none of them. It counts the
+// round.
+func (a *Analyzer) Precheck() *Decision {
+	// Check for config
+	if a.Config == nil {
+		configPath := config.Path(a.StateRoot)
+		config, err := LoadConfig(configPath)
+		if err != nil {
+			// A file that is not there is created; a file that cannot be used
+			// is corrected. The run stops either way, and says which.
+			reason := ReasonConfigNotFound
+			if !os.IsNotExist(err) {
+				reason = ReasonConfigInvalid
+				fmt.Fprintf(os.Stderr, "[analyzer] error: %v\n", err)
+			}
+			return &Decision{
+				NextAction: ActionNone,
+				ExitReason: reason,
+			}
+		}
+		a.Config = config
+	}
+
+	// A stop was asked for: nothing more is handed out. This is how a stop
+	// reaches a Principal in the middle of its session; the run's own loop
+	// looks for the marker only between sessions. The reason is the marker's
+	// when `awkit stop-workflow` knows it, and the user's otherwise.
+	if reason, stopped := stopmark.Read(a.StateRoot); stopped {
+		if !workflow.IsValidExitReason(reason) {
+			reason = ReasonStopRequested
+		}
+		return &Decision{NextAction: ActionNone, ExitReason: reason}
+	}
+
+	// Step 0: Loop safety check
+	loopCount, err := a.updateLoopCount()
+	if err != nil {
+		// If we can't update/read loop count, stop to prevent infinite loop
+		return &Decision{
+			NextAction: ActionNone,
+			ExitReason: ReasonLoopCountError,
+		}
+	}
+	if loopCount >= MaxLoop {
+		return &Decision{
+			NextAction: ActionNone,
+			ExitReason: ReasonMaxLoopReached,
+		}
+	}
+
+	consecutiveFailures := a.readConsecutiveFailures()
+	if consecutiveFailures >= MaxConsecutiveFailures {
+		return &Decision{
+			NextAction: ActionNone,
+			ExitReason: ReasonMaxConsecutiveFailures,
+		}
+	}
+
+	return nil
+}
+
+// decideFromLabels reads the labels of the tickets in the workflow's hands
+// (steps 2 to 2.7), then picks the next ticket (NextTicket).
+func (a *Analyzer) decideFromLabels(ctx context.Context) (*Decision, error) {
+	labels := a.Config.GitHub.Labels
 
 	// Track API errors for subsequent non-critical checks
 	var apiErrors int
@@ -322,6 +344,23 @@ func (a *Analyzer) Decide(ctx context.Context) (*Decision, error) {
 		}, nil
 	}
 
+	return a.pickTicket(ctx, apiErrors)
+}
+
+// NextTicket is the decision once no ticket is in the workflow's hands: the
+// next pending ticket to dispatch, a run that is complete, or none and why.
+// It may change GitHub as Decide does: close an issue whose pull request is
+// merged, reopen one closed without its work landing, hand a ticket that
+// cannot be used to a person.
+func (a *Analyzer) NextTicket(ctx context.Context) (*Decision, error) {
+	return a.pickTicket(ctx, 0)
+}
+
+// pickTicket is steps 3 to 5; apiErrors counts the lookups that failed
+// before it.
+func (a *Analyzer) pickTicket(ctx context.Context, apiErrors int) (*Decision, error) {
+	labels := a.Config.GitHub.Labels
+
 	// Step 3: Pick the next ticket among the pending ones: the lowest number
 	// whose dependencies are done.
 	lookup := a.newTicketLookup()
@@ -438,6 +477,12 @@ func (a *Analyzer) readConsecutiveFailures() int {
 }
 
 // extractPRNumberForIssue extracts PR number from result file, issue body, or branch lookup
+// PRNumber is the pull request of a ticket: the one its Worker's result
+// names, or the one its body links; 0 when there is none.
+func (a *Analyzer) PRNumber(issue int, body string) int {
+	return a.extractPRNumberForIssue(issue, body)
+}
+
 func (a *Analyzer) extractPRNumberForIssue(issueNumber int, issueBody string) int {
 	// Try result file first (most reliable: has pr_url from worker)
 	resultFile := layout.Result(a.StateRoot, issueNumber)
