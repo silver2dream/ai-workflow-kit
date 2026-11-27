@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
+	"github.com/silver2dream/ai-workflow-kit/internal/engine"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/status"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
@@ -87,6 +89,18 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request, root str
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// StopView is what became of a stop the page asked for.
+type StopView struct {
+	// Engine says the run is the engine's, and was given the stop through
+	// its inbox; Answered says it answered in time, with Reply.
+	Engine   bool          `json:"engine"`
+	Answered bool          `json:"answered"`
+	Reply    *engine.Reply `json:"reply,omitempty"`
+	// Ended says the run's process was ended from here: a stop at once of
+	// the Principal's run, or of an engine that did not answer it.
+	Ended bool `json:"ended"`
+}
+
 func (s *Server) handleStopRun(w http.ResponseWriter, r *http.Request, root string) {
 	var body struct {
 		// Now ends the run at once, and what it started with it; else it
@@ -108,13 +122,53 @@ func (s *Server) handleStopRun(w http.ResponseWriter, r *http.Request, root stri
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	var view StopView
+	// The engine is given the stop as `awkit stop` gives it, and ends what
+	// it runs itself. A stop at once it does not answer ends its process:
+	// the person asked for it to end now.
+	if run, ok := engine.ReadRun(root); ok && run.Alive(s.opts.Now()) {
+		view.Engine = true
+		kind := engine.CommandStop
+		if body.Now {
+			kind = engine.CommandStopNow
+		}
+		_, reply, answered, err := engine.Ask(root, engine.Command{Kind: kind, By: "the workbench"}, s.opts.StopWait)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "the engine cannot be given the stop: "+err.Error())
+			return
+		}
+		if answered {
+			view.Answered, view.Reply = true, &reply
+			if reply.Result != engine.Applied {
+				writeError(w, http.StatusInternalServerError, "the engine did not take the stop: "+reply.Reason)
+				return
+			}
+		}
+		if answered || !body.Now {
+			writeJSON(w, http.StatusOK, view)
+			return
+		}
+	}
 	if body.Now {
 		if err := s.opts.Kill(pid); err != nil {
 			writeError(w, http.StatusInternalServerError, "the run cannot be ended at once: "+err.Error())
 			return
 		}
+		view.Ended = true
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, view)
+}
+
+// handleEngine is the engine's state of the project: its run, its lanes, how
+// its last run compared with its shadow, and its answers.
+func (s *Server) handleEngine(w http.ResponseWriter, r *http.Request, root string) {
+	// Without a configuration that can be read, the limits are the
+	// defaults: the rest is the engine's own files.
+	cfg, err := config.Load(root)
+	if err != nil {
+		cfg = nil
+	}
+	writeJSON(w, http.StatusOK, engine.Look(root, cfg, s.opts.Now()))
 }
 
 // RunLogView is a log of a run that can be read: the run's own, the

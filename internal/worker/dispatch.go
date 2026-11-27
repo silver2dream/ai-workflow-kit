@@ -35,6 +35,11 @@ type DispatchOptions struct {
 // long: see what `awkit run` sets for the Principal's shell tool.
 const DefaultWorkerTimeout = 60 * time.Minute
 
+// DefaultMaxRetries is how often the Worker of a ticket may fail before the
+// ticket needs a person, unless the dispatch is told otherwise. It counts
+// dispatches, not the tries within one (escalation.retry_count).
+const DefaultMaxRetries = 3
+
 // DispatchOutput is the output for bash eval compatibility
 type DispatchOutput struct {
 	Status       string // success, failed, in_progress, needs_conflict_resolution, blocked
@@ -56,7 +61,7 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 		opts.WorkerTimeout = DefaultWorkerTimeout
 	}
 	if opts.MaxRetries == 0 {
-		opts.MaxRetries = 3
+		opts.MaxRetries = DefaultMaxRetries
 	}
 
 	startTime := time.Now()

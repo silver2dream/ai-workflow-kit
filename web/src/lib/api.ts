@@ -61,7 +61,8 @@ export interface Ticket {
 }
 
 export interface TicketsView {
-  tickets?: { open: Ticket[]; done: number };
+  /** done_titles are the titles of the tickets that are done, by number. */
+  tickets?: { open: Ticket[]; done: number; done_titles?: Record<string, string> };
   stages: { stage: Stage; title: string }[];
   error?: string;
   asked_at: string;
@@ -135,6 +136,129 @@ export interface RunOutput {
   fresh: boolean;
 }
 
+/** A decision of the engine, or of the Principal's workflow beside it, as internal/analyzer writes it. */
+export interface Decision {
+  next_action: string;
+  issue_number: number;
+  pr_number: number;
+  exit_reason: string;
+  merge_issue: string;
+}
+
+/** What the engine does in a step: the decision it acts on, and since when. */
+export interface EngineStep {
+  action: string;
+  issue?: number;
+  pr?: number;
+  /** conflict or rebase: the step resolves the pull request. */
+  merge?: string;
+  since: string;
+}
+
+/** The engine's run file: its process, its beat, the step it is on, and how it ended. */
+export interface EngineRun {
+  pid: number;
+  host: string;
+  started: string;
+  beat: string;
+  only?: number;
+  step?: EngineStep;
+  ended?: string;
+  reason?: string;
+}
+
+export type LaneState =
+  | "blocked"
+  | "ready"
+  | "implementing"
+  | "checking"
+  | "reviewing"
+  | "review_retry"
+  | "rework"
+  | "awaiting_approval"
+  | "queued"
+  | "resolving"
+  | "merged"
+  | "completed"
+  | "needs_you"
+  | "paused"
+  | "cancelled";
+
+/** A guardrail's verdict on what was read or written for a ticket. */
+export interface LaneVerdict {
+  result: "block" | "flag" | string;
+  class: string;
+  stage: string;
+  rule: string;
+  piece?: string;
+  source?: string;
+  reason: string;
+  at: string;
+}
+
+/** A ticket's way to the integration branch, as the engine keeps it. */
+export interface Lane {
+  issue: number;
+  state: LaneState;
+  pr?: number;
+  /** conflict or rebase, while it is resolved. */
+  resolve?: string;
+  why?: string;
+  note?: string;
+  attempts: { failures?: number; reviews?: number; conflicts?: number };
+  since: string;
+  /** What the engine does on it now. */
+  step?: EngineStep;
+  /** The latest verdict on its ticket in the last run that was not a pass. */
+  verdict?: LaneVerdict;
+}
+
+export interface ShadowDifference {
+  at: string;
+  comparison: { engine: Decision | null; analyzer: Decision | null; same: boolean; known?: string; error?: string };
+}
+
+/** How the last run's decisions compared with the Principal's workflow's (AWKIT_ENGINE=shadow). */
+export interface ShadowRun {
+  started: string;
+  steps: number;
+  same: number;
+  known: number;
+  failed: number;
+  differences: ShadowDifference[];
+}
+
+export interface EngineReply {
+  id: string;
+  kind: string;
+  result: "applied" | "rejected" | string;
+  reason?: string;
+  at: string;
+}
+
+/** The engine's state, as `awkit status` reads it too. */
+export interface EngineView {
+  run?: EngineRun;
+  going: boolean;
+  /** Every lane not over, and those that ended in the last run, in the order they are shown. */
+  lanes: Lane[];
+  /** The lanes that ended before the last run: not listed. */
+  earlier: number;
+  limits: { failures: number; reviews: number; conflicts: number };
+  shadow?: ShadowRun;
+  pending: { id: string; kind: string; by: string; at: string }[];
+  replies: EngineReply[];
+  problems?: string[];
+}
+
+/** What became of a stop: given to the engine, and answered; or the run's process ended from the workbench. */
+export interface StopView {
+  engine: boolean;
+  answered: boolean;
+  reply?: EngineReply;
+  ended: boolean;
+}
+
 /** An answer the server gave with an error: what it said, its status, and the code it tells the error apart by, when it gave one. */
 export class ApiError extends Error {
   constructor(
@@ -198,7 +322,8 @@ export const api = {
   health: (id: string) => request<Health>("GET", `${project(id)}/health`),
   plans: (id: string) => request<{ plans: PlanView[] }>("GET", `${project(id)}/plans`),
   startRun: (id: string, issue?: number) => request<void>("POST", `${project(id)}/run`, { issue: issue ?? 0 }),
-  stopRun: (id: string, now: boolean) => request<void>("POST", `${project(id)}/run/stop`, { now }),
+  stopRun: (id: string, now: boolean) => request<StopView>("POST", `${project(id)}/run/stop`, { now }),
+  engine: (id: string) => request<EngineView>("GET", `${project(id)}/engine`),
   runLogs: (id: string) => request<{ logs: RunLog[] }>("GET", `${project(id)}/run/logs`),
   runOutput: (id: string, log: string, since: number) => request<RunOutput>("GET", `${project(id)}/run/output?log=${encodeURIComponent(log)}&since=${since}`),
   lessons: (id: string) => request<LessonsView>("GET", `${project(id)}/lessons`),

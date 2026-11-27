@@ -63,7 +63,7 @@ func (w *WorkerSteps) defaults() {
 		w.WorkerTimeout = worker.DefaultWorkerTimeout
 	}
 	if w.MaxRetries == 0 {
-		w.MaxRetries = 3
+		w.MaxRetries = worker.DefaultMaxRetries
 	}
 	if w.InProgress == "" {
 		w.InProgress = config.DefaultLabels().InProgress

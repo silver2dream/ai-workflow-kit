@@ -143,6 +143,29 @@ func ReplyOf(root, id string) (Reply, bool) {
 	return r, true
 }
 
+// askPoll is how often Ask looks for the answer.
+const askPoll = 200 * time.Millisecond
+
+// Ask gives the engine a command, and waits up to wait for its answer:
+// answered is false when it has not answered by then. The engine looks at
+// its inbox every two seconds.
+func Ask(root string, c Command, wait time.Duration) (sent Command, reply Reply, answered bool, err error) {
+	sent, err = Send(root, c)
+	if err != nil {
+		return sent, Reply{}, false, err
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		if r, ok := ReplyOf(root, sent.ID); ok {
+			return sent, r, true, nil
+		}
+		if !time.Now().Before(deadline) {
+			return sent, Reply{}, false, nil
+		}
+		time.Sleep(askPoll)
+	}
+}
+
 // writeAtomic writes a file whole or not at all: a reader never sees half
 // of it.
 func writeAtomic(dir, name string, data []byte) error {

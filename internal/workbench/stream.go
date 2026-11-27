@@ -38,7 +38,11 @@ var areas = []area{
 	// The run: its lock, its session, how many loops and failures, the
 	// result of each ticket. Not its logs and events, which grow all the
 	// time a run goes on.
-	{name: "status", dir: layout.StateDir, skip: []string{"logs", "events", "council", "tmp", "settings"}},
+	{name: "status", dir: layout.StateDir, skip: []string{"logs", "events", "council", "tmp", "settings", "engine"}},
+	// The engine: its run file (its beat and the step it is on), its lanes,
+	// its inbox and answers. Not what each of its agents was given, which
+	// grows with every step.
+	{name: "engine", dir: layout.StateDir + "/engine", skip: []string{"runs"}},
 	{name: "events", dir: layout.StateDir + "/events"},
 	{name: "plans", dir: council.PlansDir},
 	// A meeting that goes on: where it is, what was said, what the owner

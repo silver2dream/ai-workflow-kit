@@ -15,6 +15,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/engine"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	status "github.com/silver2dream/ai-workflow-kit/internal/status"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
@@ -228,6 +229,17 @@ func TestCollectStatusView(t *testing.T) {
 	if view := collectStatusView(context.Background(), report, nil, true); len(view.Warnings) != 0 {
 		t.Errorf("a warning about an issue's files is shown in the view: %v", view.Warnings)
 	}
+
+	// The engine's state, and what of it cannot be read.
+	if err := os.MkdirAll(filepath.FromSlash(engine.LanesDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(filepath.FromSlash(engine.LanesDir), "3.json"), []byte(`{"issue":3,"state":"reviewing","pr":4}`), 0o644)
+	os.WriteFile(filepath.Join(filepath.FromSlash(engine.LanesDir), "6.json"), []byte(`{`), 0o644)
+	view = collectStatusView(context.Background(), status.Report{}, nil, true)
+	if len(view.Engine.Lanes) != 1 || view.Engine.Lanes[0].PR != 4 || len(view.Warnings) != 1 || !strings.Contains(view.Warnings[0], "6.json") {
+		t.Errorf("the engine's state: %+v, warnings %v", view.Engine, view.Warnings)
+	}
 }
 
 // The command, start to end, in a project with tickets.
@@ -248,13 +260,22 @@ func TestCmdStatus_ShowsTheTickets(t *testing.T) {
 		}
 		return []byte(`[{"number": 1}]`), nil
 	})
+	// The engine handed #9 to a person.
+	lane, _ := json.Marshal(engine.Lane{Issue: 9, State: engine.NeedsYou, Why: engine.WhyWorkerFailed, Attempts: engine.Attempts{Failures: 3}})
+	if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(engine.LanesDir)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(engine.LanesDir), "9.json"), lane, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	out := captureStdout(t, func() {
 		if code := cmdStatus(nil); code != 0 {
 			t.Errorf("cmdStatus = %d, want 0", code)
 		}
 	})
-	for _, want := range []string{"demo: pull requests go to main\n", "Tickets   2 open, 1 done\n", "  needs you\n    #9    [feat] add login\n", "  ready\n    #16   [feat] shop checkout\n", "Next      Look at #9"} {
+	for _, want := range []string{"demo: pull requests go to main\n", "Lanes     1 in the engine's hands\n\n    #9    needs you, failed 3 of 3\n          [feat] add login\n          the Worker failed as often as it may\n",
+		"Tickets   2 open, 1 done\n", "  needs you\n    #9    [feat] add login\n", "  ready\n    #16   [feat] shop checkout\n", "Next      Look at #9"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("awkit status does not show %q:\n%s", want, out)
 		}
@@ -265,12 +286,16 @@ func TestCmdStatus_ShowsTheTickets(t *testing.T) {
 	var parsed struct {
 		Run     struct{ State string } `json:"run"`
 		Tickets *status.Tickets        `json:"tickets"`
+		Engine  engine.View            `json:"engine"`
 	}
 	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
 		t.Fatalf("awkit status --json is not JSON: %v\n%s", err, out)
 	}
 	if parsed.Run.State != "no_lock" || parsed.Tickets == nil || len(parsed.Tickets.Open) != 2 || parsed.Tickets.Done != 1 {
 		t.Errorf("awkit status --json: %+v", parsed)
+	}
+	if len(parsed.Engine.Lanes) != 1 || parsed.Engine.Lanes[0].Why != engine.WhyWorkerFailed || parsed.Engine.Limits.Failures != 3 {
+		t.Errorf("awkit status --json, the engine: %+v", parsed.Engine)
 	}
 
 	// Offline, and for one issue's files, GitHub is not asked.
@@ -338,5 +363,120 @@ func TestPrintStatus_Shadow(t *testing.T) {
 	// A run without a shadow says nothing of one.
 	if out := statusText(statusView{}); strings.Contains(out, "Shadow") {
 		t.Errorf("status speaks of a shadow there was not:\n%s", out)
+	}
+}
+
+// The engine's lanes: each in hand with where it is, its pull request, the
+// counts it used of its limits and since when; what needs a person says
+// why, a lane the engine is on says what it does, and the latest verdict
+// of a guardrail is shown. The step of a run that goes is said beside it.
+func TestPrintStatus_Lanes(t *testing.T) {
+	at := time.Now().Truncate(time.Minute)
+	clock := at.Local().Format("15:04")
+	view := statusView{
+		Project: "demo", Integration: "develop", Running: true, PID: 7,
+		Tickets: &status.Tickets{Open: []status.Ticket{{Number: 5, Title: "[feat] show the room code", Stage: status.StageInReview}}, DoneTitles: map[int]string{8: "[feat] start the match"}},
+		Engine: engine.View{
+			Going:  true,
+			Run:    &engine.RunInfo{Step: &engine.StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: at}},
+			Limits: engine.Limits{Failures: 3, Reviews: 3, Conflicts: 3},
+			Lanes: []engine.LaneView{
+				{Lane: engine.Lane{Issue: 5, State: engine.Reviewing, PR: 12, Attempts: engine.Attempts{Reviews: 1}, Since: at}, Step: &engine.StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: at}},
+				{Lane: engine.Lane{Issue: 7, State: engine.NeedsYou, PR: 14, Why: engine.WhyGuardBlocked, Note: "secret-scan/1 in the diff", Since: at},
+					Verdict: &engine.LaneVerdict{Verdict: guard.Verdict{Result: guard.Block, Rule: "secret-scan/1", Source: "the diff", Reason: "a token"}, At: at}},
+				{Lane: engine.Lane{Issue: 9, State: engine.Resolving, Resolve: engine.ResolveRebase, PR: 15, Attempts: engine.Attempts{Failures: 2}, Since: at}},
+				{Lane: engine.Lane{Issue: 8, State: engine.Merged, PR: 11, Since: at}},
+			},
+			Earlier: 4,
+		},
+	}
+	out := statusText(view)
+	for _, want := range []string{
+		"          the engine: the reviewer reviews PR #12 of #5 since " + clock + "\n",
+		"Lanes     3 in the engine's hands, 1 finished in its last run\n\n",
+		"    #5    in review, PR #12, reviewed again 1 of 3, since " + clock + "\n          [feat] show the room code\n          now: the reviewer reviews PR #12 of #5\n",
+		"    #7    needs you, PR #14, since " + clock + "\n          a guardrail stopped what an agent was to read\n          a guardrail blocked secret-scan/1 in the diff at " + clock + ": a token\n",
+		"    #9    behind its base, PR #15, failed 2 of 3, since " + clock + "\n",
+		"    #8    merged, PR #11, since " + clock + "\n          [feat] start the match\n",
+		"    4 more ended before the last run; awkit events --issue N shows one\n\nTickets ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status does not show %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "Lanes") > strings.Index(out, "Tickets") && strings.Contains(out, "Tickets") {
+		t.Errorf("the lanes come after the tickets:\n%s", out)
+	}
+
+	// No step is said of a run that does not go, nor of an engine's run file
+	// left by a run before the one that goes (the Principal's, say), nor of
+	// a step that ends a run; a project the engine has not run has no lanes.
+	view.Running, view.Engine.Going = false, false
+	if out := statusText(view); strings.Contains(out, "the engine: ") {
+		t.Errorf("a step of a run that does not go:\n%s", out)
+	}
+	view.Running = true
+	if out := statusText(view); strings.Contains(out, "the engine: ") {
+		t.Errorf("the step of an engine that does not go, while another run goes:\n%s", out)
+	}
+	view.Running, view.Engine.Going = true, true
+	view.Engine.Run.Step = &engine.StepInfo{Action: analyzer.ActionAllComplete}
+	if out := statusText(view); strings.Contains(out, "the engine: ") {
+		t.Errorf("the step that ends a run:\n%s", out)
+	}
+	if out := statusText(statusView{Project: "demo", Integration: "develop"}); strings.Contains(out, "Lanes") {
+		t.Errorf("lanes the engine never had:\n%s", out)
+	}
+
+	// A lane that needs a person for another reason says what the engine
+	// noted of it.
+	view = statusView{Project: "demo", Integration: "develop", Engine: engine.View{Limits: engine.Limits{Failures: 3, Reviews: 3, Conflicts: 3}, Lanes: []engine.LaneView{
+		{Lane: engine.Lane{Issue: 11, State: engine.NeedsYou, PR: 20, Why: engine.WhyReviewMaxRetries, Note: "the review of PR #20 was tried 3 times", Attempts: engine.Attempts{Reviews: 3}}},
+	}}}
+	if out := statusText(view); !strings.Contains(out, "          the review could not be completed as often as it may be tried: the review of PR #20 was tried 3 times\n") {
+		t.Errorf("the engine's note of a lane that needs a person:\n%s", out)
+	}
+}
+
+// Each state of a lane, and of resolving, is said in words, and each step
+// the engine takes on a lane.
+func TestLaneWords(t *testing.T) {
+	for _, s := range engine.States {
+		if _, ok := laneStates[s]; !ok {
+			t.Errorf("%s is not said in words", s)
+		}
+	}
+	for _, c := range []struct {
+		lane engine.Lane
+		want string
+	}{
+		{engine.Lane{State: engine.Resolving, Resolve: engine.ResolveConflict}, "conflicts with its base"},
+		{engine.Lane{State: engine.Implementing, Resolve: engine.ResolveConflict}, "its conflict is being resolved"},
+		{engine.Lane{State: engine.Implementing, Resolve: engine.ResolveRebase}, "being brought up to its base"},
+	} {
+		if got := laneState(c.lane); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.lane, got, c.want)
+		}
+	}
+	for _, c := range []struct {
+		step engine.StepInfo
+		want string
+	}{
+		{engine.StepInfo{Action: analyzer.ActionDispatchWorker, Issue: 5}, "a Worker writes #5"},
+		{engine.StepInfo{Action: analyzer.ActionCheckResult, Issue: 5}, "a Worker writes #5"},
+		{engine.StepInfo{Action: analyzer.ActionDispatchWorker, Issue: 5, PR: 9, Merge: analyzer.MergeIssueConflict}, "the resolver resolves the conflict of PR #9 of #5"},
+		{engine.StepInfo{Action: analyzer.ActionDispatchWorker, Issue: 5, PR: 9, Merge: analyzer.MergeIssueRebase}, "PR #9 of #5 is brought up to its base"},
+		{engine.StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 9}, "the reviewer reviews PR #9 of #5"},
+		{engine.StepInfo{Action: analyzer.ActionNone, Issue: 5}, ""},
+	} {
+		if got := stepWords(c.step); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.step, got, c.want)
+		}
+	}
+	for _, why := range []string{engine.WhyWorkerFailed, engine.WhyNeedsHumanReview, engine.WhyReviewMaxRetries, engine.WhyConflictRetries, engine.WhyNoPR, engine.WhyMergeBlocked,
+		engine.WhyGuardBlocked, engine.WhyGuardOutput, engine.WhyInvalidTicket, engine.WhyDependencyCycle, engine.WhyPerson, engine.WhyAgentRefused, engine.WhyWorkerLost} {
+		if engine.WhyText(why) == why {
+			t.Errorf("%s is not said in words", why)
+		}
 	}
 }

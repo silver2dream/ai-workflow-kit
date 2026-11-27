@@ -35,7 +35,7 @@ export function useResource<T>(load: () => Promise<T>, deps: readonly unknown[])
   return { ...state, reload };
 }
 
-export type Area = "status" | "events" | "plans" | "tickets" | "meeting" | "settings" | "lessons";
+export type Area = "status" | "events" | "plans" | "tickets" | "meeting" | "settings" | "lessons" | "engine";
 
 /**
  * useStream listens to what changes in a project. The browser reconnects by

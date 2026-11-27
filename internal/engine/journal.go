@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -239,7 +240,9 @@ func writeSnapshot(root string, l *Lane) error {
 }
 
 // ReadLanes reads the snapshots of the project at root, for a reader that
-// is not the engine: what the engine last wrote, by issue.
+// is not the engine: what the engine last wrote, by issue. A snapshot that
+// cannot be read is named in the error, and the others are given all the
+// same.
 func ReadLanes(root string) ([]Lane, error) {
 	dir := filepath.Join(root, filepath.FromSlash(LanesDir))
 	entries, err := os.ReadDir(dir)
@@ -250,22 +253,25 @@ func ReadLanes(root string) ([]Lane, error) {
 		return nil, err
 	}
 	lanes := []Lane{}
+	var bad []error
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
-			return nil, err
+			bad = append(bad, err)
+			continue
 		}
 		var l Lane
 		if err := json.Unmarshal(data, &l); err != nil {
-			return nil, fmt.Errorf("%s: %w", entry.Name(), err)
+			bad = append(bad, fmt.Errorf("%s: %w", entry.Name(), err))
+			continue
 		}
 		lanes = append(lanes, l)
 	}
 	sort.Slice(lanes, func(a, b int) bool { return lanes[a].Issue < lanes[b].Issue })
-	return lanes, nil
+	return lanes, errors.Join(bad...)
 }
 
 // Note writes an event of the engine that is no transition (a command, a

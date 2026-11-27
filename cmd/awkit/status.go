@@ -18,7 +18,12 @@ import (
 func usageStatus() {
 	fmt.Fprint(os.Stderr, `Show where the work is: the run, every ticket, and what to do next
 
-  Run       whether a run is going, and how the last one ended
+  Run       whether a run is going, the step the engine is on, and how
+            the last one ended
+  Lanes     the tickets in the engine's hands, and those its last run
+            finished: where each is, its pull request, how often it was
+            tried again of how often it may be, why it needs you, and the
+            latest verdict of a guardrail on it
   Tickets   every open ticket by the stage it is in: needs you, in review,
             in progress, back to a Worker, ready, waiting
   Next      the one thing to do next
@@ -82,8 +87,9 @@ func cmdStatus(args []string) int {
 		if err := enc.Encode(struct {
 			status.Report
 			Tickets *status.Tickets   `json:"tickets,omitempty"`
+			Engine  engine.View       `json:"engine"`
 			Shadow  *engine.ShadowRun `json:"shadow,omitempty"`
-		}{report, view.Tickets, view.Shadow}); err != nil {
+		}{report, view.Tickets, view.Engine, view.Shadow}); err != nil {
 			output.Error(fmt.Sprintf("Failed to write JSON: %v", err))
 			return 1
 		}

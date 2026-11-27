@@ -531,6 +531,27 @@ func TestStream(t *testing.T) {
 	if got := next(); got != `data: {"areas":["plans"]}` {
 		t.Errorf("a plan was written, after a log: %s", got)
 	}
+	// The engine's files are the engine's area, not the run's state: a lane,
+	// its run file, an answer. What each of its agents was given is not a
+	// change of it.
+	write(t, root, ".ai/state/engine/lanes/5.json", `{"issue":5,"state":"reviewing"}`)
+	if got := next(); got != `data: {"areas":["engine"]}` {
+		t.Errorf("a lane moved: %s", got)
+	}
+	write(t, root, ".ai/state/engine/runs/5/3/envelope.json", "{}")
+	write(t, root, ".ai/state/loop_count", "4")
+	if got := next(); got != `data: {"areas":["status"]}` {
+		t.Errorf("an agent's envelope, then the run's count: %s", got)
+	}
+	write(t, root, ".ai/state/engine/run.json", `{"pid":1}`)
+	if got := next(); got != `data: {"areas":["engine"]}` {
+		t.Errorf("the run beat: %s", got)
+	}
+	write(t, root, ".ai/state/engine/outbox/1.json", `{}`)
+	write(t, root, ".ai/state/consecutive_failures", "1")
+	if got := next(); got != `data: {"areas":["status","engine"]}` {
+		t.Errorf("an answer and a failure: %s", got)
+	}
 }
 
 // probe answers what a run needs as a project in one folder would: its

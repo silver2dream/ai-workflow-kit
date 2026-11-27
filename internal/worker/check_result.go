@@ -33,7 +33,7 @@ type CheckResultOutput struct {
 func CheckResult(ctx context.Context, opts CheckResultOptions) (output *CheckResultOutput, err error) {
 	// Set defaults
 	if opts.MaxRetries == 0 {
-		opts.MaxRetries = 3
+		opts.MaxRetries = DefaultMaxRetries
 	}
 	if opts.GHTimeout == 0 {
 		opts.GHTimeout = 30 * time.Second

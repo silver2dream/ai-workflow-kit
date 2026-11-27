@@ -66,6 +66,9 @@ type Options struct {
 	Alive func(pid int) bool
 	// Kill ends a process and what it started; killTree when nil.
 	Kill func(pid int) error
+	// StopWait is how long a stop waits for the engine to answer it; ten
+	// seconds when zero.
+	StopWait time.Duration
 }
 
 // Server is the workbench of one awkit process.
@@ -104,6 +107,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.Poll <= 0 {
 		opts.Poll = time.Second
+	}
+	if opts.StopWait <= 0 {
+		opts.StopWait = 10 * time.Second
 	}
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
