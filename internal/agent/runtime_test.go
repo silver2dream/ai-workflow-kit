@@ -352,17 +352,17 @@ func TestRun_WithAContext(t *testing.T) {
 
 // The hook runs the awkit the envelope names, or, when it names none, this
 // one.
-func TestHookCommand_WhichAwkit(t *testing.T) {
+func TestPolicyHook_WhichAwkit(t *testing.T) {
 	orig := awkitExecutable
 	awkitExecutable = func() (string, error) { return "C:/self/awkit.exe", nil }
 	t.Cleanup(func() { awkitExecutable = orig })
 
 	env := Envelope{Profile: Profile{Role: Reviewer, Tools: ReadTools}}
-	if cmd, err := hookCommand(env); err != nil || !strings.HasPrefix(cmd, `"C:/self/awkit.exe" guard tool --role implementer`) {
-		t.Errorf("itself: %q, %v", cmd, err)
+	if h, err := policyHook(env); err != nil || !strings.HasPrefix(h.Command(), `"C:/self/awkit.exe" guard tool --role implementer`) {
+		t.Errorf("itself: %q, %v", h.Command(), err)
 	}
 	env.Awkit = "D:/build/awkit.exe"
-	if cmd, err := hookCommand(env); err != nil || !strings.HasPrefix(cmd, `"D:/build/awkit.exe" guard tool --role implementer`) {
-		t.Errorf("the one given: %q, %v", cmd, err)
+	if h, err := policyHook(env); err != nil || !strings.HasPrefix(h.Command(), `"D:/build/awkit.exe" guard tool --role implementer`) {
+		t.Errorf("the one given: %q, %v", h.Command(), err)
 	}
 }

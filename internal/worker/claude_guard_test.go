@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
 func stubClaudeCLI(t *testing.T, options []string, mentions []string, atLeast bool) {
@@ -75,7 +77,7 @@ func TestGuardArgs(t *testing.T) {
 	}
 	hook := settings.Hooks.PreToolUse[0].Hooks[0]
 	wantCommand := `"C:/tools/awkit.exe" guard tool --role implementer --state-root "D:/games/rally" --protect "develop" --protect "main" --allow-control`
-	if hook.Type != "command" || hook.Command != wantCommand || hook.OnFailure != "block" || hook.Timeout != hookTimeoutSeconds {
+	if hook.Type != "command" || hook.Command != wantCommand || hook.OnFailure != "block" || hook.Timeout != guard.HookTimeoutSeconds {
 		t.Errorf("hook = %+v\nwant command %s", hook, wantCommand)
 	}
 }

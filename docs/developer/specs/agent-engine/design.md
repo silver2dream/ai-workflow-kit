@@ -164,7 +164,11 @@
 - **`awkit run` 預設由 engine 跑**：`AWKIT_ENGINE` 沒設或是 `engine` 都是 engine；`shadow` 是 1.7a 的影子；`principal` 改用主控（Claude Code session 跑 `principal-workflow`），保留這一個版本，下一版移除。其他值當作沒設，由 engine 跑，並在終端機說那個值不是一種跑法。
 - **deprecation 事件**：`AWKIT_ENGINE=principal`，以及只有主控會呼叫的 `awkit analyze-next`、`check-result`、`stop-workflow`，每次被用到都寫一筆 `deprecated_path`（寫進當時 run 的 session）。不在 run 裡被呼叫時沒有 session 可寫，改在 stderr 告訴人。`principal-workflow` skill 本身看不見，它每一圈都呼叫 `analyze-next`，所以也記得到。engine 用的是這些指令背後的函式（`worker.CheckResult`、`workflow.StopWorkflow`），不會被記成 deprecation。
 - **文件**：使用者文件、README、`CLAUDE.md` 的範本，都改成由 engine 派工；`claude` 的角色剩審查者與議會（`AWKIT_ENGINE=principal` 時也是主控）；`awkit stop --now` 是立刻停的方法（主控的 run 仍是 Ctrl-C）。`awkit run --help` 說明 `AWKIT_ENGINE` 的三種值。
-- **還沒處理的**：`awkit generate` 仍然把主控的指令政策 hook 寫進專案的 `.claude/settings.local.json`，套用在專案裡每一個 Claude Code session，包括人自己開的。engine 成為預設之後，一般已經沒有主控 session，這個 hook 只剩限制人的作用。要不要改成只在 `AWKIT_ENGINE=principal` 時裝，等決定。
+- **主控的指令政策 hook 只跟著主控**（2026-11-27 改，使用者同意）：
+  - 原本 `awkit generate` 把它寫進專案的 `.claude/settings.local.json`。那個檔案是專案裡每一個 Claude Code session 都會讀的，所以人自己開的 session 也被當成主控檢查：不能推、不能合併、不能開 issue。hook 呼叫的是 PATH 上的 `awkit`，那一版太舊或找不到時，檢查本身失敗，而 `onFailure: block` 讓每一個工具呼叫都被擋。engine 成為預設之後，一般已經沒有主控 session，這個 hook 只剩限制人的作用。
+  - 現在 `AWKIT_ENGINE=principal` 啟動主控時，`awkit run` 把 hook 寫進那一輪的設定（`.ai/state/principal/claude-settings.json`），以 `--settings` 交給主控 session，加在專案的設定之上（專案的權限照用）。主控派出去的 `pr-reviewer`、`conflict-resolver` 在同一個 session 裡，一樣受管。不能給設定的 claude CLI 拒絕啟動主控。
+  - hook 的指令由 `guard.Hook` 組成，三處共用：Worker、engine 的 agent、主控。它寫的是這個 awkit 的完整路徑，不再依賴 PATH 上的是哪一版。
+  - `awkit generate`、`upgrade` 與設定頁寫本機設定時，不再寫入 hook，並把以前寫的那條（指令以 `awkit guard tool` 開頭）拿掉，人自己的 hook 與權限都留著。
 
 ### 5.2 狀態
 
@@ -454,7 +458,7 @@ type Verdict struct {
 - **預算**：§5.10。
 - **容器**：§5.8。
 
-P0（還沒有 engine）時：主控的 session 也掛上同一個 hook，政策是主控、審查、解衝突三者需求的聯集，但禁止 `gh pr merge`、推到整合分支與發版分支（解衝突的 `git push --force-with-lease` 只允許推到 `feat/ai-issue-*`）。
+P0（還沒有 engine）時：主控的 session 也掛上同一個 hook（1.7b 之後只在 `AWKIT_ENGINE=principal` 啟動的主控 session 上，見 §5.1），政策是主控、審查、解衝突三者需求的聯集，但禁止 `gh pr merge`、推到整合分支與發版分支（解衝突的 `git push --force-with-lease` 只允許推到 `feat/ai-issue-*`）。
 
 ### 9.4 輸出層
 

@@ -23,7 +23,8 @@ on standard error, which Claude Code gives the agent; the verdict is written
 to the project's events. A call that cannot be read is refused.
 
 Roles:
-  principal     the session of awkit run, with its reviewer and conflict resolver
+  principal     the Principal of AWKIT_ENGINE=principal, with its reviewer and
+                conflict resolver
   implementer   a Worker
 
 Options:

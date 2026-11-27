@@ -24,10 +24,6 @@ var workerTools = []string{"Read", "Edit", "Write", "MultiEdit", "NotebookEdit",
 // workerDenied are refused by Claude Code itself as well, before the hook.
 var workerDenied = []string{"WebFetch", "WebSearch", "Bash(gh:*)", "Bash(git push:*)", "Bash(curl:*)", "Bash(wget:*)"}
 
-// hookTimeoutSeconds bounds one check; the policy is a few regular
-// expressions, so a check that takes longer has gone wrong.
-const hookTimeoutSeconds = 30
-
 // awkitExecutable is the awkit the hook runs: this one. It and what is asked
 // of the claude CLI are variables, so tests do not depend on what is
 // installed.
@@ -38,34 +34,18 @@ var (
 	claudeAtLeast   = claudecli.AtLeast
 )
 
-// guardHookCommand is the hook's command line.
-func guardHookCommand(exe string, g *WorkerGuard) string {
-	quote := func(s string) string { return `"` + filepath.ToSlash(s) + `"` }
-	parts := []string{quote(exe), "guard", "tool", "--role", guard.RoleImplementer, "--state-root", quote(g.StateRoot)}
-	for _, branch := range g.Protected {
-		if branch != "" {
-			parts = append(parts, "--protect", quote(branch))
-		}
-	}
-	if g.AllowControl {
-		parts = append(parts, "--allow-control")
-	}
-	return strings.Join(parts, " ")
+// workerHook is the Worker's command-policy hook: the implementer's.
+func workerHook(exe string, g *WorkerGuard) guard.Hook {
+	return guard.Hook{Awkit: exe, Role: guard.RoleImplementer, StateRoot: g.StateRoot, Protected: g.Protected, AllowControl: g.AllowControl}
 }
 
 // workerClaudeSettings are the settings of a Worker's claude for one run.
 // blockOnFailure makes a hook that fails or times out refuse the call; the
 // CLI knows it from 2.1.295 on.
-func workerClaudeSettings(hookCommand string, blockOnFailure bool) ([]byte, error) {
-	hook := map[string]any{"type": "command", "command": hookCommand, "timeout": hookTimeoutSeconds}
-	if blockOnFailure {
-		hook["onFailure"] = "block"
-	}
+func workerClaudeSettings(hook guard.Hook, blockOnFailure bool) ([]byte, error) {
 	settings := map[string]any{
 		"permissions": map[string]any{"allow": workerTools, "deny": workerDenied},
-		"hooks": map[string]any{
-			"PreToolUse": []any{map[string]any{"matcher": "*", "hooks": []any{hook}}},
-		},
+		"hooks":       map[string]any{"PreToolUse": []any{hook.PreToolUse(blockOnFailure)}},
 	}
 	return json.MarshalIndent(settings, "", "  ")
 }
@@ -94,7 +74,7 @@ func (b *ClaudeCodeBackend) guardArgs(g *WorkerGuard) ([]string, error) {
 	if !blockOnFailure {
 		fmt.Fprintln(os.Stderr, "[worker] warning: this claude CLI is older than 2.1.295: a check of the Worker's tool calls that fails or times out lets the call through")
 	}
-	data, err := workerClaudeSettings(guardHookCommand(exe, g), blockOnFailure)
+	data, err := workerClaudeSettings(workerHook(exe, g), blockOnFailure)
 	if err != nil {
 		return nil, err
 	}
