@@ -3,6 +3,9 @@ updates:
   # Go modules
   - package-ecosystem: "gomod"
     directory: "/"
+    # Every pull request goes to the integration branch; main only takes a
+    # release (.claude/rules/_kit/git-workflow.md).
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -16,6 +19,7 @@ updates:
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -23,5 +27,24 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    commit-message:
+      prefix: "[chore]"
+
+  # The workbench's page (web/), built into awkit: one pull request a week
+  # with every update, rather than one for each package.
+  - package-ecosystem: "npm"
+    directory: "/web"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      web:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "javascript"
     commit-message:
       prefix: "[chore]"

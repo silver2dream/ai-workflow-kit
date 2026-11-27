@@ -6,7 +6,7 @@
 
 ## 環境
 
-- Go 1.25 以上
+- Go 1.27 以上
 - 改工作台的畫面時：Node.js 22 以上（`web/`）
 - `git`、[`gh`](https://cli.github.com/)
 - Windows：Git for Windows，而且 `sh`、`bash` 要在 `PATH` 上（從 Git Bash 執行測試最省事）。有些測試會真的執行 shell 指令
