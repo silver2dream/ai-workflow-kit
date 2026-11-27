@@ -21,7 +21,10 @@ import (
 // decision is compared with it. The engine does what it decided; the
 // analyzer decides and does nothing (it changes no label and counts no
 // attempt). What a run's checks and the choice of the next ticket decide
-// (Precheck, NextTicket) is the analyzer's own in both, and is not compared.
+// (Precheck, and NextTicket, which the engine asks as Candidates) is the
+// analyzer's own in both, and is not compared; the paths a lane holds, which
+// only the engine looks at, can make it start another ticket (design.md
+// §5.3).
 //
 // Both read one state: the analyzer reads the tickets from the snapshot the
 // shadow takes, asks GitHub nothing the engine asked in the same step (a
