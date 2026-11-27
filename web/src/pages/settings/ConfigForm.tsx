@@ -1,8 +1,8 @@
 import { GitBranch, TriangleAlert } from "lucide-react";
 import { Panel, PanelHead, Tag } from "@/components/bits";
-import type { Config, Defaults } from "@/lib/settings";
-import { EffortSelect, ModelSelect, NumberField, SelectField, TextField } from "./fields";
-import { BACKENDS, modelLabel, STRATEGIES } from "./model";
+import type { AgentRole, AgentRoleName, Config, Defaults } from "@/lib/settings";
+import { EffortSelect, ModelSelect, MoneyField, NumberField, SelectField, TextField } from "./fields";
+import { AGENT_ROLES, agentDefaults, agentProfile, BACKENDS, effortLabel, implementerOf, modelLabel, STRATEGIES } from "./model";
 
 /** EXAMPLES are the commands a repo of a language is usually built and tested with, shown as examples in its empty fields. */
 const EXAMPLES: Record<string, { setup: string; build: string; test: string }> = {
@@ -17,6 +17,102 @@ const EXAMPLES: Record<string, { setup: string; build: string; test: string }> =
 };
 const GENERIC = { setup: "make deps", build: "make build", test: "make test" };
 const exampleOf = (language: string, key: "setup" | "build" | "test") => `例如 ${EXAMPLES[language.toLowerCase()]?.[key] || GENERIC[key]}`;
+
+const AGENT_WORDS: Record<AgentRoleName, { title: string; sub: string }> = {
+  reviewer: { title: "審查者", sub: "讀 PR 的改動和測試結果，打分數、寫意見。它只能讀，不能改檔或跑指令。" },
+  resolver: { title: "解衝突者", sub: "PR 和整合分支衝突時，只改衝突的檔案；engine 檢查過才推上去。" },
+};
+
+/** AgentFields edit one of the engine's agents: empty is the default, which the box says. */
+function AgentFields({
+  role,
+  config,
+  onChange,
+  defaults,
+  problems,
+}: {
+  role: AgentRoleName;
+  config: Config;
+  onChange: (config: Config) => void;
+  defaults: Defaults["config"];
+  problems: Record<string, string>;
+}) {
+  const set = config.agents[role];
+  const update = (change: Partial<AgentRole>) => onChange({ ...config, agents: { ...config.agents, [role]: { ...set, ...change } } });
+  const fallback = agentDefaults(role, config.worker, defaults);
+  // What an empty model and effort get, on the backend picked.
+  const base = agentProfile(role, { ...set, model: "", effort: "" }, config.worker, defaults);
+  const backend = base.backend;
+  const tool = BACKENDS[backend]?.label ?? backend;
+  const runs = agentProfile(role, set, config.worker, defaults);
+  const worker = implementerOf(config.worker, defaults);
+  const sameModel = role === "reviewer" && runs.backend === worker.backend && runs.model !== "" && runs.model === worker.model;
+  const max = defaults.agents.max_minutes[role];
+  const words = AGENT_WORDS[role];
+  return (
+    <div className="grid min-w-0 content-start gap-3 rounded-lg border border-border bg-background p-4" data-agent={role}>
+      <div>
+        <div className="text-[15px] font-extrabold">{words.title}</div>
+        <p className="text-[13px] text-muted-foreground">{words.sub}</p>
+      </div>
+      <SelectField
+        label="用哪一個工具"
+        value={set.backend}
+        options={[
+          { value: "", label: `預設（${BACKENDS[fallback.backend]?.label ?? fallback.backend}）` },
+          ...defaults.backends.map((id) => ({ value: id, label: BACKENDS[id]?.label ?? id })),
+        ]}
+        // Another tool's model and effort have other names: they start from its own.
+        onChange={(value) => update({ backend: value, model: "", effort: "" })}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
+        {backend === "claude-code" ? (
+          <ModelSelect label="模型" value={set.model} inherit={`預設（${base.model ? modelLabel(base.model) : "Claude CLI 自己決定"}）`} onChange={(model) => update({ model })} />
+        ) : (
+          <TextField
+            label="模型"
+            mono
+            value={set.model}
+            placeholder={`預設（${base.model || `${tool} 自己決定`}）`}
+            onChange={(model) => update({ model })}
+            hint={`${tool} 的模型名稱。`}
+          />
+        )}
+        <EffortSelect
+          label="想多深"
+          value={set.effort}
+          inherit={`預設（${base.effort ? effortLabel(base.effort) : `${tool} 自己決定`}）`}
+          efforts={backend === "claude-code" ? defaults.efforts : defaults.agents.codex_efforts}
+          onChange={(effort) => update({ effort })}
+        />
+        <NumberField
+          label="一次最多跑多久"
+          hint={`最多 ${max} 分鐘；超過就停下，算這一步沒做成。`}
+          unit="分鐘"
+          min={1}
+          max={max}
+          value={set.minutes}
+          fallback={fallback.minutes}
+          error={problems[`${role}.minutes`]}
+          onChange={(minutes) => update({ minutes })}
+        />
+        <MoneyField
+          label="一次最多花多少"
+          hint={backend === "claude-code" ? "空著就是不限。Claude Code 會在這裡自己停下。" : "空著就是不限。跑完才看得到花了多少，超過就算這一步沒做成。"}
+          value={set.usd}
+          error={problems[`${role}.usd`]}
+          onChange={(usd) => update({ usd })}
+        />
+      </div>
+      {sameModel && (
+        <p className="flex gap-1.5 text-[13px] leading-snug text-caution-ink">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          審查者和執行者是同一個模型（{tool} 的 {modelLabel(runs.model)}），審查比較不獨立。換一個模型，審查比較看得出執行者的盲點。
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** ConfigForm edits the part of the configuration a person changes: the name, the commands, who writes the code, the review. */
 export function ConfigForm({
@@ -132,6 +228,15 @@ export function ConfigForm({
               />
             </div>
           )}
+        </div>
+      </Panel>
+
+      <Panel data-settings="agents">
+        <PanelHead title="審查與解衝突" sub="engine 用它們審 PR，以及解 PR 和整合分支的衝突。空著就用預設，預設跟著上面的執行者。" />
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 px-5 pb-5 xl:grid-cols-2">
+          {AGENT_ROLES.map((role) => (
+            <AgentFields key={role} role={role} config={config} onChange={onChange} defaults={d} problems={problems} />
+          ))}
         </div>
       </Panel>
 

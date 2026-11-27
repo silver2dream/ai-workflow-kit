@@ -55,4 +55,13 @@ func TestCmdValidate_NamesTheKeysNothingReads(t *testing.T) {
 	if code != 1 || !strings.Contains(out, `github.labels.task: the label cannot be renamed ("todo")`) || strings.Contains(out, "Configuration is valid") {
 		t.Errorf("a renamed label: validate = %d\n%s", code, out)
 	}
+
+	// The engine's agents, as the engine would take them.
+	if code, out := validate(valid); code != 0 || !strings.Contains(out, "The engine's agents: OK") {
+		t.Errorf("the default agents: validate = %d\n%s", code, out)
+	}
+	code, out = validate(valid + "agents:\n  reviewer: {minutes: 500}\n")
+	if code != 1 || !strings.Contains(out, "The engine's agents: agents.reviewer: the reviewer's time limit is 500 minutes") || strings.Contains(out, "Configuration is valid") {
+		t.Errorf("a reviewer past its limit: validate = %d\n%s", code, out)
+	}
 }

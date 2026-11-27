@@ -623,7 +623,23 @@ guardrails:
   - 「主控」只在主控派工的一輪出現（`AWKIT_ENGINE=principal`）。
 - 工作看板的工單經過也是同一份事件，所以多了線的轉換。
 
-1.8c 的細節在開始時寫進這裡：設定頁編輯 `agents.reviewer`、`agents.resolver`（§12）。
+實作（1.8c，`internal/agent/config.go`、`internal/settings`、頁面的設定頁）：
+
+- **角色設定只在一個地方解出來（`agent.FromConfig`）**：從設定檔得到實作者（`worker.*`）、審查者與解衝突者（`agents.reviewer`、`agents.resolver` 疊在角色預設上）的設定，超出角色上限的說是哪一個鍵。原本只有 engine 啟動時才解（`engine.New`），存了不能用的值要到開始工作才知道；現在 engine、設定頁存檔前的檢查（`settings.CheckConfig`）與 `awkit validate` 都用它。
+- **設定頁**：「專案設定」多一塊「審查與解衝突」，兩個角色各有：
+  - 用哪一個工具：預設、Claude Code、Codex；
+  - 模型：Claude Code 從清單選，Codex 自己填；
+  - 想多深：選項跟著工具，Claude Code 與 Codex 各有自己的；
+  - 一次最多跑幾分鐘（1 到角色的上限，兩個角色都是 120）；
+  - 一次最多花多少美元（0 或空著是不限）。
+  - 空著就是預設，框裡寫出預設是什麼。
+- **預設跟著執行者**，而且是表單上現在的執行者（還沒存也算）。
+  - 審查者用 Claude Code 的 opus；執行者是 Claude Code 的 opus 時，改用 sonnet。
+  - 解衝突者跟執行者用同一個工具、模型與想多深。
+  - 換了工具的，模型與想多深從那個工具自己的預設開始。
+  - 頁面照 `agent.Defaults` 的規則自己算。為了不讓兩邊分岔，Go 與頁面的測試讀同一份案例（`internal/agent/testdata/defaults.json`），任一邊改了規則，另一邊的測試就會失敗。
+  - 審查者和執行者是同一個模型時，頁面提醒審查比較不獨立（engine 啟動時也會這樣說）。
+- **存檔**：照設定頁現有的做法，以三方合併寫進 `agents.reviewer`、`agents.resolver`，只寫有值的鍵，`agents.builtin`／`custom` 與註解不動；值不能用的在存檔前就被擋下，說是哪一個鍵。伺服器另外給頁面角色的時間上限與預設分鐘數、Codex 接受的想多深（都從 `agent` 讀）。
 
 ## 14. 遷移與相容
 

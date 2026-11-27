@@ -43,6 +43,31 @@ func pickInt(was, mine, theirs *int) *int {
 	return theirs
 }
 
+func pickFloat(was, mine, theirs *float64) *float64 {
+	value := func(n *float64) float64 {
+		if n == nil {
+			return 0
+		}
+		return *n
+	}
+	if value(mine) != value(was) {
+		return mine
+	}
+	return theirs
+}
+
+// pickRole takes each setting of an agent the person changed, and the
+// others as the branch has them.
+func pickRole(was, mine, theirs AgentRole) AgentRole {
+	return AgentRole{
+		Backend: pick(was.Backend, mine.Backend, theirs.Backend),
+		Model:   pick(was.Model, mine.Model, theirs.Model),
+		Effort:  pick(was.Effort, mine.Effort, theirs.Effort),
+		Minutes: pickInt(was.Minutes, mine.Minutes, theirs.Minutes),
+		USD:     pickFloat(was.USD, mine.USD, theirs.USD),
+	}
+}
+
 // mergeRoster returns the roster on the branch with what the person changed.
 // The roles are one thing: changed on both sides, differently, they are a
 // conflict.
@@ -102,6 +127,10 @@ func mergeConfig(was, mine, theirs *Config) (*Config, error) {
 		Backend: pick(was.Worker.Backend, mine.Worker.Backend, theirs.Worker.Backend),
 		Model:   pick(was.Worker.Model, mine.Worker.Model, theirs.Worker.Model),
 		Effort:  pick(was.Worker.Effort, mine.Worker.Effort, theirs.Worker.Effort),
+	}
+	merged.Agents = Agents{
+		Reviewer: pickRole(was.Agents.Reviewer, mine.Agents.Reviewer, theirs.Agents.Reviewer),
+		Resolver: pickRole(was.Agents.Resolver, mine.Agents.Resolver, theirs.Agents.Resolver),
 	}
 	merged.Review = Review{
 		ScoreThreshold: pickInt(was.Review.ScoreThreshold, mine.Review.ScoreThreshold, theirs.Review.ScoreThreshold),

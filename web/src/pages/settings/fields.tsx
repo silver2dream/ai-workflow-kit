@@ -1,7 +1,7 @@
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { EFFORT_WORDS, MODELS, numberOf } from "./model";
+import { decimalOf, EFFORT_WORDS, MODELS, numberOf } from "./model";
 
 /** Field is a labelled control, with what it is for and what is wrong with it. */
 export function Field({
@@ -118,6 +118,56 @@ export function NumberField({
             className="h-9 w-32 text-[14px] tnum"
           />
           {unit && <span className="text-[13.5px] text-muted-foreground">{unit}</span>}
+        </div>
+      )}
+    </Field>
+  );
+}
+
+/**
+ * MoneyField holds an amount in dollars, cents and all, or nothing for no
+ * limit. What is typed is kept as typed ("1." stays while the cents come),
+ * and taken again from the value when that changes from outside.
+ */
+export function MoneyField({
+  label,
+  hint,
+  error,
+  value,
+  onChange,
+}: {
+  label: ReactNode;
+  hint?: ReactNode;
+  error?: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  const [text, setText] = useState(value === null ? "" : String(value));
+  useEffect(() => {
+    if (decimalOf(text) !== value) setText(value === null ? "" : String(value));
+    // Only a value from outside is taken again, not what the field just said.
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Field label={label} hint={hint} error={error}>
+      {(id, describedBy) => (
+        <div className="flex items-center gap-2">
+          <span className="text-[13.5px] text-muted-foreground">US$</span>
+          <Input
+            id={id}
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step={0.01}
+            value={text}
+            placeholder="不限"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedBy}
+            onChange={(e) => {
+              setText(e.target.value);
+              onChange(decimalOf(e.target.value));
+            }}
+            className="h-9 w-32 text-[14px] tnum"
+          />
         </div>
       )}
     </Field>

@@ -1,4 +1,4 @@
-import type { Config, Role, Roster } from "@/lib/settings";
+import type { AgentRole, AgentRoleName, Config, Defaults, Role, Roster } from "@/lib/settings";
 
 /** A role's id, as the council takes it. */
 export const ROLE_ID = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -71,9 +71,69 @@ export function rosterProblems(roster: Roster): RosterProblems {
   return { whole, roles, count };
 }
 
+/** The settings a role of the engine runs with. */
+export interface AgentProfile {
+  backend: string;
+  model: string;
+  effort: string;
+  minutes: number;
+  usd: number;
+}
+
+export const AGENT_ROLES: AgentRoleName[] = ["reviewer", "resolver"];
+
+/** implementerOf is the Worker as the form has it, as the roles that follow it read it: its backend, and Claude Code's model and effort. */
+export function implementerOf(worker: Config["worker"], d: Defaults["config"]): { backend: string; model: string; effort: string } {
+  const backend = worker.backend || d.backend;
+  return backend === "claude-code" ? { backend, model: worker.model || d.model, effort: worker.effort } : { backend, model: "", effort: "" };
+}
+
+/**
+ * agentDefaults are a role's settings before the project's, by the rules of
+ * agent.Defaults: the reviewer is Claude Code's opus, or sonnet when the
+ * Worker is opus; the resolver works as the Worker does.
+ * internal/agent/testdata/defaults.json holds the cases both read.
+ */
+export function agentDefaults(role: AgentRoleName, worker: Config["worker"], d: Defaults["config"]): AgentProfile {
+  const w = implementerOf(worker, d);
+  const minutes = d.agents.minutes[role];
+  if (role === "reviewer") {
+    return { backend: "claude-code", model: w.backend === "claude-code" && w.model === "opus" ? "sonnet" : "opus", effort: "", minutes, usd: 0 };
+  }
+  return { backend: w.backend, model: w.model, effort: w.effort, minutes, usd: 0 };
+}
+
+/** agentProfile is what a role runs with: its defaults with what the form sets, as agent.Resolve gives them. Another backend starts from its own model and effort. */
+export function agentProfile(role: AgentRoleName, set: AgentRole, worker: Config["worker"], d: Defaults["config"]): AgentProfile {
+  const p = agentDefaults(role, worker, d);
+  if (set.backend && set.backend !== p.backend) {
+    p.backend = set.backend;
+    p.model = "";
+    p.effort = "";
+  }
+  if (set.model) p.model = set.model;
+  if (set.effort) p.effort = set.effort;
+  if (set.minutes) p.minutes = set.minutes;
+  if (set.usd) p.usd = set.usd;
+  return p;
+}
+
+/** A number a field holds, fraction and all; null when it holds none. */
+export function decimalOf(text: string): number | null {
+  if (text.trim() === "") return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** What is wrong with the configuration, for the page, by field. */
-export function configProblems(config: Config): { fields: Record<string, string>; count: number } {
+export function configProblems(config: Config, d?: Defaults["config"]): { fields: Record<string, string>; count: number } {
   const fields: Record<string, string> = {};
+  for (const role of AGENT_ROLES) {
+    const set = config.agents?.[role];
+    const max = d?.agents.max_minutes[role];
+    if (set?.minutes !== null && set?.minutes !== undefined && (set.minutes < 1 || (max && set.minutes > max))) fields[`${role}.minutes`] = `是 1 到 ${max ?? "上限"} 分鐘。`;
+    if (set?.usd !== null && set?.usd !== undefined && set.usd < 0) fields[`${role}.usd`] = "不能是負的；不限就空著。";
+  }
   if (!config.name.trim()) fields.name = "專案要有名字。";
   const score = config.review.score_threshold;
   if (score !== null && (score < 1 || score > 10)) fields.score = "分數是 1 到 10。";
