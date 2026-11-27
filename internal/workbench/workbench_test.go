@@ -548,10 +548,15 @@ func TestStream(t *testing.T) {
 	if got := next(); got != `data: {"areas":["engine"]}` {
 		t.Errorf("the run beat: %s", got)
 	}
+	// One file at a time: two written together may be seen in one look or
+	// in two.
 	write(t, root, ".ai/state/engine/outbox/1.json", `{}`)
+	if got := next(); got != `data: {"areas":["engine"]}` {
+		t.Errorf("an answer: %s", got)
+	}
 	write(t, root, ".ai/state/consecutive_failures", "1")
-	if got := next(); got != `data: {"areas":["status","engine"]}` {
-		t.Errorf("an answer and a failure: %s", got)
+	if got := next(); got != `data: {"areas":["status"]}` {
+		t.Errorf("a failure: %s", got)
 	}
 }
 
