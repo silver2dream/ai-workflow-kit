@@ -289,7 +289,8 @@ func Generate(opts Options) (*Result, error) {
 	}
 
 	// The local settings of Claude Code are the person's own: what a run
-	// needs is added to them, and nothing in them is replaced.
+	// needs is added to them, nothing in them is replaced, and the hook an
+	// earlier awkit put there is taken out (settings.go).
 	switch changed, err := generateClaudeSettings(settingsPath, config); {
 	case err != nil:
 		warn(err.Error())

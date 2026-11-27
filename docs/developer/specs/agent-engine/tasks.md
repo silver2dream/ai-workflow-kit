@@ -35,6 +35,7 @@
   - P0 的政策：主控 session 是主控、審查、解衝突需求的聯集，禁止 `gh pr merge`、`gh issue create`、寫入類的 `gh api`、推到整合與發版分支（含 `main`、`master`、`develop`、`trunk`、`release/*`）、沒有 lease 的強制推送、刪分支、讀家目錄的憑證、列印環境變數、寫 `.git/`
   - 連外：P0 沒有白名單，兩個角色都不能用 `curl`、`wget`、`ssh` 這類連外程式與 WebFetch、WebSearch；依角色的主機白名單由 3.2 的 egress proxy 提供
   - `awkit generate` 把 hook 寫進 `settings.local.json`，保留人自己的 hook
+  - 2026-11-27 改：主控的 hook 改由 `awkit run` 在 `AWKIT_ENGINE=principal` 時以 `--settings` 交給主控 session；`awkit generate` 不再把它寫進專案的 `settings.local.json`，並拿掉以前寫的。原因：那個檔案套用在專案的每一個 Claude Code session，包括人自己開的；PATH 上的 awkit 不能檢查時，每一個工具呼叫都被擋。細節在 `design.md` §5.1 的 1.7b
   - 需求：R10
   - 完成：#277
 - [x] 0.5 Claude 執行者的角色設定與環境變數清理
@@ -130,7 +131,7 @@
   - 1.7a：細節在 `design.md` §5.1。與原本寫的不同：影子模式改成 engine 執行、主控的判斷在旁邊算（使用者 2026-11-24 同意，理由在 design）；另加窮舉比對的測試；工作台的顯示放到 1.8。比對找到一個 engine 與主控不同的地方並改了 engine：需要人的線，決定不再帶 PR 編號
   - 1.7a 完成：#290
   - 影子實跑（2026-11-24，公開的測試 repo，四張票：兩張沒有依賴、一張依賴一張、一張依賴兩張；codex 實作、Claude 審查）：四張都合併，整輪以 `all_tasks_complete` 結束；比對 9 次（5 次手上沒有票、4 次送審），9 次一樣，沒有已知差異，也沒有比不成的。四次審查都一次通過，共 $0.69。這次實跑只走到常見的路（挑票、送審、合併）；重試、衝突、轉人、人放行這些路由窮舉比對涵蓋。PR 與合併後的 commit 都用了工單的標題（#289 的修正）
-  - 1.7b：細節在 `design.md` §5.1。與原本寫的不同：`AWKIT_ENGINE` 不是 `engine`／`shadow`／`principal` 時不報錯，由 engine 跑並說那個值不算；主控指令不在 run 裡被呼叫時沒有 session 可寫，改在 stderr 提醒；架構、使用者文件、README 與 `CLAUDE.md` 的範本一起改成由 engine 派工。看到但沒有處理的：`awkit generate` 仍為專案的每一個 Claude Code session 裝主控的指令政策 hook
+  - 1.7b：細節在 `design.md` §5.1。與原本寫的不同：`AWKIT_ENGINE` 不是 `engine`／`shadow`／`principal` 時不報錯，由 engine 跑並說那個值不算；主控指令不在 run 裡被呼叫時沒有 session 可寫，改在 stderr 提醒；架構、使用者文件、README 與 `CLAUDE.md` 的範本一起改成由 engine 派工。看到的另一個問題（`awkit generate` 為專案的每一個 Claude Code session 裝主控的指令政策 hook）接著另一個 PR 處理，見 0.4 的 2026-11-27 註記
 - [ ] 1.8 工作台與 `awkit status` 讀 engine 的狀態
   - 相依：1.6
   - 執行頁改顯示線（P1 只有一條）；串流的 `engine` 區塊

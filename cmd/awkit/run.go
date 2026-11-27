@@ -253,14 +253,22 @@ func cmdRun(args []string) int {
 	// --dangerously-skip-permissions — for locked-down or older environments
 	// where `auto` is unavailable).
 	permissionMode := getEnvString("AWKIT_PRINCIPAL_PERMISSION_MODE", "auto")
+	// Its tool calls are checked against the principal's policy, by the
+	// settings it is started with (principal_guard.go).
+	guardArgs, err := principalGuardArgs(".", config)
+	if err != nil {
+		output.Error(err.Error())
+		endPrincipalSession("failed")
+		return 1
+	}
 	claudeCmd := "claude"
-	claudeArgs := []string{
+	claudeArgs := append([]string{
 		"--print",
 		"--output-format", "stream-json",
 		"--verbose",
 		"--permission-mode", permissionMode,
-		"-p", principalPromptFor(*issue),
-	}
+	}, guardArgs...)
+	claudeArgs = append(claudeArgs, "-p", principalPromptFor(*issue))
 
 	fmt.Println("")
 	if *issue > 0 {

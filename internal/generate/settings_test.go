@@ -243,10 +243,10 @@ func TestLocalSettings_WritesOnlyTheLocalSettings(t *testing.T) {
 	if !strings.Contains(strings.Join(allow, " "), "Bash(go:*)") {
 		t.Errorf("allow = %v", allow)
 	}
-	// The principal's guard hook comes with them, with the branches of the
-	// configuration.
-	if entries := guardEntries(t, filepath.Join(root, ".claude", "settings.local.json")); len(entries) != 1 {
-		t.Errorf("guard hook entries = %v", entries)
+	// No hook comes with them: the project's sessions are not held to the
+	// Principal's policy.
+	if entries := guardEntries(t, filepath.Join(root, ".claude", "settings.local.json")); len(entries) != 0 {
+		t.Errorf("hook entries = %v", entries)
 	}
 	for _, other := range []string{"CLAUDE.md", "AGENTS.md", ".claude/agents", ".github"} {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(other))); !os.IsNotExist(err) {
@@ -275,26 +275,35 @@ func guardEntries(t *testing.T, path string) []map[string]any {
 	return settings.Hooks.PreToolUse
 }
 
-// The session of awkit run, with its reviewer and conflict resolver, has
-// every tool call checked against the principal's policy, with the project's
-// branches protected; the hook replaces the one awkit put there before and
-// leaves the person's own hooks as they are.
-func TestGenerateClaudeSettings_GuardHook(t *testing.T) {
-	orig := claudeAtLeast
-	t.Cleanup(func() { claudeAtLeast = orig })
-	claudeAtLeast = func(int, int, int) bool { return true }
-
+// The project's settings hold no session to a tool policy: the hook awkit
+// put there before held every session of the project, a person's own among
+// them, and stopped them all when the awkit on PATH could not check. It is
+// taken out, the person's own hooks stay, and a file with no hook of awkit's
+// is not changed for it.
+func TestGenerateClaudeSettings_TakesOutTheGuardHook(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".claude", "settings.local.json")
 	if _, err := generateClaudeSettings(path, settingsProject()); err != nil {
 		t.Fatal(err)
 	}
-	entries := guardEntries(t, path)
-	if len(entries) != 1 {
-		t.Fatalf("entries = %v", entries)
+	if entries := guardEntries(t, path); len(entries) != 0 {
+		t.Fatalf("a new file has hooks: %v", entries)
 	}
-	data, _ := json.Marshal(entries[0])
-	if !strings.Contains(string(data), `"command":"awkit guard tool --role principal --protect \"develop\" --protect \"main\""`) || !strings.Contains(string(data), `"onFailure":"block"`) || !strings.Contains(string(data), `"matcher":"*"`) {
-		t.Errorf("entry = %s", data)
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), `"hooks"`) {
+		t.Errorf("a new file has hooks: %s", data)
+	}
+
+	// The hook an earlier awkit wrote, beside the person's own.
+	old := `{"type":"command","command":"awkit guard tool --role principal --protect \"develop\" --protect \"main\"","timeout":30,"onFailure":"block"}`
+	own := `{"permissions":{"allow":["Bash(make:*)"]},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-linter"}]},{"matcher":"*","hooks":[` + old + `]}],"PostToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":"my-formatter"}]}]}}`
+	if err := os.WriteFile(path, []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := generateClaudeSettings(path, settingsProject()); err != nil || !changed {
+		t.Fatalf("changed = %v, err = %v", changed, err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "awkit guard tool") || !strings.Contains(string(data), "my-linter") || !strings.Contains(string(data), "my-formatter") || !strings.Contains(string(data), "Bash(make:*)") {
+		t.Errorf("settings = %s", data)
 	}
 
 	// Again: nothing changes.
@@ -302,20 +311,15 @@ func TestGenerateClaudeSettings_GuardHook(t *testing.T) {
 		t.Errorf("second run: changed = %v, err = %v", changed, err)
 	}
 
-	// The person's own hook stays; awkit's is replaced when the branches
-	// change.
-	own := `{"permissions":{"allow":["Bash(make:*)"]},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-linter"}]},` + string(data) + `]}}`
-	if err := os.WriteFile(path, []byte(own), 0o644); err != nil {
+	// The hook alone: the hooks go with it, the permissions stay.
+	alone := `{"permissions":{"allow":["Bash(make:*)"]},"hooks":{"PreToolUse":[{"matcher":"*","hooks":[` + old + `]}]}}`
+	if err := os.WriteFile(path, []byte(alone), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := settingsProject()
-	cfg.Git.IntegrationBranch = "integration"
-	if changed, err := generateClaudeSettings(path, cfg); err != nil || !changed {
-		t.Fatalf("changed = %v, err = %v", changed, err)
+	if _, err := generateClaudeSettings(path, settingsProject()); err != nil {
+		t.Fatal(err)
 	}
-	entries = guardEntries(t, path)
-	all, _ := json.Marshal(entries)
-	if len(entries) != 2 || !strings.Contains(string(all), "my-linter") || !strings.Contains(string(all), `--protect \"integration\"`) || strings.Contains(string(all), `--protect \"develop\"`) {
-		t.Errorf("entries = %s", all)
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), `"hooks"`) || !strings.Contains(string(data), "Bash(make:*)") {
+		t.Errorf("settings = %s", data)
 	}
 }

@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 )
 
 // claudeAdapter runs the Claude Code CLI: one `claude --print` with the
@@ -41,9 +41,6 @@ var claudeDenied = map[Tools][]string{
 	ShellTools: {"WebFetch", "WebSearch", "Bash(gh:*)", "Bash(git push:*)", "Bash(curl:*)", "Bash(wget:*)"},
 }
 
-// hookTimeoutSeconds bounds one check of the command policy.
-const hookTimeoutSeconds = 30
-
 func (claudeAdapter) prepare(env Envelope, files runFiles) (invocation, error) {
 	p := env.Profile
 	var missing, unenforced []string
@@ -64,17 +61,15 @@ func (claudeAdapter) prepare(env Envelope, files runFiles) (invocation, error) {
 		"permissions": map[string]any{"allow": tools, "deny": append([]string{"WebFetch", "WebSearch"}, claudeDenied[p.Tools]...)},
 	}
 	if p.Tools != NoTools {
-		hook, err := hookCommand(env)
+		hook, err := policyHook(env)
 		if err != nil {
 			return invocation{}, err
 		}
-		entry := map[string]any{"type": "command", "command": hook, "timeout": hookTimeoutSeconds}
-		if claudeAtLeast(2, 1, 295) {
-			entry["onFailure"] = "block"
-		} else {
+		block := claudeAtLeast(2, 1, 295)
+		if !block {
 			unenforced = append(unenforced, "a command-policy check that fails or times out lets the call through (Claude Code before 2.1.295)")
 		}
-		settings["hooks"] = map[string]any{"PreToolUse": []any{map[string]any{"matcher": "*", "hooks": []any{entry}}}}
+		settings["hooks"] = map[string]any{"PreToolUse": []any{hook.PreToolUse(block)}}
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
@@ -125,31 +120,19 @@ func (claudeAdapter) prepare(env Envelope, files runFiles) (invocation, error) {
 	return invocation{program: claudeProgram, args: args, stdin: prompt, settings: data, unenforced: unenforced}, nil
 }
 
-// hookCommand is the command line of the command-policy hook: this awkit's
-// `guard tool`, with the role's policy, the project, and its branches.
-func hookCommand(env Envelope) (string, error) {
+// policyHook is the command-policy hook: this awkit's `guard tool`, or the
+// one the envelope names, with the role's policy, the project, and its
+// branches.
+func policyHook(env Envelope) (guard.Hook, error) {
 	exe := env.Awkit
 	if exe == "" {
 		self, err := awkitExecutable()
 		if err != nil {
-			return "", fmt.Errorf("awkit cannot find itself for the command-policy hook: %w", err)
+			return guard.Hook{}, fmt.Errorf("awkit cannot find itself for the command-policy hook: %w", err)
 		}
 		exe = self
 	}
-	quote := func(s string) string { return `"` + filepath.ToSlash(s) + `"` }
-	parts := []string{quote(exe), "guard", "tool", "--role", env.Profile.guardRole()}
-	if env.StateRoot != "" {
-		parts = append(parts, "--state-root", quote(env.StateRoot))
-	}
-	for _, branch := range env.Protected {
-		if branch != "" {
-			parts = append(parts, "--protect", quote(branch))
-		}
-	}
-	if env.AllowControl {
-		parts = append(parts, "--allow-control")
-	}
-	return strings.Join(parts, " "), nil
+	return guard.Hook{Awkit: exe, Role: env.Profile.guardRole(), StateRoot: env.StateRoot, Protected: env.Protected, AllowControl: env.AllowControl}, nil
 }
 
 // claudeResult is the part of `claude --print --output-format json` that is
