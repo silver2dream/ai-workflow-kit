@@ -382,7 +382,7 @@ func names(env []string) []string {
 
 // Session is the event file of the runs, for a process that has no event
 // stream of its own.
-const Session = "agent"
+const Session = trace.SessionAgent
 
 // The event of a run.
 const (

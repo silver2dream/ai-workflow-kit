@@ -16,12 +16,13 @@ export function Shadow() {
   const { engine } = useProject();
   const shadow = engine.data?.shadow;
   if (!shadow) return null;
-  const differences = [...shadow.differences].reverse();
+  // A run with no difference may say so with none at all.
+  const differences = [...(shadow.differences ?? [])].reverse();
   const cells = [
     { label: "比了幾步", value: shadow.steps, tone: "" },
     { label: "一樣", value: shadow.same, tone: "" },
     { label: "已知的差異", value: shadow.known, tone: "" },
-    { label: "不同", value: shadow.differences.length, tone: shadow.differences.length > 0 ? "text-caution-ink" : "" },
+    { label: "不同", value: differences.length, tone: differences.length > 0 ? "text-caution-ink" : "" },
     { label: "沒比成", value: shadow.failed, tone: shadow.failed > 0 ? "text-caution-ink" : "" },
   ];
   return (

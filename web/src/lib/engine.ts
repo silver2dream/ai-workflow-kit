@@ -135,6 +135,72 @@ export function decisionWords(d: Decision | null): string {
   }
 }
 
+/** What moved a lane, as a transition of the activity says it. */
+export const CAUSES: Record<string, string> = {
+  opened: "開始追蹤",
+  imported: "從工單的標籤接手",
+  unblocked: "等的工單合併了",
+  blocked: "等的工單又打開了",
+  dispatched: "交給執行者",
+  implemented: "PR 開好了",
+  no_changes: "執行者發現不用改",
+  implement_failed: "執行者沒做成",
+  resolve_failed: "衝突沒解成",
+  checked: "檢查通過",
+  check_failed: "檢查沒過",
+  approved: "審查通過",
+  changes_requested: "審查要求修改",
+  review_failed: "審查沒做成",
+  review_retried: "再審一次",
+  conflicting: "和整合分支衝突或落後",
+  resolved: "衝突解好了",
+  approval_needed: "要你核可",
+  owner_approved: "你核可了",
+  owner_returned: "你退回了",
+  merged: "合併了",
+  landed: "改動已經進了整合分支",
+  escalated: "交給你",
+  released: "你放行了",
+  paused: "暫停",
+  resumed: "繼續",
+  cancelled: "取消",
+  reopened: "工單重新打開",
+  prioritized: "調了優先順序",
+};
+
+/** How a run of the engine ended, in a line of the activity. */
+const RUN_ENDS: Record<string, string> = {
+  all_tasks_complete: "工單都做完了",
+  user_stopped: "照你的要求停了",
+  interrupted: "被中斷了",
+  needs_human_review: "有工單需要你",
+  worker_failed: "有張工單的執行者試了幾次都失敗",
+  review_max_retries: "有張工單的審查次數用完了",
+};
+
+export function runEndWords(reason: string): string {
+  return RUN_ENDS[reason] ?? reason;
+}
+
+/** Who gave the engine a command. */
+export function byWords(by: string): string {
+  if (by === "the workbench") return "工作台";
+  return by;
+}
+
+/** The kinds of command the engine takes. */
+export const COMMANDS: Record<string, string> = {
+  stop: "收尾後停",
+  stop_now: "立刻停",
+};
+
+/** The roles of the agents the engine runs, by who the activity says did it. */
+export const ROLES: Record<string, string> = {
+  reviewer: "審查",
+  resolver: "解衝突",
+  implementer: "執行者",
+};
+
 /** The differences between the two the comparison knows the reason of. */
 export const KNOWN: Record<string, string> = {
   order: "兩張工單的狀態一樣，兩邊先挑了不同的一張",

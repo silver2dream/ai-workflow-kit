@@ -296,6 +296,20 @@ func TestLook_TheShadow(t *testing.T) {
 	if v.Shadow == nil || v.Shadow.Steps != 2 || v.Shadow.Same != 1 || len(v.Shadow.Differences) != 1 {
 		t.Errorf("shadow = %+v", v.Shadow)
 	}
+
+	// A run whose decisions were all the same has an empty list of
+	// differences, not none: the page reads it as a list.
+	j, err = OpenJournal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.Note(TypeRun, trace.LevelInfo, 0, map[string]any{"event": "started"})
+	j.Note(TypeShadow, trace.LevelInfo, 0, Comparison{Same: true})
+	j.Close()
+	data, _ := json.Marshal(Look(root, nil, time.Now()).Shadow)
+	if !strings.Contains(string(data), `"differences":[]`) {
+		t.Errorf("shadow = %s", data)
+	}
 }
 
 // What cannot be read is said, and the rest is shown.

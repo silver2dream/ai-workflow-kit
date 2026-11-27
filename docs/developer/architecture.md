@@ -141,7 +141,7 @@ engine 當掉重開，線從事件重建，接著做手上那一步。主控模�
 | `jittest` | 審查時依 diff 產生並執行測試 |
 | `lessons` | 學習迴圈：記錄 → 濃縮 → 篩檢 → 放進 prompt → 結算；篩檢沒過的隔離，由人放行或不採用（`Decide`，決定寫成 `guardrail_decision` 事件） |
 | `hooks` | 設定檔的 `hooks` |
-| `trace`、`session` | 事件流；Principal 與 Worker 的 session 紀錄 |
+| `trace`、`session` | 事件流；Principal 與 Worker 的 session 紀錄。一輪的事件是它的 session 檔，加上沒有 run 串流的程序在那段時間寫進旁檔的（`engine`、`guard`、`agent`，名稱定在 `trace`）：`ReadRun` 從旁檔的尾端往回讀到這一輪開始為止，工作台的活動紀錄與 `awkit events` 都用它 |
 | `status`、`doctor`、`reset` | 同名的指令 |
 | `workbench` | `awkit ui`：只聽 127.0.0.1 的 HTTP 伺服器（每次啟動一把新鑰匙、只接受自己頁面送來的變更）、各頁讀的資料（和 `status`、`events`、`doctor`、`plan` 同一套讀法）、變更的推送、使用者自己的設定檔（專案清單、教學進度）；從頁面開的會議和核可（`meetings.go`）、教訓與人對隔離教訓的決定（`lessons.go`）、從頁面開始的工作（`runs.go`）、設定的修改（`project_settings.go`，`awkit settings apply`）由 `awkit detach` 另起一個不屬於工作台的程序來做，關掉工作台、甚至連子程序一起結束它，都照做；會議停只能靠暫停或開完，工作停靠停止標記（和 `awkit stop` 一樣），engine 的 run 另外經由它的收件匣交給它（兩種停止都是；立刻停等不到回覆才結束程序），主控的 run 立刻停是結束它的整個程序樹（`kill_windows.go` 用 `taskkill /T`，其他系統結束它的程序群組）。執行頁讀 `engine.Look`（`GET …/engine`，串流的 `engine` 區塊在 `.ai/state/engine/` 有變時通知）。即時輸出直接讀 `.ai/state/logs/` 的 run、主控與執行者 log，只讀那個資料夾裡的檔案。頁面本身在 `web/`（React、TypeScript、Tailwind、shadcn/ui），`npm --prefix web run build` 建到 `internal/workbench/dist/`，由 `go:embed` 放進 awkit；repository 裡只有 `dist/.keep` |
 | `stopmark`、`workflow` | STOP 標記；停止原因、結束語、報告 |

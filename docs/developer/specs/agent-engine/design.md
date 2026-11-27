@@ -603,7 +603,27 @@ guardrails:
   - 頁面上的字：派工的是 engine，不再說主控；詞彙表加上 engine。主控的分頁與詞只在 `AWKIT_ENGINE=principal` 的 run 出現。
 - **`awkit status`**：run 在跑時說 engine 正在做哪一步、從何時；新的 `Lanes` 段落，每條線一行（工單、狀態、PR、用過的次數、從何時），需要人的多一行原因，有判定的多一行判定；`--json` 多 `engine`（`engine.Look` 的內容），`shadow` 照舊。
 
-1.8b、1.8c 的細節在各自開始時寫進這裡：活動紀錄讀 engine 的事件（`engine.jsonl` 不在 run 的 session 裡，現在活動紀錄看不到線的轉換）；設定頁編輯 `agents.reviewer`、`agents.resolver`（§12）。
+實作（1.8b，`internal/trace` 的 `ReadRun`、`internal/workbench/api.go`、`cmd/awkit/events.go`、頁面的活動紀錄）：
+
+- **一輪的事件分散在幾個檔**：run 的 session 檔（`awkit run` 與它程序裡的 engine、審查、解衝突寫的），以及沒有 run 串流的程序寫的旁檔——`engine.jsonl`（線的轉換、run 的開始與結束、指令、影子比對；engine 的事件只寫在這裡）、`guard.jsonl`（hook 與 `awkit run-issue` 裡 Worker 的判定）、`agent.jsonl`（不在 run 裡跑的 agent）。活動紀錄與 `awkit events` 原本只讀 session 檔，所以 engine 跑的一輪看不到任何線的轉換、指令與影子比對，也看不到 hook 擋下的工具呼叫。
+- **`ReadRun`（`internal/trace`）**：一輪的事件＝它的 session 檔，加上旁檔裡在這一輪期間寫下的，依時間排序，再套篩選與「最後 N 筆」。
+  - 期間從 session 的第一筆事件開始，到它的 `session_end`；沒有 `session_end` 的，若是目前的 session 就沒有終點（還在跑），否則到它的最後一筆（程序死掉的一輪）。
+  - 旁檔從檔尾往前讀，讀到早於這一輪開始的事件就停：`engine.jsonl` 會一直長，一輪的事件在檔尾，每次問不必讀整個檔。
+  - 旁檔的名稱定在 `trace`（`SessionEngine`、`SessionGuard`、`SessionAgent`），`engine`、`guard`、`agent` 的 `Session` 都用它，只有一個來源。
+- **工作台的活動紀錄**讀 `ReadRun`。「這一輪」選目前的 session，沒有時選最新的、不是旁檔的 session（原本沒有 run 的 session 時會選到 `guard` 這類旁檔）。
+- **`awkit events`**：預設（目前的 session）與 `--session <run 的 session>` 讀 `ReadRun`；`--session engine` 這類旁檔、`--all`、`--issue` 照舊讀那些檔本身。
+- **頁面的字**：
+  - 線的轉換：「工單 #5：審查中 → 已合併（審查通過）」；轉到需要你的那筆是黃色，並附原因。
+  - run 的開始與結束、收到的指令與回覆、影子比對（一樣的灰色，說不出原因的不同是警告色）、agent 呼叫（角色、backend 與模型、花了多久與多少錢、沒跑完的原因）、用到舊主控做法的提醒。
+  - 一輪的開始、結束與停止原本標成「主控」，因為 `awkit run` 用主控的 component 寫它們；改標成「這一輪」，主控跑的一輪也一樣。
+  - 派工與看結果的事件（`dispatch_start`、`check_result` 這些）是 worker 的函式寫的，component 也是主控；engine 呼叫同一段程式，所以 engine 跑的一輪裡它們也標成主控。伺服器回答這一輪是誰派工的（`dispatcher`：這一輪期間 `engine.jsonl` 有 `engine_run` 就是 engine），頁面據此把它們標成「engine」、歸在 engine 的篩選裡。
+- **篩選**：
+  - 多了「engine」。
+  - 「審查」包括 agent 呼叫裡的審查者與解衝突者。
+  - 「主控」只在主控派工的一輪出現（`AWKIT_ENGINE=principal`）。
+- 工作看板的工單經過也是同一份事件，所以多了線的轉換。
+
+1.8c 的細節在開始時寫進這裡：設定頁編輯 `agents.reviewer`、`agents.resolver`（§12）。
 
 ## 14. 遷移與相容
 

@@ -221,3 +221,17 @@ func TestCollectTickets_WhenGitHubCannotBeAsked(t *testing.T) {
 		t.Errorf("an answer that is not JSON: err = %v", err)
 	}
 }
+
+// A project whose tickets are all done has an empty list of open ones, not
+// none: the workbench's page reads it as a list.
+func TestCollectTickets_NoneOpen(t *testing.T) {
+	l := &lister{issues: map[string][]issue{"ai-task/closed": {{Number: 1, Title: "[feat] one"}}}}
+	tickets, err := CollectTickets(context.Background(), config.DefaultLabels(), l.list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(tickets)
+	if !strings.Contains(string(data), `"open":[]`) || tickets.Done != 1 {
+		t.Errorf("tickets = %s", data)
+	}
+}

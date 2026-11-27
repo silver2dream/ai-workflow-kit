@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -618,5 +619,51 @@ func TestHealth(t *testing.T) {
 		if !want[c.Name] {
 			t.Errorf("%s is not a check of awkit doctor", c.Name)
 		}
+	}
+}
+
+// The activity of a run is its session's events with what the engine, the
+// guardrails and the agents wrote to their own files while it went. A
+// project with only those files has no run to show.
+func TestEventsOfARun(t *testing.T) {
+	s, root, base := added(t, nil)
+	write(t, root, ".ai/state/events/guard.jsonl", `{"seq": 1, "ts": "2026-11-18T08:00:00Z", "component": "guard", "type": "guardrail_verdict", "level": "error", "issue_id": 9}`+"\n")
+	if events := decode[EventsView](t, do(t, s, http.MethodGet, base+"/events", "")); events.Session != "" || len(events.Events) != 0 {
+		t.Errorf("a side file is shown as a run: %+v", events)
+	}
+
+	write(t, root, ".ai/state/principal/session.json", `{"session_id": "principal-20261118-090000-ab12"}`)
+	write(t, root, ".ai/state/events/principal-20261118-090000-ab12.jsonl",
+		`{"seq": 1, "ts": "2026-11-18T09:00:01Z", "component": "principal", "type": "session_start", "level": "info"}`+"\n"+
+			`{"seq": 2, "ts": "2026-11-18T09:00:05Z", "component": "agent", "type": "agent_run", "level": "info", "issue_id": 303, "data": {"role": "reviewer"}}`+"\n")
+	write(t, root, ".ai/state/events/engine.jsonl",
+		`{"seq": 1, "ts": "2026-11-17T10:00:00Z", "component": "engine", "type": "lane_transition", "level": "info", "issue_id": 1}`+"\n"+
+			`{"seq": 2, "ts": "2026-11-18T09:00:02Z", "component": "engine", "type": "engine_run", "level": "info", "data": {"event": "started"}}`+"\n"+
+			`{"seq": 3, "ts": "2026-11-18T09:00:03Z", "component": "engine", "type": "lane_transition", "level": "info", "issue_id": 303, "data": {"from": "ready", "to": "implementing", "cause": "dispatched"}}`+"\n")
+	write(t, root, ".ai/state/events/guard.jsonl",
+		`{"seq": 1, "ts": "2026-11-18T08:00:00Z", "component": "guard", "type": "guardrail_verdict", "level": "error", "issue_id": 9}`+"\n"+
+			`{"seq": 2, "ts": "2026-11-18T09:00:04Z", "component": "guard", "type": "guardrail_verdict", "level": "error", "issue_id": 303}`+"\n")
+	events := decode[EventsView](t, do(t, s, http.MethodGet, base+"/events", ""))
+	var got []string
+	for _, e := range events.Events {
+		got = append(got, fmt.Sprintf("%s#%d", e.Type, e.IssueID))
+	}
+	if want := "session_start#0 engine_run#0 lane_transition#303 guardrail_verdict#303 agent_run#303"; events.Session != "principal-20261118-090000-ab12" || strings.Join(got, " ") != want {
+		t.Errorf("the run's activity:\n got %s %v\nwant %s", events.Session, got, want)
+	}
+	if last := decode[EventsView](t, do(t, s, http.MethodGet, base+"/events?last=2", "")); len(last.Events) != 2 || last.Events[0].Type != "guardrail_verdict" {
+		t.Errorf("the last two: %+v", last.Events)
+	}
+	if events.Dispatcher != DispatcherEngine {
+		t.Errorf("the engine started a run while it went: dispatcher %q", events.Dispatcher)
+	}
+	// A run the engine did not start is the Principal's; a side file has
+	// no dispatcher.
+	write(t, root, ".ai/state/events/engine.jsonl", `{"seq": 1, "ts": "2026-11-17T10:00:00Z", "component": "engine", "type": "engine_run", "level": "info", "data": {"event": "started"}}`+"\n")
+	if events := decode[EventsView](t, do(t, s, http.MethodGet, base+"/events", "")); events.Dispatcher != DispatcherPrincipal {
+		t.Errorf("a run the engine did not run: dispatcher %q", events.Dispatcher)
+	}
+	if events := decode[EventsView](t, do(t, s, http.MethodGet, base+"/events?session=guard", "")); events.Dispatcher != "" || len(events.Events) != 2 {
+		t.Errorf("the guard's file: %+v", events)
 	}
 }

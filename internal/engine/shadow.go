@@ -302,6 +302,10 @@ func LastShadow(root string) (run ShadowRun, ok bool, err error) {
 	if err != nil {
 		return ShadowRun{}, false, err
 	}
+	// No difference is an empty list, not none: a page reads it as a list.
+	if run.Differences == nil {
+		run.Differences = []ShadowDifference{}
+	}
 	return run, run.Steps > 0, nil
 }
 
