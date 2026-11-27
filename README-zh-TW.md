@@ -109,7 +109,7 @@ awkit plan "每日登入獎勵：連續七天、獎勵遞增、漏一天重來"
 
 ## 票券
 
-票券是一個帶 `ai-task` 標籤的 GitHub issue，內文有一個小區塊，說明它給哪個 repo、在等哪些票。`awkit plan approve` 會建立它們；也可以自己寫一張：
+票券是一個帶 `ai-task` 標籤的 GitHub issue，內文有一個小區塊，說明它給哪個 repo、在等哪些票、會動到哪些路徑、風險多高。`awkit plan approve` 會建立它們；也可以自己寫一張：
 
 ````markdown
 ## Summary
@@ -125,9 +125,12 @@ Add a health endpoint.
 - A unit test covers the handler
 
 ```yaml awk-ticket
-schema: 1
+schema: 2
 repo: backend          # .ai/config.yaml 裡的 repo 名稱，或 root
 depends_on: [12]       # 選填：必須先完成的 issue
+paths:                 # 會動到的檔案：從專案根目錄寫起的 glob
+  - "backend/internal/health/**"
+risk: low              # low、medium 或 high
 ```
 ````
 
@@ -136,7 +139,7 @@ awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
 awkit run --issue 42   # 只做這一張票
 ```
 
-票券依編號由小到大處理，而且要等它依賴的 issue 都完成。區塊會被嚴格讀取：未知的欄位、設定檔裡沒有的 repo，在建立 issue 之前就會被拒絕。完整格式在 `.claude/skills/principal-workflow/references/ticket.md`。
+票券依編號由小到大處理，而且要等它依賴的 issue 都完成。區塊會被嚴格讀取：未知的欄位、設定檔裡沒有的 repo、在 repo 資料夾外的路徑，在建立 issue 之前就會被拒絕。完整格式在 `.claude/skills/principal-workflow/references/ticket.md`。
 
 ## 「通過」是什麼意思
 

@@ -109,7 +109,7 @@ Nothing is on GitHub yet. Read the work list, change what you want changed, then
 
 ## Tickets
 
-A ticket is a GitHub issue with the `ai-task` label and a small block that says which repo it is for and what it waits for. `awkit plan approve` creates them; you can also write one yourself:
+A ticket is a GitHub issue with the `ai-task` label and a small block that says which repo it is for, what it waits for, what its work changes and how risky it is. `awkit plan approve` creates them; you can also write one yourself:
 
 ````markdown
 ## Summary
@@ -125,9 +125,12 @@ Add a health endpoint.
 - A unit test covers the handler
 
 ```yaml awk-ticket
-schema: 1
+schema: 2
 repo: backend          # a repo of .ai/config.yaml, or root
 depends_on: [12]       # optional: issues that must be done first
+paths:                 # what the work changes: globs from the project's root
+  - "backend/internal/health/**"
+risk: low              # low, medium or high
 ```
 ````
 
@@ -136,7 +139,7 @@ awkit create-task --title "[feat] add a health endpoint" --body-file ticket.md
 awkit run --issue 42   # work on one ticket only
 ```
 
-Tickets are taken in the order of their numbers, each once the issues it depends on are done. The block is read strictly: an unknown field, or a repo the configuration does not have, is refused before the issue is created. The full format is in `.claude/skills/principal-workflow/references/ticket.md`.
+Tickets are taken in the order of their numbers, each once the issues it depends on are done. The block is read strictly: an unknown field, a repo the configuration does not have, or a path outside the repo's folder is refused before the issue is created. The full format is in `.claude/skills/principal-workflow/references/ticket.md`.
 
 ## What "passes" means
 

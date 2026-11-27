@@ -390,6 +390,35 @@ allow_script_changes: false
 - `internal/ticket`：schema 2 的嚴格解析；schema 1 照常讀，`paths` 為空、`risk` 為 `medium`，每次走這條路寫 `ticket_schema_v1` 事件；兩個版本之後移除。
 - 範圍檢查（§9.4）以 `paths` 為準；`paths` 為空時記「未檢查」的事件，不 block。
 
+實作（2.1，`internal/ticket`、`internal/council`、`internal/task`、`internal/analyzer`、頁面的工單）：
+
+- **schema 2 的 `paths` 與 `risk` 都必填。** engine 依它們排程（2.2）、檢查範圍與決定要不要人核可（2.5）；schema 2 的工單少了它們是寫漏，不是宣告。`schema: 1` 的區塊寫了 `paths` 或 `risk` 也是錯，要改成 `schema: 2`。
+- **`paths` 的寫法**（`ticket.CheckGlob`）：
+  - 從專案根目錄寫起，以 `/` 分段；不以 `/` 或 `./` 開頭、不以 `/` 結尾；沒有空的段、`.`、`..`、反斜線與控制字元。
+  - `*` 是同一段裡任意長度的字（包括以 `.` 開頭的名字），`?` 是一個字，`**` 單獨成一段時是任意多段（包括零段）。其他 glob 語法（`[...]`、`{a,b}`、開頭的 `!`）一律拒絕，不當成字面：各種工具對它們的解讀不同，讀成哪一種都是猜。
+  - 每張最多 50 條、每條最多 256 字，不能重複。
+- **在 repo 的範圍內**（`Meta.CheckRepo`）：
+  - repo 不是 root 時，每條都要以 repo 的資料夾開頭（那幾段不能有萬用字元），後面還要有東西（整個資料夾寫 `backend/**`）。`allow_parent_changes: true` 的工單不受這條限制。
+  - 這條要知道 repo 的資料夾，所以不在 `Parse` 裡，由知道設定的地方檢查：議會、`awkit create-task`、analyzer 的 `ticketProblem`（engine 挑票也經過它；人在 GitHub 上把路徑改到 repo 外，那張票照現有做法轉人，`invalid_ticket`）。
+- **受保護的檔案**：一條路徑只要可能包括 AWK 自己的檔案（`.claude/` 底下、`.ai/config.yaml`、`.ai/roster.yaml`、`CLAUDE.md`、`AGENTS.md`、`.mcp.json`，不分大小寫），工單就要有 `allow_script_changes: true`，否則區塊不能用。例如 `**` 與 `*.md` 都包括 `CLAUDE.md`。
+  - 判斷用「兩個 glob 有沒有交集」（`ticket.Overlap`：有沒有一個路徑兩邊都符合）；2.2 的避撞用同一個函式。
+  - 受保護的清單移到 `layout`，worker 交付前的檢查與這裡共用一份。
+- **`risk`**：`low`、`medium`、`high`。2.1 只讀、寫與顯示；依 diff 往上調與高風險的關卡在 2.5。
+- **schema 1**：
+  - 照讀：`paths` 是空的、`risk` 是 `medium`；`Meta.Schema` 仍是 1，用的人據此知道路徑沒有宣告。
+  - 每次派工給 schema 1 的工單，寫一筆 `ticket_schema_v1` 事件（warn）。
+  - 新的工單一律 schema 2：`awkit create-task` 拒絕 schema 1，並說要補什麼。
+  - schema 1 的讀法在 schema 2 首次發佈後的第二個版本移除（§14）。
+- **議會**：
+  - 規劃角色的工單多 `paths`、`risk`。規則告訴它：
+    - 路徑從專案根目錄寫，從工單的 repo 資料夾開始，越窄越好（路徑有交集的工單不會同時做），不列 AWK 自己的檔案；
+    - 什麼算高風險（照 §10：資料庫 migration、CI 與建置、相依套件、認證授權與密碼學、大量刪除、發版），只動文件或測試的是低風險，其他是中風險。
+  - 檢查（`checkTickets`，開會時與核可時都用）：兩個都要有、路徑合法、在 repo 內、不碰受保護的檔案（議會的工單不會設 `allow_script_changes`）。不過就照現有做法帶著原因重問。
+  - 給其他角色挑毛病的清單、會議紀錄的工單表，都列出每張的風險；給角色的清單也列出路徑。
+  - `plan approve` 把 `paths`、`risk` 寫進 issue 的區塊（schema 2）。
+  - 2.1 之前排出、還沒核可的工單沒有 `paths` 與 `risk`：核可前的檢查會說哪一張缺，人在工作台補上，或直接改 `tickets.yaml`。
+- **核可畫面**：每張工單顯示風險（低、中、高）；展開後顯示「會動到的路徑」；「改工單」可以改路徑（一行一條）與風險，存檔前照上面的規則檢查，不過就說原因。
+
 ## 8. 資料流
 
 ```

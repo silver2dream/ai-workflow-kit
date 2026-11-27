@@ -12,7 +12,7 @@
 - `## Scope`
 - `## Acceptance Criteria`（至少一個 `- [ ]` checkbox）
 - `## Testing Requirements`
-- 一個 `yaml awk-ticket` 區塊：工作流程從這裡讀取這張票給哪個 repo、要等哪些票先完成
+- 一個 `yaml awk-ticket` 區塊：工作流程從這裡讀取這張票給哪個 repo、要等哪些票先完成、會動到哪些路徑、風險多高
 
 模板：
 
@@ -36,9 +36,13 @@
 - Test coverage should cover happy path and error cases
 
 ```yaml awk-ticket
-schema: 1
+schema: 2
 repo: backend
 depends_on: [12, 15]
+paths:
+  - "backend/internal/match/**"
+  - backend/docs/match.md
+risk: medium
 ```
 ````
 
@@ -46,9 +50,11 @@ depends_on: [12, 15]
 
 | 欄位 | 必填 | 說明 |
 |------|------|------|
-| `schema` | 是 | 固定寫 `1` |
+| `schema` | 是 | 固定寫 `2` |
 | `repo` | 是 | `.ai/config.yaml` 裡的 repo 名稱，或 `root`（repo 根目錄）。Worker 依它決定在哪裡工作、跑哪一組 verify 指令 |
 | `depends_on` | 否 | 必須先完成的 Issue 編號清單。沒有就整行省略 |
+| `paths` | 是 | 這張票會新增、修改或刪除的檔案，寫成 glob（見下方） |
+| `risk` | 是 | `low`、`medium` 或 `high`（見下方） |
 | `severity` | 否 | `P0`、`P1`、`P2` 或 `P3` |
 | `release` | 否 | `true` 表示 PR 送往 release 分支；只有 `repo: root` 的票可以設 |
 | `allow_script_changes` | 否 | `true` 才允許 Worker 修改工作流自身的檔案（見下方） |
@@ -60,6 +66,16 @@ depends_on: [12, 15]
 - 一張票只能有一個區塊。未知或拼錯的欄位、讀不懂的值、設定檔裡沒有的 repo，都會讓這張票被拒絕。`awkit create-task` 在建立前就會擋下；如果是直接在 GitHub 上寫壞的，`awkit analyze-next` 會在 Issue 留言說明原因、加上 `needs-human-review` 標籤，並以 `invalid_ticket` 停下。
 - `depends_on` 裡的每個 Issue 都以 completed 關閉後，這張票才會被派工。票券依編號由小到大處理，還在等的票會被跳過。
 - 被依賴的 Issue 必須已經存在，寫它的實際編號。它如果以 not planned 關閉，這張票永遠不會開始；當所有待辦的票都在等，流程會以 `blocked_by_dependencies` 停下。
+
+**`paths`** 從專案根目錄寫起，資料夾之間用 `/`：
+
+- `*` 是同一個名字裡任意的字（包括 `.` 開頭的名字），`?` 是一個字，`**` 單獨成一段時是任意層資料夾（也可以是零層）。其他寫法（`[...]`、`{a,b}`、開頭的 `!`）一律拒絕。
+- 不以 `/` 或 `./` 開頭、不以 `/` 結尾，不寫 `.`、`..`、反斜線。整個資料夾寫成 `backend/**`。
+- repo 不是 `root` 時，每一條都要在那個 repo 的資料夾裡（`backend/...`）；`allow_parent_changes: true` 的票例外。
+- 可能包括工作流程自己的檔案（見下方 `allow_script_changes`）的路徑，要那張票設了 `allow_script_changes: true` 才行。`**` 與 `*.md`（包括 `CLAUDE.md`）都算。
+- 最多 50 條，每條最多 256 字，不能重複。寫得越窄越好：路徑沒寫到的，這張票的工作就不該動。
+
+**`risk`** 是這張票的工作做錯時代價多高：動到資料庫 schema 或 migration、認證、授權、密碼學、CI 或建置、相依套件，或會刪除檔案或資料、是發版的，寫 `high`；只動文件或測試的寫 `low`；其他寫 `medium`。
 
 撰寫要點：
 
@@ -92,5 +108,7 @@ awkit create-task \
 - 建立後不需要再做任何登記；Issue 本身就是唯一的工作來源。
 
 ## 舊格式的票
+
+`schema: 1` 的區塊是加上 `paths`、`risk` 之前的寫法：GitHub 上已經有的這種票照常可以做，路徑當成沒宣告（可能動到任何檔案）、風險當成 `medium`，每次派工都會在事件紀錄留下一筆 `ticket_schema_v1`。新的票一律寫 `schema: 2`，`awkit create-task` 會拒絕 `schema: 1`。schema 1 的讀法在 schema 2 首次發佈後的第二個版本移除；要讓舊票改用 schema 2，直接編輯 Issue 內文，補上 `paths` 與 `risk`、把 `schema` 改成 `2`。
 
 區塊出現之前建立的票沒有 `yaml awk-ticket` 區塊。它們仍然可以執行：Worker 會照舊從內文讀取（`- **Repo**: backend`、`## Constraints` 下的 `allow-script-changes` 等），沒有依賴關係，並在事件紀錄裡留下一筆 `deprecated_path`。新的票一律要有區塊；要讓舊票改用區塊，直接編輯 Issue 內文加上即可。

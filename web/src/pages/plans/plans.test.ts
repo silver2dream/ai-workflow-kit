@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Entry, Topic } from "@/lib/council";
+import { riskOf, type Entry, type Topic } from "@/lib/council";
 import { byTopic } from "@/pages/plans/Meeting";
 import { headline, planStatus } from "@/pages/plans/status";
 import { merge } from "@/pages/plans/usePlan";
@@ -60,5 +60,16 @@ describe("headline", () => {
     expect(headline("\n# 網球遊戲\n細節", "x")).toBe("網球遊戲");
     expect(headline("", "規劃 p1")).toBe("規劃 p1");
     expect(headline("字".repeat(80), "x")).toHaveLength(59);
+  });
+});
+
+describe("riskOf", () => {
+  it("knows the three risks of a ticket, and nothing else", () => {
+    expect(riskOf("low")?.label).toBe("低風險");
+    expect(riskOf("medium")?.label).toBe("中風險");
+    expect(riskOf("high")).toMatchObject({ label: "高風險", tone: "caution" });
+    for (const other of ["", undefined, null, "High", "critical", "toString", "constructor"]) {
+      expect(riskOf(other), String(other)).toBeNull();
+    }
   });
 });

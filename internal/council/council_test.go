@@ -231,8 +231,8 @@ const goodWork = `{"milestones": [
   {"key": "m1", "title": "The endpoint answers", "goal": "The smallest thing that shows it works.", "done_when": ["GET /healthz answers 200"]},
   {"key": "m2", "title": "It is watched", "goal": "Somebody hears when it fails.", "done_when": ["an alert fires when it fails"]}
 ], "tickets": [
-  {"key": "t2", "title": "[feat] serve the health endpoint", "repo": "backend", "summary": "GET /healthz.", "scope": ["handler"], "acceptance": ["GET /healthz answers 200"], "testing": ["a handler test"], "reads": ["docs/tech/architecture.md"], "depends_on": ["t1"]},
-  {"key": "t1", "title": "[chore] set up the module", "repo": "backend", "summary": "The Go module.", "scope": ["go.mod"], "acceptance": ["go build passes"], "testing": [], "depends_on": []}
+  {"key": "t2", "title": "[feat] serve the health endpoint", "repo": "backend", "summary": "GET /healthz.", "scope": ["handler"], "acceptance": ["GET /healthz answers 200"], "testing": ["a handler test"], "reads": ["docs/tech/architecture.md"], "depends_on": ["t1"], "paths": ["backend/internal/health/**"], "risk": "low"},
+  {"key": "t1", "title": "[chore] set up the module", "repo": "backend", "summary": "The Go module.", "scope": ["go.mod"], "acceptance": ["go build passes"], "testing": [], "depends_on": [], "paths": ["backend/go.mod", "backend/go.sum"], "risk": "medium"}
 ], "later": ["metrics"]}`
 
 // agreeable answers every question in the simplest acceptable way: the
@@ -381,8 +381,8 @@ func TestRun_AMeetingWithoutObjections(t *testing.T) {
 		"| 2 | [How it is built](topics/02-build.md) | builder | designer, skeptic | `docs/tech/architecture.md` | held |",
 		"### 1. What is built\n\n- **D1 scope**: Build the health endpoint only.", "### 2. How it is built\n\n- **D2 stack**: One Go handler.",
 		"`docs/qa/risks.md` (skeptic)", "- **m1 The endpoint answers** (ticketed): The smallest thing that shows it works.\n  - [ ] GET /healthz answers 200\n",
-		"- **m2 It is watched**: Somebody hears when it fails.", "| t1 | [chore] set up the module | backend | - |",
-		"| t2 | [feat] serve the health endpoint | backend | t1 |", "awkit plan approve " + plan.ID, "Left for a later plan:\n- metrics"} {
+		"- **m2 It is watched**: Somebody hears when it fails.", "| t1 | [chore] set up the module | backend | medium | - |",
+		"| t2 | [feat] serve the health endpoint | backend | low | t1 |", "awkit plan approve " + plan.ID, "Left for a later plan:\n- metrics"} {
 		if !strings.Contains(minutes, want) {
 			t.Errorf("the minutes should say %q:\n%s", want, minutes)
 		}
@@ -1016,8 +1016,8 @@ func TestRun_TheTableObjectsToTheWorkList(t *testing.T) {
 		case c.Step == "revise":
 			return block(`{"milestones": [{"key": "m1", "title": "The endpoint answers", "goal": "It works.", "done_when": ["GET /healthz answers 200"]}],
 			"tickets": [
-				{"key": "t1", "title": "[chore] set up the module", "repo": "backend", "summary": "The Go module.", "scope": ["go.mod"], "acceptance": ["go build passes"], "testing": []},
-				{"key": "t2", "title": "[feat] serve the health endpoint", "repo": "backend", "summary": "GET /healthz.", "scope": ["handler"], "acceptance": ["GET /healthz answers 200", "answers 503 when the database is down"], "testing": ["a handler test"], "depends_on": ["t1"]}
+				{"key": "t1", "title": "[chore] set up the module", "repo": "backend", "summary": "The Go module.", "scope": ["go.mod"], "acceptance": ["go build passes"], "testing": [], "paths": ["backend/go.mod"], "risk": "medium"},
+				{"key": "t2", "title": "[feat] serve the health endpoint", "repo": "backend", "summary": "GET /healthz.", "scope": ["handler"], "acceptance": ["GET /healthz answers 200", "answers 503 when the database is down"], "testing": ["a handler test"], "depends_on": ["t1"], "paths": ["backend/internal/health/**"], "risk": "low"}
 			], "later": [], "kept": ["watching stays in m2: the first milestone is the endpoint"]}`), nil
 		}
 		return base(c)

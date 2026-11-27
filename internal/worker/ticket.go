@@ -14,6 +14,9 @@ import (
 // TicketMetadata is what the workflow needs to know about a ticket to run a
 // Worker on it.
 type TicketMetadata struct {
+	// Schema is the schema of the ticket's awk-ticket block; 0 for a ticket
+	// without one.
+	Schema             int
 	Repo               string // the repo of the workflow config the ticket is for
 	Severity           string // P0 to P3, or empty
 	Release            bool   // the pull request goes to the release branch
@@ -127,6 +130,7 @@ func ReadTicketMetadata(body string) (*TicketMetadata, error) {
 		return readLegacyTicket(body), nil
 	}
 	return &TicketMetadata{
+		Schema:             block.Schema,
 		Repo:               block.Repo,
 		Severity:           block.Severity,
 		Release:            block.Release,

@@ -21,12 +21,16 @@ Required:
   --body-file   Path to the ticket body (markdown). It must have the sections
                 Summary, Scope, Acceptance Criteria and Testing Requirements,
                 at least one unchecked checkbox, and a "yaml awk-ticket" block
-                that names the ticket's repo:
+                that names the ticket's repo, what its work changes and its
+                risk:
 
                     `+"```"+`yaml awk-ticket
-                    schema: 1
+                    schema: 2
                     repo: backend          # a repo of `+layout.ConfigFile+`, or root
                     depends_on: [12, 15]   # optional: issues that must be done first
+                    paths:                 # globs from the project's root, in the repo's folder
+                      - "backend/internal/health/**"
+                    risk: low              # low, medium or high
                     `+"```"+`
 
 Options:

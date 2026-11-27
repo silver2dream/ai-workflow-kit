@@ -188,14 +188,18 @@ func (p *planner) writeMinutes(plan *Plan, stopped error) error {
 	}
 
 	if len(plan.Tickets) > 0 {
-		fmt.Fprintf(&b, "\n## Work list\n\nThe tickets of the first milestone, proposed by %s, in `%s/%s`.\n\n| Key | Ticket | Repo | After |\n|---|---|---|---|\n",
+		fmt.Fprintf(&b, "\n## Work list\n\nThe tickets of the first milestone, proposed by %s, in `%s/%s`.\n\n| Key | Ticket | Repo | Risk | After |\n|---|---|---|---|---|\n",
 			p.roster.Planner().ID, plan.Dir(), WorkListFile)
 		for _, ticket := range plan.Tickets {
 			after := "-"
 			if len(ticket.DependsOn) > 0 {
 				after = strings.Join(ticket.DependsOn, ", ")
 			}
-			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", ticket.Key, strings.ReplaceAll(oneLine(ticket.Title), "|", "/"), ticket.Repo, after)
+			risk := ticket.Risk
+			if risk == "" {
+				risk = "-"
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", ticket.Key, strings.ReplaceAll(oneLine(ticket.Title), "|", "/"), ticket.Repo, risk, after)
 		}
 		if len(plan.ListObjections) > 0 {
 			b.WriteString("\nThe table's objections to the first draft:\n")

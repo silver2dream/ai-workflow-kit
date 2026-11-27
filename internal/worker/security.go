@@ -12,29 +12,15 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
-// protectedPaths are the workflow's own control files: what decides how work
-// is dispatched and reviewed, and what the agents that do it are told and
-// allowed. A Worker that edits them changes the rules it is checked against,
-// so the runner rejects such a change unless the ticket allows it
-// (`allow_script_changes: true` in its awk-ticket block).
-//
-// All of .claude is protected, not only what AWK puts there: rules and skills
-// are instructions to the Principal and the reviewers, and a settings file
-// can grant permissions and run commands in their sessions.
-var protectedPaths = []string{
-	".claude/",
-}
-
-// protectedFiles are single files with the same standing: the project's
-// configuration and roster, the guides of the Principal and the Worker, and
-// the file that names the project's MCP servers.
-var protectedFiles = []string{
-	layout.ConfigFile,
-	layout.RosterFile,
-	"CLAUDE.md",
-	"AGENTS.md",
-	".mcp.json",
-}
+// protectedPaths and protectedFiles are the workflow's own control files
+// (layout.ProtectedDirs, layout.ProtectedFiles). A Worker that edits them
+// changes the rules it is checked against, so the runner rejects such a
+// change unless the ticket allows it (`allow_script_changes: true` in its
+// awk-ticket block).
+var (
+	protectedPaths = layout.ProtectedDirs
+	protectedFiles = layout.ProtectedFiles
+)
 
 // protectedPathList renders the protected set for the Worker prompt, so the
 // prompt names exactly what the runner enforces.

@@ -233,7 +233,7 @@ func TestCmdCreateTask_RemovedFlagsAreRefused(t *testing.T) {
 func TestCmdCreateTask_DryRun(t *testing.T) {
 	dir := t.TempDir()
 	body := filepath.Join(dir, "ticket.md")
-	content := "## Summary\ns\n\n## Scope\n- x\n\n## Acceptance Criteria\n- [ ] works\n\n## Testing Requirements\n- [ ] tested\n\n```yaml awk-ticket\nschema: 1\nrepo: root\n```\n"
+	content := "## Summary\ns\n\n## Scope\n- x\n\n## Acceptance Criteria\n- [ ] works\n\n## Testing Requirements\n- [ ] tested\n\n```yaml awk-ticket\nschema: 2\nrepo: root\npaths: [docs/a.md]\nrisk: low\n```\n"
 	if err := os.WriteFile(body, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

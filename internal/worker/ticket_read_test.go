@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,7 +17,10 @@ import (
 
 // blockTicket is a ticket as it is written today: its block says what the
 // workflow needs to know, and sets no flag.
-const blockTicket = "## Summary\nAdd a health endpoint.\n\n```yaml awk-ticket\nschema: 1\nrepo: backend\ndepends_on: [3]\nseverity: P1\n```\n"
+const blockTicket = "## Summary\nAdd a health endpoint.\n\n```yaml awk-ticket\nschema: 2\nrepo: backend\ndepends_on: [3]\npaths: [backend/health/**]\nrisk: low\nseverity: P1\n```\n"
+
+// schemaV1Ticket is a ticket of the block before it had paths and risk.
+const schemaV1Ticket = "## Summary\nAdd a health endpoint.\n\n```yaml awk-ticket\nschema: 1\nrepo: backend\ndepends_on: [3]\nseverity: P1\n```\n"
 
 func TestReadTicketMetadata_ReadsTheBlock(t *testing.T) {
 	body := "## Summary\nCut the release.\n\n```yaml awk-ticket\nschema: 1\nrepo: root\nseverity: P0\nrelease: true\n" +
@@ -27,7 +31,7 @@ func TestReadTicketMetadata_ReadsTheBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadTicketMetadata: %v", err)
 	}
-	want := &TicketMetadata{Repo: "root", Severity: "P0", Release: true, AllowParentChanges: true, AllowScriptChanges: true, AllowSecrets: true}
+	want := &TicketMetadata{Schema: 1, Repo: "root", Severity: "P0", Release: true, AllowParentChanges: true, AllowScriptChanges: true, AllowSecrets: true}
 	if !reflect.DeepEqual(meta, want) {
 		t.Errorf("meta = %+v, want %+v", meta, want)
 	}
@@ -57,7 +61,7 @@ func TestReadTicketMetadata_ProseCannotSetAFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadTicketMetadata: %v", err)
 	}
-	if want := (&TicketMetadata{Repo: "backend", Severity: "P1"}); !reflect.DeepEqual(meta, want) {
+	if want := (&TicketMetadata{Schema: 2, Repo: "backend", Severity: "P1"}); !reflect.DeepEqual(meta, want) {
 		t.Errorf("meta = %+v, want only what the block says: %+v", meta, want)
 	}
 }
@@ -262,6 +266,12 @@ func TestDispatchNotes(t *testing.T) {
 // deprecatedPathEvents returns the deprecated_path events of a session.
 func deprecatedPathEvents(t *testing.T, stateRoot, session string) []evtrace.Event {
 	t.Helper()
+	return eventsOfType(t, stateRoot, session, evtrace.TypeDeprecatedPath)
+}
+
+// eventsOfType returns the events of a type a session has.
+func eventsOfType(t *testing.T, stateRoot, session, kind string) []evtrace.Event {
+	t.Helper()
 	file, err := os.Open(filepath.Join(stateRoot, ".ai", "state", "events", session+".jsonl"))
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +285,7 @@ func deprecatedPathEvents(t *testing.T, stateRoot, session string) []evtrace.Eve
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			t.Fatalf("event %q: %v", scanner.Text(), err)
 		}
-		if event.Type == evtrace.TypeDeprecatedPath {
+		if event.Type == kind {
 			events = append(events, event)
 		}
 	}
@@ -323,6 +333,26 @@ func TestTicketForDispatch(t *testing.T) {
 	}
 	if events := deprecatedPathEvents(t, dir, "session-1"); len(events) != 1 {
 		t.Errorf("%d deprecated_path events after a ticket that cannot be used, want still one", len(events))
+	}
+	if events := eventsOfType(t, dir, "session-1", evtrace.TypeTicketSchemaV1); len(events) != 0 {
+		t.Errorf("tickets that are not schema 1 were put on record as schema 1: %+v", events)
+	}
+
+	// A schema 1 block is read, and that it was goes on record: its paths
+	// are not known.
+	meta, err = ticketForDispatch(10, schemaV1Ticket, logger)
+	if err != nil || meta.Repo != "backend" || meta.Schema != 1 || meta.Legacy {
+		t.Errorf("a schema 1 ticket: meta = %+v, err = %v", meta, err)
+	}
+	events = eventsOfType(t, dir, "session-1", evtrace.TypeTicketSchemaV1)
+	if len(events) != 1 || events[0].IssueID != 10 || events[0].Level != evtrace.LevelWarn {
+		t.Fatalf("ticket_schema_v1 events = %+v, want one for #10", events)
+	}
+	if data, _ := events[0].Data.(map[string]any); !strings.Contains(fmt.Sprint(data["removed"]), "second version after") {
+		t.Errorf("the event does not say when schema 1 goes: %+v", events[0])
+	}
+	if events := deprecatedPathEvents(t, dir, "session-1"); len(events) != 1 {
+		t.Errorf("a schema 1 ticket was put on record as one without a block")
 	}
 }
 

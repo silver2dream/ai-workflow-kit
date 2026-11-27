@@ -139,7 +139,25 @@ export interface Ticket {
   testing: string[] | null;
   reads?: string[] | null;
   depends_on?: string[] | null;
+  /** What the ticket's work may change: globs from the project's root. */
+  paths?: string[] | null;
+  /** low, medium or high; empty on a ticket laid out before tickets had one. */
+  risk?: string;
   issue?: number;
+}
+
+export type Risk = "low" | "medium" | "high";
+
+/** What each risk of a ticket means, in a few words. */
+export const RISKS: Record<Risk, { label: string; tone: "muted" | "caution"; means: string }> = {
+  low: { label: "低風險", tone: "muted", means: "只動到文件或測試" },
+  medium: { label: "中風險", tone: "muted", means: "一般的功能修改" },
+  high: { label: "高風險", tone: "caution", means: "動到資料庫、認證、CI、建置、相依套件，或刪除、發版" },
+};
+
+/** The risk of a ticket, or null when it has none (or one this page does not know). */
+export function riskOf(risk?: string | null) {
+  return risk && Object.hasOwn(RISKS, risk) ? RISKS[risk as Risk] : null;
 }
 
 export interface Dispute {
@@ -286,6 +304,8 @@ export interface TicketText {
   scope: string[];
   acceptance: string[];
   testing: string[];
+  paths: string[];
+  risk: string;
 }
 
 /** Where an approval started from the page is: `awkit plan approve --merge-docs` writes it as it goes. */

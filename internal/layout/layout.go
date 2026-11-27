@@ -62,6 +62,24 @@ const (
 	OldTempDir    = ".ai/temp"
 )
 
+// The workflow's own control files: what decides how work is dispatched and
+// reviewed, and what the agents that do it are told and allowed. An agent
+// that changed them would change the rules it is checked against, so a
+// ticket may change them only when its awk-ticket block says so
+// (allow_script_changes). Case does not count when they are compared: on a
+// file system that ignores it, .Claude/settings.json is .claude/settings.json.
+var (
+	// ProtectedDirs are directories whose every file is protected. All of
+	// .claude is, not only what AWK puts there: rules and skills are
+	// instructions to the agents, and a settings file can grant permissions
+	// and run commands in their sessions.
+	ProtectedDirs = []string{".claude/"}
+	// ProtectedFiles are single files with the same standing: the project's
+	// configuration and roster, the guides of the Principal and the Worker,
+	// and the file that names the project's MCP servers.
+	ProtectedFiles = []string{ConfigFile, RosterFile, "CLAUDE.md", "AGENTS.md", ".mcp.json"}
+)
+
 // In returns a location of the project at root, as a path of this system.
 func In(root, location string) string {
 	return filepath.Join(root, filepath.FromSlash(location))

@@ -184,6 +184,6 @@ func ticketBody(item Ticket, planID string, dependsOn []int) string {
 		fmt.Fprintf(&b, "- `%s`\n", doc)
 	}
 	fmt.Fprintf(&b, "- `%s/%s/minutes.md`: the plan this ticket comes from, and `%s`\n\n", PlansDir, planID, DecisionsPath)
-	b.WriteString(ticket.Render(ticket.Meta{Schema: ticket.Schema, Repo: item.Repo, DependsOn: dependsOn}))
+	b.WriteString(ticket.Render(blockOf(item, dependsOn)))
 	return b.String()
 }

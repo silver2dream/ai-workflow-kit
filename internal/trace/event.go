@@ -66,6 +66,10 @@ const (
 	TypeWorkflowStop   = "workflow_stop"
 	TypeReconcile      = "reconcile"       // self-heal reconciled a structural bad state
 	TypeDeprecatedPath = "deprecated_path" // a deprecated compat path was exercised (managed migration)
+	// A Worker was dispatched for a ticket whose awk-ticket block is schema
+	// 1: its paths are not known and its risk is taken as medium. The reading
+	// of schema 1 is removed in the second version after schema 2's.
+	TypeTicketSchemaV1 = "ticket_schema_v1"
 
 	// Worker retry
 	TypeWorkerRetry = "worker_retry"

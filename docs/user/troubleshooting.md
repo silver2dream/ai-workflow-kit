@@ -34,7 +34,7 @@ run 開始前會做一串檢查，第一個不過就停下來並說是哪一個�
 |---|---|
 | Every ticket is done. | 沒有開著的票。票是帶 `ai-task` 標籤的 open issue：自己開的 issue 要有這個標籤與 `awk-ticket` 區塊（`awkit create-task` 會處理） |
 | Every open ticket waits for an issue that is not done. | 每張票的 `depends_on` 都指向還沒完成的 issue。`awkit status` 會列出誰在等誰 |
-| A ticket cannot be read. | 某張票的 `awk-ticket` 區塊有誤。流程已在那個 issue 上留言說明哪裡錯 |
+| A ticket cannot be read. | 某張票的 `awk-ticket` 區塊有誤（例如 `paths` 在它的 repo 資料夾外，或包括工作流程自己的檔案）。流程已在那個 issue 上留言說明哪裡錯 |
 | The project has no configuration. / The configuration cannot be used. | 沒有 `.ai/config.yaml`（`awkit init`），或它無效（`awkit validate`） |
 
 ## 一張票卡住了

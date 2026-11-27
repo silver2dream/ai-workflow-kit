@@ -12,9 +12,13 @@ func fenced(lines ...string) string {
 
 func TestParse(t *testing.T) {
 	body := "## Summary\nAdd a health endpoint.\n\n" + fenced(
-		"schema: 1",
+		"schema: 2",
 		"repo: root",
 		"depends_on: [12, 15]",
+		"paths:",
+		`  - "backend/health/**"`,
+		"  - .github/workflows/ci.yml",
+		"risk: high",
 		"severity: P1",
 		"release: true",
 		"allow_script_changes: true",
@@ -25,30 +29,59 @@ func TestParse(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("Parse: found=%v err=%v", found, err)
 	}
-	want := Meta{Schema: 1, Repo: "root", DependsOn: []int{12, 15}, Severity: "P1", Release: true, AllowScriptChanges: true}
+	want := Meta{Schema: 2, Repo: "root", DependsOn: []int{12, 15}, Paths: []string{"backend/health/**", ".github/workflows/ci.yml"},
+		Risk: "high", Severity: "P1", Release: true, AllowScriptChanges: true}
 	if !reflect.DeepEqual(meta, want) {
 		t.Errorf("meta = %+v, want %+v", meta, want)
 	}
 }
 
 func TestParse_EveryFlag(t *testing.T) {
-	meta, found, err := Parse(fenced("schema: 1", "repo: backend", "allow_parent_changes: true", "allow_script_changes: true", "allow_secrets: true"))
+	meta, found, err := Parse(fenced("schema: 2", "repo: backend", "paths: [backend/x.go]", "risk: low",
+		"allow_parent_changes: true", "allow_script_changes: true", "allow_secrets: true"))
 	if err != nil || !found {
 		t.Fatalf("Parse: found=%v err=%v", found, err)
 	}
-	want := Meta{Schema: 1, Repo: "backend", AllowParentChanges: true, AllowScriptChanges: true, AllowSecrets: true}
+	want := Meta{Schema: 2, Repo: "backend", Paths: []string{"backend/x.go"}, Risk: "low",
+		AllowParentChanges: true, AllowScriptChanges: true, AllowSecrets: true}
 	if !reflect.DeepEqual(meta, want) {
 		t.Errorf("meta = %+v, want %+v", meta, want)
 	}
 }
 
 func TestParse_OnlyWhatIsNeeded(t *testing.T) {
-	meta, found, err := Parse(fenced("schema: 1", "repo: root"))
+	meta, found, err := Parse(fenced("schema: 2", "repo: root", "paths: [docs/a.md]", "risk: medium"))
 	if err != nil || !found {
 		t.Fatalf("Parse: found=%v err=%v", found, err)
 	}
-	if !reflect.DeepEqual(meta, Meta{Schema: 1, Repo: "root"}) {
+	if !reflect.DeepEqual(meta, Meta{Schema: 2, Repo: "root", Paths: []string{"docs/a.md"}, Risk: "medium"}) {
 		t.Errorf("meta = %+v", meta)
+	}
+}
+
+// A schema 1 block is the block before it had paths and risk: still read,
+// for the tickets on GitHub, with no paths and medium risk.
+func TestParse_SchemaV1(t *testing.T) {
+	meta, found, err := Parse(fenced("schema: 1", "repo: backend", "depends_on: [4]"))
+	if err != nil || !found {
+		t.Fatalf("Parse: found=%v err=%v", found, err)
+	}
+	if want := (Meta{Schema: 1, Repo: "backend", DependsOn: []int{4}, Risk: "medium"}); !reflect.DeepEqual(meta, want) {
+		t.Errorf("meta = %+v, want %+v", meta, want)
+	}
+	// A schema 1 block that writes a field of schema 2 was meant to be
+	// schema 2: read as schema 1, its paths would be lost.
+	for name, lines := range map[string][]string{
+		"paths":          {"paths: [backend/x.go]"},
+		"no paths":       {"paths: []"},
+		"risk":           {"risk: high"},
+		"risk as medium": {"risk: medium"},
+		"empty risk":     {`risk: ""`},
+	} {
+		meta, found, err := Parse(fenced(append([]string{"schema: 1", "repo: backend"}, lines...)...))
+		if err == nil || !found || !strings.Contains(err.Error(), "write schema: 2") {
+			t.Errorf("%s: meta=%+v found=%v err=%v; want a schema 2 field refused in schema 1", name, meta, found, err)
+		}
 	}
 }
 
@@ -79,7 +112,7 @@ func TestParse_NoBlock(t *testing.T) {
 
 // How the block is fenced and what line ends the body has does not matter.
 func TestParse_FencesAndLineEnds(t *testing.T) {
-	want := Meta{Schema: 1, Repo: "backend", DependsOn: []int{3}}
+	want := Meta{Schema: 1, Repo: "backend", DependsOn: []int{3}, Risk: "medium"}
 	for name, body := range map[string]string{
 		"CRLF":                    "text\r\n```yaml awk-ticket\r\nschema: 1\r\nrepo: backend\r\ndepends_on: [3]\r\n```\r\nmore\r\n",
 		"four backticks":          "````yaml awk-ticket\nschema: 1\nrepo: backend\ndepends_on: [3]\n````\n",
@@ -119,7 +152,20 @@ func TestParse_InvalidBlockIsAnError(t *testing.T) {
 		{"unknown field", fenced("schema: 1", "repo: backend", "priority: high"), `unknown field "priority"`},
 		{"a misspelt field", fenced("schema: 1", "repo: backend", "depend_on: [3]"), `unknown field "depend_on"`},
 		{"no schema", fenced("repo: backend"), "schema is missing"},
-		{"a schema from the future", fenced("schema: 2", "repo: backend"), "schema 2 is not one this version reads"},
+		{"a schema from the future", fenced("schema: 3", "repo: backend"), "schema 3 is not one this version reads"},
+		{"no risk", fenced("schema: 2", "repo: backend", "paths: [backend/x.go]"), "risk is missing"},
+		// The paths first: a person fills them in before the risk.
+		{"neither paths nor risk", fenced("schema: 2", "repo: backend"), "paths is missing"},
+		{"a bad path and no risk", fenced("schema: 2", "repo: backend", "paths: [/x]"), "starts with /"},
+		{"a risk that is not one", fenced("schema: 2", "repo: backend", "paths: [backend/x.go]", "risk: severe"), `risk "severe" is not one of low, medium, high`},
+		{"a risk in capitals", fenced("schema: 2", "repo: backend", "paths: [backend/x.go]", "risk: High"), `risk "High"`},
+		{"no paths", fenced("schema: 2", "repo: backend", "risk: low"), "paths is missing"},
+		{"empty paths", fenced("schema: 2", "repo: backend", "paths: []", "risk: low"), "paths is missing"},
+		{"paths not a list", fenced("schema: 2", "repo: backend", "paths: backend/x.go", "risk: low"), "not valid"},
+		{"a path that is not a glob", fenced("schema: 2", "repo: backend", `paths: ["backend/[ab].go"]`, "risk: low"), "has [: a path is a glob of *, ? and ** only"},
+		{"a path twice", fenced("schema: 2", "repo: backend", "paths: [backend/x.go, backend/x.go]", "risk: low"), `paths lists "backend/x.go" twice`},
+		{"the workflow's own files", fenced("schema: 2", "repo: root", `paths: ["**"]`, "risk: low"), "takes in .claude/, one of the workflow's own files"},
+		{"too many paths", fenced("schema: 2", "repo: backend", "paths: ["+strings.TrimSuffix(strings.Repeat("backend/a.go, ", 51), ", ")+"]", "risk: low"), "paths has 51 entries; at most 50"},
 		{"no repo", fenced("schema: 1"), "repo is missing"},
 		{"empty repo", fenced("schema: 1", `repo: ""`), "repo is missing"},
 		{"repo with a space", fenced("schema: 1", `repo: "back end"`), "whitespace"},
@@ -173,12 +219,30 @@ func TestParse_InvalidBlockIsAnError(t *testing.T) {
 // The root repo may be written in any case; the workflow lowers repo names.
 func TestValidate_ReleaseForTheRootRepo(t *testing.T) {
 	for _, repo := range []string{"root", "Root", "ROOT"} {
-		if err := (Meta{Schema: 1, Repo: repo, Release: true}).Validate(); err != nil {
+		if err := (Meta{Schema: 2, Repo: repo, Paths: []string{"VERSION"}, Risk: "high", Release: true}).Validate(); err != nil {
 			t.Errorf("repo %q: a release ticket was refused: %v", repo, err)
 		}
+		if err := (Meta{Schema: 1, Repo: repo, Release: true}).Validate(); err != nil {
+			t.Errorf("repo %q: a schema 1 release ticket was refused: %v", repo, err)
+		}
 	}
-	if err := (Meta{Schema: 1, Repo: "backend"}).Validate(); err != nil {
+	if err := (Meta{Schema: 2, Repo: "backend", Paths: []string{"backend/**"}, Risk: "low"}).Validate(); err != nil {
 		t.Errorf("a ticket that is not a release was refused: %v", err)
+	}
+}
+
+// What Parse makes of a schema 1 block passes Validate again.
+func TestValidate_SchemaV1AsRead(t *testing.T) {
+	if err := (Meta{Schema: 1, Repo: "backend", Risk: "medium"}).Validate(); err != nil {
+		t.Errorf("a schema 1 block as read was refused: %v", err)
+	}
+	for _, meta := range []Meta{
+		{Schema: 1, Repo: "backend", Risk: "high"},
+		{Schema: 1, Repo: "backend", Paths: []string{"backend/**"}},
+	} {
+		if err := meta.Validate(); err == nil {
+			t.Errorf("%+v: schema 1 with schema 2 values was accepted", meta)
+		}
 	}
 }
 
@@ -188,11 +252,15 @@ func TestRender(t *testing.T) {
 		meta Meta
 		want string
 	}{
-		{"the least", Meta{Schema: 1, Repo: "root"}, "```yaml awk-ticket\nschema: 1\nrepo: root\n```\n"},
-		{"everything", Meta{Schema: 1, Repo: "root", DependsOn: []int{12, 15}, Severity: "P0", Release: true,
-			AllowParentChanges: true, AllowScriptChanges: true, AllowSecrets: true},
-			"```yaml awk-ticket\nschema: 1\nrepo: root\ndepends_on: [12, 15]\nseverity: P0\nrelease: true\n" +
-				"allow_parent_changes: true\nallow_script_changes: true\nallow_secrets: true\n```\n"},
+		{"the least", Meta{Schema: 2, Repo: "root", Paths: []string{"docs/a.md"}, Risk: "low"},
+			"```yaml awk-ticket\nschema: 2\nrepo: root\npaths:\n  - docs/a.md\nrisk: low\n```\n"},
+		{"everything", Meta{Schema: 2, Repo: "root", DependsOn: []int{12, 15}, Paths: []string{"backend/**", "*.md"}, Risk: "high",
+			Severity: "P0", Release: true, AllowParentChanges: true, AllowScriptChanges: true, AllowSecrets: true},
+			"```yaml awk-ticket\nschema: 2\nrepo: root\ndepends_on: [12, 15]\npaths:\n  - \"backend/**\"\n  - \"*.md\"\nrisk: high\n" +
+				"severity: P0\nrelease: true\nallow_parent_changes: true\nallow_script_changes: true\nallow_secrets: true\n```\n"},
+		// Render writes a schema 1 block as schema 1 wrote it: without the
+		// risk Parse reads into it.
+		{"schema 1", Meta{Schema: 1, Repo: "root", Risk: "medium"}, "```yaml awk-ticket\nschema: 1\nrepo: root\n```\n"},
 	}
 	for _, tt := range tests {
 		if got := Render(tt.meta); got != tt.want {
@@ -206,16 +274,37 @@ func TestRender(t *testing.T) {
 func TestRender_RoundTrips(t *testing.T) {
 	repos := []string{"root", "backend", "game-client", "services/api", "api.v2", "true", "no", "null", "123", "1.5", "~", "a:b", "#web", "名稱"}
 	for _, repo := range repos {
-		meta := Meta{Schema: 1, Repo: repo, DependsOn: []int{7, 2, 40}, Severity: "P2", AllowSecrets: true}
+		for _, meta := range []Meta{
+			{Schema: 2, Repo: repo, DependsOn: []int{7, 2, 40}, Paths: []string{"x/**"}, Risk: "medium", Severity: "P2", AllowSecrets: true, AllowParentChanges: true},
+			{Schema: 1, Repo: repo, DependsOn: []int{7, 2, 40}, Risk: "medium", Severity: "P2", AllowSecrets: true},
+		} {
+			got, found, err := Parse("intro\n\n" + Render(meta) + "\noutro\n")
 
-		got, found, err := Parse("intro\n\n" + Render(meta) + "\noutro\n")
+			if err != nil || !found {
+				t.Errorf("repo %q: found=%v err=%v\n%s", repo, found, err, Render(meta))
+				continue
+			}
+			if !reflect.DeepEqual(got, meta) {
+				t.Errorf("repo %q: read back %+v, wrote %+v", repo, got, meta)
+			}
+		}
+	}
+}
 
-		if err != nil || !found {
-			t.Errorf("repo %q: found=%v err=%v\n%s", repo, found, err, Render(meta))
-			continue
-		}
-		if !reflect.DeepEqual(got, meta) {
-			t.Errorf("repo %q: read back %+v, wrote %+v", repo, got, meta)
-		}
+// Paths YAML would read as something else, or not at all, read back as
+// written.
+func TestRender_PathsRoundTrip(t *testing.T) {
+	paths := []string{"**/x.go", "src/**/*.go", "*.txt", "docs/a b.md", "x/?.txt", "名稱/**", "true", "no", "null", "123", "a:b/c",
+		"#x/y", "- a", "&anchor", "*alias", "a: b", `quote"d`, "it's", "%x", "@y", "`z`", "x|y", ">z", ",a", "~", "a #b"}
+	// **/x.go may be .claude/x.go: the ticket may change the workflow's files.
+	meta := Meta{Schema: 2, Repo: "root", Paths: paths, Risk: "low", AllowScriptChanges: true}
+
+	got, found, err := Parse(Render(meta))
+
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v\n%s", found, err, Render(meta))
+	}
+	if !reflect.DeepEqual(got, meta) {
+		t.Errorf("read back %+v\nwrote %+v", got.Paths, meta.Paths)
 	}
 }

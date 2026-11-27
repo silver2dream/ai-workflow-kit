@@ -17,7 +17,13 @@ import (
 func goodTicket(key string, dependsOn ...string) Ticket {
 	return Ticket{Key: key, Title: "[feat] build " + key, Repo: "backend", Summary: "Build " + key + ".",
 		Scope: []string{"the " + key + " handler"}, Acceptance: []string{key + " answers 200"}, Testing: []string{"a test of " + key},
-		Reads: []string{"docs/tech/architecture.md"}, DependsOn: dependsOn}
+		Reads: []string{"docs/tech/architecture.md"}, DependsOn: dependsOn, Paths: []string{"backend/internal/" + key + "/**"}, Risk: "medium"}
+}
+
+// withScope returns a ticket with other paths and another risk.
+func withScope(item Ticket, paths []string, risk string) Ticket {
+	item.Paths, item.Risk = paths, risk
+	return item
 }
 
 // ownBlock is what a ticket's text must not carry: a block of its own that
@@ -232,6 +238,11 @@ func TestApprove_CreatesTheIssuesInWorkingOrder(t *testing.T) {
 		if meta.Repo != "backend" || !reflect.DeepEqual(meta.DependsOn, wantDependsOn[i]) {
 			t.Errorf("%q: block = %+v, want repo backend and depends_on %v", github.titles[i], meta, wantDependsOn[i])
 		}
+		// Schema 2, with the ticket's paths and risk.
+		key := strings.TrimPrefix(github.titles[i], "[feat] build ")
+		if meta.Schema != ticket.Schema || !reflect.DeepEqual(meta.Paths, []string{"backend/internal/" + key + "/**"}) || meta.Risk != "medium" {
+			t.Errorf("%q: block = %+v, want schema 2 with the ticket's paths and risk", github.titles[i], meta)
+		}
 	}
 	api := github.bodies[2]
 	for _, want := range []string{"## Summary\nBuild api.\n", "## Scope\n- the api handler\n", "## Acceptance Criteria\n- [ ] api answers 200\n",
@@ -359,8 +370,15 @@ func TestApprove_TheListAsThePersonLeftIt(t *testing.T) {
 		wantInError string
 	}{
 		{"a ticket that depends on a deleted one", []Ticket{goodTicket("api", "model")}, `depends on "model", which is neither a ticket of the list nor the number of an issue`},
-		{"a repo the project does not have", []Ticket{{Key: "a", Title: "[feat] a", Repo: "web", Summary: "s", Scope: []string{"x"}, Acceptance: []string{"y"}}}, `is for repo "web"`},
-		{"a ticket that carries a block of its own", []Ticket{{Key: "a", Title: "[feat] a", Repo: "backend", Summary: "s\n" + ownBlock, Scope: []string{"x"}, Acceptance: []string{"y"}}}, "its text gets in the way of the awk-ticket block"},
+		{"a repo the project does not have", []Ticket{{Key: "a", Title: "[feat] a", Repo: "web", Summary: "s", Scope: []string{"x"}, Acceptance: []string{"y"}, Paths: []string{"web/**"}, Risk: "low"}}, `is for repo "web"`},
+		{"a ticket that carries a block of its own", []Ticket{{Key: "a", Title: "[feat] a", Repo: "backend", Summary: "s\n" + ownBlock, Scope: []string{"x"}, Acceptance: []string{"y"}, Paths: []string{"backend/**"}, Risk: "low"}}, "its text gets in the way of the awk-ticket block"},
+		// A list laid out before tickets had paths and risk.
+		{"a ticket without paths", []Ticket{withScope(goodTicket("a"), nil, "low")}, "ticket a: paths is missing"},
+		{"a ticket without a risk", []Ticket{withScope(goodTicket("a"), []string{"backend/a/**"}, "")}, "ticket a: risk is missing"},
+		{"a risk that is not one", []Ticket{withScope(goodTicket("a"), []string{"backend/a/**"}, "critical")}, `ticket a: risk "critical" is not one of low, medium, high`},
+		{"a path that is not a glob", []Ticket{withScope(goodTicket("a"), []string{"backend/a/[x].go"}, "low")}, "ticket a: paths: the path \"backend/a/[x].go\" has ["},
+		{"a path outside the ticket's repo", []Ticket{withScope(goodTicket("a"), []string{"frontend/a/**"}, "low")}, `ticket a: paths has "frontend/a/**", which is not in the folder of repo backend`},
+		{"a path that takes in the workflow's files", []Ticket{{Key: "a", Title: "[feat] a", Repo: "root", Summary: "s", Scope: []string{"x"}, Acceptance: []string{"y"}, Paths: []string{"*.md"}, Risk: "low"}}, `ticket a: paths has "*.md", which takes in CLAUDE.md`},
 	}
 	for _, tt := range tests {
 		root := t.TempDir()
@@ -464,7 +482,7 @@ func TestRun_KeepsTheIssuesOfAnApprovedList(t *testing.T) {
 	base := agreeable(roster)
 	model.answer = func(c call) (string, error) {
 		if c.Step == "worklist" {
-			return block(strings.Replace(goodWork, `], "later"`, `, {"key": "t3", "title": "[test] check the endpoint", "repo": "backend", "summary": "A check.", "scope": ["a test"], "acceptance": ["the check passes"], "testing": [], "depends_on": ["t2"]}], "later"`, 1)), nil
+			return block(strings.Replace(goodWork, `], "later"`, `, {"key": "t3", "title": "[test] check the endpoint", "repo": "backend", "summary": "A check.", "scope": ["a test"], "acceptance": ["the check passes"], "testing": [], "depends_on": ["t2"], "paths": ["backend/e2e/**"], "risk": "low"}], "later"`, 1)), nil
 		}
 		return base(c)
 	}
@@ -528,7 +546,7 @@ func TestRun_GoingOnLeavesTheListAsThePersonLeftIt(t *testing.T) {
 	if got := readFile(t, root, plan.Dir()+"/"+WorkListFile); got != edited {
 		t.Errorf("going on with the plan rewrote the work list:\n%s", got)
 	}
-	if minutes := readFile(t, root, plan.Dir()+"/minutes.md"); !strings.Contains(minutes, "| t1 | [chore] the module, my way | backend | - |") || strings.Contains(minutes, "| t2 |") {
+	if minutes := readFile(t, root, plan.Dir()+"/minutes.md"); !strings.Contains(minutes, "| t1 | [chore] the module, my way | backend | medium | - |") || strings.Contains(minutes, "| t2 |") {
 		t.Errorf("the minutes do not show the list as it stands:\n%s", minutes)
 	}
 	if progress := strings.Join(told, "\n"); !strings.Contains(progress, "  the work list stays as it is: 1 tickets") || strings.Contains(progress, "tickets proposed") {
@@ -576,7 +594,7 @@ func TestRun_BuildsOnTheTicketsOfEarlierPlans(t *testing.T) {
 	base := agreeable(roster)
 	second := &table{answer: func(c call) (string, error) {
 		if c.Step == "worklist" {
-			return block(`{"milestones": [{"key": "m1", "title": "The version is served", "goal": "g", "done_when": ["GET /version answers 200"]}], "tickets": [{"key": "v1", "title": "[feat] serve the version", "repo": "backend", "summary": "GET /version.", "scope": ["handler"], "acceptance": ["GET /version answers 200"], "testing": [], "depends_on": ["#42"]}], "later": []}`), nil
+			return block(`{"milestones": [{"key": "m1", "title": "The version is served", "goal": "g", "done_when": ["GET /version answers 200"]}], "tickets": [{"key": "v1", "title": "[feat] serve the version", "repo": "backend", "summary": "GET /version.", "scope": ["handler"], "acceptance": ["GET /version answers 200"], "testing": [], "depends_on": ["#42"], "paths": ["backend/internal/version/**"], "risk": "low"}], "later": []}`), nil
 		}
 		return base(c)
 	}}
@@ -604,7 +622,7 @@ func TestRun_BuildsOnTheTicketsOfEarlierPlans(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(list.Tickets[0].DependsOn, []string{"#42"}) {
 		t.Fatalf("the list on disk = %+v, err %v", list, err)
 	}
-	if minutes := readFile(t, root, next.Dir()+"/minutes.md"); !strings.Contains(minutes, "| v1 | [feat] serve the version | backend | #42 |") {
+	if minutes := readFile(t, root, next.Dir()+"/minutes.md"); !strings.Contains(minutes, "| v1 | [feat] serve the version | backend | low | #42 |") {
 		t.Errorf("the minutes do not show what the ticket waits for:\n%s", minutes)
 	}
 
@@ -627,6 +645,8 @@ tickets:
     acceptance: [a answers 200]
     testing: []
     depends_on: [42]
+    paths: [backend/a/**]
+    risk: low
   - key: b
     title: "[feat] build b"
     repo: backend
@@ -635,6 +655,8 @@ tickets:
     acceptance: [b answers 200]
     testing: []
     depends_on: [a, 41]
+    paths: [backend/b/**]
+    risk: low
 `)
 	if _, err := Approve(context.Background(), ApproveOptions{Root: root, ID: "20261115-by-hand", Repos: testRepos, Create: github.create}); err != nil {
 		t.Fatalf("Approve of a list written by hand: %v", err)
@@ -725,7 +747,7 @@ func TestRun_ADraftAskedAnewIsWritten(t *testing.T) {
 	repos := []Repo{{Name: "root", Path: "./"}, {Name: "api", Language: "go", Path: "api/"}}
 	model.answer = func(c call) (string, error) {
 		if c.Step == "worklist" {
-			return block(strings.ReplaceAll(goodWork, `"repo": "backend"`, `"repo": "api"`)), nil
+			return block(strings.ReplaceAll(strings.ReplaceAll(goodWork, `"repo": "backend"`, `"repo": "api"`), `"backend/`, `"api/`)), nil
 		}
 		return base(c)
 	}
@@ -773,5 +795,36 @@ func TestOpen(t *testing.T) {
 
 	if got, want := Open(root), []string{"20261103-third (1 of 1 tickets)", "20261102-second (2 of 3 tickets)"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Open = %v, want %v", got, want)
+	}
+}
+
+// The planning role is told how a ticket's paths are written and where they
+// start for each repo, which files no ticket takes in, and what each risk
+// means; the table sees the paths and the risk of every ticket.
+func TestRun_TheListHasPathsAndRisk(t *testing.T) {
+	root := t.TempDir()
+	roster := mustRoster(t, testRoster)
+	model := &table{answer: agreeable(roster)}
+	if _, err := runPlan(t, root, roster, model, "Add a health endpoint."); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	prompt := model.promptOf("builder", "worklist")
+	for _, want := range []string{
+		`"paths": [`, `"risk": "low | medium | high"`,
+		"* for any characters within a name, ? for one character, ** alone between two / for any number of folders",
+		"Every path of a ticket starts with the folder of its repo: backend/ for backend; a ticket for root may name any path of the project",
+		"No path takes in the workflow's own files: .claude/, .ai/config.yaml, .ai/roster.yaml, CLAUDE.md, AGENTS.md, .mcp.json",
+		"risk is how much a mistake in the ticket's work would cost: high when it changes a database schema",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the planning role should be told %q:\n%s", want, prompt)
+		}
+	}
+	review := model.promptOf("skeptic", "review")
+	for _, want := range []string{"t1  [chore] set up the module  (repo: backend; risk: medium)", "  Paths:\n    - backend/go.mod", "a risk set too low"} {
+		if !strings.Contains(review, want) {
+			t.Errorf("the table should see %q:\n%s", want, review)
+		}
 	}
 }

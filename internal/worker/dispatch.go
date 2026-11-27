@@ -562,6 +562,14 @@ func ticketForDispatch(issueNumber int, issueBody string, logger *DispatchLogger
 				"path": "ticket without an awk-ticket block",
 			}))
 	}
+	if meta.Schema == ticket.SchemaV1 {
+		logger.Log("⚠ Ticket 的 `%s` 區塊是 schema 1：沒有寫會動到的路徑與風險，當成可能動到任何檔案、中風險", ticket.Info)
+		trace.WriteEvent(trace.ComponentPrincipal, trace.TypeTicketSchemaV1, trace.LevelWarn,
+			trace.WithIssue(issueNumber),
+			trace.WithData(map[string]any{
+				"removed": "in the second version after the one schema 2 came with",
+			}))
+	}
 	return meta, nil
 }
 

@@ -294,8 +294,8 @@ func TestMeetings_Agenda(t *testing.T) {
 func putWorkList(t *testing.T, root string) {
 	t.Helper()
 	list := &council.WorkList{Plan: "p1", Tickets: []council.Ticket{
-		{Key: "t1", Title: "[chore] set up the module", Repo: "root", Summary: "The module.", Scope: []string{"go.mod"}, Acceptance: []string{"go build passes"}},
-		{Key: "t2", Title: "[feat] serve /healthz", Repo: "root", Summary: "The endpoint.", Scope: []string{"handler"}, Acceptance: []string{"answers 200"}, DependsOn: []string{"t1"}},
+		{Key: "t1", Title: "[chore] set up the module", Repo: "root", Summary: "The module.", Scope: []string{"go.mod"}, Acceptance: []string{"go build passes"}, Paths: []string{"go.mod"}, Risk: "medium"},
+		{Key: "t2", Title: "[feat] serve /healthz", Repo: "root", Summary: "The endpoint.", Scope: []string{"handler"}, Acceptance: []string{"answers 200"}, DependsOn: []string{"t1"}, Paths: []string{"internal/health/**"}, Risk: "low"},
 	}}
 	if err := council.SaveWorkList(root, list); err != nil {
 		t.Fatal(err)
@@ -307,11 +307,11 @@ func putWorkList(t *testing.T, root string) {
 func TestMeetings_Tickets(t *testing.T) {
 	s, root, base, _, _ := meetingProject(t, council.LiveFinished)
 	putWorkList(t, root)
-	w := do(t, s, http.MethodPut, base+"/plans/p1/tickets/t2", `{"title": "[feat] serve /health", "summary": "The endpoint.", "scope": ["handler"], "acceptance": ["answers 200"], "testing": []}`)
+	w := do(t, s, http.MethodPut, base+"/plans/p1/tickets/t2", `{"title": "[feat] serve /health", "summary": "The endpoint.", "scope": ["handler"], "acceptance": ["answers 200"], "testing": [], "paths": ["internal/health/**"], "risk": "low"}`)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "[feat] serve /health") {
 		t.Errorf("change a ticket: %d %s", w.Code, w.Body)
 	}
-	if w := do(t, s, http.MethodPut, base+"/plans/p1/tickets/t2", `{"title": "serve it", "summary": "x", "scope": ["a"], "acceptance": ["b"], "testing": []}`); w.Code != http.StatusBadRequest {
+	if w := do(t, s, http.MethodPut, base+"/plans/p1/tickets/t2", `{"title": "serve it", "summary": "x", "scope": ["a"], "acceptance": ["b"], "testing": [], "paths": ["x/**"], "risk": "low"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("a title out of form: %d", w.Code)
 	}
 	if w := do(t, s, http.MethodDelete, base+"/plans/p1/tickets/t1", ""); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "t2 waits for t1") {
@@ -397,7 +397,7 @@ func TestMeetings_Approve(t *testing.T) {
 	if err := council.WriteApproval(root, "p1", &council.ApprovalRecord{PID: 4242, State: council.ApprovalDone, Step: "done"}); err != nil {
 		t.Fatal(err)
 	}
-	if w := do(t, s, http.MethodPut, base+"/plans/p1/tickets/t1", `{"title": "[chore] x", "summary": "x", "scope": ["a"], "acceptance": ["b"], "testing": []}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "#101") {
+	if w := do(t, s, http.MethodPut, base+"/plans/p1/tickets/t1", `{"title": "[chore] x", "summary": "x", "scope": ["a"], "acceptance": ["b"], "testing": [], "paths": ["x/**"], "risk": "low"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "#101") {
 		t.Errorf("change a ticket that is an issue: %d %s", w.Code, w.Body)
 	}
 }
