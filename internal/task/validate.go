@@ -52,5 +52,10 @@ func validatedBlock(body string) (ticket.Meta, error) {
 	if !found {
 		return ticket.Meta{}, fmt.Errorf("ticket body has no `%s` block: it is where the workflow reads which repo the ticket is for and which tickets it waits for", ticket.Info)
 	}
+	if meta.Schema != ticket.Schema {
+		// Schema 1 is read only for the tickets already on GitHub.
+		return ticket.Meta{}, fmt.Errorf("ticket body: the `%s` block is schema %d; a new ticket is schema %d, with paths (what its work changes, as globs from the project's root) and risk (low, medium or high)",
+			ticket.Info, meta.Schema, ticket.Schema)
+	}
 	return meta, nil
 }

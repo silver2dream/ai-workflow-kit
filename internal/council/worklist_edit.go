@@ -14,14 +14,17 @@ import (
 // checks it, and kept only when the list still passes: what is on disk can
 // always be approved. A ticket that is on GitHub already is changed there.
 
-// TicketText is what a person may change in a ticket: what it says. Its key,
-// its repo and what it waits for stay as the council laid them out.
+// TicketText is what a person may change in a ticket: what it says, what it
+// may change and its risk. Its key, its repo and what it waits for stay as
+// the council laid them out.
 type TicketText struct {
 	Title      string   `json:"title"`
 	Summary    string   `json:"summary"`
 	Scope      []string `json:"scope"`
 	Acceptance []string `json:"acceptance"`
 	Testing    []string `json:"testing"`
+	Paths      []string `json:"paths"`
+	Risk       string   `json:"risk"`
 }
 
 // CheckWorkList checks a plan's work list as approving it would.
@@ -61,6 +64,7 @@ func EditTicket(root, id, key string, text TicketText, repos []Repo) (*WorkList,
 	item := &list.Tickets[at]
 	item.Title, item.Summary = strings.TrimSpace(text.Title), strings.TrimSpace(text.Summary)
 	item.Scope, item.Acceptance, item.Testing = nonEmpty(text.Scope), nonEmpty(text.Acceptance), nonEmpty(text.Testing)
+	item.Paths, item.Risk = nonEmpty(text.Paths), strings.TrimSpace(text.Risk)
 	if err := checkTickets(list.Tickets, repos, 0, earlierIn(root)); err != nil {
 		return nil, err
 	}

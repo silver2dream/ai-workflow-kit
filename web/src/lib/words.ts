@@ -174,8 +174,16 @@ export function describe(event: TraceEvent, dispatcher?: Dispatcher): Described 
       if (status === "ok") return say(`${where}跑完了${how.length ? `（${how.join("，")}）` : ""}`);
       return say(`${where}沒跑完（${status}）${word(data, "error") ? `：${word(data, "error")}` : ""}`, "caution");
     }
-    case "deprecated_path":
-      return say(`用了舊的主控做法：${word(data, "path")}（下一版移除）`, "caution");
+    case "deprecated_path": {
+      // Each old way that is still read says so; only the Principal's goes in the next version.
+      const path = word(data, "path");
+      if (path === "ticket without an awk-ticket block") return say(`工單 ${issue} 沒有 awk-ticket 區塊，照舊的寫法從內文讀`, "caution");
+      const removal = word(data, "removal");
+      if (removal) return say(`用了舊的做法：${path}（${removal} 移除）`, "caution");
+      return say(`用了舊的主控做法：${path}（下一版移除）`, "caution");
+    }
+    case "ticket_schema_v1":
+      return say(`工單 ${issue} 用的是舊的工單格式（schema 1）：沒寫會動到的路徑和風險，當成可能動到任何檔案、中風險。兩個版本後不再接受`, "caution");
     case "loop_start":
       return say(reason ? `問下一步（${reason}）` : "問下一步");
     case "loop_decision":

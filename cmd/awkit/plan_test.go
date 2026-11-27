@@ -363,8 +363,8 @@ func (m *scriptedCouncil) Ask(ctx context.Context, voice council.Voice, prompt s
 	case strings.Contains(prompt, "Your task now: lay the plan out in milestones"):
 		return block(`{"milestones": [{"key": "m1", "title": "The endpoint answers", "goal": "It works.", "done_when": ["GET /healthz answers 200"]},
 			{"key": "m2", "title": "It is watched", "goal": "Somebody hears of it.", "done_when": ["an alert fires"]}], "tickets": [
-			{"key": "t1", "title": "[feat] serve /healthz", "repo": "backend", "summary": "The endpoint.", "scope": ["handler"], "acceptance": ["answers 200"], "testing": ["a test"]},
-			{"key": "t2", "title": "[docs] describe /healthz", "repo": "root", "summary": "The docs.", "scope": ["README"], "acceptance": ["the README names the endpoint"], "testing": [], "depends_on": ["t1"]}
+			{"key": "t1", "title": "[feat] serve /healthz", "repo": "backend", "summary": "The endpoint.", "scope": ["handler"], "acceptance": ["answers 200"], "testing": ["a test"], "paths": ["backend/internal/health/**"], "risk": "low"},
+			{"key": "t2", "title": "[docs] describe /healthz", "repo": "root", "summary": "The docs.", "scope": ["README"], "acceptance": ["the README names the endpoint"], "testing": [], "depends_on": ["t1"], "paths": ["README.md"], "risk": "low"}
 		], "later": []}`)
 	}
 	return "", fmt.Errorf("the test does not know this prompt: %.200s", prompt)

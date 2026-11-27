@@ -76,6 +76,9 @@ func CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult,
 		return nil, fmt.Errorf("ticket body: the awk-ticket block names repo %q, which is not a repo of "+layout.ConfigFile+" (it has: %s)",
 			block.Repo, strings.Join(cfg.TicketRepos(), ", "))
 	}
+	if err := block.CheckRepo(cfg.TicketRepoDir(block.Repo)); err != nil {
+		return nil, fmt.Errorf("ticket body: the awk-ticket block is not valid: %w", err)
+	}
 	label, repo := resolveGHParams(opts, cfg)
 	if opts.Unlabeled {
 		label = ""

@@ -3,6 +3,9 @@ package council
 import (
 	"fmt"
 	"strings"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/layout"
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
 // The prompts of a plan. Each call is one question to one role; everything
@@ -696,7 +699,9 @@ const workShape = `{
       "acceptance": ["behaviour a test can check"],
       "testing": ["what must be tested"],
       "reads": ["the path of a document the developer has to read"],
-      "depends_on": ["key of a ticket that must be done first"]
+      "depends_on": ["key of a ticket that must be done first"],
+      "paths": ["a glob from the project's root of what the ticket creates, changes or deletes"],
+      "risk": "low | medium | high"
     }
   ],
   "later": ["what this plan leaves out of its milestones, for a later plan"]`
@@ -727,12 +732,41 @@ Rules for the tickets:
 - Acceptance criteria describe behaviour a test can check: not test names, not "the code is clean".
 - A ticket can be understood alone: it names, in reads, the documents the developer has to read.
 - A title is "[type] subject" in lower case; type is one of feat, fix, refactor, test, docs, chore.
+- paths lists every file the ticket creates, changes or deletes, as globs written from the root of the project: * for any characters within a name, ? for one character, ** alone between two / for any number of folders. No other glob syntax, no leading / or ./. %s. Make them as narrow as the work allows: what a ticket's paths do not name, its work does not change, and two tickets whose paths overlap are not worked on at the same time.
+- No path takes in the workflow's own files: %s. (* and ** take them in too: "*.md" takes in CLAUDE.md.)
+- risk is how much a mistake in the ticket's work would cost: high when it changes a database schema or a migration, authentication, authorization or cryptography, CI or the build, the dependencies, deletes files or data, or makes a release; low when it changes only documentation or tests; medium otherwise.
 - At most %d tickets. When the first milestone needs more, it is too large: make it smaller.
-`, maxMilestones, notTickets, strings.Join(names, ", "), p.maxTickets)
+`, maxMilestones, notTickets, strings.Join(names, ", "), repoFolders(p.repos), protectedFiles(), p.maxTickets)
 	if earlier {
 		rules += "- Work an earlier plan ticketed is not ticketed again, whether its ticket is on GitHub or only proposed. A ticket that builds on an earlier one names it in depends_on by what its line in the list of earlier tickets starts with: \"#12\" for an issue, \"<plan>/<key>\" for a ticket that is only proposed.\n"
 	}
 	return rules
+}
+
+// repoFolders says where the paths of a ticket for each repo start.
+func repoFolders(repos []Repo) string {
+	var folders, anywhere []string
+	for _, repo := range repos {
+		if dir := ticket.RepoDir(repo.Path); dir != "" {
+			folders = append(folders, fmt.Sprintf("%s/ for %s", dir, repo.Name))
+		} else {
+			anywhere = append(anywhere, repo.Name)
+		}
+	}
+	var parts []string
+	if len(folders) > 0 {
+		parts = append(parts, "Every path of a ticket starts with the folder of its repo: "+strings.Join(folders, ", "))
+	}
+	if len(anywhere) > 0 {
+		parts = append(parts, "a ticket for "+strings.Join(anywhere, " or ")+" may name any path of the project")
+	}
+	return strings.Join(parts, "; ")
+}
+
+// protectedFiles names the workflow's own files, which no ticket of a plan
+// changes.
+func protectedFiles() string {
+	return strings.Join(append(append([]string{}, layout.ProtectedDirs...), layout.ProtectedFiles...), ", ")
 }
 
 // worklistPrompt asks the planning role for the milestones and the tickets.
@@ -767,11 +801,12 @@ func milestonesText(milestones []Milestone) string {
 func ticketsText(tickets []Ticket) string {
 	var b strings.Builder
 	for _, ticket := range tickets {
-		fmt.Fprintf(&b, "%s  %s  (repo: %s", ticket.Key, ticket.Title, ticket.Repo)
+		fmt.Fprintf(&b, "%s  %s  (repo: %s; risk: %s", ticket.Key, ticket.Title, ticket.Repo, ticket.Risk)
 		if len(ticket.DependsOn) > 0 {
 			fmt.Fprintf(&b, "; after %s", strings.Join(ticket.DependsOn, ", "))
 		}
-		fmt.Fprintf(&b, ")\n  %s\n  Scope:\n%s  Accepted when:\n%s", oneLine(ticket.Summary), indent(bullets(ticket.Scope)), indent(bullets(ticket.Acceptance)))
+		fmt.Fprintf(&b, ")\n  %s\n  Scope:\n%s  Accepted when:\n%s  Paths:\n%s", oneLine(ticket.Summary), indent(bullets(ticket.Scope)),
+			indent(bullets(ticket.Acceptance)), indent(bullets(ticket.Paths)))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -782,7 +817,7 @@ func (p *planner) worklistReviewPrompt(role *Role, plan *Plan, milestones []Mile
 	return p.frame(role) + "\nWhat the meeting decided:\n" + decisionsText(plan.standing(len(plan.Topics))) + "\nThe documents, written by their owners:\n" + p.documentsList(plan) +
 		"\nThe milestones " + p.roster.Planner().ID + " laid out:\n\n" + milestonesText(milestones) +
 		"The tickets of the first milestone:\n\n" + ticketsText(tickets) + `
-Your task now: object to the work list, from where you stand: a first milestone that does not show the core of the brief works, or is larger than it needs to be; work the first milestone needs that is missing; a ticket too large to merge alone; a wrong order; an acceptance criterion nobody can check; something the decisions ruled out. ` + notTickets + ` Do not ask for more than was decided. When the list is acceptable, the list of objections is empty.
+Your task now: object to the work list, from where you stand: a first milestone that does not show the core of the brief works, or is larger than it needs to be; work the first milestone needs that is missing; a ticket too large to merge alone; a wrong order; an acceptance criterion nobody can check; paths that leave out what a ticket has to change, or take in far more; a risk set too low; something the decisions ruled out. ` + notTickets + ` Do not ask for more than was decided. When the list is acceptable, the list of objections is empty.
 
 ` + jsonOnly + `
 {"objections": [{"ticket": "the key of a ticket or a milestone, or empty for the list as a whole", "point": "what is wrong", "wants": "what would fix it"}]}

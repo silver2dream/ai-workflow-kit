@@ -508,6 +508,25 @@ func TestStream(t *testing.T) {
 		t.Fatalf("stream: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 	lines := bufio.NewScanner(resp.Body)
+	// A file is put in place whole, the way awkit writes its state: written
+	// where the workbench does not look, then renamed. os.WriteFile empties
+	// the file first, and a look between that and the write sees a change
+	// of its own.
+	aside := t.TempDir()
+	write := func(t *testing.T, root, rel, content string) {
+		t.Helper()
+		staged := filepath.Join(aside, "staged")
+		if err := os.WriteFile(staged, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(staged, path); err != nil {
+			t.Fatal(err)
+		}
+	}
 	next := func() string {
 		for lines.Scan() {
 			if line := lines.Text(); strings.HasPrefix(line, "data: ") {

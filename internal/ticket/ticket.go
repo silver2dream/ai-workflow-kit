@@ -5,9 +5,12 @@
 // sits in the issue body as a fenced YAML block:
 //
 //	```yaml awk-ticket
-//	schema: 1
+//	schema: 2
 //	repo: backend
 //	depends_on: [12, 15]
+//	paths:
+//	  - "backend/internal/match/**"
+//	risk: medium
 //	```
 //
 // The block is read strictly. A field this version does not know, a schema it
@@ -26,8 +29,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Schema is the version of the block this build reads and writes.
-const Schema = 1
+// Schema is the version of the block this build writes. It reads SchemaV1
+// as well, for the tickets already on GitHub: their paths are not known, and
+// their risk is medium. That reading is removed in the second version after
+// the one schema 2 came with (design.md §14).
+const Schema = 2
+
+// SchemaV1 is the block before it had paths and risk.
+const SchemaV1 = 1
 
 // Info is the info string of the fenced block.
 const Info = "yaml awk-ticket"
@@ -42,6 +51,11 @@ type Meta struct {
 	Repo string `yaml:"repo"`
 	// DependsOn lists the issues that must be done before this one starts.
 	DependsOn []int `yaml:"depends_on"`
+	// Paths name what the ticket's work may change: globs from the root of
+	// the project (see CheckGlob). Empty in a schema 1 block: not known.
+	Paths []string `yaml:"paths"`
+	// Risk is low, medium or high; medium in a schema 1 block.
+	Risk string `yaml:"risk"`
 	// Severity is P0 to P3, or empty.
 	Severity string `yaml:"severity"`
 	// Release marks a ticket whose pull request goes to the release branch.
@@ -89,8 +103,23 @@ func Parse(body string) (meta Meta, found bool, err error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return Meta{}, true, errors.New("the awk-ticket block holds more than one YAML document")
 	}
+	if meta.Schema == SchemaV1 {
+		// A schema 1 block that writes a field of schema 2 was meant to be
+		// schema 2: read as schema 1, its paths would be dropped.
+		var fields map[string]any
+		if err := yaml.Unmarshal([]byte(blocks[0]), &fields); err == nil {
+			for _, name := range []string{"paths", "risk"} {
+				if _, ok := fields[name]; ok {
+					return Meta{}, true, fmt.Errorf("the awk-ticket block is not valid: %s is a field of schema %d; write schema: %d", name, Schema, Schema)
+				}
+			}
+		}
+	}
 	if err := meta.Validate(); err != nil {
 		return Meta{}, true, fmt.Errorf("the awk-ticket block is not valid: %w", err)
+	}
+	if meta.Schema == SchemaV1 {
+		meta.Risk = RiskMedium
 	}
 	return meta, true, nil
 }
@@ -188,9 +217,9 @@ func blocksIn(body string) ([]string, error) {
 func (m Meta) Validate() error {
 	switch {
 	case m.Schema == 0:
-		return fmt.Errorf("schema is missing (this version reads schema %d)", Schema)
-	case m.Schema != Schema:
-		return fmt.Errorf("schema %d is not one this version reads (it reads schema %d)", m.Schema, Schema)
+		return fmt.Errorf("schema is missing (write schema: %d)", Schema)
+	case m.Schema != Schema && m.Schema != SchemaV1:
+		return fmt.Errorf("schema %d is not one this version reads (it reads schema %d and %d)", m.Schema, SchemaV1, Schema)
 	}
 	if m.Repo == "" {
 		return errors.New("repo is missing: name the repo of the workflow config this ticket is for")
@@ -214,13 +243,20 @@ func (m Meta) Validate() error {
 	if m.Release && !strings.EqualFold(m.Repo, RootRepo) {
 		return fmt.Errorf("release is set for repo %q; only a ticket for the %s repo can be a release", m.Repo, RootRepo)
 	}
-	return nil
+	if m.Schema == SchemaV1 {
+		if len(m.Paths) > 0 || (m.Risk != "" && m.Risk != RiskMedium) {
+			return fmt.Errorf("paths and risk are fields of schema %d; write schema: %d", Schema, Schema)
+		}
+		return nil
+	}
+	return m.checkPaths()
 }
 
 var plainScalar = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_./-]*$`)
 
 // Render returns the block as it goes into an issue body, fences included.
-// Only what is set is written, in a fixed order.
+// Only what is set is written, in a fixed order; paths and risk only in
+// schema 2.
 func Render(meta Meta) string {
 	var b strings.Builder
 	b.WriteString("```" + Info + "\n")
@@ -232,6 +268,17 @@ func Render(meta Meta) string {
 			numbers[i] = strconv.Itoa(issue)
 		}
 		fmt.Fprintf(&b, "depends_on: [%s]\n", strings.Join(numbers, ", "))
+	}
+	if meta.Schema != SchemaV1 {
+		if len(meta.Paths) > 0 {
+			b.WriteString("paths:\n")
+			for _, path := range meta.Paths {
+				fmt.Fprintf(&b, "  - %s\n", yamlScalar(path))
+			}
+		}
+		if meta.Risk != "" {
+			fmt.Fprintf(&b, "risk: %s\n", yamlScalar(meta.Risk))
+		}
 	}
 	if meta.Severity != "" {
 		fmt.Fprintf(&b, "severity: %s\n", meta.Severity)

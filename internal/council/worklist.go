@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,11 @@ type Ticket struct {
 	// key, an issue that exists already by its number ("#12"), or a ticket of
 	// another plan that is only proposed ("<plan>/<key>").
 	DependsOn []string `json:"depends_on" yaml:"depends_on,omitempty"`
+	// Paths name what the ticket's work may change, and Risk how much a
+	// mistake in it would cost: the paths and the risk of its awk-ticket
+	// block (ticket.CheckGlob, ticket.Risks).
+	Paths []string `json:"paths" yaml:"paths"`
+	Risk  string   `json:"risk" yaml:"risk"`
 	// Issue is the GitHub issue the ticket became; zero until it is created.
 	Issue int `json:"-" yaml:"issue,omitempty"`
 }
@@ -97,16 +103,35 @@ var ticketTitle = regexp.MustCompile(`^\[(feat|fix|refactor|test|docs|chore|perf
 
 // blockIntact reports whether the issue body of a ticket reads back as awkit
 // wrote it: one awk-ticket block, the one awkit put there, for the ticket's
-// repo and with nothing switched on. What a ticket says is written by a role
-// or by a person; the block decides what an unattended Worker may do, and
-// only awkit writes it.
+// repo, with its paths and its risk and with nothing switched on. What a
+// ticket says is written by a role or by a person; the block decides what an
+// unattended Worker may do, and only awkit writes it.
 func blockIntact(item Ticket) bool {
 	meta, found, err := ticket.Parse(ticketBody(item, "plan", nil))
 	if err != nil || !found {
 		return false
 	}
 	return strings.EqualFold(meta.Repo, item.Repo) && len(meta.DependsOn) == 0 && meta.Severity == "" && !meta.Release &&
-		!meta.AllowParentChanges && !meta.AllowScriptChanges && !meta.AllowSecrets
+		!meta.AllowParentChanges && !meta.AllowScriptChanges && !meta.AllowSecrets &&
+		meta.Risk == strings.TrimSpace(item.Risk) && slices.Equal(meta.Paths, nonEmpty(item.Paths))
+}
+
+// blockOf is the awk-ticket block of a ticket of the list, as awkit writes
+// it into the ticket's issue: dependsOn are the issues it waits for.
+func blockOf(item Ticket, dependsOn []int) ticket.Meta {
+	return ticket.Meta{Schema: ticket.Schema, Repo: item.Repo, DependsOn: dependsOn, Paths: nonEmpty(item.Paths), Risk: strings.TrimSpace(item.Risk)}
+}
+
+// checkScope checks the paths and the risk of a ticket of the list as its
+// issue's block will have them: valid, in the folder of the ticket's repo,
+// and clear of the workflow's own files, which a ticket of a plan never
+// changes. repo is the ticket's repo.
+func checkScope(item Ticket, repo Repo) error {
+	meta := blockOf(item, nil)
+	if err := meta.Validate(); err != nil {
+		return err
+	}
+	return meta.CheckRepo(repo.Path)
 }
 
 // issueRef is how a ticket names an issue that exists already, the ticket of
@@ -184,9 +209,9 @@ func checkTickets(tickets []Ticket, repos []Repo, max int, other earlier) error 
 	if max > 0 && len(tickets) > max {
 		return fmt.Errorf("the list has %d tickets; at most %d (name the rest in later)", len(tickets), max)
 	}
-	known := map[string]bool{}
+	known := map[string]Repo{}
 	for _, repo := range repos {
-		known[strings.ToLower(repo.Name)] = true
+		known[strings.ToLower(repo.Name)] = repo
 	}
 	names := make([]string, len(repos))
 	for i, repo := range repos {
@@ -205,7 +230,8 @@ func checkTickets(tickets []Ticket, repos []Repo, max int, other earlier) error 
 		if !ticketTitle.MatchString(ticket.Title) {
 			return fmt.Errorf("ticket %s: the title %q is not \"[type] subject\" with a type of feat, fix, refactor, test, docs or chore", key, ticket.Title)
 		}
-		if !known[strings.ToLower(ticket.Repo)] {
+		repo, isRepo := known[strings.ToLower(ticket.Repo)]
+		if !isRepo {
 			return fmt.Errorf("ticket %s is for repo %q; the repos are: %s", key, ticket.Repo, strings.Join(names, ", "))
 		}
 		if strings.TrimSpace(ticket.Summary) == "" {
@@ -216,6 +242,9 @@ func checkTickets(tickets []Ticket, repos []Repo, max int, other earlier) error 
 		}
 		if len(nonEmpty(ticket.Acceptance)) == 0 {
 			return fmt.Errorf("ticket %s has no acceptance criteria", key)
+		}
+		if err := checkScope(ticket, repo); err != nil {
+			return fmt.Errorf("ticket %s: %w", key, err)
 		}
 		if !blockIntact(ticket) {
 			return fmt.Errorf("ticket %s: its text gets in the way of the awk-ticket block awkit writes under it; take out the block it has of its own, or close the code fence it leaves open", key)
@@ -443,6 +472,7 @@ func (p *planner) worklist(ctx context.Context, plan *Plan) error {
 		ordered[i].Key = strings.TrimSpace(ordered[i].Key)
 		ordered[i].Scope, ordered[i].Acceptance = nonEmpty(ordered[i].Scope), nonEmpty(ordered[i].Acceptance)
 		ordered[i].Testing, ordered[i].Reads = nonEmpty(ordered[i].Testing), nonEmpty(ordered[i].Reads)
+		ordered[i].Paths, ordered[i].Risk = nonEmpty(ordered[i].Paths), strings.TrimSpace(ordered[i].Risk)
 	}
 	milestones := make([]Milestone, len(final.Milestones))
 	for i, milestone := range final.Milestones {
@@ -544,15 +574,17 @@ const workListHeader = `# The work list the council proposes. Nothing here is on
 # The plan is laid out in milestones; the tickets are those of the first.
 # The other milestones are planned when the first is reached.
 #
-# Read it, change what you want changed (titles, scope, order, depends_on;
-# delete a ticket you do not want), then create the issues:
+# Read it, change what you want changed (titles, scope, order, depends_on,
+# paths, risk; delete a ticket you do not want), then create the issues:
 #
 #   awkit plan approve %s
 #
 # depends_on names a ticket of this list by its key, an issue that exists
 # already by its number, or a ticket of another plan as <plan>/<key> (that
-# plan is then approved first). "issue" is filled in as each ticket is
-# created; a ticket that has one is not created again.
+# plan is then approved first). paths are what the ticket may change, as
+# globs from the project's root (* within a name, ? for one character, **
+# for any number of folders); risk is low, medium or high. "issue" is filled
+# in as each ticket is created; a ticket that has one is not created again.
 `
 
 func workListPath(root, id string) string {

@@ -29,6 +29,22 @@ group("describe", () => {
     }
   });
 
+  it("tells each old way that is still read apart: a ticket's, a review's, the Principal's", () => {
+    expect(describe(event({ type: "ticket_schema_v1", level: "warn", issue_id: 7, data: { removed: "x" } }))).toMatchObject({
+      text: "工單 #7 用的是舊的工單格式（schema 1）：沒寫會動到的路徑和風險，當成可能動到任何檔案、中風險。兩個版本後不再接受",
+      tone: "caution",
+    });
+    expect(describe(event({ type: "deprecated_path", level: "warn", issue_id: 8, data: { path: "ticket without an awk-ticket block" } })).text).toBe(
+      "工單 #8 沒有 awk-ticket 區塊，照舊的寫法從內文讀",
+    );
+    expect(describe(event({ component: "reviewer", type: "deprecated_path", level: "warn", data: { path: "submit-review --body", removal: "v0.16", pr: 4 } })).text).toBe(
+      "用了舊的做法：submit-review --body（v0.16 移除）",
+    );
+    expect(describe(event({ type: "deprecated_path", level: "warn", data: { path: "analyze-next", removed: "in the version after" } })).text).toBe(
+      "用了舊的主控做法：analyze-next（下一版移除）",
+    );
+  });
+
   it("shows an event it has no words for as the event names itself", () => {
     expect(describe(event({ component: "audit", type: "drift_found", issue_id: 7, data: { message: "two configs" } }))).toEqual({
       who: "稽核",

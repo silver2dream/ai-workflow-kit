@@ -228,7 +228,7 @@ func (a *Analyzer) redoFalseCompletion(ctx context.Context, issue int) (*Decisio
 }
 
 // ticketProblem checks a ticket's block against what only the workflow knows:
-// the ticket's own number and the repos of the config.
+// the ticket's own number, the repos of the config and their folders.
 func (a *Analyzer) ticketProblem(issue int, meta ticket.Meta) error {
 	for _, dependency := range meta.DependsOn {
 		if dependency == issue {
@@ -238,6 +238,9 @@ func (a *Analyzer) ticketProblem(issue int, meta ticket.Meta) error {
 	if !a.Config.HasTicketRepo(meta.Repo) {
 		return fmt.Errorf("the awk-ticket block is not valid: repo %q is not a repo of "+layout.ConfigFile+" (it has: %s)",
 			meta.Repo, strings.Join(a.Config.TicketRepos(), ", "))
+	}
+	if err := meta.CheckRepo(a.Config.TicketRepoDir(meta.Repo)); err != nil {
+		return fmt.Errorf("the awk-ticket block is not valid: %w", err)
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ Add a health endpoint.
 
 ` + validBlock
 
-const validBlock = "```yaml awk-ticket\nschema: 1\nrepo: backend\ndepends_on: [12]\n```\n"
+const validBlock = "```yaml awk-ticket\nschema: 2\nrepo: backend\ndepends_on: [12]\npaths: [backend/internal/health/**]\nrisk: low\n```\n"
 
 func writeBody(t *testing.T, dir, body string) string {
 	t.Helper()
@@ -221,7 +221,11 @@ func TestCreateTask_RepoOfTheConfig(t *testing.T) {
 	writeConfig(t, dir, "repos:\n  - name: backend\n    path: backend/\n  - name: frontend\n    path: frontend/\n")
 
 	for _, repo := range []string{"backend", "frontend", "root", "Backend"} {
-		body := writeBody(t, dir, strings.Replace(validBody, "repo: backend\n", "repo: "+repo+"\n", 1))
+		folder := strings.ToLower(repo)
+		if repo == "root" {
+			folder = "anywhere"
+		}
+		body := writeBody(t, dir, strings.NewReplacer("repo: backend\n", "repo: "+repo+"\n", "paths: [backend/", "paths: ["+folder+"/").Replace(validBody))
 		calls := fakeGH(t, "https://github.com/acme/game/issues/7\n", nil)
 		if _, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir}); err != nil {
 			t.Errorf("repo %q: %v", repo, err)
@@ -236,6 +240,16 @@ func TestCreateTask_RepoOfTheConfig(t *testing.T) {
 	_, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir, DryRun: true})
 	if err == nil || !strings.Contains(err.Error(), `repo "web", which is not a repo of `+layout.ConfigFile+` (it has: root, backend, frontend)`) {
 		t.Errorf("error = %v, want it to name the repo and list the config's", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("gh was called although the ticket was refused: %v", *calls)
+	}
+
+	// The paths of a ticket are in the folder of its repo.
+	body = writeBody(t, dir, strings.Replace(validBody, "paths: [backend/", "paths: [frontend/", 1))
+	_, err = CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: body, StateRoot: dir})
+	if err == nil || !strings.Contains(err.Error(), `paths has "frontend/internal/health/**", which is not in the folder of repo backend`) {
+		t.Errorf("error = %v, want the path outside the repo refused", err)
 	}
 	if len(*calls) != 0 {
 		t.Errorf("gh was called although the ticket was refused: %v", *calls)
@@ -352,5 +366,26 @@ func TestResolveGHParams(t *testing.T) {
 	}
 	if _, repo := resolveGHParams(CreateTaskOptions{Repo: "acme/other"}, cfg); repo != "acme/other" {
 		t.Errorf("repo = %q, want the one given for this ticket", repo)
+	}
+}
+
+// A new ticket is schema 2: schema 1 is read only for the tickets already on
+// GitHub, whose paths are not known.
+func TestCreateTask_NewTicketsAreSchema2(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "repos:\n  - name: backend\n    path: backend/\n")
+	v1 := strings.Replace(validBody, validBlock, "```yaml awk-ticket\nschema: 1\nrepo: backend\n```\n", 1)
+	if v1 == validBody {
+		t.Fatal("the body has no block to replace")
+	}
+	calls := fakeGH(t, "https://github.com/acme/game/issues/7\n", nil)
+
+	_, err := CreateTask(context.Background(), CreateTaskOptions{Title: "t", BodyFile: writeBody(t, dir, v1), StateRoot: dir})
+
+	if err == nil || !strings.Contains(err.Error(), "is schema 1; a new ticket is schema 2, with paths") {
+		t.Errorf("error = %v, want schema 1 refused for a new ticket", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("gh was called although the ticket was refused: %v", *calls)
 	}
 }

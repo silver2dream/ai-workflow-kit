@@ -400,7 +400,9 @@ func TestDecide_TicketThatCannotBeUsed(t *testing.T) {
 		name, body, wantInComment string
 	}{
 		{"unknown field", ticketBody("priority: high"), `unknown field "priority"`},
-		{"schema from the future", "```yaml awk-ticket\nschema: 2\nrepo: root\n```\n", "schema 2"},
+		{"schema from the future", "```yaml awk-ticket\nschema: 3\nrepo: root\n```\n", "schema 3"},
+		{"schema 2 without paths", "```yaml awk-ticket\nschema: 2\nrepo: root\nrisk: low\n```\n", "paths is missing"},
+		{"paths that take in the workflow's files", "```yaml awk-ticket\nschema: 2\nrepo: root\npaths: [\"**\"]\nrisk: low\n```\n", "takes in .claude/"},
 		{"no repo", "```yaml awk-ticket\nschema: 1\n```\n", "repo is missing"},
 		{"depends on itself", ticketBody(dependsOn(3, 7)), "depends_on lists the ticket itself (#7)"},
 		{"depends on an issue that does not exist", ticketBody(dependsOn(3, 99)), "depends_on lists #99, and the repository has no such issue"},
@@ -463,6 +465,45 @@ func TestDecide_TicketNamesARepoOfTheConfig(t *testing.T) {
 	}
 	if len(mock.Comments[7]) != 1 || !strings.Contains(mock.Comments[7][0], "(it has: root, backend, frontend)") {
 		t.Errorf("the comment should list the repos of the config: %v", mock.Comments[7])
+	}
+}
+
+// The paths of a ticket are in the folder of its repo: a person who changed
+// the block on GitHub to name others has the ticket handed back.
+func TestDecide_TicketPathsInItsRepo(t *testing.T) {
+	config := defaultTestConfig()
+	config.Repos = []RepoConfig{{Name: "backend", Path: "backend/"}}
+	block := func(repo, path string) string {
+		return "## Summary\nwork\n\n```yaml awk-ticket\nschema: 2\nrepo: " + repo + "\npaths: [\"" + path + "\"]\nrisk: low\n```\n"
+	}
+	for name, body := range map[string]string{
+		"in its folder":        block("backend", "backend/internal/**"),
+		"the root, anywhere":   block("root", "frontend/x.go"),
+		"schema 1, no paths":   ticketBodyFor("backend"),
+		"a repo in other case": block("Backend", "backend/x.go"),
+	} {
+		mock := NewMockGitHubClient()
+		mock.PendingIssues = []Issue{{Number: 7, Body: body}}
+		mock.OpenIssueCount = 1
+
+		got, err := newTestAnalyzer(t.TempDir(), config, mock).Decide(context.Background())
+
+		if err != nil || got.NextAction != ActionDispatchWorker || got.IssueNumber != 7 {
+			t.Errorf("%s: decision = %+v, err %v; want the ticket dispatched", name, got, err)
+		}
+	}
+
+	mock := NewMockGitHubClient()
+	mock.PendingIssues = []Issue{{Number: 7, Body: block("backend", "frontend/**")}}
+	mock.OpenIssueCount = 1
+
+	got, err := newTestAnalyzer(t.TempDir(), config, mock).Decide(context.Background())
+
+	if err != nil || got.NextAction != ActionNone || got.ExitReason != ReasonInvalidTicket {
+		t.Fatalf("decision = %+v, err %v; want the ticket refused", got, err)
+	}
+	if len(mock.Comments[7]) != 1 || !strings.Contains(mock.Comments[7][0], `paths has "frontend/**", which is not in the folder of repo backend`) {
+		t.Errorf("the comment should name the path: %v", mock.Comments[7])
 	}
 }
 

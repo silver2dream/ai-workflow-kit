@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Empty, Panel, PanelHead, Problem, Tag } from "@/components/bits";
 import { useProject } from "@/app/project";
-import { council, type ListObjection, type Milestone, type PlanDetail, type Ticket, type TicketText } from "@/lib/council";
+import { council, riskOf, RISKS, type ListObjection, type Milestone, type PlanDetail, type Risk, type Ticket, type TicketText } from "@/lib/council";
 import { href } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { ApprovalProgress } from "@/pages/plans/ApprovalProgress";
@@ -16,7 +16,7 @@ import { useOtherMeeting } from "@/pages/plans/usePlan";
 
 const lines = (items?: string[] | null) => (items ?? []).filter((s) => s.trim());
 
-function Points({ title, items }: { title: string; items?: string[] | null }) {
+function Points({ title, items, mono }: { title: string; items?: string[] | null; mono?: boolean }) {
   const shown = lines(items);
   if (shown.length === 0) return null;
   return (
@@ -24,13 +24,33 @@ function Points({ title, items }: { title: string; items?: string[] | null }) {
       <div className="text-[12.5px] font-bold text-muted-foreground">{title}</div>
       <ul className="mt-1 grid gap-1">
         {shown.map((item, i) => (
-          <li key={i} className="flex gap-1.5 text-[14px] leading-relaxed">
+          <li key={i} className={cn("flex gap-1.5 leading-relaxed", mono ? "font-mono text-[13px]" : "text-[14px]")}>
             <span aria-hidden className="mt-[9px] size-1 shrink-0 rounded-full bg-current opacity-60" />
-            <span className="min-w-0">{item}</span>
+            <span className="min-w-0 break-words">{item}</span>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** RiskTag says how much a mistake in a ticket's work would cost, or that nobody has said. */
+function RiskTag({ risk }: { risk?: string }) {
+  const known = riskOf(risk);
+  if (!known) {
+    return (
+      <Tag tone="caution" className="max-w-full whitespace-normal">
+        還沒標風險
+      </Tag>
+    );
+  }
+  return (
+    <Tag tone={known.tone} className="max-w-full whitespace-normal">
+      <span>
+        {known.label}
+        <span className="sr-only">：{known.means}</span>
+      </span>
+    </Tag>
   );
 }
 
@@ -51,12 +71,13 @@ function TicketCard({
   const { project } = useProject();
   const seat = useSeats();
   const [open, setOpen] = useState(false);
-  const more = lines(ticket.scope).length + lines(ticket.acceptance).length + lines(ticket.testing).length > 0;
+  const more = lines(ticket.scope).length + lines(ticket.paths).length + lines(ticket.acceptance).length + lines(ticket.testing).length > 0;
   return (
     <li className="rounded-lg border border-border bg-card p-4" data-ticket={ticket.key}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-[12.5px] font-bold text-muted-foreground">{ticket.key}</span>
         <Tag>{ticket.repo}</Tag>
+        <RiskTag risk={ticket.risk} />
         {ticket.issue ? (
           <a href={href({ project: project.id, page: "board", rest: [String(ticket.issue)] })} className="inline-flex items-center gap-1 text-[13px] font-bold text-go underline-offset-4 hover:underline">
             <CircleCheck className="size-3.5" aria-hidden />
@@ -90,11 +111,12 @@ function TicketCard({
       {more && (
         <>
           <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-2 cursor-pointer text-[13.5px] font-bold text-ring underline-offset-4 hover:underline">
-            {open ? "收起範圍和驗收條件" : "看範圍、驗收條件和測試"}
+            {open ? "收起範圍、路徑和驗收條件" : "看範圍、會動到的路徑、驗收條件和測試"}
           </button>
           {open && (
             <div className="mt-2 grid gap-3 rounded-md bg-muted/60 p-3">
               <Points title="範圍" items={ticket.scope} />
+              <Points title="會動到的路徑" items={ticket.paths} mono />
               <Points title="驗收條件" items={ticket.acceptance} />
               <Points title="怎麼測" items={ticket.testing} />
             </div>
@@ -110,7 +132,7 @@ const asLines = (text: string) => text.split("\n").map((s) => s.trim()).filter(B
 /** TicketEditor changes what a ticket says before it is on GitHub. */
 function TicketEditor({ planId, ticket, onClose, onSaved }: { planId: string; ticket: Ticket | null; onClose: () => void; onSaved: () => void }) {
   const { project } = useProject();
-  const [draft, setDraft] = useState({ title: "", summary: "", scope: "", acceptance: "", testing: "" });
+  const [draft, setDraft] = useState({ title: "", summary: "", scope: "", acceptance: "", testing: "", paths: "", risk: "" });
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState<string | null>(null);
@@ -123,6 +145,8 @@ function TicketEditor({ planId, ticket, onClose, onSaved }: { planId: string; ti
       scope: lines(ticket.scope).join("\n"),
       acceptance: lines(ticket.acceptance).join("\n"),
       testing: lines(ticket.testing).join("\n"),
+      paths: lines(ticket.paths).join("\n"),
+      risk: riskOf(ticket.risk) ? (ticket.risk ?? "") : "",
     });
   }
   if (!ticket && shown !== null) setShown(null);
@@ -131,7 +155,15 @@ function TicketEditor({ planId, ticket, onClose, onSaved }: { planId: string; ti
     if (!ticket) return;
     setBusy(true);
     setProblem("");
-    const text: TicketText = { title: draft.title.trim(), summary: draft.summary.trim(), scope: asLines(draft.scope), acceptance: asLines(draft.acceptance), testing: asLines(draft.testing) };
+    const text: TicketText = {
+      title: draft.title.trim(),
+      summary: draft.summary.trim(),
+      scope: asLines(draft.scope),
+      acceptance: asLines(draft.acceptance),
+      testing: asLines(draft.testing),
+      paths: asLines(draft.paths),
+      risk: draft.risk,
+    };
     try {
       await council.editTicket(project.id, planId, ticket.key, text);
       toast.success(`工單 ${ticket.key} 改好了`);
@@ -144,13 +176,19 @@ function TicketEditor({ planId, ticket, onClose, onSaved }: { planId: string; ti
     }
   }
 
-  const field = (key: keyof typeof draft, label: string, hint?: string, rows = 3) => (
+  const field = (key: keyof typeof draft, label: string, hint?: string, rows = 3, mono = false) => (
     <label className="grid gap-1 text-[13px] font-bold text-muted-foreground">
       <span>
         {label}
         {hint && <span className="ml-1.5 font-normal">{hint}</span>}
       </span>
-      <Textarea rows={rows} value={draft[key]} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} className="text-[14.5px] text-foreground" />
+      <Textarea
+        rows={rows}
+        value={draft[key]}
+        onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+        spellCheck={mono ? false : undefined}
+        className={cn("text-foreground", mono ? "font-mono text-[13.5px]" : "text-[14.5px]")}
+      />
     </label>
   );
 
@@ -168,6 +206,22 @@ function TicketEditor({ planId, ticket, onClose, onSaved }: { planId: string; ti
           </label>
           {field("summary", "要做什麼")}
           {field("scope", "範圍", "一行一項")}
+          {field("paths", "會動到的路徑", "一行一條，從專案根目錄寫起，例如 backend/internal/match/**。* 是名字裡任意的字，? 是一個字，** 是任意層資料夾", 3, true)}
+          <label className="grid gap-1 text-[13px] font-bold text-muted-foreground">
+            風險
+            <select
+              value={draft.risk}
+              onChange={(e) => setDraft((d) => ({ ...d, risk: e.target.value }))}
+              className="h-9 w-full min-w-0 rounded-lg border border-input bg-card px-2 text-[14.5px] font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {!riskOf(draft.risk) && <option value="">還沒標，選一個</option>}
+              {(Object.keys(RISKS) as Risk[]).map((risk) => (
+                <option key={risk} value={risk}>
+                  {RISKS[risk].label}：{RISKS[risk].means}
+                </option>
+              ))}
+            </select>
+          </label>
           {field("acceptance", "驗收條件", "一行一項")}
           {field("testing", "怎麼測", "一行一項", 2)}
         </div>

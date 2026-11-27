@@ -151,6 +151,7 @@
   - 相依：—
   - `internal/ticket` schema 2 與 schema 1 的相容路徑（事件、移除版本）；議會規劃角色輸出 `paths`、`risk` 並驗證；核可畫面顯示與修改；`plan approve` 寫進 issue
   - 需求：R6
+  - 細節在 `design.md` §7。原本沒寫清楚、這次定下的：schema 2 的 `paths`、`risk` 都必填；glob 只接受 `*`、`?`、`**`；路徑要在工單的 repo 資料夾裡（`allow_parent_changes` 例外）；可能包括 AWK 自己檔案的路徑要 `allow_script_changes`；新的工單一律 schema 2（`awkit create-task` 拒絕 schema 1）；兩個 glob 有沒有交集（`ticket.Overlap`）先在這裡做，2.2 的避撞直接用
 - [ ] 2.2 排程器
   - 相依：1.6、2.1
   - `engine.max_parallel`、`engine.max_per_backend`；依賴的拓撲順序與環的偵測；路徑避撞；人的優先與固定組；名額不含等核可與等 CI 的線

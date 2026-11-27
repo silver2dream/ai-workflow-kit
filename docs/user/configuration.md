@@ -72,7 +72,7 @@ review:
 
 ## `repos`
 
-一張票只會給一個 repo（票的 `awk-ticket` 區塊的 `repo:`）。`root`（repository 根目錄）永遠可以用，不必列出來；列出來是為了給它建置與測試指令。
+一張票只會給一個 repo（票的 `awk-ticket` 區塊的 `repo:`），它的 `paths` 要在那個 repo 的 `path` 底下。`root`（repository 根目錄）永遠可以用，不必列出來；列出來是為了給它建置與測試指令。
 
 | 鍵 | 預設 | 說明 |
 |---|---|---|

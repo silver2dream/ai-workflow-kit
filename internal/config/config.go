@@ -578,6 +578,15 @@ func (c *Config) TicketRepos() []string {
 	return names
 }
 
+// TicketRepoDir returns the folder of the repo a ticket names, the way the
+// file writes it: "" for the root of the repository, which needs no entry.
+func (c *Config) TicketRepoDir(name string) string {
+	if repo := c.FindRepo(name); repo != nil {
+		return repo.Path
+	}
+	return ""
+}
+
 // HasTicketRepo reports whether a ticket can be for the named repo, whatever
 // the case of the name.
 func (c *Config) HasTicketRepo(name string) bool {
