@@ -157,7 +157,7 @@
   - 答案必須一致，或是上面的已知差異。另外故意把 engine 改壞（上限差一、先 rebase 再衝突、把不確定當衝突、`Infer` 的順序、不給 analyzer 次數等八種），每一種都會被抓到。
   - engine 既有的流程測試（一張票做到合併、審查重試、先解衝突、人放行等）也都開著影子跑，每一步都必須一致。
   - P1 的線不會進入的狀態不比：`checking`（檢查在審查裡）、`awaiting_approval`（P2 的關卡）、`queued`（P2 的合併佇列）、`paused`（P2 的指令）。
-- **看得到**：`awkit status` 顯示最近一次有影子的 run 比了幾步、幾步一樣、幾步是已知差異、幾步不同、幾步沒比成，列出最近五個不同的步驟；`--json` 有同樣的內容（`shadow`）。工作台的顯示放到 1.8，與 engine 的其他狀態一起做。
+- **看得到**：`awkit status` 顯示最近一次有影子的 run 比了幾步、幾步一樣、幾步是已知差異、幾步不同、幾步沒比成，列出最近五個不同的步驟；`--json` 有同樣的內容（`shadow`）。工作台的顯示在 1.8a，與 engine 的其他狀態一起做（§13）。
 
 實作（1.7b，`cmd/awkit/run_engine.go`、`run.go`）：
 
@@ -581,6 +581,29 @@ guardrails:
 - 待核可：§10 的核可畫面。
 - 教訓：隔離中的教訓清單（核可或刪除）。
 - 串流新增 `engine` 區塊（線的快照與回覆）。
+
+實作（1.8a，`internal/engine/view.go`、`internal/workbench`、`cmd/awkit/status_view.go`）：
+
+- **engine 的狀態給別人讀（`engine.Look`）**：工作台與 `awkit status` 讀同一份，不各自讀檔：
+  - 最近一次 run（`run.json`）：還在不在跑（`Alive`）、正在做的那一步、限定的工單、結束的原因。
+  - 線：還沒結束的每一條，加上在最近一次 run 裡結束的；更早結束的只算條數。順序：engine 正在做的那條、需要人的、其他依編號，結束的排最後。
+  - 每條線：狀態、為什麼要人（`why`、`note`）、PR、三種次數與上限、engine 正在做它的哪一步、最近的判定。上限與 engine 用的是同一份（`engine.LimitsOf`）：審查重試與解衝突是 `escalation.max_review_attempts`，實作者失敗是 3 次（與 `awkit dispatch-worker` 的預設相同；`escalation.retry_count` 是一次派工裡的重試，不是這個）。
+  - 最近的判定：最近一次 run 裡，這張工單最新一筆沒有通過的 guardrail 判定（擋下或標記可疑）。只讀 run 開始後寫過的事件檔，run 越多也不會越慢；更早的在活動紀錄與 `awkit events --issue N`。
+  - 影子比對（`LastShadow`；只解讀事件類型對得上的那幾行，`engine.jsonl` 再長也很快）、收件匣裡還沒回覆的指令、最近五個回覆。
+  - 用量（花費）不在 1.8：P1 的實作者不經 agent runtime，花費記不全，與預算一起在 2.7 做。
+- **工作台**：
+  - `GET /api/projects/{id}/engine` 回 `engine.Look`。
+  - 串流新增 `engine` 區塊：`.ai/state/engine/` 有變（線的快照、收件匣與回覆、run 檔的心跳與步驟）就通知，不看每次派工留下的 `runs/`；`status` 區塊不再看 `engine/`。
+  - 執行頁：
+    - 「工作中」那段說 engine 正在做的那一步：執行者在寫工單 #N、審查者在審 PR #M、在解 PR #M 的衝突、在把 PR #M 更新到整合分支，從什麼時候開始。原本以最近的 Worker 結果猜正在做哪張，engine 審查時會猜錯。上方的「工作中」標籤也一樣。
+    - 新的「每張工單走到哪」：每條線一列，列出工單（標題來自 GitHub；已關的工單也有，`awkit status` 的工單清單多帶已完成工單的標題）、狀態、現在誰在做、PR、次數與上限（用過才列）、為什麼要你、最近的判定、從什麼時候；點一列打開那張工單。P1 一次只有一條線在動。
+    - 上一輪怎麼結束的，照 engine 記下的原因（`run.json` 的 `reason`）說，不再只有「停了：有人要它停，或有工單需要你」。
+    - 有影子比對時，右欄顯示上一輪比了幾步、幾步一樣、已知差異、不同、沒比成，與最近五個不同的步驟（兩邊各做什麼）。
+    - 停止：engine 在跑時，「收尾後停」與「立刻停」都經由收件匣交給 engine（與 `awkit stop` 相同，§5.1），頁面說 engine 收下了沒有；「立刻停」等 10 秒沒有回覆，才照以前直接結束程序。主控的 run 照舊。
+  - 頁面上的字：派工的是 engine，不再說主控；詞彙表加上 engine。主控的分頁與詞只在 `AWKIT_ENGINE=principal` 的 run 出現。
+- **`awkit status`**：run 在跑時說 engine 正在做哪一步、從何時；新的 `Lanes` 段落，每條線一行（工單、狀態、PR、用過的次數、從何時），需要人的多一行原因，有判定的多一行判定；`--json` 多 `engine`（`engine.Look` 的內容），`shadow` 照舊。
+
+1.8b、1.8c 的細節在各自開始時寫進這裡：活動紀錄讀 engine 的事件（`engine.jsonl` 不在 run 的 session 裡，現在活動紀錄看不到線的轉換）；設定頁編輯 `agents.reviewer`、`agents.resolver`（§12）。
 
 ## 14. 遷移與相容
 

@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, PageHead, Panel, PanelHead, Problem } from "@/components/bits";
 import { useProject } from "@/app/project";
-import { api, type RunLog, type Ticket } from "@/lib/api";
+import { api, type RunLog, type StopView, type Ticket } from "@/lib/api";
+import { endedWords, stepWords } from "@/lib/engine";
 import { useResource } from "@/lib/resource";
 import { href } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -13,8 +14,10 @@ import { when } from "@/lib/words";
 import { Checks } from "@/pages/Health";
 import { RecentActivity } from "@/pages/Overview";
 import { headline } from "@/pages/plans/status";
+import { Lanes, titleOf } from "@/pages/run/Lanes";
+import { Shadow } from "@/pages/run/Shadow";
 
-/** How the last run ended, in words, by the reason its session ended with. */
+/** How a run of the Principal's workflow ended, in words, by the reason its session ended with. */
 const ENDED: Record<string, string> = {
   completed: "上一輪做完了：沒有可以做的工單了。",
   stopped: "上一輪停了：有人要它停，或有工單需要你。",
@@ -69,7 +72,7 @@ function Console({ log, going }: { log: string; going: boolean }) {
     if (el && follow.current) el.scrollTop = el.scrollHeight;
   }, [text]);
 
-  if (missing) return <Empty icon={TerminalSquare} title="這份輸出還沒有內容">開始工作之後，執行者和主控說的話會出現在這裡。</Empty>;
+  if (missing) return <Empty icon={TerminalSquare} title="這份輸出還沒有內容">開始工作之後，engine 和執行者說的話會出現在這裡。</Empty>;
   return (
     <pre
       ref={box}
@@ -92,7 +95,7 @@ function logTitle(log: RunLog): string {
   return `工單 #${log.issue}`;
 }
 
-/** Output is what the run says: its own words, the Principal's, and each ticket's Worker's. */
+/** Output is what the run says: its own words (the engine's), the Principal's when it ran one, and each ticket's Worker's. */
 function Output({ going, target, prefer }: { going: boolean; target?: number; prefer?: string }) {
   const { project } = useProject();
   const [tick, setTick] = useState(0);
@@ -111,9 +114,9 @@ function Output({ going, target, prefer }: { going: boolean; target?: number; pr
   const shown = picked && list.some((l) => l.name === picked) ? picked : fallback;
   return (
     <Panel data-tour="runoutput" className="overflow-hidden">
-      <PanelHead title="即時輸出" sub="主控和執行者說的話；工作中每兩秒更新一次。" />
+      <PanelHead title="即時輸出" sub="「這一輪」是 engine 派工的紀錄，「工單 #N」是那張工單的執行者說的話；工作中每兩秒更新一次。" />
       {list.length === 0 ? (
-        <Empty icon={TerminalSquare} title="還沒有輸出">開始工作之後，執行者和主控說的話會出現在這裡。</Empty>
+        <Empty icon={TerminalSquare} title="還沒有輸出">開始工作之後，engine 和執行者說的話會出現在這裡。</Empty>
       ) : (
         <>
           <div role="tablist" aria-label="哪一份輸出" className="flex gap-1 overflow-x-auto border-b border-border px-4">
@@ -176,7 +179,7 @@ function StartDialog({ open, onClose, preset, onStarted }: { open: boolean; onCl
       <DialogContent>
         <DialogHeader>
           <DialogTitle>開始工作？</DialogTitle>
-          <DialogDescription>主控會一張一張把工單交給執行者，寫好的程式經過審查才合併。做到沒有工單、或有工單需要你，就會停下。會呼叫 Claude，工單越多花越多。</DialogDescription>
+          <DialogDescription>engine 會一張一張把工單交給執行者，寫好的程式經過審查才合併。做到沒有工單、或有工單需要你，就會停下。執行者和審查是 AI，工單越多花越多。</DialogDescription>
         </DialogHeader>
         <fieldset className="grid gap-2">
           <legend className="sr-only">做哪些工單</legend>
@@ -224,7 +227,7 @@ function StartDialog({ open, onClose, preset, onStarted }: { open: boolean; onCl
 
 /** RunPage starts the work and stops it, and shows what the run says while it goes. */
 export function RunPage({ preset }: { preset?: number }) {
-  const { project, status, tickets, plans } = useProject();
+  const { project, status, engine, tickets, plans } = useProject();
   const [starting, setStarting] = useState(!!preset);
   const [stopping, setStopping] = useState<false | "now">(false);
   const [busy, setBusy] = useState(false);
@@ -234,6 +237,11 @@ export function RunPage({ preset }: { preset?: number }) {
   const winding = going && !!report?.control.stop_present;
   const target = report?.target.issue_id;
   const targetTicket = (tickets.data?.tickets?.open ?? []).find((t) => t.number === target);
+  // The engine says what it does; a run of the Principal's workflow is
+  // guessed at from the Worker that ran last.
+  const view = engine.data;
+  const step = going && view?.going ? view.run?.step : undefined;
+  const doing = step ? stepWords(step, step.issue ? titleOf(tickets.data, step.issue) : undefined) : "";
   const health = useResource(() => (going ? Promise.resolve(undefined) : api.health(project.id)), [project.id, going]);
   // What a run's own checks stop at: the errors of the health check, and a
   // working tree that is not clean, which the health check only warns of.
@@ -242,6 +250,10 @@ export function RunPage({ preset }: { preset?: number }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const sessionAt = run?.session.started_at ? Date.parse(run.session.started_at) : 0;
   const neverStarted = !going && startedAt !== null && sessionAt < startedAt - 2000 && Date.now() - startedAt > 4000;
+  // The last run was the engine's when its run started with the session
+  // (a minute after it, at most): it says why it ended.
+  const engineEnded =
+    !going && view?.run?.ended && view.run.reason && (!sessionAt || Date.parse(view.run.started) >= sessionAt - 60_000) ? view.run.reason : undefined;
   const meeting = (plans.data?.plans ?? []).find((p) => p.meeting?.state === "meeting");
   const approving = (plans.data?.plans ?? []).find((p) => p.approval?.state === "working");
   const noTickets = !!tickets.data?.tickets && tickets.data.tickets.open.length === 0;
@@ -262,12 +274,19 @@ export function RunPage({ preset }: { preset?: number }) {
   async function stop(now: boolean) {
     setBusy(true);
     try {
-      await api.stopRun(project.id, now);
-      toast.success(now ? "停下來了" : "會在手上這一步做完後停", {
-        description: now ? "做到一半的改動留在它自己的工作區，下一輪會從這張工單接著做。" : "正在寫的執行者或正在審的審查做完，就不再接新的工作。",
-      });
+      const said: StopView = await api.stopRun(project.id, now);
+      if (said.engine && !said.answered && !now) {
+        toast.success("已經告訴 engine 要停了", { description: "它還沒回覆；手上這一步（執行者正在寫，或審查正在審）做完就會停。" });
+      } else if (said.engine && !said.answered) {
+        toast.success("停下來了", { description: "engine 沒有回覆，所以直接結束了它和它開出來的程式。做到一半的改動留在執行者自己的工作區，下一輪會從這張工單接著做。" });
+      } else {
+        toast.success(now ? "停下來了" : "會在手上這一步做完後停", {
+          description: now ? "做到一半的改動留在它自己的工作區，下一輪會從這張工單接著做。" : "正在寫的執行者或正在審的審查做完，就不再接新的工作。",
+        });
+      }
       setStopping(false);
       status.reload();
+      engine.reload();
     } catch (e) {
       toast.error("停不下來", { description: (e as Error).message });
     } finally {
@@ -300,9 +319,13 @@ export function RunPage({ preset }: { preset?: number }) {
                   <p className="text-[15px] leading-relaxed">
                     {winding
                       ? "收到停止了：手上這一步（執行者正在寫，或審查正在審）做完就停，不再接新的工作。等不及可以立刻停。"
-                      : target
-                        ? `執行者正在處理工單 #${target}${targetTicket ? `「${targetTicket.title}」` : ""}。`
-                        : "主控在看下一步要做什麼。"}
+                      : doing
+                        ? `${doing}，從 ${when(step!.since)} 開始。`
+                        : view?.going
+                          ? "engine 在看下一步要做什麼。"
+                          : target
+                            ? `執行者正在處理工單 #${target}${targetTicket ? `「${targetTicket.title}」` : ""}。`
+                            : "主控在看下一步要做什麼。"}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {!winding && (
@@ -324,9 +347,11 @@ export function RunPage({ preset }: { preset?: number }) {
                   <p className="text-[15px] leading-relaxed text-ink2">
                     {run?.state === "stale_lock"
                       ? "上一輪的程序不在了（被立刻停下，或電腦重開）。做到一半的工單，下一輪會接著做；它留下的工作區可以在健康檢查清掉。"
-                      : run?.session.exit_reason
-                        ? (ENDED[run.session.exit_reason] ?? `上一輪結束了（${run.session.exit_reason}）。`)
-                        : "還沒有開始過。核可了規劃、工單在 GitHub 上之後，就可以開始工作。"}
+                      : engineEnded
+                        ? endedWords(engineEnded)
+                        : run?.session.exit_reason
+                          ? (ENDED[run.session.exit_reason] ?? `上一輪結束了（${run.session.exit_reason}）。`)
+                          : "還沒有開始過。核可了規劃、工單在 GitHub 上之後，就可以開始工作。"}
                   </p>
                   {neverStarted && (
                     <Problem title="剛才那一輪沒有開起來">awkit run 在自己的開工檢查就停了。看下面「這一輪」的輸出是哪一項沒過，處理好再開始。</Problem>
@@ -362,6 +387,7 @@ export function RunPage({ preset }: { preset?: number }) {
               </div>
             )}
           </Panel>
+          <Lanes />
           <Output going={going} target={target} prefer={neverStarted ? "run" : undefined} />
         </div>
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-5">
@@ -377,8 +403,9 @@ export function RunPage({ preset }: { preset?: number }) {
               </div>
             </dl>
           </Panel>
+          <Shadow />
           <RecentActivity limit={8} />
-          <Button variant="ghost" className="justify-self-start" onClick={() => { status.reload(); health.reload(); }}>
+          <Button variant="ghost" className="justify-self-start" onClick={() => { status.reload(); engine.reload(); health.reload(); }}>
             <RefreshCw aria-hidden /> 重新讀一次
           </Button>
         </div>
@@ -399,7 +426,7 @@ export function RunPage({ preset }: { preset?: number }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>立刻停下？</DialogTitle>
-            <DialogDescription>主控、執行者和審查會馬上被結束，不等手上這一步做完。</DialogDescription>
+            <DialogDescription>{view?.going ? "engine 會馬上結束執行者和審查，再結束它自己，" : "主控、執行者和審查會馬上被結束，"}不等手上這一步做完。</DialogDescription>
           </DialogHeader>
           <div className="flex gap-2.5 rounded-lg border-l-4 border-caution bg-caution/10 px-4 py-3 text-[14px]">
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-caution-ink" aria-hidden />

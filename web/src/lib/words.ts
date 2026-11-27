@@ -12,7 +12,8 @@ export const TERMS: Record<string, string> = {
   審查: "另一個 AI 檢查 PR：有沒有照工單做、測試夠不夠、CI 有沒有過。沒過會自動重做，幾次都沒過就停下來等你。",
   合併: "審查通過的 PR 放進專案的主線，那張工單就完成了。",
   執行者: "拿到一張工單、寫程式、開 PR 的 AI。",
-  主控: "決定下一步做哪張工單、什麼時候送審與合併的 AI。",
+  engine: "awkit 裡派工的程式：決定下一步做哪張工單、什麼時候送審、合併，或停下來等你。它不是 AI，同樣的情況每次都做同樣的決定。",
+  主控: "舊的做法裡派工的 AI，只有設了 AWKIT_ENGINE=principal 才會用，下一版移除。平常派工的是 engine。",
   CI: "每個 PR 都會自動跑的建置與測試，綠燈代表通過。",
   教訓: "被審查退回、後來終於通過的變更，會濃縮成一條短的提醒。之後動到同樣檔案的執行者與審查者會看到相關的幾條。",
   隔離: "教訓是 AI 從審查的經過寫出來的，裡面可能夾帶別人寫的文字。給任何 AI 看之前會先檢查；看起來像在下指令、要連到外面、或碰流程本身的，就先隔離，等你讀過再決定。",
@@ -48,6 +49,7 @@ export const STATION_OF: Record<Stage, "tickets" | "code" | "review" | "siding">
 };
 
 export const WHO: Record<string, string> = {
+  engine: "engine",
   principal: "主控",
   worker: "執行者",
   reviewer: "審查",

@@ -103,36 +103,30 @@ func sendStop(w io.Writer, root, kind string, wait time.Duration) int {
 	if kind == engine.CommandStopNow {
 		by = "awkit stop --now"
 	}
-	c, err := engine.Send(root, engine.Command{Kind: kind, By: by})
+	deadline := time.Now().Add(wait)
+	c, r, answered, err := engine.Ask(root, engine.Command{Kind: kind, By: by}, wait)
 	if err != nil {
 		errorf("could not give the engine the stop: %v\n", err)
 		return 1
 	}
-	deadline := time.Now().Add(wait)
-	for {
-		if r, ok := engine.ReplyOf(root, c.ID); ok {
-			if r.Result != engine.Applied {
-				errorf("the engine did not take the stop: %s\n", r.Reason)
-				return 1
-			}
-			fmt.Fprintf(w, "The engine took the stop: %s.\n", r.Reason)
-			if kind == engine.CommandStopNow {
-				// What was running is ended: said once the run has.
-				if ended(root, deadline) {
-					fmt.Fprintln(w, "The run has stopped.")
-				} else {
-					fmt.Fprintln(w, "The run is still ending what was running.")
-				}
-			}
-			fmt.Fprintln(w, "awkit status shows where it is. awkit run goes on from there later.")
-			return 0
-		}
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
+	if !answered {
+		fmt.Fprintf(w, "Gave the engine the stop (%s); it has not answered yet. awkit status shows when it has stopped.\n", c.ID)
+		return 0
 	}
-	fmt.Fprintf(w, "Gave the engine the stop (%s); it has not answered yet. awkit status shows when it has stopped.\n", c.ID)
+	if r.Result != engine.Applied {
+		errorf("the engine did not take the stop: %s\n", r.Reason)
+		return 1
+	}
+	fmt.Fprintf(w, "The engine took the stop: %s.\n", r.Reason)
+	if kind == engine.CommandStopNow {
+		// What was running is ended: said once the run has.
+		if ended(root, deadline) {
+			fmt.Fprintln(w, "The run has stopped.")
+		} else {
+			fmt.Fprintln(w, "The run is still ending what was running.")
+		}
+	}
+	fmt.Fprintln(w, "awkit status shows where it is. awkit run goes on from there later.")
 	return 0
 }
 

@@ -225,7 +225,7 @@ function Crumbs({ items }: { items: string[] }) {
 
 /** RunChip says whether a run works on the project now, and on which ticket. */
 function RunChip() {
-  const { project, status, online } = useProject();
+  const { project, status, engine, online } = useProject();
   if (!online) {
     return (
       <span className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13.5px] font-bold text-muted-foreground sm:flex" title="畫面暫時不會自己更新；工作台恢復後會自己接上">
@@ -235,7 +235,9 @@ function RunChip() {
     );
   }
   if (status.data?.run.state !== "running") return null;
-  const target = status.data.target.issue_id;
+  // The ticket the engine is on; for a run of the Principal's workflow, the
+  // one whose Worker ran last.
+  const target = engine.data?.going ? engine.data.run?.step?.issue : status.data.target.issue_id;
   return (
     <a href={href({ project: project.id, page: "run", rest: [] })} className="hidden items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13.5px] font-bold text-live hover:bg-live/10 sm:flex">
       <span className="relative flex size-2" aria-hidden>

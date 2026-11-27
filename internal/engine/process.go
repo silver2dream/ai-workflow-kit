@@ -48,7 +48,7 @@ type RunInfo struct {
 	// when.
 	Step *StepInfo `json:"step,omitempty"`
 	// Ended and Reason say that the run is over, and why.
-	Ended  time.Time `json:"ended,omitempty"`
+	Ended  time.Time `json:"ended,omitzero"`
 	Reason string    `json:"reason,omitempty"`
 }
 

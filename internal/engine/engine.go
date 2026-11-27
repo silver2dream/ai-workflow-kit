@@ -52,8 +52,7 @@ type Engine struct {
 	Analyzer Analyzer
 	Names    config.Labels
 	// MaxReviews bounds how often a pull request is reviewed again, and how
-	// often its conflict is sent to be resolved (escalation.max_review_attempts,
-	// as the analyzer bounds both).
+	// often its conflict is sent to be resolved (LimitsOf).
 	MaxReviews int
 	// Only limits the run to one ticket; 0 is every ticket.
 	Only int
@@ -110,10 +109,7 @@ func New(opts Options) (*Engine, error) {
 	if opts.Only > 0 {
 		a.LimitTo(opts.Only)
 	}
-	maxReviews := cfg.Escalation.MaxReviewAttempts
-	if maxReviews <= 0 {
-		maxReviews = analyzer.DefaultMaxReviewAttempts
-	}
+	limits := LimitsOf(cfg)
 	gh := NewGitHub(cfg.GitHub.Labels.Task, 30*time.Second)
 	work := &WorkerSteps{Root: opts.Root, Log: opts.Log, GitHub: gh, InProgress: cfg.GitHub.Labels.InProgress}
 	review := &ReviewStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: reviewer}
@@ -121,7 +117,7 @@ func New(opts Options) (*Engine, error) {
 	e := &Engine{
 		Root: opts.Root, Journal: journal,
 		GitHub: gh, Analyzer: a,
-		Names: cfg.GitHub.Labels, MaxReviews: maxReviews, Only: opts.Only,
+		Names: cfg.GitHub.Labels, MaxReviews: limits.Reviews, Only: opts.Only,
 		Implement: work.Implement, Check: work.Check, Review: review.Review, Resolve: resolve.Resolve,
 		Log: opts.Log,
 	}
@@ -577,6 +573,17 @@ var whyText = map[string]string{
 	WhyInvalidTicket:    "its awk-ticket block cannot be used",
 	WhyAgentRefused:     "an agent's backend cannot be held to its role's settings",
 	WhyWorkerLost:       "its ticket says a Worker is at work on it, but none has left a result in the time a Worker may take",
+	WhyDependencyCycle:  "the tickets it depends on go round in a circle",
+	WhyPerson:           "a person marked it on GitHub",
+}
+
+// WhyText says, for a person, why a lane needs them: what the engine's
+// comment on the issue says.
+func WhyText(why string) string {
+	if text := whyText[why]; text != "" {
+		return text
+	}
+	return why
 }
 
 func needsYouComment(l Lane, names config.Labels) string {

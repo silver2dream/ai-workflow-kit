@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -266,17 +265,13 @@ type ShadowDifference struct {
 // LastShadow reads how the last run of the engine compared with its
 // shadow. ok is false when the last run had none.
 func LastShadow(root string) (run ShadowRun, ok bool, err error) {
-	// A project the engine has not run has no events of it.
-	if _, err := os.Stat(filepath.Join(root, layout.StateDir, "events", Session+".jsonl")); os.IsNotExist(err) {
-		return ShadowRun{}, false, nil
-	}
-	events, err := trace.NewEventReader(root).ReadSession(Session)
-	if err != nil {
-		return ShadowRun{}, false, err
-	}
-	for _, ev := range events {
+	// Only the starts of runs and the comparisons are decoded: the engine's
+	// file holds every transition of every run, and grows with them. A
+	// project the engine has not run has no file.
+	file := filepath.Join(root, filepath.FromSlash(layout.StateDir), "events", Session+".jsonl")
+	err = scanEvents(file, [][]byte{[]byte(TypeRun), []byte(TypeShadow)}, func(ev trace.Event) {
 		if ev.Component != Component {
-			continue
+			return
 		}
 		switch ev.Type {
 		case TypeRun:
@@ -288,8 +283,8 @@ func LastShadow(root string) (run ShadowRun, ok bool, err error) {
 			}
 		case TypeShadow:
 			var c Comparison
-			if err := decode(ev.Data, &c); err != nil {
-				continue
+			if decode(ev.Data, &c) != nil {
+				return
 			}
 			run.Steps++
 			switch {
@@ -303,6 +298,9 @@ func LastShadow(root string) (run ShadowRun, ok bool, err error) {
 				run.Differences = append(run.Differences, ShadowDifference{At: ev.Timestamp, Comparison: c})
 			}
 		}
+	})
+	if err != nil {
+		return ShadowRun{}, false, err
 	}
 	return run, run.Steps > 0, nil
 }

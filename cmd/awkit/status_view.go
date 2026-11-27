@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/engine"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	status "github.com/silver2dream/ai-workflow-kit/internal/status"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 	"github.com/silver2dream/ai-workflow-kit/internal/workflow"
@@ -36,6 +38,8 @@ type statusView struct {
 	Tickets   *status.Tickets
 	NoTickets string // why there is no word on the tickets
 
+	// Engine is the engine's state: its last run, its lanes, its shadow.
+	Engine engine.View
 	// Shadow is how the last run of the engine compared its decisions with
 	// the Principal's workflow's, when it had a shadow (AWKIT_ENGINE=shadow).
 	Shadow *engine.ShadowRun
@@ -45,6 +49,9 @@ type statusView struct {
 
 // listIssues asks GitHub for issues; the tests answer in its place.
 var listIssues status.IssueLister = status.ListWithGh
+
+// statusNow tells the time a run's beat is compared with; the tests set it.
+var statusNow = time.Now
 
 // hasOrigin reports whether the project has a remote named origin. Without
 // one there is no GitHub to ask, and `gh` takes its time to say so.
@@ -66,11 +73,9 @@ func collectStatusView(ctx context.Context, report status.Report, cfg *config.Co
 		view.Warnings = append(view.Warnings, "the lock of a run cannot be read ("+filepath.ToSlash(report.Run.LockFile)+"); awkit reset --lock removes it")
 	}
 	view.StopReason, view.Stopped = stopmark.Read(".")
-	if run, ok, err := engine.LastShadow("."); err != nil {
-		view.Warnings = append(view.Warnings, fmt.Sprintf("how the engine's last run compared with the Principal's workflow cannot be read: %v", err))
-	} else if ok {
-		view.Shadow = &run
-	}
+	view.Engine = engine.Look(".", cfg, statusNow())
+	view.Shadow = view.Engine.Shadow
+	view.Warnings = append(view.Warnings, view.Engine.Problems...)
 
 	if cfg == nil {
 		return view
@@ -114,6 +119,11 @@ func printStatus(w io.Writer, v statusView) {
 	switch {
 	case v.Running:
 		fmt.Fprintf(w, "%-9s going%s (pid %d). awkit stop asks it to stop.\n", "Run", since(v.Since), v.PID)
+		if v.Engine.Going && v.Engine.Run.Step != nil {
+			if doing := stepWords(*v.Engine.Run.Step); doing != "" {
+				fmt.Fprintf(w, "%-9s the engine: %s%s\n", "", doing, since(v.Engine.Run.Step.Since.Format(time.RFC3339)))
+			}
+		}
 	case v.Stopped:
 		ending := workflow.EndingFor(v.StopReason)
 		fmt.Fprintf(w, "%-9s not going. The last one: %s\n", "Run", ending.Summary)
@@ -124,6 +134,7 @@ func printStatus(w io.Writer, v statusView) {
 		fmt.Fprintf(w, "%-9s a run died and left its lock; the next run clears it\n", "")
 	}
 	printShadow(w, v.Shadow)
+	printLanes(w, v)
 
 	// The tickets.
 	switch {
@@ -187,6 +198,146 @@ func printShadow(w io.Writer, run *engine.ShadowRun) {
 		fmt.Fprintf(w, "%-9s %s the engine: %s\n", "", d.At.Local().Format("15:04"), engine.Decided(d.Comparison.Engine))
 		fmt.Fprintf(w, "%-9s       the Principal's workflow: %s\n", "", engine.Decided(d.Comparison.Analyzer))
 	}
+}
+
+// laneStates say where a lane is, as `awkit status` says it.
+var laneStates = map[engine.State]string{
+	engine.Blocked:          "waits for a ticket it depends on",
+	engine.Ready:            "ready",
+	engine.Implementing:     "being written",
+	engine.Checking:         "being checked",
+	engine.Reviewing:        "in review",
+	engine.ReviewRetry:      "to be reviewed again",
+	engine.Rework:           "back to a Worker",
+	engine.AwaitingApproval: "waits for your approval",
+	engine.Queued:           "waits its turn to be merged",
+	engine.Resolving:        "to be resolved",
+	engine.Merged:           "merged",
+	engine.Completed:        "done: nothing to change",
+	engine.NeedsYou:         "needs you",
+	engine.Paused:           "paused",
+	engine.Cancelled:        "cancelled",
+}
+
+// laneState says where a lane is, with what resolving does to it.
+func laneState(l engine.Lane) string {
+	switch {
+	case l.State == engine.Resolving && l.Resolve == engine.ResolveConflict:
+		return "conflicts with its base"
+	case l.State == engine.Resolving && l.Resolve == engine.ResolveRebase:
+		return "behind its base"
+	case l.State == engine.Implementing && l.Resolve == engine.ResolveConflict:
+		return "its conflict is being resolved"
+	case l.State == engine.Implementing && l.Resolve == engine.ResolveRebase:
+		return "being brought up to its base"
+	}
+	if words, ok := laneStates[l.State]; ok {
+		return words
+	}
+	return string(l.State)
+}
+
+// stepWords say what the engine does in a step, "" for a step that ends
+// the run.
+func stepWords(s engine.StepInfo) string {
+	switch {
+	case s.Action == analyzer.ActionReviewPR:
+		return fmt.Sprintf("the reviewer reviews PR #%d of #%d", s.PR, s.Issue)
+	case s.Action == analyzer.ActionDispatchWorker && s.Merge == analyzer.MergeIssueConflict:
+		return fmt.Sprintf("the resolver resolves the conflict of PR #%d of #%d", s.PR, s.Issue)
+	case s.Action == analyzer.ActionDispatchWorker && s.Merge == analyzer.MergeIssueRebase:
+		return fmt.Sprintf("PR #%d of #%d is brought up to its base", s.PR, s.Issue)
+	case s.Action == analyzer.ActionDispatchWorker, s.Action == analyzer.ActionCheckResult:
+		return fmt.Sprintf("a Worker writes #%d", s.Issue)
+	}
+	return ""
+}
+
+// printLanes lists the engine's lanes: the tickets in its hands, and those
+// its last run finished.
+func printLanes(w io.Writer, v statusView) {
+	e := v.Engine
+	if len(e.Lanes) == 0 {
+		return
+	}
+	title := func(issue int) string {
+		if v.Tickets == nil {
+			return ""
+		}
+		for _, t := range v.Tickets.Open {
+			if t.Number == issue {
+				return t.Title
+			}
+		}
+		return v.Tickets.DoneTitles[issue]
+	}
+	inHand, finished := 0, 0
+	for _, l := range e.Lanes {
+		if l.State.Terminal() {
+			finished++
+		} else {
+			inHand++
+		}
+	}
+	summary := fmt.Sprintf("%d in the engine's hands", inHand)
+	if finished > 0 {
+		summary += fmt.Sprintf(", %d finished in its last run", finished)
+	}
+	fmt.Fprintf(w, "%-9s %s\n\n", "Lanes", summary)
+	for _, l := range e.Lanes {
+		parts := []string{laneState(l.Lane)}
+		if l.PR > 0 {
+			parts = append(parts, fmt.Sprintf("PR #%d", l.PR))
+		}
+		for _, count := range []struct {
+			name      string
+			used, max int
+		}{
+			{"failed", l.Attempts.Failures, e.Limits.Failures},
+			{"reviewed again", l.Attempts.Reviews, e.Limits.Reviews},
+			{"conflicts sent to be resolved", l.Attempts.Conflicts, e.Limits.Conflicts},
+		} {
+			if count.used > 0 {
+				parts = append(parts, fmt.Sprintf("%s %d of %d", count.name, count.used, count.max))
+			}
+		}
+		if !l.Since.IsZero() {
+			parts = append(parts, strings.TrimSpace(since(l.Since.Format(time.RFC3339))))
+		}
+		fmt.Fprintf(w, "    #%-4d %s\n", l.Issue, strings.Join(parts, ", "))
+		if t := title(l.Issue); t != "" {
+			fmt.Fprintf(w, "          %s\n", shortened(t, 72))
+		}
+		if l.Step != nil {
+			if doing := stepWords(*l.Step); doing != "" {
+				fmt.Fprintf(w, "          now: %s\n", doing)
+			}
+		}
+		if l.State == engine.NeedsYou {
+			why := engine.WhyText(l.Why)
+			// What a guardrail stopped is said by its verdict, below.
+			guarded := l.Verdict != nil && strings.HasPrefix(l.Why, "guard_")
+			if l.Note != "" && l.Note != why && !guarded {
+				why += ": " + l.Note
+			}
+			fmt.Fprintf(w, "          %s\n", why)
+		}
+		if l.Verdict != nil {
+			what := "flagged"
+			if l.Verdict.Result == guard.Block {
+				what = "blocked"
+			}
+			where := l.Verdict.Rule
+			if l.Verdict.Source != "" {
+				where += " in " + l.Verdict.Source
+			}
+			fmt.Fprintf(w, "          a guardrail %s %s at %s: %s\n", what, where, l.Verdict.At.Local().Format("15:04"), l.Verdict.Reason)
+		}
+	}
+	if e.Earlier > 0 {
+		fmt.Fprintf(w, "    %d more ended before the last run; awkit events --issue N shows one\n", e.Earlier)
+	}
+	fmt.Fprintln(w)
 }
 
 // nextStep is the one thing a person does next.

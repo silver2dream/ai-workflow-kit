@@ -79,8 +79,8 @@ func TestCollectTickets_Stages(t *testing.T) {
 			labelled(22, "[feat] by hand", "a ticket written before the block existed"),
 			labelled(23, "[feat] bad block", "```yaml awk-ticket\nschema: 1\nrepo: root\nseverity: urgent\n```\n"),
 		},
-		"ai-task/closed":   {{Number: 1}, {Number: 2}, {Number: 3}},
-		"completed/closed": {{Number: 3}, {Number: 4}},
+		"ai-task/closed":   {{Number: 1, Title: "[feat] one"}, {Number: 2, Title: "[feat] two"}, {Number: 3, Title: "[feat] three"}},
+		"completed/closed": {{Number: 3, Title: "[feat] three"}, {Number: 4, Title: "[feat] four"}},
 	}}
 
 	tickets, err := CollectTickets(context.Background(), config.DefaultLabels(), l.list)
@@ -142,7 +142,11 @@ func TestCollectTickets_Stages(t *testing.T) {
 	if tickets.Done != 4 {
 		t.Errorf("Done = %d, want 4", tickets.Done)
 	}
-	if len(l.asked) != 3 || l.asked[0] != "ai-task/open number,title,url,labels,body" {
+	// And by their titles: what a run finished is shown by its name.
+	if want := map[int]string{1: "[feat] one", 2: "[feat] two", 3: "[feat] three", 4: "[feat] four"}; !reflect.DeepEqual(tickets.DoneTitles, want) {
+		t.Errorf("DoneTitles = %v, want %v", tickets.DoneTitles, want)
+	}
+	if len(l.asked) != 3 || l.asked[0] != "ai-task/open number,title,url,labels,body" || l.asked[1] != "ai-task/closed number,title" {
 		t.Errorf("GitHub was asked %v", l.asked)
 	}
 }

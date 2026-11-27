@@ -36,6 +36,7 @@ function answer(session: { status?: number; projects?: ProjectView[]; onboarding
       if (url.includes("/tickets")) return reply(200, { tickets: { open: [], done: 0 }, stages: [], asked_at: "" });
       if (url.includes("/events")) return reply(200, { events: [] });
       if (url.endsWith("/plans")) return reply(200, { plans: [] });
+      if (url.endsWith("/engine")) return reply(200, { going: false, lanes: [], earlier: 0, limits: { failures: 3, reviews: 3, conflicts: 3 }, pending: [], replies: [] });
       return reply(404, { error: "no" });
     }),
   );

@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, type EventsView, type LessonsView, type PlanView, type ProjectView, type StatusReport, type TicketsView } from "@/lib/api";
+import { api, type EngineView, type EventsView, type LessonsView, type PlanView, type ProjectView, type StatusReport, type TicketsView } from "@/lib/api";
 import { useResource, useStream, type Area, type Resource } from "@/lib/resource";
 import { council, type RosterView } from "@/lib/council";
 
 export interface ProjectData {
   project: ProjectView;
   status: Resource<StatusReport>;
+  /** The engine's run and lanes: what it does now, and where each ticket is in its hands. */
+  engine: Resource<EngineView>;
   tickets: Resource<TicketsView>;
   events: Resource<EventsView>;
   plans: Resource<{ plans: PlanView[] }>;
@@ -29,6 +31,7 @@ const Context = createContext<ProjectData | null>(null);
 export function ProjectProvider({ project, children }: { project: ProjectView; children: ReactNode }) {
   const fresh = useRef(false);
   const status = useResource(() => api.status(project.id), [project.id]);
+  const engine = useResource(() => api.engine(project.id), [project.id]);
   const tickets = useResource(() => {
     const askGitHub = fresh.current;
     fresh.current = false;
@@ -43,6 +46,7 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
 
   const online = useStream(api.streamURL(project.id), (areas: Area[]) => {
     if (areas.includes("status")) status.reload();
+    if (areas.includes("engine")) engine.reload();
     if (areas.includes("lessons")) lessons.reload();
     if (areas.includes("events")) events.reload();
     if (areas.includes("plans") || areas.includes("meeting")) plans.reload();
@@ -56,9 +60,9 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
       // A change of the roster reaches the project folder at its end.
       roster.reload();
     }
-    // What a run does to a ticket shows in its state and events first; the
-    // server asks GitHub again once its answer is old.
-    if (areas.includes("tickets") || areas.includes("status") || areas.includes("events")) tickets.reload();
+    // What a run does to a ticket shows in its state, its lanes and events
+    // first; the server asks GitHub again once its answer is old.
+    if ((["tickets", "status", "events", "engine"] as Area[]).some((a) => areas.includes(a))) tickets.reload();
   });
 
   const reloadTickets = tickets.reload;
@@ -68,8 +72,8 @@ export function ProjectProvider({ project, children }: { project: ProjectView; c
   }, [reloadTickets]);
 
   const value = useMemo<ProjectData>(
-    () => ({ project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved }),
-    [project, status, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved],
+    () => ({ project, status, engine, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved }),
+    [project, status, engine, tickets, events, plans, roster, lessons, online, refreshTickets, meetingMoved, settingsMoved],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

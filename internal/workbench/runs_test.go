@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
+	"github.com/silver2dream/ai-workflow-kit/internal/engine"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
 )
@@ -90,17 +92,183 @@ func TestRuns_Stop(t *testing.T) {
 	}
 
 	runningLock(t, root)
-	if w := do(t, s, http.MethodPost, base+"/run/stop", `{}`); w.Code != http.StatusNoContent {
+	w := do(t, s, http.MethodPost, base+"/run/stop", `{}`)
+	if w.Code != http.StatusOK {
 		t.Fatalf("stop: %d %s", w.Code, w.Body)
+	}
+	if v := decode[StopView](t, w); v.Engine || v.Ended {
+		t.Errorf("stop: %+v", v)
 	}
 	if reason, present := stopmark.Read(root); !present || reason != stopmark.ByUser || len(killed) != 0 {
 		t.Errorf("stop: marker %q %v, killed %v", reason, present, killed)
 	}
-	if w := do(t, s, http.MethodPost, base+"/run/stop", `{"now": true}`); w.Code != http.StatusNoContent {
+	w = do(t, s, http.MethodPost, base+"/run/stop", `{"now": true}`)
+	if w.Code != http.StatusOK {
 		t.Fatalf("stop now: %d %s", w.Code, w.Body)
+	}
+	if v := decode[StopView](t, w); v.Engine || !v.Ended {
+		t.Errorf("stop now: %+v", v)
 	}
 	if len(killed) != 1 || killed[0] != os.Getpid() {
 		t.Errorf("killed %v, want the run's process %d", killed, os.Getpid())
+	}
+	if pending, _ := engine.Pending(root); len(pending) != 0 {
+		t.Errorf("the Principal's run was given %+v", pending)
+	}
+}
+
+// engineAt stands in for an engine that runs the project: its run file says
+// it is alive, and, while answer is set, each command in its inbox is
+// answered with what answer says, as the engine answers it.
+type engineAt struct {
+	root   string
+	mu     sync.Mutex
+	answer func(engine.Command) (result, reason string)
+	given  []engine.Command
+}
+
+func runningEngine(t *testing.T, root string) *engineAt {
+	t.Helper()
+	runningLock(t, root)
+	now := time.Now().UTC()
+	run, _ := json.Marshal(engine.RunInfo{PID: os.Getpid(), Host: "here", Started: now, Beat: now})
+	write(t, root, filepath.ToSlash(engine.RunFile), string(run))
+	e := &engineAt{root: root, answer: func(engine.Command) (string, string) { return engine.Applied, "taken" }}
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+			e.mu.Lock()
+			answer := e.answer
+			e.mu.Unlock()
+			if answer == nil {
+				continue
+			}
+			pending, _ := engine.Pending(root)
+			for _, c := range pending {
+				result, reason := answer(c)
+				data, _ := json.Marshal(engine.Reply{ID: c.ID, Kind: c.Kind, Result: result, Reason: reason, At: time.Now().UTC()})
+				out := filepath.Join(root, filepath.FromSlash(engine.OutboxDir))
+				os.MkdirAll(out, 0o755)
+				os.WriteFile(filepath.Join(out, c.ID+".json"), data, 0o644)
+				os.Remove(filepath.Join(root, filepath.FromSlash(engine.InboxDir), c.ID+".json"))
+				e.mu.Lock()
+				e.given = append(e.given, c)
+				e.mu.Unlock()
+			}
+		}
+	}()
+	return e
+}
+
+func (e *engineAt) set(answer func(engine.Command) (string, string)) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.answer = answer
+}
+
+func (e *engineAt) last() engine.Command {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.given) == 0 {
+		return engine.Command{}
+	}
+	return e.given[len(e.given)-1]
+}
+
+// The engine is given a stop through its inbox, as `awkit stop` gives it,
+// and the page is told what it answered. It ends what it runs itself: its
+// process is ended from here only when it does not answer a stop at once.
+func TestRuns_StopTheEngine(t *testing.T) {
+	s, root, base, _, _ := meetingProject(t, "")
+	var killed []int
+	s.opts.Kill = func(pid int) error {
+		killed = append(killed, pid)
+		return nil
+	}
+	s.opts.StopWait = 2 * time.Second
+	e := runningEngine(t, root)
+
+	w := do(t, s, http.MethodPost, base+"/run/stop", `{}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("stop: %d %s", w.Code, w.Body)
+	}
+	if v := decode[StopView](t, w); !v.Engine || !v.Answered || v.Reply == nil || v.Reply.Kind != engine.CommandStop || v.Reply.Reason != "taken" || v.Ended {
+		t.Errorf("stop: %+v", v)
+	}
+	if c := e.last(); c.Kind != engine.CommandStop || c.By != "the workbench" {
+		t.Errorf("the engine was given %+v", c)
+	}
+	if _, present := stopmark.Read(root); !present {
+		t.Error("no marker: a run the engine outlives is not stopped")
+	}
+
+	w = do(t, s, http.MethodPost, base+"/run/stop", `{"now": true}`)
+	if v := decode[StopView](t, w); w.Code != http.StatusOK || !v.Engine || !v.Answered || v.Reply.Kind != engine.CommandStopNow || v.Ended {
+		t.Errorf("stop now: %d %+v", w.Code, v)
+	}
+	if len(killed) != 0 {
+		t.Errorf("the engine's process was ended from here: %v", killed)
+	}
+
+	// A stop the engine refuses is said.
+	e.set(func(engine.Command) (string, string) { return engine.Rejected, "the stop could not be written" })
+	if w := do(t, s, http.MethodPost, base+"/run/stop", `{}`); w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "the stop could not be written") {
+		t.Errorf("refused: %d %s", w.Code, w.Body)
+	}
+
+	// An engine that does not answer: a stop waits for its next step, and
+	// a stop at once ends its process.
+	e.set(nil)
+	s.opts.StopWait = 50 * time.Millisecond
+	w = do(t, s, http.MethodPost, base+"/run/stop", `{}`)
+	if v := decode[StopView](t, w); w.Code != http.StatusOK || !v.Engine || v.Answered || v.Ended || len(killed) != 0 {
+		t.Errorf("stop, no answer: %d %+v, killed %v", w.Code, v, killed)
+	}
+	w = do(t, s, http.MethodPost, base+"/run/stop", `{"now": true}`)
+	if v := decode[StopView](t, w); w.Code != http.StatusOK || !v.Engine || v.Answered || !v.Ended || len(killed) != 1 || killed[0] != os.Getpid() {
+		t.Errorf("stop now, no answer: %d %+v, killed %v", w.Code, v, killed)
+	}
+}
+
+// The page reads the engine's state as `awkit status` does: its run, its
+// lanes with the limits of the project's configuration, its answers.
+func TestEngineView(t *testing.T) {
+	s, root, base, _, _ := meetingProject(t, "")
+	w := do(t, s, http.MethodGet, base+"/engine", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("engine: %d %s", w.Code, w.Body)
+	}
+	for _, want := range []string{`"going":false`, `"lanes":[]`, `"pending":[]`, `"replies":[]`, `"limits":{"failures":3,"reviews":`} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("a project the engine has not run: %s has no %s", w.Body, want)
+		}
+	}
+
+	runningEngine(t, root)
+	now := time.Now().UTC()
+	lane, _ := json.Marshal(engine.Lane{Issue: 5, State: engine.Reviewing, PR: 12, Attempts: engine.Attempts{Reviews: 1}, Since: now})
+	write(t, root, filepath.ToSlash(engine.LanesDir)+"/5.json", string(lane))
+	v := decode[engine.View](t, do(t, s, http.MethodGet, base+"/engine", ""))
+	if !v.Going || v.Run == nil || len(v.Lanes) != 1 || v.Lanes[0].PR != 12 || v.Lanes[0].Attempts.Reviews != 1 {
+		t.Errorf("engine = %+v", v)
+	}
+
+	// The limits are the configuration's; without one that can be read,
+	// the defaults, and the engine's files are shown all the same.
+	write(t, root, ".ai/config.yaml", testConfig+"escalation:\n  max_review_attempts: 5\n")
+	if v := decode[engine.View](t, do(t, s, http.MethodGet, base+"/engine", "")); v.Limits.Reviews != 5 || v.Limits.Conflicts != 5 {
+		t.Errorf("limits = %+v, want the configuration's 5", v.Limits)
+	}
+	write(t, root, ".ai/config.yaml", "version: [")
+	w = do(t, s, http.MethodGet, base+"/engine", "")
+	if v := decode[engine.View](t, w); w.Code != http.StatusOK || v.Limits.Reviews != 3 || len(v.Lanes) != 1 {
+		t.Errorf("a configuration that cannot be read: %d %+v", w.Code, v)
 	}
 }
 

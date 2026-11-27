@@ -51,6 +51,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/projects/{id}/run/stop", s.project(s.handleStopRun))
 	s.mux.HandleFunc("GET /api/projects/{id}/run/logs", s.project(s.handleRunLogs))
 	s.mux.HandleFunc("GET /api/projects/{id}/run/output", s.project(s.handleRunOutput))
+	s.mux.HandleFunc("GET /api/projects/{id}/engine", s.project(s.handleEngine))
 	s.mux.HandleFunc("GET /api/projects/{id}/stream", s.project(s.handleStream))
 	s.mux.HandleFunc("GET /api/projects/{id}/lessons", s.project(s.handleLessons))
 	s.mux.HandleFunc("POST /api/projects/{id}/lessons/{lesson}/approve", s.project(s.handleLessonDecision(guard.ApproveDecision)))

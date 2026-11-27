@@ -48,6 +48,9 @@ type Ticket struct {
 type Tickets struct {
 	Open []Ticket `json:"open"`
 	Done int      `json:"done"`
+	// DoneTitles are the titles of the tickets that are done, by number:
+	// what the engine finished is shown by its name too.
+	DoneTitles map[int]string `json:"done_titles,omitempty"`
 }
 
 // In returns the open tickets of a stage.
@@ -171,24 +174,28 @@ func CollectTickets(ctx context.Context, labels config.Labels, list IssueLister)
 	// label in its place (no change was needed). A list that cannot be had is
 	// not worth failing the whole view for: the open tickets are what a
 	// person came for.
-	done := map[int]bool{}
+	done := map[int]string{}
 	for _, label := range []string{labels.Task, labels.Completed} {
 		if label == "" {
 			continue
 		}
-		raw, err := list(ctx, label, "closed", "number")
+		raw, err := list(ctx, label, "closed", "number,title")
 		if err != nil {
 			continue
 		}
 		var closed []struct {
-			Number int `json:"number"`
+			Number int    `json:"number"`
+			Title  string `json:"title"`
 		}
 		if json.Unmarshal(raw, &closed) == nil {
 			for _, issue := range closed {
-				done[issue.Number] = true
+				done[issue.Number] = issue.Title
 			}
 		}
 	}
 	tickets.Done = len(done)
+	if len(done) > 0 {
+		tickets.DoneTitles = done
+	}
 	return tickets, nil
 }
