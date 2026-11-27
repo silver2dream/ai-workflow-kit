@@ -45,6 +45,8 @@ export interface Config {
   review: { score_threshold: number | null; merge_strategy: string };
   retries: { review_attempts: number | null; worker: number | null };
   verify_minutes: number | null;
+  /** How much the engine does at once: null is one step at a time; a backend left out has no limit of its own. */
+  engine: { max_parallel: number | null; max_per_backend: Record<string, number> };
 }
 
 export type AgentRoleName = "reviewer" | "resolver";
@@ -77,6 +79,7 @@ export interface Defaults {
     review_attempts: number;
     worker_retries: number;
     verify_minutes: number;
+    max_parallel: number;
     backends: string[];
     strategies: string[];
     efforts: string[];

@@ -79,3 +79,31 @@ func TestMergeConfig_TheAgents(t *testing.T) {
 		t.Errorf("a limit taken out is put back: %v", *merged.Agents.Reviewer.USD)
 	}
 }
+
+// How much the engine does at once is merged number by number, backend by
+// backend: what the person changed, over what the branch has.
+func TestMergeConfig_TheEngine(t *testing.T) {
+	was := readConfig(t, configFile)
+	was.Engine.MaxPerBackend = map[string]int{"codex": 2, "claude-code": 1}
+	mine := readConfig(t, configFile)
+	mine.Engine = Engine{MaxParallel: intOf(4), MaxPerBackend: map[string]int{"codex": 3, "claude-code": 1}}
+	theirs := readConfig(t, configFile)
+	theirs.Engine = Engine{MaxParallel: intOf(2), MaxPerBackend: map[string]int{"codex": 2}}
+	merged, err := mergeConfig(was, mine, theirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Mine changed the number and codex; theirs took claude-code out.
+	if merged.Engine.MaxParallel == nil || *merged.Engine.MaxParallel != 4 || len(merged.Engine.MaxPerBackend) != 1 || merged.Engine.MaxPerBackend["codex"] != 3 {
+		t.Errorf("merged = %+v %v", merged.Engine, merged.Engine.MaxPerBackend)
+	}
+	// What only theirs changed is theirs; a limit only mine took out goes.
+	mine = readConfig(t, configFile)
+	mine.Engine.MaxPerBackend = map[string]int{"codex": 2}
+	theirs = readConfig(t, configFile)
+	theirs.Engine = Engine{MaxParallel: intOf(5), MaxPerBackend: map[string]int{"codex": 2, "claude-code": 1}}
+	merged, _ = mergeConfig(was, mine, theirs)
+	if *merged.Engine.MaxParallel != 5 || len(merged.Engine.MaxPerBackend) != 1 || merged.Engine.MaxPerBackend["codex"] != 2 {
+		t.Errorf("merged = %+v %v", merged.Engine, merged.Engine.MaxPerBackend)
+	}
+}

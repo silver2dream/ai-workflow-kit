@@ -36,16 +36,20 @@ awkit plan approve <plan>
 
 awkit run
   ├─ kickoff：啟動前的檢查（PreflightChecker.steps）、lock、建立標籤、清掉上次的 STOP 標記
-  └─ engine.Serve：run 檔的心跳、收件匣的停止指令；迴圈（Engine.Run）重複：
-       Reconcile                 → 人在 GitHub 上做的事轉成線的轉換、匯入新票
-       Next                      → Precheck（analyzer）→ 手上的線 → NextTicket（analyzer）
-       Step
-         ├─ dispatch_worker → worker.DispatchWorker → worker.RunIssue（實作者）
+  └─ engine.Serve：run 檔的心跳（同時在跑的每一步）、收件匣的停止指令；迴圈（Engine.Run）一輪一輪做，
+     開始時與每有一步做完時各一輪：
+       Reconcile                 → 人在 GitHub 上做的事轉成線的轉換、匯入新票（正在跑的線不碰）
+       Precheck（analyzer）       → 停止、輪數、連續失敗
+       手上的線 → Candidates（analyzer） → 能開始的都開始：最多 engine.max_parallel 步、
+                                    各 backend 最多 engine.max_per_backend 步、審查與解衝突一次一個
+       每一步在自己的 goroutine 裡跑，做完交回迴圈：
+         ├─ dispatch_worker → worker.DispatchWorker → worker.RunIssue（實作者，各自的程序）
          ├─ check_result    → worker.CheckResult
          ├─ review_pr       → ReviewStep：engine 跑測試 → 唯讀的 reviewer → reviewer.SubmitReview（驗證、合併或退回）
          ├─ dispatch_worker（解衝突）→ ResolveStep：engine rebase → resolver 改檔 → engine 檢查、push
          └─ none / all_complete → workflow.StopWorkflow（寫 STOP 標記與報告）
        每個轉換寫進事件（events/engine.jsonl），再把工單的標籤改成線的投影
+       AWK 自己下的 git 指令都先拿 repo 的鎖（gitlock），各程序的 Worker 不會同時改主 repo 的 refs 與設定
 
 AWKIT_ENGINE=principal awkit run（保留一個版本）
   └─ 迴圈：啟動一個 Principal session（claude），結束後看 STOP 標記；沒有就再開一個
@@ -133,7 +137,7 @@ engine 當掉重開，線從事件重建，接著做手上那一步。主控模�
 | `ticket`、`task` | `awk-ticket` 區塊的讀取與驗證（schema 2 的 `paths` 與 `risk`、路徑的 glob 與交集；schema 1 照讀）；建立票券 |
 | `kickoff` | `awkit run`：啟動前的檢查、lock、PTY、log |
 | `analyzer` | 決策引擎：從 GitHub 的狀態決定下一步，計數迴圈與連續失敗 |
-| `engine` | 取代 LLM 主控的確定性 engine（[Agent Engine](specs/agent-engine/README.md) P1；`awkit run` 預設由它跑）：線的狀態機（`lane.go`）、狀態與 GitHub 標籤的對照（`labels.go`，投影與讀回）、事件與快照（`journal.go`，事件在 `events/engine.jsonl`，快照在 `.ai/state/engine/lanes/`）、審查步驟（`review.go`：自己跑測試、組 reviewer 的 context、唯讀的 reviewer、經 `reviewer.SubmitReview` 做決定，回傳線的轉換）、解衝突步驟（`resolve.go`：engine 自己 rebase 與 push，resolver 只改衝突檔案，engine 檢查標記與範圍）、主迴圈（`engine.go`：依線決定下一步，順序照 analyzer；投影標籤、轉人留言；每一輪先對帳，人在 GitHub 上做的事轉成線的轉換）、排程（`schedule.go`：哪些線佔名額、哪些佔住工單的 `paths`、依賴繞成的圈；可以開工的工單問 analyzer 的 `Candidates`，跳過路徑被佔住的）、實作者步驟（`implement.go`：P1 沿用 worker）、GitHub 讀寫（`github.go`）、當作專案的 run 執行（`process.go`：心跳與正在做的事寫進 `.ai/state/engine/run.json`）、指令的收件匣與回覆（`inbox.go`）、影子（`shadow.go`：每一步讓主控的 analyzer 對同一份狀態只算不做，比對兩邊的決定，寫 `engine_shadow` 事件；`awkit status` 顯示最近一次的比對）、給別人讀的狀態（`view.go`：`Look` 把 run 檔、線、上限、最近的 guardrail 判定、影子比對與指令的回覆組成一份，工作台的執行頁與 `awkit status` 讀同一份）。`awkit run` 預設由它跑，`AWKIT_ENGINE=shadow` 另外開著影子，`AWKIT_ENGINE=principal` 改用主控（保留一個版本，`cmd/awkit/run_engine.go`） |
+| `engine` | 取代 LLM 主控的確定性 engine（[Agent Engine](specs/agent-engine/README.md) P1；`awkit run` 預設由它跑）：線的狀態機（`lane.go`）、狀態與 GitHub 標籤的對照（`labels.go`，投影與讀回）、事件與快照（`journal.go`，事件在 `events/engine.jsonl`，快照在 `.ai/state/engine/lanes/`）、審查步驟（`review.go`：自己跑測試、組 reviewer 的 context、唯讀的 reviewer、經 `reviewer.SubmitReview` 做決定，回傳線的轉換）、解衝突步驟（`resolve.go`：engine 自己 rebase 與 push，resolver 只改衝突檔案，engine 檢查標記與範圍）、主迴圈（`engine.go`：依線決定下一步，順序照 analyzer；投影標籤、轉人留言；每一輪先對帳，人在 GitHub 上做的事轉成線的轉換）、排程（`schedule.go`：哪些線佔名額、哪些佔住工單的 `paths`、依賴繞成的圈；可以開工的工單問 analyzer 的 `Candidates`，跳過路徑被佔住的）、多條線同時跑（`parallel.go`：一輪一輪做，能開始的步驟都開始、各在自己的 goroutine 裡跑；`engine.max_parallel`、`engine.max_per_backend`、審查與解衝突一次一個；Worker 的輸出每行帶工單編號）、實作者步驟（`implement.go`：P1 沿用 worker）、GitHub 讀寫（`github.go`）、當作專案的 run 執行（`process.go`：心跳與同時在跑的每一步寫進 `.ai/state/engine/run.json`）、指令的收件匣與回覆（`inbox.go`）、影子（`shadow.go`：每一步讓主控的 analyzer 對同一份狀態只算不做，比對兩邊的決定，寫 `engine_shadow` 事件；`awkit status` 顯示最近一次的比對）、給別人讀的狀態（`view.go`：`Look` 把 run 檔、線、上限、最近的 guardrail 判定、影子比對與指令的回覆組成一份，工作台的執行頁與 `awkit status` 讀同一份）。`awkit run` 預設由它跑，`AWKIT_ENGINE=shadow` 另外開著影子，`AWKIT_ENGINE=principal` 改用主控（保留一個版本，`cmd/awkit/run_engine.go`） |
 | `agent` | engine 的 agent runtime（engine 的審查者與解衝突者經由它跑）：角色設定的預設與上限（`role.go`）、從設定檔解出三個角色的設定（`config.go` 的 `FromConfig`：engine 啟動、`awkit validate` 與設定頁存檔前都用它）、`Run(ctx, envelope) → Result`、schema 核對與重問、逾時連同子程序一起結束、每次派工的 `agent_run` 事件（`runtime.go`）、Claude Code 與 Codex 的轉接器（`claude.go`、`codex.go`）、每個角色的最少 context、依來源推導的信任等級、遮蔽、資料區塊與信封存檔（`context.go`） |
 | `worker` | 派工、runner、backend、安全檢查、結果檢查 |
 | `guard` | guardrail 共用的部分：判定（`Verdict`，寫成 `guardrail_verdict` 事件）、帶來源與信任等級的 context 片段、清理看不見的字元、規則層注入偵測（`injection.go`，含中英文；語料在 `testdata/injection/`）、把不可信的片段包成資料區塊。Worker 的 prompt 由它組成，被擋下的票不派出去（`blocked`）。工具政策（`policy.go`、`shell.go`：拆開組合指令與 `sh -c`、`cmd /c` 這類包裝，依角色決定）由 `awkit guard tool` 當作 Claude Code 的 PreToolUse hook 執行（`hook.go`）：awkit 啟動的每一個 session 都在啟動時的設定裡帶著它，指令寫的是這個 awkit 的完整路徑。Claude 的 Worker 與 engine 的 agent 只帶 awkit 寫的設定（`--settings`、`--setting-sources ""`、`dontAsk`）；`AWKIT_ENGINE=principal` 的主控以 `--settings` 加在專案的設定之上。專案自己的設定檔裡沒有它，人自己開的 session 不受它管。`env.go` 決定 agent 拿到哪些環境變數。`outbound.go` 在每一個寫到 GitHub 的 `gh` 呼叫送出前掃描憑證與個資（`GHGate`：`ghutil.RunWithRetry`、`landing.GH` 與 `awkit lessons promote` 都經過它；被擋的錯誤包著 `ErrBlocked`，Worker 的 pull request 被擋時結果是 `blocked`、階段 `guard_output`）；呼叫屬於哪個專案與工單由 `context` 裡的 `Scope` 帶著。`diff.go` 在 Worker 的變更裡找可疑的模式，只記錄（`flag`）。教訓的篩檢與隔離在 `lessons/screen.go`。見 [Agent Engine](specs/agent-engine/design.md) §9 |
@@ -149,6 +153,7 @@ engine 當掉重開，線從事件重建，接著做手上那一步。主控模�
 | `audit`、`evaluate` | `awkit evaluate`：給 CI 用的檢查 |
 | `repo` | 語言與工具鏈的對照 |
 | `ghutil`、`claudecli` | 帶重試的 `gh` 呼叫；單輪 `claude` 呼叫的參數 |
+| `gitlock` | repo 的 git 鎖：engine 的線同時跑，每個 Worker 是自己的程序，共用主 repo 的 `.git`。AWK 自己下的 git 指令（Worker、審查、解衝突、教訓、文件落地）都先拿鎖再跑：作業系統的檔案鎖（Windows `LockFileEx`、其他 `flock`），鎖檔在 repo 共用的 git 目錄裡（worktree 與主 repo 同一把，submodule 另一把），程序結束就放掉；一次只鎖一個指令。碰到 git 自己的鎖衝突（agent 或人在用）等一下再試；刪「留下來的」`index.lock` 也在鎖裡做 |
 | `updatecheck`、`buildinfo`、`util` | 版本檢查、版本號、跨平台的小工具 |
 
 ## kit 怎麼出貨
@@ -177,5 +182,5 @@ engine 當掉重開，線從事件重建，接著做手上那一步。主控模�
 
 - [貢獻](contributing.md)：建置、測試、commit 與發版
 - [學習迴圈的設計](specs/learning-loop/design.md)
-- [Agent Engine](specs/agent-engine/README.md)：以確定性的 engine 取代 LLM 主控、平行的線與合併佇列、角色設定、分層的 guardrail、容器隔離（已核可，分階段實作中；本頁描述的是已經做到的部分：P1 起 `awkit run` 由 engine 跑，平行的線、合併佇列與容器還沒有）
+- [Agent Engine](specs/agent-engine/README.md)：以確定性的 engine 取代 LLM 主控、平行的線與合併佇列、角色設定、分層的 guardrail、容器隔離（已核可，分階段實作中；本頁描述的是已經做到的部分：P1 起 `awkit run` 由 engine 跑，P2 起多條線同時跑；合併佇列與容器還沒有）
 - [Skills 與規則](../user/skills.md)：kit 的 skill 怎麼寫

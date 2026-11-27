@@ -199,7 +199,7 @@ func TestEngine_PathsALaneHolds(t *testing.T) {
 		}
 		for _, max := range f.an.maxAsked {
 			if max != 1 {
-				t.Errorf("%s: %d tickets asked for; one lane at a time until 2.2b", tt.name, max)
+				t.Errorf("%s: %d tickets asked for; one lane at a time by default (engine.max_parallel)", tt.name, max)
 			}
 		}
 	}

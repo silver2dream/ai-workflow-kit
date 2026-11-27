@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 )
 
 // WorkerPreflight performs pre-flight checks for worker execution
@@ -81,13 +82,8 @@ func (p *WorkerPreflight) Check(ctx context.Context) (*PreflightResult, error) {
 // checkRoot performs preflight for root type
 func (p *WorkerPreflight) checkRoot(ctx context.Context) (*PreflightResult, error) {
 	// Sync and update submodules
-	cmd := exec.CommandContext(ctx, "git", "submodule", "sync", "--recursive")
-	cmd.Dir = p.StateRoot
-	_ = cmd.Run()
-
-	cmd = exec.CommandContext(ctx, "git", "submodule", "update", "--init", "--recursive")
-	cmd.Dir = p.StateRoot
-	if err := cmd.Run(); err != nil {
+	_ = gitlock.Run(ctx, p.StateRoot, 0, "submodule", "sync", "--recursive")
+	if err := gitlock.Run(ctx, p.StateRoot, 0, "submodule", "update", "--init", "--recursive"); err != nil {
 		return &PreflightResult{
 			Passed:  false,
 			Message: fmt.Sprintf("failed to update submodules: %v", err),
@@ -166,13 +162,11 @@ func (p *WorkerPreflight) checkSubmodule(ctx context.Context) (*PreflightResult,
 
 // isWorkingTreeDirty checks if a working tree has uncommitted changes
 func (p *WorkerPreflight) isWorkingTreeDirty(ctx context.Context, dir string) (bool, string) {
-	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
-	cmd.Dir = dir
-	output, err := cmd.Output()
+	output, err := gitlock.Output(ctx, dir, 0, "status", "--porcelain")
 	if err != nil {
 		return false, ""
 	}
-	outputStr := strings.TrimSpace(string(output))
+	outputStr := strings.TrimSpace(output)
 	if outputStr == "" {
 		return false, ""
 	}
@@ -181,15 +175,13 @@ func (p *WorkerPreflight) isWorkingTreeDirty(ctx context.Context, dir string) (b
 
 // getSubmodulePaths returns the paths of all submodules
 func (p *WorkerPreflight) getSubmodulePaths(ctx context.Context) []string {
-	cmd := exec.CommandContext(ctx, "git", "config", "-f", ".gitmodules", "--get-regexp", "path")
-	cmd.Dir = p.StateRoot
-	output, err := cmd.Output()
+	output, err := gitlock.Output(ctx, p.StateRoot, 0, "config", "-f", ".gitmodules", "--get-regexp", "path")
 	if err != nil {
 		return nil
 	}
 
 	var paths []string
-	for _, line := range strings.Split(string(output), "\n") {
+	for _, line := range strings.Split(output, "\n") {
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			paths = append(paths, parts[1])
@@ -200,13 +192,11 @@ func (p *WorkerPreflight) getSubmodulePaths(ctx context.Context) []string {
 
 // getRemoteURL gets the origin remote URL
 func (p *WorkerPreflight) getRemoteURL(ctx context.Context, dir string) string {
-	cmd := exec.CommandContext(ctx, "git", "remote", "get-url", "origin")
-	cmd.Dir = dir
-	output, err := cmd.Output()
+	output, err := gitlock.Output(ctx, dir, 0, "remote", "get-url", "origin")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(output))
+	return strings.TrimSpace(output)
 }
 
 // checkRemoteAccessible checks if a remote is accessible (with caching)
@@ -220,8 +210,7 @@ func (p *WorkerPreflight) checkRemoteAccessible(ctx context.Context, remoteURL s
 	}
 
 	// Try to reach remote
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", remoteURL, "HEAD")
-	err := cmd.Run()
+	err := gitlock.Run(ctx, p.StateRoot, 0, "ls-remote", "--exit-code", remoteURL, "HEAD")
 	accessible := err == nil
 
 	// Update cache

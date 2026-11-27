@@ -19,8 +19,8 @@ type Action struct {
 // This method is safe for concurrent use.
 func (m *Manager) AppendAction(sessionID, actionType string, data interface{}) error {
 	// Lock to prevent concurrent read-modify-write race conditions
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	logMu.Lock()
+	defer logMu.Unlock()
 
 	logFile := filepath.Join(m.SessionsDir(), sessionID+".json")
 

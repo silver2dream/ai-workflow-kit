@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
 
@@ -37,11 +38,20 @@ const (
 	maxFindingsChars = 2000
 )
 
+// learningMu keeps what learns from reviews from running into itself: the
+// feedback log, the lessons and what was synced of the maintainers' activity
+// are each read, changed and written back. The engine's lanes run side by
+// side: a review closes its loop while another lane is about to be
+// dispatched (LearnBeforeDispatch), and the one waits for the other.
+var learningMu sync.Mutex
+
 // closeLearningLoop records a terminal review outcome in the feedback log,
 // settles the lessons that were in the Worker's prompt and, when the outcome
 // is a merge, distills the cases the merge resolved. Every step is
 // best-effort and none of them affects the review verdict.
 func closeLearningLoop(ctx context.Context, opts SubmitReviewOptions, o learningOutcome) {
+	learningMu.Lock()
+	defer learningMu.Unlock()
 	merged := o.Outcome == lessons.OutcomeMerged
 	findings := strings.TrimSpace(o.Findings)
 
@@ -288,9 +298,9 @@ func worktreeHead(worktreePath string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", worktreePath, "rev-parse", "--verify", "HEAD").Output()
+	out, err := gitlock.Output(ctx, worktreePath, 0, "rev-parse", "--verify", "HEAD")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(out)
 }

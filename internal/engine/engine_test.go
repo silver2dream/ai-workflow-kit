@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	"fmt"
 	"io"
@@ -18,8 +19,10 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
-// fakeGitHub keeps tickets in memory, and what was done to them.
+// fakeGitHub keeps tickets in memory, and what was done to them. Steps that
+// run at once use it at once.
 type fakeGitHub struct {
+	mu        sync.Mutex
 	tickets   map[int]*Ticket
 	mergeable map[int]string // by pull request; "" is MERGEABLE
 	comments  []string
@@ -35,6 +38,8 @@ func newFakeGitHub(tickets ...Ticket) *fakeGitHub {
 }
 
 func (g *fakeGitHub) Tickets(ctx context.Context) ([]Ticket, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	var out []Ticket
 	for _, t := range g.tickets {
 		if !t.Closed && slices.Contains(t.Labels, "ai-task") {
@@ -47,6 +52,8 @@ func (g *fakeGitHub) Tickets(ctx context.Context) ([]Ticket, error) {
 // pendingOf are the tickets the analyzer would look at for one to start:
 // open, by number, and none that a label says is in the workflow's hands.
 func (g *fakeGitHub) pendingOf() []Ticket {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	var out []Ticket
 	for _, t := range g.tickets {
 		held := slices.ContainsFunc(t.Labels, func(l string) bool {
@@ -61,6 +68,8 @@ func (g *fakeGitHub) pendingOf() []Ticket {
 }
 
 func (g *fakeGitHub) Ticket(ctx context.Context, issue int) (Ticket, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	t, ok := g.tickets[issue]
 	if !ok {
 		return Ticket{}, fmt.Errorf("no issue #%d", issue)
@@ -69,6 +78,8 @@ func (g *fakeGitHub) Ticket(ctx context.Context, issue int) (Ticket, error) {
 }
 
 func (g *fakeGitHub) Edit(ctx context.Context, issue int, ops Ops) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	t := g.tickets[issue]
 	for _, r := range ops.Remove {
 		t.Labels = slices.DeleteFunc(t.Labels, func(l string) bool { return l == r })
@@ -85,11 +96,15 @@ func (g *fakeGitHub) Edit(ctx context.Context, issue int, ops Ops) error {
 }
 
 func (g *fakeGitHub) Comment(ctx context.Context, issue int, body string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.comments = append(g.comments, fmt.Sprintf("#%d %s", issue, body))
 	return nil
 }
 
 func (g *fakeGitHub) Mergeable(ctx context.Context, pr int) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if s := g.mergeable[pr]; s != "" {
 		return s, nil
 	}
@@ -97,6 +112,8 @@ func (g *fakeGitHub) Mergeable(ctx context.Context, pr int) (string, error) {
 }
 
 func (g *fakeGitHub) labels(issue int) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	t := g.tickets[issue]
 	s := strings.Join(t.Labels, ",")
 	if t.Closed {
@@ -728,6 +745,21 @@ func TestNew(t *testing.T) {
 	}
 	if _, err := New(Options{Root: t.TempDir()}); err == nil {
 		t.Error("an engine without a configuration")
+	}
+	if e.maxParallel() != 1 || len(e.MaxPerBackend) != 0 {
+		t.Errorf("one step at a time by default: %d, %v", e.maxParallel(), e.MaxPerBackend)
+	}
+
+	// How much at once, and the backends the steps are counted by.
+	root = t.TempDir()
+	writeFile(t, root+"/.ai/config.yaml", reviewConfig+"worker:\n  backend: codex\nagents:\n  resolver: {backend: claude-code}\nengine:\n  max_parallel: 3\n  max_per_backend: {codex: 2}\n")
+	e, err = New(Options{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Journal.Close()
+	if e.maxParallel() != 3 || e.MaxPerBackend["codex"] != 2 || e.Backends != (Backends{Implementer: "codex", Reviewer: "claude-code", Resolver: "claude-code"}) {
+		t.Errorf("engine: %d, %v, %+v", e.maxParallel(), e.MaxPerBackend, e.Backends)
 	}
 }
 

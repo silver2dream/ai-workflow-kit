@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
@@ -44,6 +45,8 @@ type WorkerSteps struct {
 	// `awkit dispatch-worker` has it.
 	MaxRetries int
 	// Log is where what the Worker's dispatch reports goes; nil is stderr.
+	// What a Worker prints goes there too, each line with its ticket's
+	// number: Workers run side by side.
 	Log io.Writer
 
 	// Replaced in tests.
@@ -53,9 +56,14 @@ type WorkerSteps struct {
 	learn     func(ctx context.Context, root string, timeout time.Duration, log io.Writer)
 	failCount func(root string, issue int) int
 	stage     func(root string, issue int) string
+
+	// once sets the defaults once: Workers run side by side.
+	once sync.Once
 }
 
-func (w *WorkerSteps) defaults() {
+func (w *WorkerSteps) defaults() { w.once.Do(w.setDefaults) }
+
+func (w *WorkerSteps) setDefaults() {
 	if w.GHTimeout == 0 {
 		w.GHTimeout = 30 * time.Second
 	}
@@ -107,9 +115,12 @@ func (w *WorkerSteps) Implement(ctx context.Context, lane Lane) (Transition, err
 	// Maintainers review on their own schedule: what they wrote since the
 	// last look is taken in before the Worker's prompt is built.
 	w.learn(ctx, w.Root, w.GHTimeout, w.Log)
+	output := newPrefixWriter(w.Log, fmt.Sprintf("[#%d] ", lane.Issue))
+	defer output.Flush()
 	opts := worker.DispatchOptions{
 		IssueNumber: lane.Issue, StateRoot: w.Root,
 		GHTimeout: w.GHTimeout, WorkerTimeout: w.WorkerTimeout, MaxRetries: w.MaxRetries,
+		Output: output,
 	}
 	if cfg, err := analyzer.LoadConfig(config.Path(w.Root)); err == nil {
 		opts.HookRunner = hooks.NewHookRunner(cfg.Hooks, w.Root, w.Log)

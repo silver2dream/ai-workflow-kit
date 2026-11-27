@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 	"github.com/silver2dream/ai-workflow-kit/internal/repo"
@@ -265,29 +265,18 @@ func buildTestCommand(repoPath, repoType, testCmd string) string {
 func rebuildWorktree(ctx context.Context, stateRoot string, issueNumber, prNumber int, timeout time.Duration) (string, error) {
 	wtPath := filepath.Join(stateRoot, ".worktrees", fmt.Sprintf("issue-%d", issueNumber))
 
-	// First, fetch latest refs
-	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout)
-	defer fetchCancel()
-	fetchCmd := exec.CommandContext(fetchCtx, "git", "fetch", "--all")
-	fetchCmd.Dir = stateRoot
-	_ = fetchCmd.Run() // best-effort
+	// First, fetch latest refs (best effort). Every git command here holds
+	// the repository's lock: lanes run side by side (internal/gitlock).
+	_ = gitlock.Run(ctx, stateRoot, timeout, "fetch", "--all")
 
 	// Try branch name convention: feat/ai-issue-{N}
 	branchName := fmt.Sprintf("feat/ai-issue-%d", issueNumber)
 
 	// Try to add worktree from the branch
-	addCtx, addCancel := context.WithTimeout(ctx, timeout)
-	defer addCancel()
-	addCmd := exec.CommandContext(addCtx, "git", "worktree", "add", wtPath, branchName)
-	addCmd.Dir = stateRoot
-	if err := addCmd.Run(); err != nil {
+	if err := gitlock.Run(ctx, stateRoot, timeout, "worktree", "add", wtPath, branchName); err != nil {
 		// Try remote tracking branch
 		remoteBranch := fmt.Sprintf("origin/%s", branchName)
-		addCtx2, addCancel2 := context.WithTimeout(ctx, timeout)
-		defer addCancel2()
-		addCmd2 := exec.CommandContext(addCtx2, "git", "worktree", "add", wtPath, remoteBranch)
-		addCmd2.Dir = stateRoot
-		if err2 := addCmd2.Run(); err2 != nil {
+		if err2 := gitlock.Run(ctx, stateRoot, timeout, "worktree", "add", wtPath, remoteBranch); err2 != nil {
 			return "", fmt.Errorf("failed to rebuild worktree from branch %s or %s: %v / %v", branchName, remoteBranch, err, err2)
 		}
 	}

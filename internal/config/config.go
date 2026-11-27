@@ -43,7 +43,22 @@ type Config struct {
 	Hooks      Hooks      `yaml:"hooks"`
 	Worker     Worker     `yaml:"worker"`
 	Lessons    Lessons    `yaml:"lessons"`
+	Engine     Engine     `yaml:"engine"`
 }
+
+// Engine is how awkit's engine runs the work (design.md §5.3).
+type Engine struct {
+	// MaxParallel is how many steps run at once: Workers that write, the
+	// review, the resolution. 1 (the default) is one lane at a time.
+	MaxParallel int `yaml:"max_parallel"`
+	// MaxPerBackend bounds the steps one agent backend runs at once, by its
+	// name (AgentBackends). A backend it does not name is bounded by
+	// MaxParallel alone.
+	MaxPerBackend map[string]int `yaml:"max_per_backend"`
+}
+
+// AgentBackends are the backends an agent runs on.
+var AgentBackends = []string{"claude-code", "codex"}
 
 // Project says what the project is.
 type Project struct {
@@ -524,6 +539,7 @@ func (c *Config) applyDefaults() {
 	if c.Worker.Backend == "" {
 		c.Worker.Backend = "codex"
 	}
+	positive(&c.Engine.MaxParallel, 1)
 	if c.Worker.ClaudeCode.Model == "" {
 		c.Worker.ClaudeCode.Model = "sonnet"
 	}

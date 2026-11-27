@@ -82,14 +82,14 @@ func TestLook_NoEngine(t *testing.T) {
 }
 
 // The lanes shown are those not over and those that ended in the last run,
-// the one the engine is on first, then the ones that need a person, the rest
-// by number, and what ended last at the end, the latest first. The step is
-// the lane's only while the run goes.
+// the ones the engine is on first, then the ones that need a person, the
+// rest by number, and what ended last at the end, the latest first. A step is
+// its lane's only while the run goes.
 func TestLook_TheLanesOfTheLastRun(t *testing.T) {
 	root := t.TempDir()
 	now := time.Now().UTC()
 	started := now.Add(-time.Hour)
-	run := &RunInfo{PID: os.Getpid(), Started: started, Beat: now, Step: &StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: now.Add(-time.Minute)}}
+	run := &RunInfo{PID: os.Getpid(), Started: started, Beat: now, Steps: []StepInfo{{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: now.Add(-time.Minute)}}}
 	writeView(t, root, run,
 		Lane{Issue: 3, State: Ready, Since: started.Add(time.Minute)},
 		Lane{Issue: 5, State: Reviewing, PR: 12, Attempts: Attempts{Reviews: 1}, Since: now.Add(-2 * time.Minute)},
@@ -100,7 +100,7 @@ func TestLook_TheLanesOfTheLastRun(t *testing.T) {
 		Lane{Issue: 1, State: Blocked, Since: started.Add(-24 * time.Hour)}, // not over, however old
 	)
 	v := Look(root, nil, now)
-	if !v.Going || v.Run == nil || v.Run.Step.PR != 12 {
+	if !v.Going || v.Run == nil || len(v.Run.Steps) != 1 || v.Run.Steps[0].PR != 12 {
 		t.Fatalf("view = %+v", v)
 	}
 	if got, want := fmt.Sprint(issues(v.Lanes)), "[5 7 1 3 9 8]"; got != want {
@@ -128,8 +128,9 @@ func TestLook_TheLanesOfTheLastRun(t *testing.T) {
 		"ended":    func(r *RunInfo) { r.Ended = now },
 		"gone":     func(r *RunInfo) { r.PID = 1 << 30 },
 		"no beat":  func(r *RunInfo) { r.Beat = now.Add(-time.Hour) },
-		"settling": func(r *RunInfo) { r.Step = &StepInfo{Action: analyzer.ActionNone, Issue: 5} },
-		"the end":  func(r *RunInfo) { r.Step = &StepInfo{Action: analyzer.ActionAllComplete} },
+		"settling": func(r *RunInfo) { r.Steps = []StepInfo{{Action: analyzer.ActionNone, Issue: 5}} },
+		"the end":  func(r *RunInfo) { r.Steps = []StepInfo{{Action: analyzer.ActionAllComplete}} },
+		"none":     func(r *RunInfo) { r.Steps = nil },
 	} {
 		r := *run
 		change(&r)
@@ -148,11 +149,68 @@ func TestLook_TheLanesOfTheLastRun(t *testing.T) {
 	// The engine resolves and writes as well as reviews.
 	for _, action := range []string{analyzer.ActionDispatchWorker, analyzer.ActionCheckResult} {
 		r := *run
-		r.Step = &StepInfo{Action: action, Issue: 3, Since: now}
+		r.Steps = []StepInfo{{Action: action, Issue: 3, Since: now}}
 		writeView(t, root, &r)
 		if v := Look(root, nil, now); v.Lanes[0].Issue != 3 || v.Lanes[0].Step == nil || v.Lanes[0].Step.Action != action {
 			t.Errorf("%s: lanes = %v", action, issues(v.Lanes))
 		}
+	}
+
+	// Lanes run side by side: each one the engine is on has its step, and
+	// they come first, by number.
+	r := *run
+	r.Steps = []StepInfo{
+		{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: now.Add(-time.Minute)},
+		{Action: analyzer.ActionDispatchWorker, Issue: 3, Since: now.Add(-3 * time.Minute)},
+		{Action: analyzer.ActionCheckResult, Issue: 1, Since: now},
+	}
+	writeView(t, root, &r)
+	v = Look(root, nil, now)
+	if got := fmt.Sprint(issues(v.Lanes)); got != "[1 3 5 7 9 8]" {
+		t.Errorf("three steps: lanes = %s", got)
+	}
+	for _, l := range v.Lanes[:3] {
+		if l.Step == nil || l.Step.Issue != l.Issue {
+			t.Errorf("three steps: #%d is on %+v", l.Issue, l.Step)
+		}
+	}
+	if v.Lanes[1].Step.Action != analyzer.ActionDispatchWorker || v.Lanes[2].Step.PR != 12 {
+		t.Errorf("three steps: the steps are not their lanes': %+v, %+v", v.Lanes[1].Step, v.Lanes[2].Step)
+	}
+}
+
+// A run file an awkit before task 2.2b wrote names one step: it is read as
+// the steps.
+func TestReadRun_OneStepOfAnEarlierAwkit(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	dir := filepath.Join(root, filepath.FromSlash(layout.StateDir), "engine")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	earlier := fmt.Sprintf(`{"pid": 7, "host": "h", "started": %q, "beat": %q, "step": {"action": "review_pr", "issue": 5, "pr": 12, "since": %q}}`,
+		now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(earlier), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, ok := ReadRun(root)
+	if !ok || r.Step != nil || len(r.Steps) != 1 || r.Steps[0] != (StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: now}) {
+		t.Errorf("run = %+v (%v)", r, ok)
+	}
+	// One that names its steps keeps them, and none is none.
+	both := fmt.Sprintf(`{"pid": 7, "steps": [{"action": "check_result", "issue": 3, "since": %q}], "step": {"action": "review_pr", "issue": 5, "since": %q}}`,
+		now.Format(time.RFC3339), now.Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(both), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := ReadRun(root); !ok || r.Step != nil || len(r.Steps) != 1 || r.Steps[0].Issue != 3 {
+		t.Errorf("run = %+v (%v)", r, ok)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(`{"pid": 7}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := ReadRun(root); !ok || r.Steps != nil {
+		t.Errorf("run = %+v (%v)", r, ok)
 	}
 }
 

@@ -32,8 +32,8 @@ type CurrentSessionInfo struct {
 // This method is safe for concurrent use.
 func (m *Manager) InitPrincipal() (string, error) {
 	// Lock to prevent concurrent session initialization race conditions
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	logMu.Lock()
+	defer logMu.Unlock()
 
 	// Ensure directories exist
 	if err := os.MkdirAll(m.SessionsDir(), 0755); err != nil {
@@ -98,8 +98,8 @@ func (m *Manager) InitPrincipal() (string, error) {
 // GetCurrentSessionID returns the current Principal session ID
 // This method is safe for concurrent use.
 func (m *Manager) GetCurrentSessionID() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	logMu.Lock()
+	defer logMu.Unlock()
 
 	info, err := m.loadCurrentSessionInfo()
 	if err != nil {
@@ -111,8 +111,8 @@ func (m *Manager) GetCurrentSessionID() string {
 // EndPrincipal ends a Principal session with a reason
 // This method is safe for concurrent use.
 func (m *Manager) EndPrincipal(sessionID, reason string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	logMu.Lock()
+	defer logMu.Unlock()
 
 	return m.endPrincipalLocked(sessionID, reason)
 }

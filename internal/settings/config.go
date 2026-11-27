@@ -26,12 +26,22 @@ type Config struct {
 	Repos       []RepoCommands `json:"repos"`
 	Worker      Worker         `json:"worker"`
 	// Agents are the engine's reviewer and resolver.
-	Agents      Agents         `json:"agents"`
-	Review      Review         `json:"review"`
-	Retries     Retries        `json:"retries"`
+	Agents  Agents  `json:"agents"`
+	Review  Review  `json:"review"`
+	Retries Retries `json:"retries"`
 	// VerifyMinutes bounds one build, test or setup command; nil for the
 	// default.
 	VerifyMinutes *int `json:"verify_minutes"`
+	// Engine is how much the engine does at once.
+	Engine Engine `json:"engine"`
+}
+
+// Engine is how much the engine does at once (engine.max_parallel,
+// engine.max_per_backend): nil is the default, one step at a time, and a
+// backend the map leaves out has no limit of its own.
+type Engine struct {
+	MaxParallel   *int           `json:"max_parallel"`
+	MaxPerBackend map[string]int `json:"max_per_backend"`
 }
 
 // RepoCommands are the commands that build and test a repo. The repo is
@@ -98,6 +108,7 @@ type ConfigDefaults struct {
 	ReviewAttempts int      `json:"review_attempts"`
 	WorkerRetries  int      `json:"worker_retries"`
 	VerifyMinutes  int      `json:"verify_minutes"`
+	MaxParallel    int      `json:"max_parallel"`
 	Backends       []string `json:"backends"`
 	Strategies     []string `json:"strategies"`
 	Efforts        []string `json:"efforts"`
@@ -128,6 +139,7 @@ func DefaultsOfConfig() ConfigDefaults {
 		ReviewAttempts: defaults.Escalation.MaxReviewAttempts,
 		WorkerRetries:  defaults.Escalation.RetryCount,
 		VerifyMinutes:  defaults.Timeouts.VerifyMinutes,
+		MaxParallel:    defaults.Engine.MaxParallel,
 		Backends:       []string{"codex", "claude-code"},
 		Strategies:     []string{"squash", "merge", "rebase"},
 		Efforts:        claudecli.Efforts,
@@ -173,6 +185,10 @@ func ReadConfig(data []byte) (*Config, error) {
 		Review:        Review{ScoreThreshold: positive(file.Review.ScoreThreshold), MergeStrategy: file.Review.MergeStrategy},
 		Retries:       Retries{ReviewAttempts: positive(file.Escalation.MaxReviewAttempts)},
 		VerifyMinutes: positive(file.Timeouts.VerifyMinutes),
+		Engine:        Engine{MaxParallel: positive(file.Engine.MaxParallel), MaxPerBackend: map[string]int{}},
+	}
+	for backend, limit := range file.Engine.MaxPerBackend {
+		cfg.Engine.MaxPerBackend[backend] = limit
 	}
 	// Zero retries are written -1: a file that leaves the key out reads 0.
 	switch retries := file.Escalation.RetryCount; {
@@ -229,7 +245,7 @@ func CheckConfig(data []byte) error {
 
 // The sections of a configuration, in the order a new project's has them: a
 // section that is added goes where this order puts it.
-var configKeys = []string{"version", "project", "repos", "git", "github", "rules", "agents", "worker", "review", "escalation", "timeouts", "feedback", "hooks", "lessons"}
+var configKeys = []string{"version", "project", "repos", "git", "github", "rules", "agents", "worker", "engine", "review", "escalation", "timeouts", "feedback", "hooks", "lessons"}
 
 // ApplyConfig writes the part of a configuration the workbench changes over
 // what the file holds, and returns the file as it then is: every other key,
@@ -327,6 +343,24 @@ func ApplyConfig(data []byte, cfg Config) ([]byte, error) {
 	})
 	section(top, "timeouts", func(timeouts *yaml.Node) {
 		setOptionalInt(timeouts, "verify_minutes", positiveOrNil(cfg.VerifyMinutes))
+	})
+	section(top, "engine", func(engine *yaml.Node) {
+		had := keysOf(engine)
+		setOptionalInt(engine, "max_parallel", positiveOrNil(cfg.Engine.MaxParallel))
+		// The page sets the backends it knows; one it does not is left as
+		// the file has it, and the check below says what is wrong with it.
+		section(engine, "max_per_backend", func(limits *yaml.Node) {
+			had := keysOf(limits)
+			for _, backend := range config.AgentBackends {
+				var limit *int
+				if n, ok := cfg.Engine.MaxPerBackend[backend]; ok {
+					limit = &n
+				}
+				setOptionalInt(limits, backend, limit)
+			}
+			arrange(limits, config.AgentBackends, had)
+		})
+		arrange(engine, []string{"max_parallel", "max_per_backend"}, had)
 	})
 	arrange(top, configKeys, had)
 

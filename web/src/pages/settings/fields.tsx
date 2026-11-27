@@ -85,6 +85,7 @@ export function NumberField({
   value,
   onChange,
   fallback,
+  empty,
   min = 1,
   max,
   unit,
@@ -94,7 +95,9 @@ export function NumberField({
   error?: string;
   value: number | null;
   onChange: (value: number | null) => void;
-  fallback: number;
+  fallback?: number;
+  /** What an empty field means, when it is not a default number ("不限"). */
+  empty?: string;
   min?: number;
   max?: number;
   unit?: string;
@@ -111,7 +114,7 @@ export function NumberField({
             max={max}
             step={1}
             value={value ?? ""}
-            placeholder={`預設 ${fallback}`}
+            placeholder={empty ?? `預設 ${fallback}`}
             aria-invalid={error ? true : undefined}
             aria-describedby={describedBy}
             onChange={(e) => onChange(numberOf(e.target.value))}

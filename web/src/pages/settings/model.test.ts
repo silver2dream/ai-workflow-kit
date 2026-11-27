@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AgentRole, Config, Defaults, Roster } from "@/lib/settings";
-import { AGENT_ROLES, agentDefaults, agentProfile, configProblems, decimalOf, editable, freeID, implementerOf, numberOf, rosterProblems, same, sendable } from "./model";
+import { AGENT_ROLES, agentDefaults, agentProfile, configProblems, decimalOf, editable, freeID, implementerOf, numberOf, rosterProblems, same, sendable, withLimit } from "./model";
 
 const roster = (): Roster => ({
   language: "",
@@ -26,6 +26,7 @@ const config = (): Config => ({
   review: { score_threshold: 7, merge_strategy: "squash" },
   retries: { review_attempts: null, worker: null },
   verify_minutes: null,
+  engine: { max_parallel: null, max_per_backend: {} },
 });
 
 function role(set: Partial<AgentRole> = {}): AgentRole {
@@ -41,6 +42,7 @@ const defaults: Defaults["config"] = {
   review_attempts: 3,
   worker_retries: 2,
   verify_minutes: 10,
+  max_parallel: 1,
   backends: ["codex", "claude-code"],
   strategies: ["squash", "merge", "rebase"],
   efforts: ["low", "medium", "high", "xhigh", "max"],
@@ -160,6 +162,29 @@ describe("configProblems", () => {
     c.agents.reviewer = role({ minutes: 120, usd: 0.5 });
     c.agents.resolver = role({ minutes: 1 });
     expect(configProblems(c, defaults).count).toBe(0);
+  });
+});
+
+describe("the engine's limits", () => {
+  it("holds them to one step or more; a backend's is none when empty", () => {
+    const c = config();
+    c.engine = { max_parallel: 0, max_per_backend: { codex: 0, "claude-code": 2 } };
+    expect(configProblems(c).fields).toEqual({ "engine.max_parallel": "至少是 1。", "engine.codex": "至少是 1；不限就空著。" });
+    c.engine = { max_parallel: 3, max_per_backend: { codex: 1 } };
+    expect(configProblems(c).count).toBe(0);
+    c.engine = { max_parallel: null, max_per_backend: {} };
+    expect(configProblems(c).count).toBe(0);
+  });
+
+  it("sets a backend's limit, takes it out, and keeps the order the file has", () => {
+    const one = withLimit({}, "codex", 2);
+    expect(one).toEqual({ codex: 2 });
+    const two = withLimit(one, "claude-code", 1);
+    expect(Object.keys(two)).toEqual(["claude-code", "codex"]);
+    expect(withLimit(two, "codex", null)).toEqual({ "claude-code": 1 });
+    expect(two).toEqual({ "claude-code": 1, codex: 2 });
+    // Taken out and set again, it reads as the file has it.
+    expect(same(withLimit(withLimit(two, "claude-code", null), "claude-code", 1), { "claude-code": 1, codex: 2 })).toBe(true);
   });
 });
 

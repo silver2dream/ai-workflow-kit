@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/util"
 )
@@ -163,10 +163,7 @@ func finalizeWorktree(ctx context.Context, wtDir string, opts WorktreeOptions) e
 }
 
 func removeWorktree(ctx context.Context, root, wtDir string, timeout time.Duration) error {
-	ctx, cancel := withOptionalTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "worktree", "remove", "--force", wtDir)
-	return cmd.Run()
+	return gitlock.Run(ctx, root, timeout, "worktree", "remove", "--force", wtDir)
 }
 
 func ensureWorktreeBranch(ctx context.Context, root, branch, baseBranch string, timeout time.Duration) error {
@@ -185,17 +182,21 @@ func ensureWorktreeBranch(ctx context.Context, root, branch, baseBranch string, 
 // cleanWorktree resets and cleans the worktree to remove leftover changes.
 // This prevents "working tree not clean" errors when reusing worktrees (Issue #122).
 func cleanWorktree(ctx context.Context, wtDir string, timeout time.Duration, logf func(string, ...interface{})) error {
-	// Step 1: Remove stale index lock if present
-	lockPath := filepath.Join(wtDir, ".git", "index.lock")
-	if _, err := os.Stat(lockPath); err == nil {
-		if rmErr := os.Remove(lockPath); rmErr != nil {
-			if logf != nil {
-				logf("WARNING: failed to remove worktree index.lock: %v", rmErr)
+	// Step 1: Remove stale index lock if present. With the repository's lock
+	// held, no git command of AWK's holds it: one left there is stale.
+	_ = gitlock.Hold(ctx, wtDir, func() error {
+		lockPath := filepath.Join(wtDir, ".git", "index.lock")
+		if _, err := os.Stat(lockPath); err == nil {
+			if rmErr := os.Remove(lockPath); rmErr != nil {
+				if logf != nil {
+					logf("WARNING: failed to remove worktree index.lock: %v", rmErr)
+				}
+			} else if logf != nil {
+				logf("Removed stale worktree index.lock")
 			}
-		} else if logf != nil {
-			logf("Removed stale worktree index.lock")
 		}
-	}
+		return nil
+	})
 
 	// Step 2: Hard reset to HEAD to discard staged/unstaged changes
 	if err := runGit(ctx, wtDir, timeout, "reset", "--hard", "HEAD"); err != nil {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -131,5 +132,13 @@ func TestFromConfig(t *testing.T) {
 	}
 	if e := CodexEfforts(); len(e) == 0 || e[0] != "minimal" {
 		t.Errorf("codex efforts: %v", e)
+	}
+}
+
+// The configuration names the backends whose steps engine.max_per_backend
+// bounds: they are the runtime's.
+func TestAgentBackendsAreTheRuntimes(t *testing.T) {
+	if got, want := config.AgentBackends, []string{ClaudeCode, Codex}; !slices.Equal(got, want) {
+		t.Errorf("config.AgentBackends = %v, want %v", got, want)
 	}
 }

@@ -147,17 +147,25 @@
 
 ## P2 平行與人的控制
 
-- [ ] 2.1 工單 schema v2：`paths`、`risk`
+- [x] 2.1 工單 schema v2：`paths`、`risk`
   - 相依：—
   - `internal/ticket` schema 2 與 schema 1 的相容路徑（事件、移除版本）；議會規劃角色輸出 `paths`、`risk` 並驗證；核可畫面顯示與修改；`plan approve` 寫進 issue
   - 需求：R6
   - 細節在 `design.md` §7。原本沒寫清楚、這次定下的：schema 2 的 `paths`、`risk` 都必填；glob 只接受 `*`、`?`、`**`；路徑要在工單的 repo 資料夾裡（`allow_parent_changes` 例外）；可能包括 AWK 自己檔案的路徑要 `allow_script_changes`；新的工單一律 schema 2（`awkit create-task` 拒絕 schema 1）；兩個 glob 有沒有交集（`ticket.Overlap`）先在這裡做，2.2 的避撞直接用
+  - 2.1 完成：#297
 - [ ] 2.2 排程器
   - 相依：1.6、2.1
   - `engine.max_parallel`、`engine.max_per_backend`；依賴的拓撲順序與環的偵測；路徑避撞；人的優先與固定組；名額不含等核可與等 CI 的線
   - 需求：R3
   - 分兩個 PR。2.2a 排程的決定：名額、佔住路徑與避撞、依編號的順序、環的偵測，平行上限固定為 1，挑票仍由 analyzer 做（`Candidates`），行為與主控相同。2.2b 多條線同時跑：engine 同時跑幾條線的步驟、git 操作互斥、`engine.max_parallel`、`engine.max_per_backend`、執行頁與 `awkit status` 顯示同時在做的幾步、在測試 repo 實跑三條線平行
   - 與原本寫的不同：人的優先與固定組移到 2.6，與設定它們的指令一起做（使用者 2026-11-27 同意）。細節在 `design.md` §5.3
+  - 2.2a 完成：#298
+  - 2.2b：細節在 `design.md` §5.3。原本沒寫清楚、這次定下的：
+    - 審查與解衝突一次只跑一個，到 2.3 的合併佇列接手合併為止（審查通過就合併）
+    - git 互斥是跨程序的作業系統檔案鎖（`internal/gitlock`）：每個 Worker 是自己的程序；AWK 自己下的 git 指令都經過它，agent 自己下的不經過，碰到 git 自己的鎖就重試
+    - engine 程序裡以前一次只有一件在做的讀改寫也加鎖：連續失敗次數、session 紀錄、教訓
+    - 有步驟在跑時，不是步驟的決定（結束、轉人、等待）不結束這一輪，只把它說到的線轉過去，等手上的步驟做完；`awkit stop` 因此是「手上的步驟做完就停」
+    - 這兩個設定鍵在工作台的設定頁也能改（§12 的規則）
 - [ ] 2.3 合併佇列
   - 相依：2.2、1.5
   - FIFO 加人的優先；rebase、衝突交給 resolver、重驗（diff 政策與驗證）、push、CI、合併；「先別合併」

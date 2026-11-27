@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 )
 
 var commitPrefixPattern = regexp.MustCompile(`^\[([a-z]+)\]\s+`)
@@ -64,22 +65,14 @@ func isAllowedCommitRune(r rune) bool {
 	}
 }
 
-// GitFetch runs git fetch with a timeout.
+// GitFetch runs git fetch with a timeout, and the repository's lock.
 func GitFetch(ctx context.Context, repoPath string, timeout time.Duration) error {
-	ctx, cancel := withOptionalTimeout(ctx, timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "fetch", "origin")
-	return cmd.Run()
+	return gitlock.Run(ctx, repoPath, timeout, "fetch", "origin")
 }
 
-// GitPush runs git push with a timeout.
+// GitPush runs git push with a timeout, and the repository's lock.
 func GitPush(ctx context.Context, repoPath, branch string, timeout time.Duration) error {
-	ctx, cancel := withOptionalTimeout(ctx, timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "push", "-u", "origin", branch)
-	return cmd.Run()
+	return gitlock.Run(ctx, repoPath, timeout, "push", "-u", "origin", branch)
 }
 
 func withOptionalTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

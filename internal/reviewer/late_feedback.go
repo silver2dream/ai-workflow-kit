@@ -335,6 +335,8 @@ func LearnBeforeDispatch(ctx context.Context, stateRoot string, ghTimeout time.D
 		return
 	}
 
+	learningMu.Lock()
+	defer learningMu.Unlock()
 	syncCtx, cancel := context.WithTimeout(ctx, maxSyncDuration)
 	handMerged, lateItems := SyncMaintainerActivity(syncCtx, stateRoot, ghTimeout)
 	cancel()

@@ -19,6 +19,7 @@ import { useOnboarding } from "@/onboarding/state";
 import type { ProjectView } from "@/lib/api";
 import { href, navigate, useRoute } from "@/lib/router";
 import { planStatus } from "@/pages/plans/status";
+import { workingSteps } from "@/lib/engine";
 import { useTheme } from "@/lib/theme";
 import { useAfterClose } from "@/lib/after-close";
 import { cn } from "@/lib/utils";
@@ -235,16 +236,17 @@ function RunChip() {
     );
   }
   if (status.data?.run.state !== "running") return null;
-  // The ticket the engine is on; for a run of the Principal's workflow, the
+  // The tickets the engine is on; for a run of the Principal's workflow, the
   // one whose Worker ran last.
-  const target = engine.data?.going ? engine.data.run?.step?.issue : status.data.target.issue_id;
+  const steps = engine.data?.going ? workingSteps(engine.data.run) : [];
+  const target = engine.data?.going ? steps[0]?.issue : status.data.target.issue_id;
   return (
     <a href={href({ project: project.id, page: "run", rest: [] })} className="hidden items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13.5px] font-bold text-live hover:bg-live/10 sm:flex">
       <span className="relative flex size-2" aria-hidden>
         <span className="absolute inset-0 animate-ping rounded-full bg-live opacity-60" />
         <span className="relative size-2 rounded-full bg-live" />
       </span>
-      {target ? `工作中，工單 #${target}` : "工作中"}
+      {steps.length > 1 ? `工作中，${steps.length} 張工單` : target ? `工作中，工單 #${target}` : "工作中"}
     </a>
   );
 }
