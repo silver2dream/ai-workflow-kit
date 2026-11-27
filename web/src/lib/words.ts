@@ -1,4 +1,5 @@
-import type { Stage, TraceEvent } from "./api";
+import type { Decision, Dispatcher, LaneState, Stage, TraceEvent } from "./api";
+import { byWords, CAUSES, COMMANDS, decisionWords, KNOWN, LANES, laneMeta, ROLES, runEndWords, whyWords } from "./engine";
 import { ruleWords, sourceWords } from "./guard";
 
 /** The words of AWK a newcomer meets, said plainly; shown where they appear, and in the glossary. */
@@ -77,26 +78,104 @@ const word = (data: Record<string, unknown> | undefined, ...keys: string[]) => {
   return "";
 };
 
+/** inner is a record a field of an event's data holds: a command, a reply, a usage. */
+const inner = (data: Record<string, unknown> | undefined, key: string): Record<string, unknown> | undefined => {
+  const value = data?.[key];
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+};
+
 export interface Described {
   who: string;
   text: string;
   tone: Tone;
 }
 
+/** eventKey tells the events of a run apart: they come from more than one file, and each file counts its own. */
+export const eventKey = (e: TraceEvent) => `${e.component}-${e.seq}-${e.ts}`;
+
+/** The events of a run itself, which `awkit run` writes whoever dispatches: not the Principal's. */
+export const RUN_EVENTS = new Set(["session_start", "session_end", "session_usage", "workflow_stop"]);
+
+/**
+ * dispatches says whether an event is the dispatcher's own: written under
+ * the Principal's name, by the Principal, or by the worker's functions the
+ * engine calls too. Not the run's own start and end.
+ */
+export const dispatches = (event: TraceEvent) => event.component === "principal" && !RUN_EVENTS.has(event.type);
+
+/** whoOf says who did what an event says, in a run the dispatcher dispatched: the Principal's when it is not told. */
+export function whoOf(event: TraceEvent, dispatcher?: Dispatcher): string {
+  if (RUN_EVENTS.has(event.type)) return "這一輪";
+  if (event.component === "agent") return ROLES[word(event.data, "role")] ?? "agent";
+  if (dispatches(event) && dispatcher === "engine") return WHO.engine;
+  return WHO[event.component] ?? event.component;
+}
+
 /** describe says an event in a sentence. What it cannot put in words it shows as the event names itself. */
-export function describe(event: TraceEvent): Described {
+export function describe(event: TraceEvent, dispatcher?: Dispatcher): Described {
   const issue = event.issue_id ? `#${event.issue_id}` : "";
   const pr = event.pr_number ? `PR #${event.pr_number}` : "";
   const data = event.data;
   const reason = word(data, "reason", "message", "error", "status", "decision", "action", "next_action", "name");
   const tone: Tone = event.level === "error" ? "stop" : event.level === "warn" ? "caution" : event.level === "decision" ? "focus" : "muted";
-  const who = WHO[event.component] ?? event.component;
+  const who = whoOf(event, dispatcher);
   const say = (text: string, t: Tone = tone): Described => ({ who, text, tone: t });
   switch (event.type) {
     case "session_start":
       return say("開始工作", "focus");
     case "session_end":
       return say(reason ? `這一輪結束：${reason}` : "這一輪結束");
+    case "lane_transition": {
+      const to = word(data, "to") as LaneState;
+      const from = word(data, "from") as LaneState;
+      const ticket = issue || (word(data, "issue") ? `#${word(data, "issue")}` : "");
+      const cause = word(data, "cause");
+      const said = [
+        from ? `${LANES[from]?.label ?? from} → ` : "",
+        laneMeta({ state: to, resolve: word(data, "resolve") }).label,
+        cause ? `（${CAUSES[cause] ?? cause}）` : "",
+        to === "needs_you" && word(data, "why") ? `。${whyWords(word(data, "why"))}` : "",
+      ].join("");
+      const t: Tone = to === "needs_you" ? "signal" : to === "merged" || to === "completed" ? "go" : to === "implementing" || to === "reviewing" ? "live" : "muted";
+      return say(`工單 ${ticket}：${said}`, t);
+    }
+    case "engine_run":
+      return word(data, "event") === "started"
+        ? say("engine 開始派工", "focus")
+        : say(`engine 停了：${runEndWords(word(data, "reason"))}${word(data, "error") ? `（${word(data, "error")}）` : ""}`, word(data, "error") ? "caution" : tone);
+    case "engine_command": {
+      const command = inner(data, "command");
+      const reply = inner(data, "reply");
+      const kind = word(command, "kind");
+      const by = byWords(word(command, "by"));
+      const what = `收到「${COMMANDS[kind] ?? kind}」${by ? `（${by}）` : ""}`;
+      return word(reply, "result") === "applied" ? say(`${what}，收下了`) : say(`${what}，沒收下：${word(reply, "reason")}`, "caution");
+    }
+    case "engine_shadow": {
+      if (word(data, "error")) return say(`沒和主控比成：${word(data, "error")}`, "caution");
+      if (data?.same === true) return say("和主控的判斷一樣");
+      const known = word(data, "known");
+      if (known) return say(`和主控的判斷不同，原因已知：${KNOWN[known] ?? known}`);
+      const mine = (data?.engine ?? null) as Decision | null;
+      const theirs = (data?.analyzer ?? null) as Decision | null;
+      return say(`和主控的判斷不同：engine 要${decisionWords(mine)}，主控要${decisionWords(theirs)}`, "caution");
+    }
+    case "agent_run": {
+      const usage = inner(data, "usage");
+      const minutes = Number(usage?.duration_ms ?? 0) / 60000;
+      const cost = Number(usage?.cost_usd ?? 0);
+      const how = [
+        [word(data, "backend"), word(data, "model")].filter(Boolean).join(" "),
+        minutes >= 1 ? `${Math.round(minutes)} 分鐘` : minutes > 0 ? "不到 1 分鐘" : "",
+        cost > 0 ? `$${cost.toFixed(2)}` : "",
+      ].filter(Boolean);
+      const where = issue ? `工單 ${issue} ` : "";
+      const status = word(data, "status");
+      if (status === "ok") return say(`${where}跑完了${how.length ? `（${how.join("，")}）` : ""}`);
+      return say(`${where}沒跑完（${status}）${word(data, "error") ? `：${word(data, "error")}` : ""}`, "caution");
+    }
+    case "deprecated_path":
+      return say(`用了舊的主控做法：${word(data, "path")}（下一版移除）`, "caution");
     case "loop_start":
       return say(reason ? `問下一步（${reason}）` : "問下一步");
     case "loop_decision":

@@ -106,7 +106,7 @@ func Summary(verdicts []Verdict) string {
 // Session is the event file a verdict goes to when the process has no event
 // stream of its own (a run-issue started by hand, say): a verdict is a
 // record of security, and is kept whoever ran the check.
-const Session = "guard"
+const Session = trace.SessionGuard
 
 // Record writes each verdict that is not a pass to the event stream of the
 // process, or, when it has none, to the guard's own event file of the

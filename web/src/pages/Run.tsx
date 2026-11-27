@@ -14,7 +14,8 @@ import { when } from "@/lib/words";
 import { Checks } from "@/pages/Health";
 import { RecentActivity } from "@/pages/Overview";
 import { headline } from "@/pages/plans/status";
-import { Lanes, titleOf } from "@/pages/run/Lanes";
+import { titleOf } from "@/lib/tickets";
+import { Lanes } from "@/pages/run/Lanes";
 import { Shadow } from "@/pages/run/Shadow";
 
 /** How a run of the Principal's workflow ended, in words, by the reason its session ended with. */
@@ -256,7 +257,7 @@ export function RunPage({ preset }: { preset?: number }) {
     !going && view?.run?.ended && view.run.reason && (!sessionAt || Date.parse(view.run.started) >= sessionAt - 60_000) ? view.run.reason : undefined;
   const meeting = (plans.data?.plans ?? []).find((p) => p.meeting?.state === "meeting");
   const approving = (plans.data?.plans ?? []).find((p) => p.approval?.state === "working");
-  const noTickets = !!tickets.data?.tickets && tickets.data.tickets.open.length === 0;
+  const noTickets = !!tickets.data?.tickets && (tickets.data.tickets.open?.length ?? 0) === 0;
   const blocked = noTickets
     ? "目前沒有開著的工單：先到「規劃與議會」核可一份規劃，工單建到 GitHub 之後就能開始。"
     : meeting

@@ -24,7 +24,7 @@ import (
 // from it whenever they could differ.
 
 // Session is the event log file of the engine.
-const Session = "engine"
+const Session = trace.SessionEngine
 
 // Component and event type of a transition in the event log.
 const (

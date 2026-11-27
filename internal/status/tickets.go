@@ -111,7 +111,8 @@ func CollectTickets(ctx context.Context, labels config.Labels, list IssueLister)
 		open[issue.Number] = true
 	}
 
-	tickets := &Tickets{}
+	// An empty list, not none: a page reads it as a list.
+	tickets := &Tickets{Open: []Ticket{}}
 	for _, issue := range issues {
 		has := map[string]bool{}
 		for _, label := range issue.Labels {

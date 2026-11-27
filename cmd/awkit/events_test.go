@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -212,6 +215,51 @@ func TestCmdEvents_AProjectWithoutARun(t *testing.T) {
 		if code != 0 || !strings.Contains(out, "No events found") {
 			t.Errorf("awkit events %v = %d: %q; want 0 and a word that there are none", args, code, out)
 		}
+	}
+}
+
+// The current run's events, and a run named, are read with what the engine
+// and the guardrails wrote to their own files while it went; a file of
+// theirs named is read alone.
+func TestCmdEvents_ARunWithTheEngine(t *testing.T) {
+	dir := inNewDir(t)
+	write := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := "principal-20261118-090000-ab12"
+	write(".ai/state/principal/session.json", `{"session_id": "`+run+`"}`)
+	write(".ai/state/events/"+run+".jsonl", `{"seq": 1, "ts": "2026-11-18T09:00:01Z", "component": "principal", "type": "session_start", "level": "info"}`+"\n")
+	write(".ai/state/events/engine.jsonl",
+		`{"seq": 1, "ts": "2026-11-17T10:00:00Z", "component": "engine", "type": "lane_transition", "level": "info", "issue_id": 1}`+"\n"+
+			`{"seq": 2, "ts": "2026-11-18T09:00:03Z", "component": "engine", "type": "lane_transition", "level": "info", "issue_id": 303}`+"\n")
+	write(".ai/state/events/guard.jsonl", `{"seq": 1, "ts": "2026-11-18T09:00:04Z", "component": "guard", "type": "guardrail_verdict", "level": "error", "issue_id": 303}`+"\n")
+
+	for _, args := range [][]string{{"--json"}, {"--json", "--session", run}} {
+		out := captureStdout(t, func() {
+			if code := cmdEvents(args); code != 0 {
+				t.Errorf("awkit events %v = %d", args, code)
+			}
+		})
+		var got []string
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			var e trace.Event
+			if err := json.Unmarshal([]byte(line), &e); err != nil {
+				t.Fatalf("awkit events %v: %q is no event", args, line)
+			}
+			got = append(got, e.Type)
+		}
+		if strings.Join(got, " ") != "session_start lane_transition guardrail_verdict" {
+			t.Errorf("awkit events %v: %v", args, got)
+		}
+	}
+	out := captureStdout(t, func() { cmdEvents([]string{"--json", "--session", "engine"}) })
+	if n := strings.Count(strings.TrimSpace(out), "\n") + 1; n != 2 {
+		t.Errorf("the engine's file alone: %d events\n%s", n, out)
 	}
 }
 

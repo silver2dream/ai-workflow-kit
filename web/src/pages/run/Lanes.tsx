@@ -3,17 +3,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, Panel, PanelHead, Problem, Tag } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useTicketSheet } from "@/app/ticket-sheet";
-import type { EngineView, Lane, TicketsView } from "@/lib/api";
+import type { EngineView, Lane } from "@/lib/api";
 import { laneMeta, stepWords, whyWords } from "@/lib/engine";
 import { ruleWords, sourceWords } from "@/lib/guard";
+import { titleOf } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
 import { when } from "@/lib/words";
-
-/** titleOf is a ticket's title, open or done, as GitHub last said it. */
-export function titleOf(tickets: TicketsView | undefined, issue: number): string | undefined {
-  const open = tickets?.tickets?.open.find((t) => t.number === issue);
-  return open?.title ?? tickets?.tickets?.done_titles?.[String(issue)];
-}
 
 /** counts says how often a lane was tried again, of how often it may be: only the counts it used. */
 export function counts(lane: Lane, limits: EngineView["limits"]): string[] {

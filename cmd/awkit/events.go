@@ -18,12 +18,15 @@ Usage:
   awkit events [options]
 
 Options:
-  --session <id>    Query specific session (default: current session)
+  --session <id>    Query one run (default: the current run): its session's
+                    events, and those the engine, the guardrails and the
+                    agents wrote to their own files while it went. Their
+                    files (engine, guard, agent) are sessions too, read alone
   --all             Query all sessions (not just current)
   --level <level>   Filter by level: info, warn, error, decision
   --issue <n>       Filter by issue number (searches across all sessions)
   --pr <n>          Filter by PR number
-  --component <c>   Filter by component: principal, worker, reviewer, github, hooks, audit, guard
+  --component <c>   Filter by component: engine, principal, worker, reviewer, agent, github, hooks, audit, guard
   --type <t>        Filter by event type (comma-separated, e.g. hook_fired,worker_retry)
   --last <n>        Show only last N events (default: all)
   --json            Output raw JSON (for AI analysis)
@@ -109,13 +112,19 @@ func cmdEvents(args []string) int {
 	var events []trace.Event
 	var err error
 
+	// A run is read with what the engine, the guardrails and the agents
+	// wrote to their own files while it went; a file of theirs, named, is
+	// read alone.
 	switch {
 	case *sessionID != "":
-		events, err = reader.ReadSessionFiltered(*sessionID, filter)
+		events, err = reader.ReadRun(*sessionID, filter)
 	case *allSessions || *issueNum > 0:
 		events, err = reader.ReadAllSessionsFiltered(filter)
 	default:
-		events, err = reader.ReadCurrentSessionFiltered(filter)
+		var current string
+		if current, err = reader.CurrentSessionID(); err == nil {
+			events, err = reader.ReadRun(current, filter)
+		}
 	}
 
 	// No run yet: there is no session to read the events of. That is not an

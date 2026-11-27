@@ -46,7 +46,7 @@ export const TOUR: TourStep[] = [
     page: "activity",
     targets: ["activity"],
     title: "每一步都有紀錄",
-    body: "主控、執行者、審查做的每一件事都記在這裡。出問題時從這裡往回找；只想看出錯和警告，就選「只看要注意的」。",
+    body: "engine、執行者、審查做的每一件事都記在這裡。出問題時從這裡往回找；只想看出錯和警告，就選「只看要注意的」。",
   },
   {
     page: "health",

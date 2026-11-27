@@ -6,7 +6,7 @@ import { headline, planStatus } from "@/pages/plans/status";
 import { useProject } from "@/app/project";
 import { useTicketSheet } from "@/app/ticket-sheet";
 import { href, navigate } from "@/lib/router";
-import { describe, STAGES, when } from "@/lib/words";
+import { describe, eventKey, STAGES, when } from "@/lib/words";
 import type { Stage, Ticket, TicketsView } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { TONE } from "@/components/bits";
@@ -273,9 +273,9 @@ export function RecentActivity({ limit }: { limit: number }) {
       ) : (
         <ol className="px-5 pb-4">
           {list.map((event) => {
-            const d = describe(event);
+            const d = describe(event, events.data?.dispatcher);
             return (
-              <li key={`${event.seq}-${event.ts}`} className="flex gap-3 pb-3.5 last:pb-1">
+              <li key={eventKey(event)} className="flex gap-3 pb-3.5 last:pb-1">
                 <span className={cn("mt-0.5 h-7 shrink-0 rounded-md px-1.5 text-[11.5px] font-bold leading-7", TONE[d.tone])}>{d.who}</span>
                 <div className="min-w-0">
                   <p className="text-[14px] leading-snug">{d.text}</p>

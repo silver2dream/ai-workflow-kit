@@ -79,8 +79,12 @@ export interface TraceEvent {
   data?: Record<string, unknown>;
 }
 
+/** Who dispatched a run: what the worker's functions write is under the Principal's name whichever calls them. */
+export type Dispatcher = "engine" | "principal";
+
 export interface EventsView {
   session?: string;
+  dispatcher?: Dispatcher;
   events: TraceEvent[];
 }
 

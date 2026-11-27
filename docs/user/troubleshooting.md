@@ -166,4 +166,4 @@ awkit upgrade
 
 ## 還是不行
 
-`awkit events --json > events.jsonl` 會把整個 run 的事件倒出來。到 [GitHub Issues](https://github.com/silver2dream/ai-workflow-kit/issues) 回報時，附上 `awkit doctor` 的輸出、`awkit status` 的輸出，以及出事那張票的 `awkit events --issue <N>`。
+`awkit events --json > events.jsonl` 會把整個 run 的事件倒出來：run 自己的，加上 engine（每張工單從哪一步到哪一步、收到的停止、和主控的比對）與 guardrail 的 hook 在那段時間寫在自己檔案裡的。`awkit events --session engine` 只看 engine 的檔案（每一輪都在裡面）。到 [GitHub Issues](https://github.com/silver2dream/ai-workflow-kit/issues) 回報時，附上 `awkit doctor` 的輸出、`awkit status` 的輸出，以及出事那張票的 `awkit events --issue <N>`。

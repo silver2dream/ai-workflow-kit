@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Decision, LaneState } from "./api";
 import { decisionWords, endedWords, KNOWN, laneMeta, LANES, stepWords, WHY, whyWords } from "./engine";
-import { counts, titleOf } from "@/pages/run/Lanes";
+import { titleOf } from "./tickets";
+import { counts } from "@/pages/run/Lanes";
 
 const decision = (d: Partial<Decision>): Decision => ({ next_action: "none", issue_number: 0, pr_number: 0, exit_reason: "", merge_issue: "", ...d });
 

@@ -16,6 +16,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/doctor"
+	"github.com/silver2dream/ai-workflow-kit/internal/engine"
 	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/status"
@@ -272,9 +273,19 @@ func issuesWithGhIn(root string) status.IssueLister {
 
 // EventsView is what happened in the run that is going on, or went on last.
 type EventsView struct {
-	Session string        `json:"session,omitempty"`
-	Events  []trace.Event `json:"events"`
+	Session string `json:"session,omitempty"`
+	// Dispatcher says who dispatched the run: the engine, or the Principal.
+	// What the worker's functions write is under the Principal's name
+	// whichever calls them.
+	Dispatcher string        `json:"dispatcher,omitempty"`
+	Events     []trace.Event `json:"events"`
 }
+
+// The dispatchers of a run.
+const (
+	DispatcherEngine    = "engine"
+	DispatcherPrincipal = "principal"
+)
 
 const maxEvents = 500
 
@@ -284,7 +295,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, root strin
 		last = n
 	}
 	reader := trace.NewEventReader(root)
-	session := latestSession(reader)
+	session := reader.LatestRun()
 	if asked := r.URL.Query().Get("session"); asked != "" {
 		// A session is named by the file a run left, never by a path the
 		// page sends: "../" in it reads no other file.
@@ -296,13 +307,24 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, root strin
 	}
 	out := EventsView{Session: session, Events: []trace.Event{}}
 	if session != "" {
-		events, err := reader.ReadSessionFiltered(session, trace.EventFilter{Last: last})
+		// The run's own events, and what the engine, the guardrails and the
+		// agents wrote to their own files while it went.
+		events, err := reader.ReadRun(session, trace.EventFilter{Last: last})
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if events != nil {
 			out.Events = events
+		}
+		// The engine ran the run when it started a run of its own while the
+		// run went. A side file is no run, and has no dispatcher.
+		if !trace.IsSide(session) {
+			out.Dispatcher = DispatcherPrincipal
+			ran, err := reader.ReadRun(session, trace.EventFilter{Component: engine.Component, Types: []string{engine.TypeRun}, Last: 1})
+			if err == nil && len(ran) > 0 {
+				out.Dispatcher = DispatcherEngine
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -321,20 +343,6 @@ func knownSession(reader *trace.EventReader, name string) string {
 		}
 	}
 	return ""
-}
-
-// latestSession is the run going on, or else the newest one that left events.
-func latestSession(reader *trace.EventReader) string {
-	if id, err := reader.CurrentSessionID(); err == nil {
-		if _, err := os.Stat(reader.GetSessionFilePath(id)); err == nil {
-			return id
-		}
-	}
-	sessions, err := reader.ListSessions()
-	if err != nil || len(sessions) == 0 {
-		return ""
-	}
-	return sessions[0] // the newest first
 }
 
 // CheckView is one check of `awkit doctor`.

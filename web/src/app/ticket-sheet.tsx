@@ -4,7 +4,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { DOT, Empty, Tag, TONE } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useOnboarding } from "@/onboarding/state";
-import { describe, STAGES, when } from "@/lib/words";
+import { titleOf } from "@/lib/tickets";
+import { describe, eventKey, STAGES, when } from "@/lib/words";
 import { href, useRoute } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
@@ -56,7 +57,9 @@ export function TicketSheetProvider({ children }: { children: ReactNode }) {
 
 function TicketDetail({ number, onOpen }: { number: number; onOpen: (n: number) => void }) {
   const { project, tickets, events, status } = useProject();
-  const ticket = tickets.data?.tickets?.open.find((t) => t.number === number);
+  const ticket = tickets.data?.tickets?.open?.find((t) => t.number === number);
+  // A ticket that is done is still named.
+  const title = titleOf(tickets.data, number);
   const history = (events.data?.events ?? []).filter((e) => e.issue_id === number);
   const prs = [...new Set(history.map((e) => e.pr_number).filter((n): n is number => !!n))];
   const meta = ticket ? STAGES[ticket.stage] : STAGES.done;
@@ -66,7 +69,7 @@ function TicketDetail({ number, onOpen }: { number: number; onOpen: (n: number) 
     <>
       <SheetHeader className="border-b border-border px-6 pb-4 pt-5">
         <div className="text-[13px] font-extrabold text-ink2 tnum">工單 #{number}</div>
-        <SheetTitle className="text-[20px] font-extrabold leading-snug">{ticket?.title ?? "這張工單不在進行中的清單裡"}</SheetTitle>
+        <SheetTitle className="text-[20px] font-extrabold leading-snug">{title ?? "這張工單不在進行中的清單裡"}</SheetTitle>
         <SheetDescription asChild>
           <div className="flex flex-wrap items-center gap-2">
             <Tag tone={meta.tone}>{ticket ? meta.label : "已合併或已關閉"}</Tag>
@@ -121,9 +124,9 @@ function TicketDetail({ number, onOpen }: { number: number; onOpen: (n: number) 
         ) : (
           <ol className="relative ml-3 mt-3 border-l-2 border-border">
             {history.map((event) => {
-              const d = describe(event);
+              const d = describe(event, events.data?.dispatcher);
               return (
-                <li key={`${event.seq}-${event.ts}`} className="relative pb-4 pl-6 last:pb-0">
+                <li key={eventKey(event)} className="relative pb-4 pl-6 last:pb-0">
                   <span className={cn("absolute -left-[9px] top-1 size-4 rounded-full ring-2 ring-card", DOT[d.tone])} />
                   <p className="text-[14.5px]">
                     <b className="mr-1.5 text-[12.5px] text-ink2">{d.who}</b>
