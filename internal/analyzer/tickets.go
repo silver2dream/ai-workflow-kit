@@ -54,17 +54,40 @@ func (a *Analyzer) taskLabel() string {
 	return DefaultLabels().Task
 }
 
-// nextTicket picks the ticket to dispatch among the pending ones: the one with
-// the lowest number whose dependencies are all done. It returns nil when
-// nothing is pending. apiErrors counts the lookups that failed and kept a
-// ticket from being judged.
+// Skip says whether a ticket that could start now is passed over: the engine
+// passes over one whose paths overlap the paths a lane holds (design.md
+// §5.3). meta is the ticket's block; found is false for a ticket without one.
+type Skip func(issue int, meta ticket.Meta, found bool) bool
+
+// Picks is what Candidates found among the pending tickets.
+type Picks struct {
+	// Tickets are the tickets to start, in the order to start them: lowest
+	// number first, each with its dependencies done.
+	Tickets []*Decision
+	// Then is what was decided past them, or instead of them: a ticket
+	// handed to a person, a dependency closed without its work landing that
+	// is done again; and when there is no ticket to start, what the run comes
+	// to (every ticket waits for a dependency, all done, none actionable, a
+	// lookup that failed). nil when tickets were passed over and nothing else
+	// was decided.
+	Then *Decision
+	// Skipped are the tickets that could start and were passed over.
+	Skipped []int
+}
+
+// walk looks at the pending tickets, lowest number first, for up to max that
+// can start, passing over those skip says to. It stops at max, and at the
+// first ticket it hands to a person or dependency it does again, so that it
+// changes nothing on GitHub for a ticket past those (as picking one ticket
+// never did). apiErrors counts the lookups that failed and kept a ticket from
+// being judged.
 //
 // A ticket whose block cannot be used is handed to a person: one that cannot
 // be read, names a repo the config does not have, or depends on itself or on
 // an issue that does not exist. A dependency that was closed without its work
 // landing is reopened and dispatched first. When every pending ticket waits
-// for a dependency, the decision says so instead of calling the run complete.
-func (a *Analyzer) nextTicket(ctx context.Context, pending []Issue, lookup *ticketLookup) (decision *Decision, apiErrors int) {
+// for a dependency, Then says so instead of calling the run complete.
+func (a *Analyzer) walk(ctx context.Context, pending []Issue, lookup *ticketLookup, max int, skip Skip) (picks Picks, apiErrors int) {
 	sort.Slice(pending, func(i, j int) bool { return pending[i].Number < pending[j].Number })
 
 	firstWaiting := 0
@@ -84,7 +107,8 @@ func (a *Analyzer) nextTicket(ctx context.Context, pending []Issue, lookup *tick
 			err = a.ticketProblem(issue.Number, meta)
 		}
 		if err != nil {
-			return a.rejectTicket(ctx, issue.Number, err), apiErrors
+			picks.Then = a.rejectTicket(ctx, issue.Number, err)
+			return picks, apiErrors
 		}
 
 		waitingFor, unknown := 0, false
@@ -92,7 +116,8 @@ func (a *Analyzer) nextTicket(ctx context.Context, pending []Issue, lookup *tick
 			done, redo, err := a.dependencyDone(ctx, dependency, lookup)
 			if errors.Is(err, ErrIssueNotFound) {
 				problem := fmt.Errorf("the awk-ticket block is not valid: depends_on lists #%d, and the repository has no such issue", dependency)
-				return a.rejectTicket(ctx, issue.Number, problem), apiErrors
+				picks.Then = a.rejectTicket(ctx, issue.Number, problem)
+				return picks, apiErrors
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[analyzer] warning: #%d depends on #%d, whose state could not be read: %v\n", issue.Number, dependency, err)
@@ -101,7 +126,8 @@ func (a *Analyzer) nextTicket(ctx context.Context, pending []Issue, lookup *tick
 				break
 			}
 			if redo != nil {
-				return redo, apiErrors
+				picks.Then = redo
+				return picks, apiErrors
 			}
 			if !done {
 				waitingFor = dependency
@@ -120,13 +146,22 @@ func (a *Analyzer) nextTicket(ctx context.Context, pending []Issue, lookup *tick
 			continue
 		}
 
-		return &Decision{NextAction: ActionDispatchWorker, IssueNumber: issue.Number}, apiErrors
+		if skip != nil && skip(issue.Number, meta, found) {
+			picks.Skipped = append(picks.Skipped, issue.Number)
+			continue
+		}
+		picks.Tickets = append(picks.Tickets, &Decision{NextAction: ActionDispatchWorker, IssueNumber: issue.Number})
+		if len(picks.Tickets) >= max {
+			return picks, apiErrors
+		}
 	}
 
-	if firstWaiting != 0 {
-		return &Decision{NextAction: ActionNone, IssueNumber: firstWaiting, ExitReason: ReasonBlockedByDependencies}, apiErrors
+	// Every ticket that is not started waits for a dependency: a ticket
+	// passed over does not, and one to start makes the run go on.
+	if firstWaiting != 0 && len(picks.Tickets) == 0 && len(picks.Skipped) == 0 {
+		picks.Then = &Decision{NextAction: ActionNone, IssueNumber: firstWaiting, ExitReason: ReasonBlockedByDependencies}
 	}
-	return nil, apiErrors
+	return picks, apiErrors
 }
 
 // dependencyDone reports whether the issue a ticket depends on is done.

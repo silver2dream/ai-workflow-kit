@@ -63,8 +63,8 @@ func (a stopAnalyzer) Precheck() *analyzer.Decision {
 	}
 	return nil
 }
-func (a stopAnalyzer) NextTicket(ctx context.Context) (*analyzer.Decision, error) {
-	return dispatch(12), nil
+func (a stopAnalyzer) Candidates(context.Context, int, analyzer.Skip) (analyzer.Picks, error) {
+	return analyzer.Picks{Tickets: []*analyzer.Decision{dispatch(12)}}, nil
 }
 func (a stopAnalyzer) PRNumber(int, string) int { return 0 }
 

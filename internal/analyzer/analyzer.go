@@ -385,13 +385,35 @@ func (a *Analyzer) NextTicket(ctx context.Context) (*Decision, error) {
 	return a.pickTicket(ctx, 0)
 }
 
+// Candidates is up to max pending tickets that can start, in the order to
+// start them, passing over those skip says to (nil passes over none); and
+// what was decided past them or instead (Picks). It looks at the tickets as
+// NextTicket does, and may change GitHub as it does, for the tickets it
+// looks at: with max 1 and nothing passed over, its one ticket, or else its
+// Then, is NextTicket's decision.
+func (a *Analyzer) Candidates(ctx context.Context, max int, skip Skip) (Picks, error) {
+	if max < 1 {
+		return Picks{}, fmt.Errorf("candidates: max is %d; at least one ticket is asked for", max)
+	}
+	return a.candidates(ctx, 0, max, skip), nil
+}
+
 // pickTicket is steps 3 to 5; apiErrors counts the lookups that failed
 // before it.
 func (a *Analyzer) pickTicket(ctx context.Context, apiErrors int) (*Decision, error) {
+	picks := a.candidates(ctx, apiErrors, 1, nil)
+	if len(picks.Tickets) > 0 {
+		return picks.Tickets[0], nil
+	}
+	return picks.Then, nil
+}
+
+// candidates is steps 3 to 5 for up to max tickets.
+func (a *Analyzer) candidates(ctx context.Context, apiErrors, max int, skip Skip) Picks {
 	labels := a.Config.GitHub.Labels
 
-	// Step 3: Pick the next ticket among the pending ones: the lowest number
-	// whose dependencies are done.
+	// Step 3: Pick the next tickets among the pending ones: the lowest
+	// numbers whose dependencies are done.
 	lookup := a.newTicketLookup()
 	pendingIssues, err := a.GHClient.ListPendingIssues(ctx, labels)
 	if err != nil {
@@ -399,10 +421,10 @@ func (a *Analyzer) pickTicket(ctx context.Context, apiErrors int) (*Decision, er
 		apiErrors++
 	}
 	if err == nil {
-		decision, lookupErrors := a.nextTicket(ctx, pendingIssues, lookup)
+		picks, lookupErrors := a.walk(ctx, pendingIssues, lookup, max, skip)
 		apiErrors += lookupErrors
-		if decision != nil {
-			return decision, nil
+		if len(picks.Tickets) > 0 || picks.Then != nil || len(picks.Skipped) > 0 {
+			return picks
 		}
 	}
 
@@ -420,26 +442,18 @@ func (a *Analyzer) pickTicket(ctx context.Context, apiErrors int) (*Decision, er
 			fmt.Fprintf(os.Stderr, "[analyzer] warning: failed to check that the closed tickets landed: %v\n", err)
 			apiErrors++
 		case redo != nil:
-			return redo, nil
+			return Picks{Then: redo}
 		default:
-			return &Decision{
-				NextAction: ActionAllComplete,
-			}, nil
+			return Picks{Then: &Decision{NextAction: ActionAllComplete}}
 		}
 	}
 
 	// Step 5: No actionable tasks
 	// Distinguish between "no tasks found" and "couldn't check due to API errors"
 	if apiErrors > 0 {
-		return &Decision{
-			NextAction: ActionNone,
-			ExitReason: ReasonGitHubAPIError,
-		}, nil
+		return Picks{Then: &Decision{NextAction: ActionNone, ExitReason: ReasonGitHubAPIError}}
 	}
-	return &Decision{
-		NextAction: ActionNone,
-		ExitReason: ReasonNoActionableTasks,
-	}, nil
+	return Picks{Then: &Decision{NextAction: ActionNone, ExitReason: ReasonNoActionableTasks}}
 }
 
 // writeFileAtomic writes data to a file atomically using tmp+rename pattern

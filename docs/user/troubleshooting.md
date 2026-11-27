@@ -79,7 +79,7 @@ awkit run
 
 ### 需要人處理（`needs-human-review`）
 
-流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改；Worker 要讀的內容，或它的 pull request 要寫到 GitHub 的內容，被 guardrail 擋下（見下一節）。issue 上的留言會說是哪一種。
+流程在這些情況下會把票交給你：同一個 pull request 的審查重來的次數達到 `escalation.max_review_attempts`；衝突解不掉；票的 `awk-ticket` 區塊讀不懂；幾張票的 `depends_on` 互相等待、繞成一圈（每一張都會轉給你，留言說是哪幾張、怎麼繞的）；pull request 上有你留下的審查意見，而 Worker 被退回之後沒有推任何修改；Worker 要讀的內容，或它的 pull request 要寫到 GitHub 的內容，被 guardrail 擋下（見下一節）。issue 上的留言會說是哪一種。
 
 處理完之後拿掉標籤，票就回到佇列：
 

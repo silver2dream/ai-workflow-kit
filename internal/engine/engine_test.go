@@ -14,6 +14,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 	"github.com/silver2dream/ai-workflow-kit/internal/worker"
 )
 
@@ -41,6 +42,22 @@ func (g *fakeGitHub) Tickets(ctx context.Context) ([]Ticket, error) {
 		}
 	}
 	return out, nil
+}
+
+// pendingOf are the tickets the analyzer would look at for one to start:
+// open, by number, and none that a label says is in the workflow's hands.
+func (g *fakeGitHub) pendingOf() []Ticket {
+	var out []Ticket
+	for _, t := range g.tickets {
+		held := slices.ContainsFunc(t.Labels, func(l string) bool {
+			return slices.Contains([]string{"in-progress", "pr-ready", "worker-failed", "needs-human-review", "review-failed", "merge-conflict", "needs-rebase", "completed"}, l)
+		})
+		if !t.Closed && slices.Contains(t.Labels, "ai-task") && !held {
+			out = append(out, *t)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
+	return out
 }
 
 func (g *fakeGitHub) Ticket(ctx context.Context, issue int) (Ticket, error) {
@@ -91,22 +108,52 @@ func (g *fakeGitHub) labels(issue int) string {
 // fakeAnalyzer answers the engine's questions from a script.
 type fakeAnalyzer struct {
 	precheck *analyzer.Decision
-	next     []*analyzer.Decision // NextTicket answers, in turn; the last repeats
-	asked    int
-	prs      map[int]int
+	// next are the answers to Candidates, in turn; the last repeats. A
+	// dispatch is a ticket to start, anything else what was decided instead.
+	next  []*analyzer.Decision
+	asked int
+	prs   map[int]int
+	// pending, when set, are what Candidates looks at instead: these
+	// tickets, in turn, each with its body, as the analyzer would, with skip
+	// asked of each (pendingOf).
+	pending func() []Ticket
+	// maxAsked is how many tickets each Candidates asked for.
+	maxAsked []int
 }
 
 func (a *fakeAnalyzer) Precheck() *analyzer.Decision { return a.precheck }
-func (a *fakeAnalyzer) NextTicket(ctx context.Context) (*analyzer.Decision, error) {
+func (a *fakeAnalyzer) Candidates(ctx context.Context, max int, skip analyzer.Skip) (analyzer.Picks, error) {
 	a.asked++
-	if len(a.next) == 0 {
-		return &analyzer.Decision{NextAction: analyzer.ActionAllComplete}, nil
+	a.maxAsked = append(a.maxAsked, max)
+	if a.pending != nil {
+		var picks analyzer.Picks
+		for _, t := range a.pending() {
+			meta, found, _ := ticket.Parse(t.Body)
+			if skip != nil && skip(t.Number, meta, found) {
+				picks.Skipped = append(picks.Skipped, t.Number)
+				continue
+			}
+			picks.Tickets = append(picks.Tickets, dispatch(t.Number))
+			if len(picks.Tickets) == max {
+				break
+			}
+		}
+		if len(picks.Tickets) == 0 && len(picks.Skipped) == 0 {
+			picks.Then = &analyzer.Decision{NextAction: analyzer.ActionAllComplete}
+		}
+		return picks, nil
 	}
-	d := a.next[0]
-	if len(a.next) > 1 {
-		a.next = a.next[1:]
+	d := &analyzer.Decision{NextAction: analyzer.ActionAllComplete}
+	if len(a.next) > 0 {
+		d = a.next[0]
+		if len(a.next) > 1 {
+			a.next = a.next[1:]
+		}
 	}
-	return d, nil
+	if d.NextAction == analyzer.ActionDispatchWorker {
+		return analyzer.Picks{Tickets: []*analyzer.Decision{d}}, nil
+	}
+	return analyzer.Picks{Then: d}, nil
 }
 func (a *fakeAnalyzer) PRNumber(issue int, body string) int { return a.prs[issue] }
 

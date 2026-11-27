@@ -13,6 +13,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/agent"
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
 // The engine runs the workflow in the Principal's place (design.md §5.1,
@@ -21,16 +22,18 @@ import (
 // labels: a lane at work, in review, to be reviewed again, to be resolved,
 // waiting for a person, and only then the next ticket. What is decided
 // before any lane is looked at (a stop, too many rounds, too many failures)
-// and which ticket comes next (its dependencies, a ticket that cannot be
-// used, a run that is complete) it asks the analyzer itself. Its decisions
-// are the analyzer's (analyzer.Decision), so that the two can be compared
-// (task 1.7). One lane at a time, as in P1.
+// and which tickets can start (their dependencies, a ticket that cannot be
+// used, a run that is complete) it asks the analyzer itself; which of those
+// a lane's paths keep off, and which wait for each other in a circle, it
+// decides (schedule.go). Its decisions are the analyzer's (analyzer.Decision),
+// so that the two can be compared (task 1.7). One lane at a time, until task
+// 2.2b.
 
 // Analyzer is what the engine asks the Principal's analyzer
 // (*analyzer.Analyzer).
 type Analyzer interface {
 	Precheck() *analyzer.Decision
-	NextTicket(ctx context.Context) (*analyzer.Decision, error)
+	Candidates(ctx context.Context, max int, skip analyzer.Skip) (analyzer.Picks, error)
 	PRNumber(issue int, body string) int
 }
 
@@ -73,6 +76,9 @@ type Engine struct {
 	// logMu keeps what the run and its inbox say from running into each
 	// other (Serve takes commands while a step runs).
 	logMu sync.Mutex
+	// open are the open tickets, as the last reconciliation read them: their
+	// blocks say what each holds and waits for.
+	open []Ticket
 }
 
 // Options are what `awkit run` gives the engine.
@@ -224,6 +230,7 @@ func (e *Engine) Reconcile(ctx context.Context) error {
 		return err
 	}
 	sort.Slice(tickets, func(i, j int) bool { return tickets[i].Number < tickets[j].Number })
+	e.open = tickets
 	open := map[int]bool{}
 	for _, t := range tickets {
 		if e.Only != 0 && t.Number != e.Only {
@@ -347,7 +354,106 @@ func (e *Engine) Next(ctx context.Context) (*analyzer.Decision, error) {
 	if d != nil {
 		return d, nil
 	}
-	return e.Analyzer.NextTicket(ctx)
+	return e.pick(ctx)
+}
+
+// pick is the next ticket to start, as the analyzer finds the tickets that
+// can start, past the ones the paths of a lane keep off (design.md §5.3); or
+// what the analyzer decided instead. With every ticket kept off and nothing
+// in hand, the work waits for the lanes that hold the paths: the run ends
+// for a person. With every ticket waiting for another, the ones in a circle
+// are handed to a person.
+func (e *Engine) pick(ctx context.Context) (*analyzer.Decision, error) {
+	lanes := e.live()
+	free := maxParallel - taken(lanes)
+	if free < 1 {
+		// Every lane that takes a slot is in hand, and decided first.
+		return nil, fmt.Errorf("no slot is free for a ticket to start, and no lane in hand was decided (%d take a slot)", taken(lanes))
+	}
+	paths := map[int][]string{}
+	known := map[int]bool{}
+	for _, t := range e.open {
+		paths[t.Number], known[t.Number] = pathsOfBody(t.Body), true
+	}
+	var holds []hold
+	for _, l := range lanes {
+		if holdsPaths(l) {
+			// A lane whose ticket is not open is taken for one that holds
+			// every file: reconciliation ends it before it is let go.
+			holds = append(holds, hold{Issue: l.Issue, Paths: paths[l.Issue]})
+		}
+	}
+	keptBy := map[int]int{}
+	picks, err := e.Analyzer.Candidates(ctx, free, func(issue int, meta ticket.Meta, found bool) bool {
+		if by := heldBy(holds, issue, pathsOf(meta, found)); by != 0 {
+			keptBy[issue] = by
+			return true
+		}
+		return false
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, issue := range picks.Skipped {
+		e.logf("#%d can start, and waits: #%d holds paths it may change", issue, keptBy[issue])
+	}
+	if len(picks.Tickets) > 0 {
+		return picks.Tickets[0], nil
+	}
+	if picks.Then == nil {
+		if len(picks.Skipped) == 0 {
+			return nil, fmt.Errorf("the analyzer found no ticket to start, and said nothing else")
+		}
+		first := picks.Skipped[0]
+		return &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: keptBy[first], ExitReason: analyzer.ReasonNeedsHumanReview}, nil
+	}
+	if picks.Then.ExitReason == analyzer.ReasonBlockedByDependencies {
+		if d, err := e.circles(ctx); d != nil || err != nil {
+			return d, err
+		}
+	}
+	return picks.Then, nil
+}
+
+// circles hands the tickets that wait for each other in a circle to a
+// person, and says so on each; nil when there is no circle. What the open
+// tickets wait for is read from their blocks: a closed ticket waits for
+// nothing (it is done, or done again first), so no circle goes through it.
+func (e *Engine) circles(ctx context.Context) (*analyzer.Decision, error) {
+	waits := map[int][]int{}
+	for _, t := range e.open {
+		meta, found, err := ticket.Parse(t.Body)
+		if err != nil || !found {
+			continue
+		}
+		waits[t.Number] = meta.DependsOn
+	}
+	var first *analyzer.Decision
+	for _, c := range Cycles(waits) {
+		for _, issue := range c.Members {
+			if e.Only != 0 && issue != e.Only {
+				continue
+			}
+			l := e.Journal.Lane(issue)
+			var err error
+			if l == nil {
+				l, err = e.record(ctx, Transition{Issue: issue, To: Blocked, Cause: CauseOpened, Note: "it waits for tickets that are not done", At: e.clock()}, true)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if l.State != NeedsYou {
+				t := Transition{Issue: issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: WhyDependencyCycle, Note: c.Note(), At: e.clock()}
+				if _, err := e.record(ctx, t, false); err != nil {
+					return nil, err
+				}
+			}
+			if first == nil {
+				first = &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: issue, ExitReason: analyzer.ReasonNeedsHumanReview}
+			}
+		}
+	}
+	return first, nil
 }
 
 // inHand is what to do with the lanes in the workflow's hands: a lane at
