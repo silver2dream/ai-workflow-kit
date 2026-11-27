@@ -153,7 +153,7 @@
   - 需求：R6
   - 細節在 `design.md` §7。原本沒寫清楚、這次定下的：schema 2 的 `paths`、`risk` 都必填；glob 只接受 `*`、`?`、`**`；路徑要在工單的 repo 資料夾裡（`allow_parent_changes` 例外）；可能包括 AWK 自己檔案的路徑要 `allow_script_changes`；新的工單一律 schema 2（`awkit create-task` 拒絕 schema 1）；兩個 glob 有沒有交集（`ticket.Overlap`）先在這裡做，2.2 的避撞直接用
   - 2.1 完成：#297
-- [ ] 2.2 排程器
+- [x] 2.2 排程器
   - 相依：1.6、2.1
   - `engine.max_parallel`、`engine.max_per_backend`；依賴的拓撲順序與環的偵測；路徑避撞；人的優先與固定組；名額不含等核可與等 CI 的線
   - 需求：R3
@@ -166,6 +166,8 @@
     - engine 程序裡以前一次只有一件在做的讀改寫也加鎖：連續失敗次數、session 紀錄、教訓
     - 有步驟在跑時，不是步驟的決定（結束、轉人、等待）不結束這一輪，只把它說到的線轉過去，等手上的步驟做完；`awkit stop` 因此是「手上的步驟做完就停」
     - 這兩個設定鍵在工作台的設定頁也能改（§12 的規則）
+  - 2.2b 實跑（2026-11-27，測試 repo `silver2dream/awk-engine-test`，`engine.max_parallel: 3`）：三張路徑互不重疊的工單同一秒派出，三個 Worker 同時寫、各約 2 分鐘開出 PR，審查一次一個，三張都合併，整輪 4 分 37 秒（一次一張估計 8 分多）
+  - 2.2b 完成：#299
 - [ ] 2.3 合併佇列
   - 相依：2.2、1.5
   - FIFO 加人的優先；rebase、衝突交給 resolver、重驗（diff 政策與驗證）、push、CI、合併；「先別合併」
