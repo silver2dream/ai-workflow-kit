@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/agent"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/council"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
@@ -77,6 +78,15 @@ func cmdValidate(args []string) int {
 	}
 
 	output.Success("Required fields: OK")
+
+	// The engine's agents: settings it would refuse to start with are found
+	// here, not when the work starts.
+	if _, err := agent.FromConfig(cfg); err != nil {
+		fmt.Println("")
+		output.Error(fmt.Sprintf("The engine's agents: %v", err))
+		return 1
+	}
+	output.Success("The engine's agents: OK")
 
 	// Validate paths
 	// baseDir should be the project root (parent of .ai directory)

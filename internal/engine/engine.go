@@ -92,15 +92,11 @@ func New(opts Options) (*Engine, error) {
 		return nil, err
 	}
 	// The agents' settings: the roles' defaults, the project's on them.
-	worker := Implementer(cfg)
-	reviewer, err := agent.Resolve(agent.Reviewer, worker, override(cfg.Agents.Reviewer))
+	agents, err := agent.FromConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("agents.reviewer in %s: %w", config.Path(""), err)
+		return nil, fmt.Errorf("%s: %w", config.Path(""), err)
 	}
-	resolver, err := agent.Resolve(agent.Resolver, worker, override(cfg.Agents.Resolver))
-	if err != nil {
-		return nil, fmt.Errorf("agents.resolver in %s: %w", config.Path(""), err)
-	}
+	worker, reviewer, resolver := agents.Implementer, agents.Reviewer, agents.Resolver
 	journal, err := OpenJournal(opts.Root)
 	if err != nil {
 		return nil, err
@@ -129,23 +125,6 @@ func New(opts Options) (*Engine, error) {
 		e.logf("the reviewer is the same model as the Worker (%s %s): its review is less independent; agents.reviewer sets another", reviewer.Backend, reviewer.Model)
 	}
 	return e, nil
-}
-
-// Implementer is the Worker's settings, as the roles that follow it read
-// them: its backend, and, for Claude Code, its model and effort.
-func Implementer(cfg *config.Config) agent.Profile {
-	p := agent.Profile{Role: agent.Implementer, Backend: cfg.Worker.Backend}
-	if p.Backend == "" {
-		p.Backend = agent.Codex
-	}
-	if p.Backend == agent.ClaudeCode {
-		p.Model, p.Effort = cfg.Worker.ClaudeCode.Model, cfg.Worker.ClaudeCode.Effort
-	}
-	return p
-}
-
-func override(r config.AgentRole) agent.Override {
-	return agent.Override{Backend: r.Backend, Model: r.Model, Effort: r.Effort, Minutes: r.Minutes, USD: r.USD}
 }
 
 func (e *Engine) logf(format string, args ...any) {

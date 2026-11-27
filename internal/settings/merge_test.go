@@ -50,3 +50,32 @@ func TestMergeRoster(t *testing.T) {
 		t.Errorf("limits = %+v, %v", merged.Limits, err)
 	}
 }
+
+// Each setting of an agent the person changed is theirs; the others are the
+// branch's.
+func TestMergeConfig_TheAgents(t *testing.T) {
+	was := readConfig(t, configFile)
+	mine := readConfig(t, configFile)
+	mine.Agents.Reviewer.Model = "opus"
+	usd := 3.0
+	mine.Agents.Resolver.USD = &usd
+	theirs := readConfig(t, configFile)
+	theirs.Agents.Reviewer.Minutes = intOf(30)
+	theirs.Agents.Resolver.Backend = "claude-code"
+	merged, err := mergeConfig(was, mine, theirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, s := merged.Agents.Reviewer, merged.Agents.Resolver
+	if r.Model != "opus" || r.Minutes == nil || *r.Minutes != 30 || s.Backend != "claude-code" || s.USD == nil || *s.USD != 3 {
+		t.Errorf("merged = %+v %+v", r, s)
+	}
+	// Taking a limit out is a change too.
+	was.Agents.Reviewer.USD = &usd
+	mine = readConfig(t, configFile)
+	theirs = readConfig(t, configFile)
+	theirs.Agents.Reviewer.USD = &usd
+	if merged, _ := mergeConfig(was, mine, theirs); merged.Agents.Reviewer.USD != nil {
+		t.Errorf("a limit taken out is put back: %v", *merged.Agents.Reviewer.USD)
+	}
+}

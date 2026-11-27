@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/agent"
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
@@ -24,6 +25,8 @@ type Config struct {
 	Release     string         `json:"release_branch"`
 	Repos       []RepoCommands `json:"repos"`
 	Worker      Worker         `json:"worker"`
+	// Agents are the engine's reviewer and resolver.
+	Agents      Agents         `json:"agents"`
 	Review      Review         `json:"review"`
 	Retries     Retries        `json:"retries"`
 	// VerifyMinutes bounds one build, test or setup command; nil for the
@@ -47,6 +50,24 @@ type Worker struct {
 	Backend string `json:"backend"`
 	Model   string `json:"model"`
 	Effort  string `json:"effort"`
+}
+
+// Agents are the settings of the engine's reviewer and resolver
+// (agents.reviewer, agents.resolver): what is left empty keeps the role's
+// default, which follows the Worker.
+type Agents struct {
+	Reviewer AgentRole `json:"reviewer"`
+	Resolver AgentRole `json:"resolver"`
+}
+
+// AgentRole is one of them: the backend, its model and effort, and how long
+// and how much one run may take; nil for the default.
+type AgentRole struct {
+	Backend string   `json:"backend"`
+	Model   string   `json:"model"`
+	Effort  string   `json:"effort"`
+	Minutes *int     `json:"minutes"`
+	USD     *float64 `json:"usd"`
 }
 
 // Review is how a pull request is reviewed and merged.
@@ -80,6 +101,20 @@ type ConfigDefaults struct {
 	Backends       []string `json:"backends"`
 	Strategies     []string `json:"strategies"`
 	Efforts        []string `json:"efforts"`
+	// Agents are what the reviewer's and the resolver's settings may be;
+	// their defaults follow the Worker, and the page works them out by the
+	// rules of agent.Defaults.
+	Agents AgentLimits `json:"agents"`
+}
+
+// AgentLimits are what the settings of the engine's agents may be.
+type AgentLimits struct {
+	// Minutes is how long one run takes by default, and MaxMinutes how long
+	// it may be set to take, by role.
+	Minutes    map[string]int `json:"minutes"`
+	MaxMinutes map[string]int `json:"max_minutes"`
+	// CodexEfforts are the efforts codex takes (Efforts are Claude Code's).
+	CodexEfforts []string `json:"codex_efforts"`
 }
 
 // DefaultsOfConfig returns what a configuration that leaves a value out gets.
@@ -96,7 +131,18 @@ func DefaultsOfConfig() ConfigDefaults {
 		Backends:       []string{"codex", "claude-code"},
 		Strategies:     []string{"squash", "merge", "rebase"},
 		Efforts:        claudecli.Efforts,
+		Agents:         agentLimits(defaults),
 	}
+}
+
+func agentLimits(defaults *config.Config) AgentLimits {
+	limits := AgentLimits{Minutes: map[string]int{}, MaxMinutes: map[string]int{}, CodexEfforts: agent.CodexEfforts()}
+	worker := agent.ImplementerOf(defaults)
+	for _, role := range []agent.Role{agent.Reviewer, agent.Resolver} {
+		limits.Minutes[string(role)] = agent.Defaults(role, worker).Minutes
+		limits.MaxMinutes[string(role)] = agent.MaxMinutes(role)
+	}
+	return limits
 }
 
 // ReadConfig reads the part of a configuration file the workbench shows, as
@@ -123,6 +169,7 @@ func ReadConfig(data []byte) (*Config, error) {
 		Worker: Worker{
 			Backend: file.Worker.Backend, Model: file.Worker.ClaudeCode.Model, Effort: file.Worker.ClaudeCode.Effort,
 		},
+		Agents:        Agents{Reviewer: roleOf(file.Agents.Reviewer), Resolver: roleOf(file.Agents.Resolver)},
 		Review:        Review{ScoreThreshold: positive(file.Review.ScoreThreshold), MergeStrategy: file.Review.MergeStrategy},
 		Retries:       Retries{ReviewAttempts: positive(file.Escalation.MaxReviewAttempts)},
 		VerifyMinutes: positive(file.Timeouts.VerifyMinutes),
@@ -144,8 +191,24 @@ func ReadConfig(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
+// roleOf is an agent's settings as the file has them: a number it leaves
+// out, or gives as zero, is the default.
+func roleOf(r config.AgentRole) AgentRole {
+	role := AgentRole{Backend: r.Backend, Model: r.Model, Effort: r.Effort}
+	if r.Minutes != 0 {
+		minutes := r.Minutes
+		role.Minutes = &minutes
+	}
+	if r.USD != 0 {
+		usd := r.USD
+		role.USD = &usd
+	}
+	return role
+}
+
 // CheckConfig says what keeps a run from using a configuration file, nil
-// when nothing does.
+// when nothing does: what the configuration checks of itself, and the
+// settings of the engine's agents, which the engine refuses to start with.
 func CheckConfig(data []byte) error {
 	cfg, err := config.Parse(layout.ConfigFile, data)
 	if err != nil {
@@ -157,6 +220,9 @@ func CheckConfig(data []byte) error {
 			lines[i] = problem.Error()
 		}
 		return fmt.Errorf("%s is not valid: %s", layout.ConfigFile, strings.Join(lines, "; "))
+	}
+	if _, err := agent.FromConfig(cfg); err != nil {
+		return fmt.Errorf("%s is not valid: %w", layout.ConfigFile, err)
 	}
 	return nil
 }
@@ -218,6 +284,32 @@ func ApplyConfig(data []byte, cfg Config) ([]byte, error) {
 			setOptional(claude, "model", strings.TrimSpace(cfg.Worker.Model))
 			setOptional(claude, "effort", strings.TrimSpace(cfg.Worker.Effort))
 		})
+	})
+	section(top, "agents", func(agents *yaml.Node) {
+		for _, r := range []struct {
+			key  string
+			role AgentRole
+		}{{"reviewer", cfg.Agents.Reviewer}, {"resolver", cfg.Agents.Resolver}} {
+			section(agents, r.key, func(role *yaml.Node) {
+				had := keysOf(role)
+				setOptional(role, "backend", strings.TrimSpace(r.role.Backend))
+				setOptional(role, "model", strings.TrimSpace(r.role.Model))
+				setOptional(role, "effort", strings.TrimSpace(r.role.Effort))
+				// Zero is the default; what is past a role's limit is
+				// written, and the check below refuses it.
+				minutes := r.role.Minutes
+				if minutes != nil && *minutes == 0 {
+					minutes = nil
+				}
+				setOptionalInt(role, "minutes", minutes)
+				usd := r.role.USD
+				if usd != nil && *usd == 0 {
+					usd = nil
+				}
+				setOptionalFloat(role, "usd", usd)
+				arrange(role, []string{"backend", "model", "effort", "minutes", "usd"}, had)
+			})
+		}
 	})
 	section(top, "review", func(review *yaml.Node) {
 		setOptionalInt(review, "score_threshold", positiveOrNil(cfg.Review.ScoreThreshold))

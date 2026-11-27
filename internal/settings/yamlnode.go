@@ -130,6 +130,21 @@ func setOptionalInt(mapping *yaml.Node, key string, value *int) {
 	set(mapping, key, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(*value)})
 }
 
+// setOptionalFloat sets a number that may have a fraction, and whose absence
+// means its default: nil takes it out. A whole number is written as one.
+func setOptionalFloat(mapping *yaml.Node, key string, value *float64) {
+	if value == nil {
+		remove(mapping, key)
+		return
+	}
+	text := strconv.FormatFloat(*value, 'f', -1, 64)
+	tag := "!!float"
+	if !strings.ContainsAny(text, ".eE") {
+		tag = "!!int"
+	}
+	set(mapping, key, &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: text})
+}
+
 // setText sets a text that may run over several lines, as a block when it
 // does.
 func setText(mapping *yaml.Node, key, value string) {

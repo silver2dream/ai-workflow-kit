@@ -195,3 +195,94 @@ func TestDefaultsOfConfig(t *testing.T) {
 		t.Errorf("defaults = %+v", defaults)
 	}
 }
+
+// The engine's reviewer and resolver: read as the file has them, written
+// under agents beside what else is there, and taken out again when set back
+// to the defaults.
+func TestApplyConfig_TheAgents(t *testing.T) {
+	file := configFile + `
+agents:
+  # The subagents the Principal starts.
+  builtin: [pr-reviewer, conflict-resolver]
+  reviewer:
+    model: sonnet
+`
+	cfg := readConfig(t, file)
+	if cfg.Agents.Reviewer.Model != "sonnet" || cfg.Agents.Reviewer.Minutes != nil || cfg.Agents.Resolver != (AgentRole{}) {
+		t.Errorf("agents = %+v", cfg.Agents)
+	}
+	usd := 1.5
+	cfg.Agents.Reviewer = AgentRole{Backend: "claude-code", Model: "opus", Effort: "high", Minutes: intOf(45), USD: &usd}
+	whole := 2.0
+	cfg.Agents.Resolver = AgentRole{Backend: "codex", Effort: "xhigh", USD: &whole}
+	out, err := ApplyConfig([]byte(file), *cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"agents:\n  # The subagents the Principal starts.\n  builtin: [pr-reviewer, conflict-resolver]\n",
+		"  reviewer:\n    backend: claude-code\n    model: opus\n    effort: high\n    minutes: 45\n    usd: 1.5\n",
+		"  resolver:\n    backend: codex\n    effort: xhigh\n    usd: 2\n",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the file has no %q:\n%s", want, out)
+		}
+	}
+	back := readConfig(t, string(out))
+	if back.Agents.Reviewer.USD == nil || *back.Agents.Reviewer.USD != 1.5 || *back.Agents.Reviewer.Minutes != 45 || back.Agents.Resolver.Effort != "xhigh" {
+		t.Errorf("read back = %+v", back.Agents)
+	}
+	// Back to the defaults: the roles go, and what else is under agents
+	// stays. Zero is the default too.
+	zero, none := 0, 0.0
+	back.Agents = Agents{Reviewer: AgentRole{Minutes: &zero, USD: &none}}
+	out, err = ApplyConfig(out, *back)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "reviewer:") || strings.Contains(string(out), "resolver:") || !strings.Contains(string(out), "builtin: [pr-reviewer, conflict-resolver]") {
+		t.Errorf("defaults are written down:\n%s", out)
+	}
+	// A file with no agents gets none written when none are set.
+	if out, _ := ApplyConfig([]byte(configFile), *readConfig(t, configFile)); strings.Contains(string(out), "agents:") {
+		t.Errorf("agents written:\n%s", out)
+	}
+}
+
+// What the engine would refuse to start with is refused before it is saved,
+// naming the key.
+func TestApplyConfig_RefusesAgentsTheEngineWouldNot(t *testing.T) {
+	negative := -1.0
+	for want, role := range map[string]AgentRole{
+		"agents.reviewer: the reviewer's time limit is 500 minutes": {Minutes: intOf(500)},
+		"agents.reviewer: the reviewer cannot run on \"gpt\"":       {Backend: "gpt"},
+		"agents.reviewer: the reviewer's effort \"minimal\"":        {Effort: "minimal"},
+		"agents.reviewer: the reviewer's spend limit is negative":   {USD: &negative},
+	} {
+		cfg := readConfig(t, configFile)
+		cfg.Agents.Reviewer = role
+		if _, err := ApplyConfig([]byte(configFile), *cfg); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%+v: %v, want %q", role, err, want)
+		}
+	}
+	cfg := readConfig(t, configFile)
+	cfg.Agents.Resolver = AgentRole{Backend: "codex", Effort: "max"}
+	if _, err := ApplyConfig([]byte(configFile), *cfg); err == nil || !strings.Contains(err.Error(), "agents.resolver") {
+		t.Errorf("a resolver on codex thinking at max: %v", err)
+	}
+	if err := CheckConfig([]byte(configFile + "agents:\n  resolver: {minutes: 121}\n")); err == nil || !strings.Contains(err.Error(), "agents.resolver") {
+		t.Errorf("check = %v", err)
+	}
+}
+
+// What the page is told the agents' settings may be: their default minutes,
+// their limits and codex's efforts, from the roles themselves.
+func TestDefaultsOfConfig_TheAgents(t *testing.T) {
+	a := DefaultsOfConfig().Agents
+	if a.Minutes["reviewer"] != 20 || a.Minutes["resolver"] != 20 || a.MaxMinutes["reviewer"] != 120 || a.MaxMinutes["resolver"] != 120 {
+		t.Errorf("minutes = %v, max %v", a.Minutes, a.MaxMinutes)
+	}
+	if len(a.CodexEfforts) == 0 || a.CodexEfforts[0] != "minimal" {
+		t.Errorf("codex efforts = %v", a.CodexEfforts)
+	}
+}

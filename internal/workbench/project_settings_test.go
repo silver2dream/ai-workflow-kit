@@ -27,6 +27,22 @@ func TestSettings_Read(t *testing.T) {
 	if view.Defaults.Roster.Model == "" || view.Defaults.Config.ScoreThreshold != 7 || view.Busy != nil || view.Apply != nil || view.Origin {
 		t.Errorf("defaults %+v, busy %+v, apply %+v, origin %v", view.Defaults, view.Busy, view.Apply, view.Origin)
 	}
+	// The engine's agents, and what their settings may be.
+	if a := view.Defaults.Config.Agents; a.MaxMinutes["reviewer"] != 120 || a.Minutes["resolver"] != 20 || len(a.CodexEfforts) == 0 {
+		t.Errorf("the agents' limits: %+v", a)
+	}
+	write(t, root, ".ai/config.yaml", testConfig+"agents:\n  reviewer: {model: haiku, minutes: 15}\n")
+	view = decode[SettingsView](t, do(t, s, http.MethodGet, base+"/settings", ""))
+	if r := view.Config.Agents.Reviewer; r.Model != "haiku" || r.Minutes == nil || *r.Minutes != 15 || view.ConfigProblem != "" {
+		t.Errorf("the reviewer: %+v, problem %q", r, view.ConfigProblem)
+	}
+	// One the engine would not start with is read, and the page is told why.
+	write(t, root, ".ai/config.yaml", testConfig+"agents:\n  reviewer: {minutes: 500}\n")
+	view = decode[SettingsView](t, do(t, s, http.MethodGet, base+"/settings", ""))
+	if !strings.Contains(view.ConfigProblem, "agents.reviewer") {
+		t.Errorf("a reviewer past its limit: problem %q", view.ConfigProblem)
+	}
+	write(t, root, ".ai/config.yaml", testConfig)
 
 	// A roster the council cannot meet with is read all the same, and the
 	// page is told why.

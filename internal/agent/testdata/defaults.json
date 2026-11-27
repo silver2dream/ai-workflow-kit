@@ -1,0 +1,54 @@
+[
+  {
+    "name": "no Worker set",
+    "worker": {},
+    "reviewer": { "backend": "claude-code", "model": "opus", "effort": "", "minutes": 20 },
+    "resolver": { "backend": "codex", "model": "", "effort": "", "minutes": 20 }
+  },
+  {
+    "name": "a Codex Worker",
+    "worker": { "backend": "codex", "model": "opus", "effort": "high" },
+    "reviewer": { "backend": "claude-code", "model": "opus", "effort": "", "minutes": 20 },
+    "resolver": { "backend": "codex", "model": "", "effort": "", "minutes": 20 }
+  },
+  {
+    "name": "a Claude Code Worker on the default model",
+    "worker": { "backend": "claude-code" },
+    "reviewer": { "backend": "claude-code", "model": "opus", "effort": "", "minutes": 20 },
+    "resolver": { "backend": "claude-code", "model": "sonnet", "effort": "", "minutes": 20 }
+  },
+  {
+    "name": "a Claude Code Worker on sonnet, thinking hard",
+    "worker": { "backend": "claude-code", "model": "sonnet", "effort": "high" },
+    "reviewer": { "backend": "claude-code", "model": "opus", "effort": "", "minutes": 20 },
+    "resolver": { "backend": "claude-code", "model": "sonnet", "effort": "high", "minutes": 20 }
+  },
+  {
+    "name": "a Claude Code Worker on opus: the reviewer is another model",
+    "worker": { "backend": "claude-code", "model": "opus" },
+    "reviewer": { "backend": "claude-code", "model": "sonnet", "effort": "", "minutes": 20 },
+    "resolver": { "backend": "claude-code", "model": "opus", "effort": "", "minutes": 20 }
+  },
+  {
+    "name": "a reviewer on another backend starts from that backend's defaults",
+    "worker": { "backend": "claude-code", "model": "opus" },
+    "reviewer_set": { "backend": "codex" },
+    "reviewer": { "backend": "codex", "model": "", "effort": "", "minutes": 20 },
+    "resolver": { "backend": "claude-code", "model": "opus", "effort": "", "minutes": 20 }
+  },
+  {
+    "name": "a backend named that is the default's keeps the default's model",
+    "worker": { "backend": "claude-code", "model": "opus", "effort": "high" },
+    "resolver_set": { "backend": "claude-code", "minutes": 45 },
+    "reviewer": { "backend": "claude-code", "model": "sonnet", "effort": "", "minutes": 20 },
+    "resolver": { "backend": "claude-code", "model": "opus", "effort": "high", "minutes": 45 }
+  },
+  {
+    "name": "what is set is taken over the defaults",
+    "worker": { "backend": "codex" },
+    "reviewer_set": { "model": "haiku", "effort": "low", "minutes": 10, "usd": 1.5 },
+    "resolver_set": { "backend": "claude-code", "model": "sonnet", "effort": "medium" },
+    "reviewer": { "backend": "claude-code", "model": "haiku", "effort": "low", "minutes": 10, "usd": 1.5 },
+    "resolver": { "backend": "claude-code", "model": "sonnet", "effort": "medium", "minutes": 20 }
+  }
+]

@@ -1,6 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Config, Roster } from "@/lib/settings";
-import { configProblems, editable, freeID, numberOf, rosterProblems, same, sendable } from "./model";
+import type { AgentRole, Config, Defaults, Roster } from "@/lib/settings";
+import { AGENT_ROLES, agentDefaults, agentProfile, configProblems, decimalOf, editable, freeID, implementerOf, numberOf, rosterProblems, same, sendable } from "./model";
 
 const roster = (): Roster => ({
   language: "",
@@ -20,9 +22,86 @@ const config = (): Config => ({
   release_branch: "main",
   repos: [{ name: "root", path: "./", language: "go", setup: "", build: "", test: "" }],
   worker: { backend: "codex", model: "", effort: "" },
+  agents: { reviewer: role(), resolver: role() },
   review: { score_threshold: 7, merge_strategy: "squash" },
   retries: { review_attempts: null, worker: null },
   verify_minutes: null,
+});
+
+function role(set: Partial<AgentRole> = {}): AgentRole {
+  return { backend: "", model: "", effort: "", minutes: null, usd: null, ...set };
+}
+
+/** The defaults the server gives, as DefaultsOfConfig has them. */
+const defaults: Defaults["config"] = {
+  backend: "codex",
+  model: "sonnet",
+  score_threshold: 7,
+  merge_strategy: "squash",
+  review_attempts: 3,
+  worker_retries: 2,
+  verify_minutes: 10,
+  backends: ["codex", "claude-code"],
+  strategies: ["squash", "merge", "rebase"],
+  efforts: ["low", "medium", "high", "xhigh", "max"],
+  agents: { minutes: { reviewer: 20, resolver: 20 }, max_minutes: { reviewer: 120, resolver: 120 }, codex_efforts: ["minimal", "low", "medium", "high", "xhigh"] },
+};
+
+interface Shown {
+  backend: string;
+  model: string;
+  effort: string;
+  minutes: number;
+  usd?: number;
+}
+
+/** repoRoot is the repository the page is in: the first folder up from here with go.mod. */
+function repoRoot(): string {
+  for (let dir = process.cwd(); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, "go.mod"))) return dir;
+    if (dirname(dir) === dir) throw new Error(`no go.mod above ${process.cwd()}`);
+  }
+}
+
+interface DefaultsCase {
+  name: string;
+  worker: { backend?: string; model?: string; effort?: string };
+  reviewer_set?: Partial<Shown>;
+  resolver_set?: Partial<Shown>;
+  reviewer: Shown;
+  resolver: Shown;
+}
+
+describe("the agents' defaults", () => {
+  // The cases internal/agent reads too: the defaults the page shows are the
+  // ones the engine runs with.
+  const cases: DefaultsCase[] = JSON.parse(readFileSync(join(repoRoot(), "internal", "agent", "testdata", "defaults.json"), "utf8"));
+
+  it("are the engine's, for every case", () => {
+    expect(cases.length).toBeGreaterThanOrEqual(5);
+    for (const c of cases) {
+      const worker = { backend: c.worker.backend ?? "", model: c.worker.model ?? "", effort: c.worker.effort ?? "" };
+      for (const name of AGENT_ROLES) {
+        const set = c[`${name}_set`];
+        const got = agentProfile(name, role({ ...set, minutes: set?.minutes ?? null, usd: set?.usd ?? null }), worker, defaults);
+        expect(got, `${c.name}, the ${name}`).toEqual({ usd: 0, ...c[name] });
+      }
+    }
+  });
+
+  it("read the Worker as the form has it, saved or not", () => {
+    const worker = { backend: "claude-code", model: "opus", effort: "" };
+    expect(implementerOf(worker, defaults)).toEqual({ backend: "claude-code", model: "opus", effort: "" });
+    expect(agentDefaults("reviewer", worker, defaults).model).toBe("sonnet");
+    expect(agentDefaults("reviewer", { ...worker, model: "" }, defaults).model).toBe("opus");
+    expect(implementerOf({ backend: "", model: "opus", effort: "high" }, defaults)).toEqual({ backend: "codex", model: "", effort: "" });
+  });
+
+  it("keep a number typed as it is, fraction and all", () => {
+    expect(decimalOf("1.5")).toBe(1.5);
+    expect(decimalOf(" ")).toBeNull();
+    expect(decimalOf("x")).toBeNull();
+  });
 });
 
 describe("rosterProblems", () => {
@@ -70,6 +149,17 @@ describe("configProblems", () => {
     const c = config();
     c.retries.worker = 0;
     expect(configProblems(c).count).toBe(0);
+  });
+
+  it("holds the agents to their limits", () => {
+    const c = config();
+    c.agents.reviewer = role({ minutes: 121, usd: -1 });
+    c.agents.resolver = role({ minutes: 0 });
+    const p = configProblems(c, defaults);
+    expect(p.fields).toEqual({ "reviewer.minutes": "是 1 到 120 分鐘。", "reviewer.usd": "不能是負的；不限就空著。", "resolver.minutes": "是 1 到 120 分鐘。" });
+    c.agents.reviewer = role({ minutes: 120, usd: 0.5 });
+    c.agents.resolver = role({ minutes: 1 });
+    expect(configProblems(c, defaults).count).toBe(0);
   });
 });
 

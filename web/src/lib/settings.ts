@@ -40,9 +40,22 @@ export interface Config {
   release_branch: string;
   repos: RepoCommands[];
   worker: { backend: string; model: string; effort: string };
+  /** The engine's reviewer and resolver: what is empty or null is the role's default, which follows the Worker. */
+  agents: { reviewer: AgentRole; resolver: AgentRole };
   review: { score_threshold: number | null; merge_strategy: string };
   retries: { review_attempts: number | null; worker: number | null };
   verify_minutes: number | null;
+}
+
+export type AgentRoleName = "reviewer" | "resolver";
+
+/** One of the engine's agents as the file sets it. */
+export interface AgentRole {
+  backend: string;
+  model: string;
+  effort: string;
+  minutes: number | null;
+  usd: number | null;
 }
 
 export interface RepoCommands {
@@ -67,6 +80,8 @@ export interface Defaults {
     backends: string[];
     strategies: string[];
     efforts: string[];
+    /** What the agents' settings may be: their default and largest minutes by role, and codex's efforts (efforts are Claude Code's). */
+    agents: { minutes: Record<AgentRoleName, number>; max_minutes: Record<AgentRoleName, number>; codex_efforts: string[] };
   };
 }
 

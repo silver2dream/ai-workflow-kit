@@ -765,15 +765,6 @@ func TestReconcile_APersonsHand(t *testing.T) {
 // The agents' settings come from the configuration, on the roles' defaults;
 // what goes past a role's limits keeps the engine from starting.
 func TestNew_TheAgentsSettings(t *testing.T) {
-	cfg := config.Default()
-	if p := Implementer(cfg); p.Backend != "codex" || p.Model != "" {
-		t.Errorf("the default Worker: %+v", p)
-	}
-	cfg.Worker.Backend, cfg.Worker.ClaudeCode.Model, cfg.Worker.ClaudeCode.Effort = "claude-code", "opus", "high"
-	if p := Implementer(cfg); p.Backend != "claude-code" || p.Model != "opus" || p.Effort != "high" {
-		t.Errorf("a Claude Code Worker: %+v", p)
-	}
-
 	start := func(agents string) (*Engine, string, error) {
 		root := t.TempDir()
 		writeFile(t, root+"/.ai/config.yaml", reviewConfig+"worker:\n  backend: claude-code\n  claude_code: {model: opus}\n"+agents)

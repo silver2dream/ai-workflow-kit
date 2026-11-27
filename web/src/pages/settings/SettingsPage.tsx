@@ -128,7 +128,7 @@ export function SettingsPage() {
   }, [changed]);
 
   const rProblems = useMemo(() => (shownRoster ? rosterProblems(shownRoster) : { whole: [], roles: {}, count: 0 }), [shownRoster]);
-  const cProblems = useMemo(() => (shownConfig ? configProblems(shownConfig) : { fields: {}, count: 0 }), [shownConfig]);
+  const cProblems = useMemo(() => (shownConfig ? configProblems(shownConfig, data?.defaults.config) : { fields: {}, count: 0 }), [shownConfig, data?.defaults.config]);
   const problemCount = (rosterChanged ? rProblems.count : 0) + (configChanged ? cProblems.count : 0);
 
   const blocked = !data
