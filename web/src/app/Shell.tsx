@@ -19,7 +19,7 @@ import { useOnboarding } from "@/onboarding/state";
 import type { ProjectView } from "@/lib/api";
 import { href, navigate, useRoute } from "@/lib/router";
 import { planStatus } from "@/pages/plans/status";
-import { workingSteps } from "@/lib/engine";
+import { awaitingApproval, workingSteps } from "@/lib/engine";
 import { useTheme } from "@/lib/theme";
 import { useAfterClose } from "@/lib/after-close";
 import { cn } from "@/lib/utils";
@@ -84,9 +84,11 @@ function ProjectSwitcher({ current, projects, onGo }: { current?: ProjectView; p
 }
 
 function NavLinks({ onGo }: { onGo: Go }) {
-  const { project, tickets, plans, lessons } = useProject();
+  const { project, tickets, plans, lessons, engine } = useProject();
   const route = useRoute();
-  const needs = (tickets.data?.tickets?.open ?? []).filter((t) => t.stage === "needs_you").length;
+  // As the inbox lists them: a change that waits for approval needs you too.
+  const awaiting = awaitingApproval(engine.data);
+  const needs = (tickets.data?.tickets?.open ?? []).filter((t) => t.stage === "needs_you" || awaiting.has(t.number)).length;
   const all = plans.data?.plans ?? [];
   const heldBack = (lessons.data?.lessons ?? []).filter((l) => l.status === "quarantined").length;
   const waiting = needs + all.filter((p) => planStatus(p).needsYou).length + heldBack;

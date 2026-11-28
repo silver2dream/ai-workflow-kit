@@ -4,7 +4,7 @@ import { Empty, Panel, PanelHead, Problem, Tag } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useTicketSheet } from "@/app/ticket-sheet";
 import type { EngineView, Lane } from "@/lib/api";
-import { laneMeta, stepWords, whyWords } from "@/lib/engine";
+import { approvalHow, laneMeta, stepWords, whyWords } from "@/lib/engine";
 import { isHighRisk, ruleWords, sourceWords } from "@/lib/guard";
 import { titleOf } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
@@ -78,9 +78,7 @@ function LaneRow({ lane, view }: { lane: Lane; view: EngineView }) {
             <b>等你核可。</b>
             {meta.means}
             {lane.note && <span className="mt-0.5 block text-[12.5px] text-muted-foreground">engine 的說明：{lane.note}</span>}
-            <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
-              在終端機用 awkit lane approve {lane.issue} 核可，或 awkit lane reject {lane.issue} --note "要改什麼" 退回。
-            </span>
+            <span className="mt-0.5 block text-[12.5px] text-muted-foreground">{approvalHow(lane.issue)}</span>
           </div>
         )}
         {used.length > 0 && <div className="text-[13px] text-ink2">{used.join(" · ")}</div>}

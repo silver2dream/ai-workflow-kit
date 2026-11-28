@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ExternalLink, GitPullRequest, Hand, History, Link2, Play, Ticket as TicketIcon } from "lucide-react";
+import { ExternalLink, GitPullRequest, Hand, History, Link2, Play, ShieldAlert, Ticket as TicketIcon } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DOT, Empty, Tag, TONE } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useOnboarding } from "@/onboarding/state";
+import { approvalHow, awaitingApproval, laneMeta } from "@/lib/engine";
 import { titleOf } from "@/lib/tickets";
 import { describe, eventKey, STAGES, when } from "@/lib/words";
 import { href, useRoute } from "@/lib/router";
@@ -56,13 +57,16 @@ export function TicketSheetProvider({ children }: { children: ReactNode }) {
 }
 
 function TicketDetail({ number, onOpen }: { number: number; onOpen: (n: number) => void }) {
-  const { project, tickets, events, status } = useProject();
+  const { project, tickets, events, status, engine } = useProject();
   const ticket = tickets.data?.tickets?.open?.find((t) => t.number === number);
   // A ticket that is done is still named.
   const title = titleOf(tickets.data, number);
   const history = (events.data?.events ?? []).filter((e) => e.issue_id === number);
   const prs = [...new Set(history.map((e) => e.pr_number).filter((n): n is number => !!n))];
-  const meta = ticket ? STAGES[ticket.stage] : STAGES.done;
+  // A high-risk change that waits for its owner: its label says it needs
+  // you, the engine says what for.
+  const waiting = awaitingApproval(engine.data).get(number);
+  const meta = waiting ? laneMeta(waiting) : ticket ? STAGES[ticket.stage] : STAGES.done;
   const prURL = (pr: number) => ticket?.url?.replace(/\/issues\/\d+$/, `/pull/${pr}`);
 
   return (
@@ -72,13 +76,29 @@ function TicketDetail({ number, onOpen }: { number: number; onOpen: (n: number) 
         <SheetTitle className="text-[20px] font-extrabold leading-snug">{title ?? "這張工單不在進行中的清單裡"}</SheetTitle>
         <SheetDescription asChild>
           <div className="flex flex-wrap items-center gap-2">
-            <Tag tone={meta.tone}>{ticket ? meta.label : "已合併或已關閉"}</Tag>
-            <span className="text-[13.5px] text-muted-foreground">{ticket ? meta.means : "它可能已經合併，或在 GitHub 上被關掉了。"}</span>
+            <Tag tone={meta.tone}>{ticket || waiting ? meta.label : "已合併或已關閉"}</Tag>
+            <span className="text-[13.5px] text-muted-foreground">{ticket || waiting ? meta.means : "它可能已經合併，或在 GitHub 上被關掉了。"}</span>
           </div>
         </SheetDescription>
       </SheetHeader>
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {ticket?.stage === "needs_you" && (
+        {waiting && (
+          <div className="mb-6 overflow-hidden rounded-lg bg-signal/15 ring-1 ring-inset ring-[#D29A00]/50">
+            <div className="hazard h-1.5" />
+            <div className="p-4">
+              <div className="flex items-center gap-2 text-[15px] font-extrabold">
+                <ShieldAlert className="size-4" aria-hidden />
+                等你核可
+              </div>
+              <p className="mt-1 text-[14.5px] leading-relaxed">審查通過了，但改動有風險，合併前要你看過。工單上的留言寫著是哪條規則、哪些檔案。</p>
+              {waiting.note && <p className="mt-1 break-words text-[13px] text-muted-foreground">engine 的說明：{waiting.note}</p>}
+              <p className="mt-2 text-[13.5px] leading-relaxed text-ink2">
+                {approvalHow(number)}核可的會進合併佇列；退回的交回執行者，你寫的說明會交給它。拿掉 needs-human-review 標籤不算核可。在工作台裡直接核可或退回，會在之後的版本加上。
+              </p>
+            </div>
+          </div>
+        )}
+        {!waiting && ticket?.stage === "needs_you" && (
           <div className="mb-6 overflow-hidden rounded-lg bg-signal/15 ring-1 ring-inset ring-[#D29A00]/50">
             <div className="hazard h-1.5" />
             <div className="p-4">

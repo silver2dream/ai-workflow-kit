@@ -2,8 +2,27 @@
 // person who does not write code reads. The server says it with the
 // engine's own names (internal/engine); they are put in words here, and a
 // name this page does not know is shown as it is.
-import type { Decision, EngineRun, EngineStep, Lane, LaneState } from "./api";
+import type { Decision, EngineRun, EngineStep, EngineView, Lane, LaneState } from "./api";
 import type { StageMeta } from "./words";
+
+/**
+ * awaitingApproval is the lanes whose high-risk change waits for the owner's
+ * approval, by issue. Their tickets are marked needs-human-review as a
+ * ticket that is stuck is; what they wait for is the engine's to say.
+ */
+export function awaitingApproval(view: EngineView | null | undefined): Map<number, Lane> {
+  return new Map((view?.lanes ?? []).filter((l) => l.state === "awaiting_approval").map((l) => [l.issue, l]));
+}
+
+/** approvalWhy says why a ticket needs the person when its change waits for approval; nothing for another ticket, whose server's word stands. */
+export function approvalWhy(waiting: Map<number, Lane>, issue: number): string | undefined {
+  return waiting.has(issue) ? `等你核可：${LANES.awaiting_approval.means}` : undefined;
+}
+
+/** approvalHow says how a ticket whose change waits for approval is approved or returned, until the workbench does it itself. */
+export function approvalHow(issue: number): string {
+  return `在終端機用 awkit lane approve ${issue} 核可，或 awkit lane reject ${issue} --note "要改什麼" 退回。`;
+}
 
 /** Where a ticket is in the engine's hands. */
 export const LANES: Record<LaneState, StageMeta> = {
