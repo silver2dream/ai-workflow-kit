@@ -138,7 +138,7 @@ func TestEngine_TheOwnerApproves(t *testing.T) {
 	if l := f.lane(12); l.State != Queued || l.Approved != "abc" || l.Note != "" {
 		t.Errorf("lane: %+v", l)
 	}
-	if r := reply(Command{Kind: CommandApprove, Issue: 12}); r.Result != Rejected || !strings.Contains(r.Reason, "#12 is queued") {
+	if r := reply(Command{Kind: CommandApprove, Issue: 12}); r.Result != Rejected || !strings.Contains(r.Reason, "#12 is queued: only a lane that waits for approval") {
 		t.Errorf("approved again: %+v", r)
 	}
 	f.an.next = []*analyzer.Decision{{NextAction: analyzer.ActionAllComplete}}
@@ -171,6 +171,19 @@ func TestEngine_TheOwnerReturns(t *testing.T) {
 	}
 	if got := f.gh.labels(12); got != "ai-task" {
 		t.Errorf("labels: %s", got)
+	}
+	// Returned again, now that it no longer waits: refused, and the reason
+	// of a return that was not made is not kept for the next Worker.
+	again, err := Send(f.e.Root, Command{Kind: CommandReject, Issue: 12, By: "the workbench", Args: map[string]string{"note": "Not this."}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.e.takeCommands(nil)
+	if r, _ := ReplyOf(f.e.Root, again.ID); r.Result != Rejected || !strings.Contains(r.Reason, "only a lane that waits for approval") {
+		t.Errorf("returned again: %+v", r)
+	}
+	if notes, err := lanenote.Read(f.e.Root, 12); err != nil || len(notes) != 1 {
+		t.Errorf("notes after a refused return: %+v, %v", notes, err)
 	}
 }
 

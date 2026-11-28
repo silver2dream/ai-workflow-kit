@@ -25,6 +25,7 @@ func TestHighRisk(t *testing.T) {
 		{"a ticket of high risk", RiskInput{Files: []string{"a.go"}, TicketRisk: "High"}, "ticket"},
 		{"a release", RiskInput{Files: []string{"a.go"}, Release: true}, "release"},
 		{"migrations", RiskInput{Files: []string{"db/migrations/0003_users.sql", "backend/migration/x.go", "alembic/versions/ab12.py", "db/migrate/20261128_add.rb", "sql/V3_1__add_users.sql"}}, "migration"},
+		{"a migration of Flyway's", RiskInput{Files: []string{"src/main/resources/sql/V2__add_index.sql"}}, "migration"},
 		{"not migrations", RiskInput{Files: []string{"internal/migrate/migrate.go", "cmd/migrate.go", "docs/migrations.md"}}, ""},
 		{"CI and the build", RiskInput{Files: []string{".github/workflows/ci.yml", "Makefile", "deploy/Dockerfile", "docker-compose.yaml"}}, "ci-build"},
 		{"dependencies and their locks", RiskInput{Files: []string{"go.mod", "go.sum", "web/package.json", "web/package-lock.json", "yarn.lock", "requirements-dev.txt", "Cargo.lock"}}, "dependency"},
