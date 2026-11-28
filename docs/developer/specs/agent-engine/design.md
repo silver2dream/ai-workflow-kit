@@ -716,6 +716,37 @@ P0（還沒有 engine）時：主控的 session 也掛上同一個 hook（1.7b �
 - 核可畫面：為什麼是高風險（哪條規則、哪些檔案）、diff 摘要、審查結果、所有 guardrail 判定、CI 結果；核可 → `queued`；退回 → `rework`，並把人的意見以 owner 等級放進下一次派工。
 - 等核可的線不佔名額，其他線照跑。
 
+實作分兩步（2026-11-28 定）：2.5a 是 engine 的部分（範圍檢查、高風險規則、`awaiting_approval`、核可與退回的指令）；2.5b 是工作台的核可畫面與設定頁的高風險設定。
+
+實作（2.5a，`internal/guard/risk.go`、`internal/worker`、`internal/engine`、`internal/lanenote`）：
+
+- **範圍檢查**（§9.4 的「範圍」）：
+  - 在 Worker 交出改動之前檢查，與受保護路徑、密鑰同一個地方。改動的每個檔案（包括刪掉的）都要符合工單的某個 `paths`（不分大小寫，與避撞相同）。
+  - 有不符合的 → 這次派工失敗（`scope`），原因列出超出的檔案與工單的 `paths`。線照執行者失敗的規則走：退回重做，次數用完轉人。下一次派工的 prompt 帶著上一次失敗的原因。
+  - Worker 的 prompt 寫出工單的 `paths`，說只能改這些。
+  - 沒有宣告 `paths` 的工單（schema 1、沒有區塊）不檢查。submodule 的工單也不檢查：它的改動在 submodule 自己的 repository 裡，P3 改走 agent runtime 時再一起做。
+- **高風險規則**（`high-risk/1`，只能升高，不能降低）：
+  - 工單的 `risk: high`；`release: true`。
+  - 資料庫 migration：路徑裡有 `migrations`、`migration`、`alembic` 資料夾，或 `db/migrate/`，或 Flyway 的 `V<n>__*.sql`。
+  - CI、建置、容器：與 0.8 的 `ci-build` 相同的檔案（CI workflow、Makefile、Dockerfile、compose、goreleaser…）。
+  - 相依套件：清單與 lock 檔（`go.mod`、`go.sum`、`package.json`、`package-lock.json`、`yarn.lock`、`pnpm-lock.yaml`、`requirements*.txt`、`poetry.lock`、`Pipfile(.lock)`、`pyproject.toml`、`Cargo.toml/.lock`、`Gemfile(.lock)`、`pom.xml`、`build.gradle(.kts)`、`composer.json/.lock`、`*.csproj`、`packages.config`、`pubspec.yaml/.lock`、`mix.exs/.lock`）。
+  - 認證、授權、密碼學：路徑裡的資料夾或檔名，拆開的字是 `auth`、`authn`、`authz`、`oauth`、`oauth2`、`login`、`password(s)`、`passwd`、`credential(s)`、`secret(s)`、`crypto`、`cryptography`、`encrypt(ion)`、`decrypt(ion)`、`cipher`、`jwt`、`saml`、`sso`、`rbac`、`acl`、`permission(s)` 其中之一。`session`、`token`、`security`、`key` 太常見，不算：內建規則不能刪，誤判就沒辦法關掉。
+  - 刪掉的檔案超過 `guardrails.high_risk.delete_threshold`（預設 20）。
+  - 專案加碼：符合 `guardrails.high_risk.paths` 的檔案（glob，規則與工單的 `paths` 相同）。
+- **什麼時候判**：審查通過、要進合併佇列時，用審查讀到的那份 PR diff 與工單判。高風險 → `awaiting_approval`（`approval_needed`），線記下核可的 commit（與進佇列相同），說明寫在線上。
+  - engine 在 issue 留言：為什麼要核可（哪條規則、哪些檔案）、怎麼核可與退回、拿掉 `needs-human-review` 不算核可。
+  - 判的理由與審查的分數、摘要寫進 `.ai/state/engine/approvals/<issue>.json`，給 2.5b 的核可畫面讀；每條理由也記成 guardrail 判定（flag）。
+- **核可與退回**（§5.9 的 `approve`、`reject`，經收件匣）：
+  - 只接 `awaiting_approval` 的線，其他的回覆拒絕並說明。
+  - 核可 → `queued`（`owner_approved`），照合併佇列的規則合併。
+  - 退回 → `rework`（`owner_returned`）。附的說明存成那張工單的「主人的說明」（`.ai/state/engine/notes/<issue>.jsonl`），之後每次派工都以 owner 等級放進 Worker 的 prompt。2.6 的 `note` 指令用同一個地方。
+  - engine 開始一輪 run 之前先處理收件匣：沒有 run 時下的核可，在下一次 `awkit run` 一開始就生效，不會因為「只剩等核可的線」而直接結束。
+  - run 在等步驟做完時收到核可，馬上做一輪，不等下一步做完。
+  - CLI：`awkit lane approve <issue>`、`awkit lane reject <issue> [--note "…"]`。engine 在跑就等它回覆；沒在跑就說下一次 `awkit run` 開始時生效。2.6 的 `awkit lane …` 其他子指令接在同一個指令下。
+- **看得到**：`awkit status` 與工作台的線列表，等核可的線寫出為什麼（線的說明）與怎麼核可。
+- **影子**：等核可的線與需要人的線同一類（`lane_stop`）：analyzer 看到 `needs-human-review` 就停下整輪。
+- **設定**：`guardrails.high_risk.paths`（glob 清單，`awkit validate` 檢查寫法）、`guardrails.high_risk.delete_threshold`（預設 20，沒寫、0 或負數都是 20）。設定頁的編輯在 2.5b。
+
 ## 11. LLM 輔助角色的契約
 
 | 角色 | 何時 | 輸入 | 輸出 schema | engine 怎麼用 |

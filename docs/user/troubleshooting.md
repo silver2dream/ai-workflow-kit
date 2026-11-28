@@ -88,6 +88,21 @@ gh issue edit 42 --remove-label needs-human-review
 awkit run
 ```
 
+### 等你核可（高風險的改動）
+
+審查通過的 pull request，如果工單寫了 `risk: high` 或 `release: true`，或改到 migration、CI 與建置、相依套件、認證與密碼學相關的路徑、刪掉很多檔案，或符合你在 `guardrails.high_risk.paths` 加的路徑，就不會直接合併，而是等你核可（完整的規則見[設定](configuration.md#guardrails)）。issue 上的留言寫出是哪條規則、哪些檔案；`awkit status` 的 `Lanes` 也寫著。
+
+```bash
+awkit lane approve 42                          # 核可：進合併佇列
+awkit lane reject 42 --note "版本鎖在 1.4，不要升級"   # 退回：說明交給下一次的執行者
+```
+
+run 在跑時立刻生效；沒有 run 時，下一次 `awkit run` 一開始就生效。拿掉 `needs-human-review` 標籤不算核可。
+
+### 改到工單範圍外的檔案（`scope`）
+
+工單的 `awk-ticket` 區塊寫了 `paths` 時，執行者只能改那些路徑；改到別的檔案（刪掉的也算），這次的改動不會交出去，算一次執行者失敗，下一次派工會告訴它哪些檔案超出了。一直超出、次數用完時票會標上 `worker-failed`。如果工單本來就需要改那些檔案，改工單的 `paths` 再拿掉標籤。
+
 ### 被 guardrail 擋下（`blocked`）
 
 Worker 開工前，AWK 會檢查它要讀的內容。工單是你寫的或核可過的，照原樣給；審查意見、教訓這些由 agent 寫的內容，會先拿掉看不見的字元與 HTML 註解，再比對注入的寫法（例如「ignore all previous instructions」「忽略之前的所有指示」、假的對話或工具呼叫格式、把密鑰送到外部的指令）。明顯是注入的會擋下：這張票不派出去，標上 `needs-human-review`，issue 上的留言寫出是哪條規則、內容來自哪裡，但不貼原文（Worker 會讀 GitHub）。

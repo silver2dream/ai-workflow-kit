@@ -19,7 +19,7 @@ export function InboxPage() {
       <PageHead title="需要你處理" sub="只有你能決定的事。擋住工作的排在最前面，處理完會自己從這裡消失。" />
       <div className="grid gap-5">
         <Panel>
-          <PanelHead title="卡住的工單" sub="審查幾次都沒過，或執行者做不下去" />
+          <PanelHead title="卡住的工單" sub="審查幾次都沒過、執行者做不下去，或高風險的改動等你核可" />
           <NeedsYouList />
         </Panel>
         {waiting.length > 0 && (

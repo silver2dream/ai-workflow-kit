@@ -25,6 +25,10 @@ group("the engine's events", () => {
     expect(d.tone).toBe("signal");
     expect(d.text).toBe("工單 #7：審查中 → 需要你（交給你）。防護擋下了要寫到 GitHub 的內容。");
     expect(describe(event({ type: "lane_transition", data: { from: "needs_you", to: "rework", cause: "released" } })).tone).not.toBe("signal");
+    // A high-risk change that waits for its owner needs the person too.
+    const waits = describe(event({ type: "lane_transition", issue_id: 8, data: { from: "reviewing", to: "awaiting_approval", cause: "approval_needed" } }));
+    expect(waits).toEqual({ who: "engine", text: "工單 #8：審查中 → 等你核可（要你核可）", tone: "signal" });
+    expect(describe(event({ type: "lane_transition", issue_id: 8, data: { from: "awaiting_approval", to: "queued", cause: "owner_approved" } })).tone).not.toBe("signal");
   });
 
   it("says a run's start and end, a command and what became of it", () => {

@@ -90,6 +90,9 @@ type Engine struct {
 	// running are the steps that run, by lane: only the run's loop reads
 	// and changes them (parallel.go).
 	running map[int]step
+	// wake has the run do a round while it waits for its steps: a lane was
+	// moved outside them (an approval).
+	wake chan struct{}
 }
 
 // Options are what `awkit run` gives the engine.
@@ -627,6 +630,11 @@ func (e *Engine) record(ctx context.Context, t Transition, told bool) (*Lane, er
 			e.logf("#%d: the comment that says why it needs a person could not be posted: %v", lane.Issue, err)
 		}
 	}
+	if lane.State == AwaitingApproval && !told {
+		if err := e.GitHub.Comment(ctx, lane.Issue, approvalComment(*lane, ownerReasons(e.Root, *lane), e.Names)); err != nil {
+			e.logf("#%d: the comment that asks for its owner's approval could not be posted: %v", lane.Issue, err)
+		}
+	}
 	return lane, nil
 }
 
@@ -832,8 +840,9 @@ func (e *Engine) reviewed(ctx context.Context, lane Lane) error {
 		return err
 	}
 	// The review's own decision (reviewer.SubmitReview) comments when it
-	// hands a ticket to a person; the review step does not.
-	told := t.Why != WhyGuardBlocked && t.Why != WhyAgentRefused
+	// hands a ticket to a person; the review step does not, nor does it say
+	// why a change waits for its owner.
+	told := t.Why != WhyGuardBlocked && t.Why != WhyAgentRefused && t.To != AwaitingApproval
 	return e.apply(ctx, t, told)
 }
 

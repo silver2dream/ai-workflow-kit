@@ -56,8 +56,9 @@ const KnownCheckFirst = "check_first"
 const KnownQueue = "queue"
 
 // KnownLaneStop is the known difference of a lane that waits for a person
-// (task 2.4): the analyzer stops the run on a ticket labeled worker-failed
-// or needs-human-review; the engine stops that lane only, and goes on.
+// (task 2.4), or for its owner's approval (2.5): the analyzer stops the run
+// on a ticket labeled worker-failed or needs-human-review; the engine stops
+// that lane only, and goes on.
 const KnownLaneStop = "lane_stop"
 
 // Shadow decides as the Principal's analyzer, from the tickets given, what
@@ -221,7 +222,7 @@ func (e *Engine) judge(mine, theirs *analyzer.Decision, tickets []Ticket) (same 
 	}
 	if theirs != nil && theirs.NextAction == analyzer.ActionNone && (mine == nil || *mine != *theirs) &&
 		(theirs.ExitReason == analyzer.ReasonWorkerFailed || theirs.ExitReason == analyzer.ReasonNeedsHumanReview) {
-		if l := e.Journal.Lane(theirs.IssueNumber); l != nil && l.State == NeedsYou {
+		if l := e.Journal.Lane(theirs.IssueNumber); l != nil && (l.State == NeedsYou || l.State == AwaitingApproval) {
 			return false, KnownLaneStop
 		}
 	}

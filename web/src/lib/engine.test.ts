@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Decision, LaneState } from "./api";
-import { decisionWords, endedWords, KNOWN, laneMeta, LANES, runEndWords, stepWords, WHY, whyWords, workingSteps } from "./engine";
+import type { Decision, EngineView, Lane, LaneState } from "./api";
+import { approvalHow, approvalWhy, awaitingApproval, decisionWords, endedWords, KNOWN, laneMeta, LANES, runEndWords, stepWords, WHY, whyWords, workingSteps } from "./engine";
 import { titleOf } from "./tickets";
 import { counts } from "@/pages/run/Lanes";
 
@@ -78,6 +78,26 @@ describe("engine words", () => {
     expect(decisionWords(decision({ next_action: "all_complete" }))).toBe("全部做完了");
     expect(decisionWords(decision({ next_action: "merge_pr", issue_number: 5, pr_number: 12 }))).toBe("合併工單 #5 的 PR #12");
     expect(KNOWN.order && KNOWN.check_first && KNOWN.queue).toBeTruthy();
+  });
+});
+
+describe("a change that waits for its owner", () => {
+  it("is found among the lanes, and said instead of its label's word", () => {
+    const lane = (issue: number, state: LaneState): Lane => ({ issue, state, attempts: {}, since: "2026-11-28T10:00:00Z" });
+    const view: EngineView = {
+      going: false,
+      lanes: [lane(7, "awaiting_approval"), lane(2, "needs_you"), lane(8, "awaiting_approval"), lane(3, "merged")],
+      earlier: 0,
+      limits: { failures: 3, reviews: 3, conflicts: 3 },
+      pending: [],
+      replies: [],
+    };
+    const waiting = awaitingApproval(view);
+    expect([...waiting.keys()]).toEqual([7, 8]);
+    expect(approvalWhy(waiting, 7)).toBe("等你核可：改動有風險，合併前要你看過。");
+    expect(approvalWhy(waiting, 2)).toBeUndefined();
+    expect(awaitingApproval(undefined).size).toBe(0);
+    expect(approvalHow(7)).toBe('在終端機用 awkit lane approve 7 核可，或 awkit lane reject 7 --note "要改什麼" 退回。');
   });
 });
 

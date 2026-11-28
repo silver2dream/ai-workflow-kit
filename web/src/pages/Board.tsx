@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHead, Problem, Term } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useTicketSheet } from "@/app/ticket-sheet";
+import { approvalWhy, awaitingApproval } from "@/lib/engine";
 import { STAGES } from "@/lib/words";
 import type { Stage, Ticket } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ const COLUMNS: { key: string; title: string; stages: Stage[]; dot: string }[] = 
 
 function Card({ ticket }: { ticket: Ticket }) {
   const { open } = useTicketSheet();
+  const { engine } = useProject();
   const meta = STAGES[ticket.stage];
   return (
     <button
@@ -33,7 +35,7 @@ function Card({ ticket }: { ticket: Ticket }) {
       {ticket.stage === "needs_you" ? (
         <div className="mt-3 rounded-md bg-signal/20 px-2.5 py-2 text-[13px] leading-snug text-signal-ink">
           <b>需要你。</b>
-          {ticket.why ?? meta.means}
+          {approvalWhy(awaitingApproval(engine.data), ticket.number) ?? ticket.why ?? meta.means}
         </div>
       ) : ticket.waits_for && ticket.waits_for.length > 0 ? (
         <div className="mt-3 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">

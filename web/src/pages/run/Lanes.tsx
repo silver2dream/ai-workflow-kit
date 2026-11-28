@@ -4,8 +4,8 @@ import { Empty, Panel, PanelHead, Problem, Tag } from "@/components/bits";
 import { useProject } from "@/app/project";
 import { useTicketSheet } from "@/app/ticket-sheet";
 import type { EngineView, Lane } from "@/lib/api";
-import { laneMeta, stepWords, whyWords } from "@/lib/engine";
-import { ruleWords, sourceWords } from "@/lib/guard";
+import { approvalHow, laneMeta, stepWords, whyWords } from "@/lib/engine";
+import { isHighRisk, ruleWords, sourceWords } from "@/lib/guard";
 import { titleOf } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
 import { when } from "@/lib/words";
@@ -37,7 +37,7 @@ function LaneRow({ lane, view }: { lane: Lane; view: EngineView }) {
         onClick={() => open(lane.issue)}
         className={cn(
           "grid w-full gap-1.5 px-5 py-3.5 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none",
-          lane.state === "needs_you" && "bg-signal/10 hover:bg-signal/15",
+          (lane.state === "needs_you" || lane.state === "awaiting_approval") && "bg-signal/10 hover:bg-signal/15",
         )}
       >
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -73,8 +73,25 @@ function LaneRow({ lane, view }: { lane: Lane; view: EngineView }) {
             )}
           </div>
         )}
+        {lane.state === "awaiting_approval" && (
+          <div className="text-[14px] leading-snug">
+            <b>等你核可。</b>
+            {meta.means}
+            {lane.note && <span className="mt-0.5 block text-[12.5px] text-muted-foreground">engine 的說明：{lane.note}</span>}
+            <span className="mt-0.5 block text-[12.5px] text-muted-foreground">{approvalHow(lane.issue)}</span>
+          </div>
+        )}
         {used.length > 0 && <div className="text-[13px] text-ink2">{used.join(" · ")}</div>}
-        {verdict && (
+        {verdict && isHighRisk(verdict.rule) && (
+          <div className="flex items-start gap-1.5 text-[13px] leading-snug text-caution-ink">
+            <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            <span>
+              高風險：{ruleWords(verdict.rule, verdict.reason)}
+              <span className="text-muted-foreground"> · {when(verdict.at)}</span>
+            </span>
+          </div>
+        )}
+        {verdict && !isHighRisk(verdict.rule) && (
           <div className={cn("flex items-start gap-1.5 text-[13px] leading-snug", verdict.result === "block" ? "text-destructive" : "text-caution-ink")}>
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <span>

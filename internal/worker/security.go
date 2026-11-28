@@ -112,6 +112,58 @@ func (e *PolicyError) Error() string {
 	return strings.Join(said, "; ")
 }
 
+// ScopeError is a change that touches files its ticket's paths do not name.
+type ScopeError struct {
+	Outside []string
+	Paths   []string
+}
+
+func (e *ScopeError) Error() string {
+	return fmt.Sprintf("the change touches files outside the ticket's paths: %s (the ticket's paths: %s); change only what they name, or ask for the paths to be widened",
+		strings.Join(e.Outside, ", "), strings.Join(e.Paths, ", "))
+}
+
+// CheckScope holds a staged change to its ticket's paths (design.md §9.4):
+// each file it touches, deleted ones too, is to be matched by one of them,
+// without case (as the scheduler compares them). A *ScopeError names the
+// files that are not; another error, one git could not show.
+func CheckScope(ctx context.Context, wtDir string, paths []string) error {
+	names, err := gitOutput(ctx, wtDir, "diff", "--cached", "--name-only", "--no-renames")
+	if err != nil {
+		return err
+	}
+	var outside []string
+	for _, file := range splitLines(names) {
+		if !inScope(file, paths) {
+			outside = append(outside, file)
+		}
+	}
+	if len(outside) > 0 {
+		return &ScopeError{Outside: outside, Paths: paths}
+	}
+	return nil
+}
+
+// holdToScope holds a Worker's staged change to its ticket's paths, when it
+// has any: a submodule's change is in its own repository, and is not held
+// to them here.
+func holdToScope(ctx context.Context, wtDir, repoType string, paths []string) error {
+	if repoType == "submodule" || len(paths) == 0 {
+		return nil
+	}
+	return CheckScope(ctx, wtDir, paths)
+}
+
+func inScope(file string, paths []string) bool {
+	lower := strings.ToLower(strings.ReplaceAll(file, "\\", "/"))
+	for _, p := range paths {
+		if ticket.Overlap(strings.ToLower(p), lower) {
+			return true
+		}
+	}
+	return false
+}
+
 // CheckCommits holds the change of revs, in git's notation (for instance
 // "origin/develop...HEAD"), to the rules a Worker's staged change is held to
 // before it is handed in (CheckScriptModifications, CheckSensitiveInfo),

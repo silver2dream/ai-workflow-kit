@@ -26,7 +26,7 @@ func EndingFor(reason string) Ending {
 	case "user_stopped", "interrupted", "":
 		return Ending{Done: true, Summary: "The run was stopped, as asked.", Next: "awkit run goes on from where it stopped."}
 	case "needs_human_review", "escalation_triggered":
-		return Ending{Summary: "A ticket needs you.", Next: "awkit status shows which one and why. Deal with it, take its needs-human-review label off, then awkit run."}
+		return Ending{Summary: "A ticket needs you.", Next: "awkit status shows which one, why, and what to do. A high-risk change that waits for your approval takes awkit lane approve or reject; taking the label off is no approval. Another one, deal with it and take its needs-human-review label off. Then awkit run."}
 	case "review_max_retries":
 		return Ending{Summary: "A pull request was turned back by the review as often as a review is tried.", Next: "awkit status shows which one. Read the review comments on it, then awkit run."}
 	case "worker_failed", "max_failures":

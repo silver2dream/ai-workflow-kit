@@ -145,6 +145,8 @@ func run() int {
 		return cmdStatus(os.Args[2:])
 	case "stop":
 		return cmdStop(os.Args[2:])
+	case "lane":
+		return cmdLane(os.Args[2:])
 	case "next":
 		return cmdNext(os.Args[2:])
 	case "check-result":
@@ -284,6 +286,7 @@ Run the workflow:
   run           Work through the open tickets (--issue N for one ticket only)
   status        Where the work is: the run, every ticket, what to do next
   stop          Ask the run that is going to stop
+  lane          Approve or return a ticket that waits for you
   next          Suggest what to do next from local files only
   reset         Clear what earlier runs left behind
 
@@ -365,6 +368,8 @@ func cmdHelp(command string) int {
 		usageStatus()
 	case "stop":
 		usageStop()
+	case "lane":
+		usageLane()
 	case "next":
 		usageNext()
 	case "check-result":

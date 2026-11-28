@@ -394,6 +394,7 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 	}
 
 	failOutput, failErr := handleWorkerFailure(ctx, opts, logger, ghClient, meta, result.Status)
+	withWorkersWord(failOutput, result)
 
 	// Fire post_dispatch hooks (non-blocking)
 	if opts.HookRunner != nil {
@@ -409,6 +410,15 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 	}
 
 	return failOutput, failErr
+}
+
+// withWorkersWord adds what the Worker said of its failure to the dispatch's
+// failure: the engine notes it on the lane (a change outside its ticket's
+// paths, say, names the files).
+func withWorkersWord(out *DispatchOutput, result *IssueResult) {
+	if out != nil && result != nil && result.ErrorMessage != "" && out.Status == "failed" {
+		out.Error += ": " + result.ErrorMessage
+	}
 }
 
 // handleWorkerSuccess handles successful worker execution

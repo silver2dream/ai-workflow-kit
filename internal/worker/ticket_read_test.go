@@ -61,7 +61,7 @@ func TestReadTicketMetadata_ProseCannotSetAFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadTicketMetadata: %v", err)
 	}
-	if want := (&TicketMetadata{Schema: 2, Repo: "backend", Severity: "P1"}); !reflect.DeepEqual(meta, want) {
+	if want := (&TicketMetadata{Schema: 2, Repo: "backend", Severity: "P1", Paths: []string{"backend/health/**"}}); !reflect.DeepEqual(meta, want) {
 		t.Errorf("meta = %+v, want only what the block says: %+v", meta, want)
 	}
 }

@@ -6,6 +6,7 @@ import { headline, planStatus } from "@/pages/plans/status";
 import { useProject } from "@/app/project";
 import { useTicketSheet } from "@/app/ticket-sheet";
 import { href, navigate } from "@/lib/router";
+import { approvalWhy, awaitingApproval } from "@/lib/engine";
 import { describe, eventKey, STAGES, when } from "@/lib/words";
 import type { Stage, Ticket, TicketsView } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -111,9 +112,10 @@ function AttentionStrip({ needs }: { needs: Ticket[] }) {
 }
 
 function LineMap() {
-  const { project, tickets, plans } = useProject();
+  const { project, tickets, plans, engine } = useProject();
   const open = tickets.data?.tickets?.open ?? [];
   const done = tickets.data?.tickets?.done ?? 0;
+  const waiting = awaitingApproval(engine.data);
   const at = (stages: Stage[]) => open.filter((t) => stages.includes(t.stage));
   const latest = plans.data?.plans[0];
   const needs = at(["needs_you"]);
@@ -220,7 +222,7 @@ function LineMap() {
               <Tokens tickets={needs} />
               <span className="min-w-0 flex-1 text-[13.5px] leading-snug">
                 <b>卡在這裡。</b>
-                {needs[0].why ?? STAGES.needs_you.means}
+                {approvalWhy(waiting, needs[0].number) ?? needs[0].why ?? STAGES.needs_you.means}
               </span>
             </div>
           </div>
@@ -293,9 +295,11 @@ export function RecentActivity({ limit }: { limit: number }) {
 }
 
 export function NeedsYouList({ limit }: { limit?: number }) {
-  const { tickets } = useProject();
+  const { tickets, engine } = useProject();
   const { open } = useTicketSheet();
-  const needs = (tickets.data?.tickets?.open ?? []).filter((t) => t.stage === "needs_you");
+  // A high-risk change that waits for its owner needs you too, whatever its labels say.
+  const waiting = awaitingApproval(engine.data);
+  const needs = (tickets.data?.tickets?.open ?? []).filter((t) => t.stage === "needs_you" || waiting.has(t.number));
   const shown = limit ? needs.slice(0, limit) : needs;
   if (tickets.loading && !tickets.data) return <div className="grid gap-3 px-5 pb-5">{[0, 1].map((i) => <Skeleton key={i} className="h-12" />)}</div>;
   if (shown.length === 0 && unknown(tickets.data)) return <Empty icon={CloudOff} title="不知道有沒有卡住的工單">GitHub 問不到工單，所以這裡看不出來。到「健康檢查」看是哪裡沒接好。</Empty>;
@@ -311,7 +315,7 @@ export function NeedsYouList({ limit }: { limit?: number }) {
             <div className="flex flex-wrap items-center gap-2 text-[15px] font-bold">
               工單 #{t.number} {t.title}
             </div>
-            <p className="mt-0.5 text-[14px] text-ink2">{t.why ?? STAGES.needs_you.means}</p>
+            <p className="mt-0.5 text-[14px] text-ink2">{approvalWhy(waiting, t.number) ?? t.why ?? STAGES.needs_you.means}</p>
           </div>
           <Button size="sm" className="shrink-0 bg-signal text-[#231a00] hover:bg-signal/90" onClick={() => open(t.number)}>
             處理
@@ -420,9 +424,10 @@ function Milestones() {
 }
 
 export function Overview() {
-  const { project, tickets, status, refreshTickets } = useProject();
+  const { project, tickets, status, refreshTickets, engine } = useProject();
   const open = tickets.data?.tickets?.open ?? [];
-  const needs = open.filter((t) => t.stage === "needs_you");
+  const waiting = awaitingApproval(engine.data);
+  const needs = open.filter((t) => t.stage === "needs_you" || waiting.has(t.number));
   const target = status.data?.target.issue_id;
   const running = status.data?.run.state === "running";
   return (

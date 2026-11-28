@@ -18,6 +18,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
 	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/guard"
+	"github.com/silver2dream/ai-workflow-kit/internal/lanenote"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	repocfg "github.com/silver2dream/ai-workflow-kit/internal/repo"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
@@ -701,6 +702,34 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	secretMatches, err := CheckSensitiveInfo(ctx, wtDir, meta.AllowSecrets, meta.SecretPatterns)
+	if err == nil {
+		if scopeErr := holdToScope(ctx, wtDir, repoType, meta.Paths); scopeErr != nil {
+			var outside *ScopeError
+			if errors.As(scopeErr, &outside) {
+				logger.Log("✗ %v", scopeErr)
+				_ = writeIssueResult(ctx, stateRoot, issueResultContext{
+					IssueID: opts.IssueID, Status: "failed",
+					RepoName: repoName, RepoType: repoType, RepoPath: repoPath,
+					WorktreeDir: wtDir, WorkDir: workDir, Branch: branch, BaseBranch: prBase,
+					SummaryFile: summaryFile, ErrorMessage: scopeErr.Error(), FailureStage: "scope",
+					WorkerSessionID:       workerSessionID,
+					AttemptNumber:         attemptInfo.AttemptNumber,
+					PreviousSessionIDs:    attemptInfo.PreviousSessionIDs,
+					PreviousFailureReason: attemptInfo.PreviousFailureReason,
+					WorkerPID:             pidInfo.PID,
+					WorkerStartTime:       pidInfo.StartTime,
+					Duration:              time.Since(startTime),
+				})
+				resultWritten = true
+			}
+			runErr = scopeErr
+			result.Error = scopeErr.Error()
+			if trace != nil {
+				_ = trace.StepEnd("failed", "changes outside the ticket's paths", nil)
+			}
+			return result, scopeErr
+		}
+	}
 	if err != nil {
 		runErr = err
 		result.Error = err.Error()
@@ -1214,6 +1243,13 @@ type workerPromptInputs struct {
 	PRReviewComments   string // file-level comments from the previous review
 	LessonsSection     string // distilled lessons relevant to the ticket
 	TopCategorySection string // most common rejection categories
+	// Paths are the ticket's paths: the change is held to them.
+	Paths []string
+	// OwnerNotes are what the owner said of the ticket (internal/lanenote).
+	OwnerNotes string
+	// ScopeFailure is why the last attempt's change was refused for its
+	// scope; "" when it was not.
+	ScopeFailure string
 }
 
 // writePromptFile gathers what a Worker is told, runs the input checks over
@@ -1237,8 +1273,22 @@ func writePromptFile(path, workDirInstruction, ticket, stateRoot string, issueID
 	if feedbackCfg == nil || feedbackCfg.IsEnabled() {
 		in.TopCategorySection = loadTopCategorySummary(stateRoot)
 	}
+	in.Paths = ticketPaths(ticket)
+	in.OwnerNotes = lanenote.Text(stateRoot, issueID)
+	if prev, err := LoadResult(stateRoot, issueID); err == nil && prev != nil && prev.FailureStage == "scope" {
+		in.ScopeFailure = prev.ErrorMessage
+	}
 
 	return writePrompt(path, stateRoot, in)
+}
+
+// ticketPaths are the paths of a ticket file's awk-ticket block; none when
+// it declares none.
+func ticketPaths(text string) []string {
+	if block, found, err := ticket.Parse(ticketOf(text)); err == nil && found {
+		return block.Paths
+	}
+	return nil
 }
 
 // writePrompt runs the input checks over gathered inputs, records what they
@@ -1264,6 +1314,12 @@ func promptPieces(in workerPromptInputs) []guard.Piece {
 		pieces = append(pieces, guard.Piece{Source: "codebase map", Trust: guard.Repo, Text: in.GraphSection})
 	}
 	pieces = append(pieces, guard.Piece{Source: fmt.Sprintf("issue #%d", in.IssueID), Trust: guard.Owner, Text: in.Ticket})
+	if in.OwnerNotes != "" {
+		pieces = append(pieces, guard.Piece{Source: fmt.Sprintf("the owner's notes on issue #%d", in.IssueID), Trust: guard.Owner, Text: in.OwnerNotes})
+	}
+	if in.ScopeFailure != "" {
+		pieces = append(pieces, guard.Piece{Source: "the scope check of the last attempt", Trust: guard.Agent, Text: in.ScopeFailure})
+	}
 	if in.ReviewComments != "" {
 		pieces = append(pieces, guard.Piece{Source: fmt.Sprintf("review comments on issue #%d", in.IssueID), Trust: guard.Agent, Text: in.ReviewComments})
 	}
@@ -1340,6 +1396,32 @@ func preparePrompt(in workerPromptInputs) (string, *guard.Prepared) {
 	if p, ok := piece(fmt.Sprintf("issue #%d", in.IssueID)); ok {
 		p.Title = "Ticket"
 		builder.WriteString(guard.Render(p))
+	}
+
+	if len(in.Paths) > 0 {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("WHAT YOU MAY CHANGE\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString("Change only files these paths of the ticket match (globs from the project's root; ** is any number of folders). A change that touches any other file is refused, and the work is done again:\n")
+		for _, p := range in.Paths {
+			builder.WriteString("- " + p + "\n")
+		}
+	}
+
+	if p, ok := piece(fmt.Sprintf("the owner's notes on issue #%d", in.IssueID)); ok {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("THE OWNER'S NOTES ON THIS TICKET: they come from the ticket's owner; follow them.\n")
+		builder.WriteString("============================================================\n")
+		p.Title = "The owner's notes"
+		builder.WriteString(guard.Render(p))
+	}
+
+	if p, ok := piece("the scope check of the last attempt"); ok {
+		builder.WriteString("\n============================================================\n")
+		builder.WriteString("YOUR LAST ATTEMPT WAS REFUSED: its change touched files outside the ticket's paths. What the check said is in the data block below.\n")
+		builder.WriteString("============================================================\n")
+		builder.WriteString(guard.Render(p))
+		builder.WriteString("============================================================\n")
 	}
 
 	if p, ok := piece(fmt.Sprintf("review comments on issue #%d", in.IssueID)); ok {

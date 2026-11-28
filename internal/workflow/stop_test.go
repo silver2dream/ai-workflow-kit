@@ -67,6 +67,11 @@ func TestEndingFor(t *testing.T) {
 			t.Errorf("EndingFor(%q) has no words of its own: %q", reason, ending.Summary)
 		}
 	}
+	// A ticket that needs you may be a change that waits for approval:
+	// taking its label off is no approval.
+	if next := EndingFor("needs_human_review").Next; !strings.Contains(next, "awkit lane approve or reject") || !strings.Contains(next, "taking the label off is no approval") {
+		t.Errorf("needs_human_review: %q", next)
+	}
 	// A marker made by hand carries no reason: a person asked.
 	if ending := EndingFor(""); !ending.Done {
 		t.Errorf("EndingFor(\"\") = %+v, want the stop a person asked for", ending)

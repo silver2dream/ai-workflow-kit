@@ -175,6 +175,29 @@ commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如
 
 每一張進行中的工單都有自己的 worktree 與一個 agent 程序，記憶體與 API 用量會跟著乘上去：先從 `2` 試起。`max_per_backend` 適合訂閱有同時連線上限的 backend。
 
+## `guardrails`
+
+你加在內建防護之上的規則。目前只有高風險的部分。
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `high_risk.paths` | 無 | glob 清單，從專案根目錄寫起，寫法與工單的 `paths` 相同（`*`、`?`、`**`）。改到符合的檔案的 PR，合併前要你核可 |
+| `high_risk.delete_threshold` | `20` | 一個 PR 刪掉的檔案超過這個數字，合併前要你核可；`0` 或負數都當作 `20` |
+
+**高風險的 PR 要你核可才合併。** 審查通過之後，下面任一種情況的 PR 不會直接進合併佇列，而是停在「等你核可」，issue 上會留言說為什麼：
+
+- 工單寫了 `risk: high`，或 `release: true`；
+- 改到資料庫 migration（`migrations`、`migration`、`alembic` 資料夾、`db/migrate/`、Flyway 的 `V1__*.sql`）；
+- 改到 CI 或建置、容器設定（`.github/workflows/`、Makefile、Dockerfile、docker-compose 等）；
+- 改到相依套件的清單或 lock 檔（`go.mod`、`go.sum`、`package.json`、`package-lock.json`、`requirements*.txt`、`Cargo.lock` 等）；
+- 路徑裡有認證、授權、密碼學的字（`auth`、`oauth`、`login`、`password`、`secret`、`crypto`、`encrypt`、`jwt`、`sso`、`rbac`、`acl`、`permission` 等）；
+- 刪掉的檔案超過 `high_risk.delete_threshold`；
+- 符合 `high_risk.paths`。
+
+這些內建規則不能關掉，`high_risk.paths` 只能再加。只停那一張，其他工單照做。核可：`awkit lane approve <issue>`，它就進合併佇列。退回：`awkit lane reject <issue> --note "要改什麼"`，你寫的說明會在下一次派工時交給執行者。拿掉 `needs-human-review` 標籤不算核可。
+
+另外，工單的 `paths` 也是改動的範圍：執行者改到 `paths` 以外的檔案（刪掉的也算），這次的改動就不交出去，退回重做，說明哪些檔案超出了；重做的次數算在執行者失敗的次數裡。沒有寫 `paths` 的舊工單不檢查。
+
 ## `review`
 
 | 鍵 | 預設 | 說明 |

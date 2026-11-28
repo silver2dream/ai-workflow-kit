@@ -49,6 +49,7 @@ func TestLoad_Defaults(t *testing.T) {
 		Worker:     Worker{Backend: "codex", ClaudeCode: ClaudeCode{Model: "sonnet", MaxTurns: 50}},
 		Lessons:    Lessons{MaxActive: 30, InjectTopK: 3, InjectMaxChars: 800, Distiller: LessonsDistiller{Model: "sonnet", TimeoutSeconds: 60}},
 		Engine:     Engine{MaxParallel: 1},
+		Guardrails: Guardrails{HighRisk: HighRisk{DeleteThreshold: 20}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("the configuration of an empty file =\n%+v\nwant\n%+v", cfg, want)
@@ -128,6 +129,8 @@ lessons:
   inject_max_chars: 300
   distiller: {model: haiku, timeout_seconds: 20}
 engine: {max_parallel: 3, max_per_backend: {codex: 2, claude-code: 1}}
+guardrails:
+  high_risk: {paths: ["billing/**", "internal/payments/*.go"], delete_threshold: 8}
 `
 
 // What the file says is what the configuration holds: no default writes over
@@ -167,8 +170,9 @@ func TestLoad_WhatTheFileSays(t *testing.T) {
 		},
 		Worker: Worker{Backend: "claude-code", Codex: Codex{FullAuto: &no},
 			ClaudeCode: ClaudeCode{Model: "opus", Effort: "xhigh", MaxTurns: 80, DangerouslySkipPermissions: true}, KnowledgeGraph: "off"},
-		Lessons: Lessons{Enabled: &no, MaxActive: 7, InjectTopK: 2, InjectMaxChars: 300, Distiller: LessonsDistiller{Model: "haiku", TimeoutSeconds: 20}},
-		Engine:  Engine{MaxParallel: 3, MaxPerBackend: map[string]int{"codex": 2, "claude-code": 1}},
+		Lessons:    Lessons{Enabled: &no, MaxActive: 7, InjectTopK: 2, InjectMaxChars: 300, Distiller: LessonsDistiller{Model: "haiku", TimeoutSeconds: 20}},
+		Engine:     Engine{MaxParallel: 3, MaxPerBackend: map[string]int{"codex": 2, "claude-code": 1}},
+		Guardrails: Guardrails{HighRisk: HighRisk{Paths: []string{"billing/**", "internal/payments/*.go"}, DeleteThreshold: 8}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("the configuration =\n%+v\nwant\n%+v", cfg, want)
@@ -204,6 +208,7 @@ timeouts: {git_seconds: -1, gh_seconds: 0, codex_minutes: -9, verify_minutes: -2
 worker: {claude_code: {max_turns: -4}}
 lessons: {max_active: -1, inject_top_k: -1, inject_max_chars: -1, distiller: {timeout_seconds: -1}}
 engine: {max_parallel: -3}
+guardrails: {high_risk: {delete_threshold: -1}}
 `))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -440,6 +445,8 @@ func TestValidate(t *testing.T) {
 			"engine.max_per_backend.claude-code: invalid limit: 0: a backend that may run no step never runs its roles (expected: 1 or more)"},
 		{"a backend that may run less than nothing", func(c *Config) { c.Engine.MaxPerBackend = map[string]int{"codex": -2} },
 			"engine.max_per_backend.codex: invalid limit: -2: a backend that may run no step never runs its roles (expected: 1 or more)"},
+		{"a high-risk path written another way", func(c *Config) { c.Guardrails.HighRisk.Paths = []string{"billing/**", "/etc/passwd"} },
+			"guardrails.high_risk.paths[1]: the path \"/etc/passwd\" starts with /: write it from the project's root, without the / (expected: a path from the project's root, with *, ? and ** only)"},
 	}
 	for _, tt := range tests {
 		cfg := valid()

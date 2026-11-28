@@ -23,6 +23,9 @@ type TicketMetadata struct {
 	AllowParentChanges bool   // changes outside the submodule are allowed
 	AllowScriptChanges bool   // changes to the workflow's own files (protectedPaths) are allowed
 	AllowSecrets       bool   // secrets in the diff are allowed
+	// Paths are the globs of what the ticket changes (schema 2): a change
+	// may touch nothing else. None for a ticket that declares none.
+	Paths []string
 
 	// Legacy is set for a ticket without an awk-ticket block: one written
 	// before the block existed, read from its prose the way it used to be.
@@ -137,6 +140,7 @@ func ReadTicketMetadata(body string) (*TicketMetadata, error) {
 		AllowParentChanges: block.AllowParentChanges,
 		AllowScriptChanges: block.AllowScriptChanges,
 		AllowSecrets:       block.AllowSecrets,
+		Paths:              block.Paths,
 	}, nil
 }
 

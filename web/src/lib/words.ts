@@ -1,6 +1,6 @@
 import type { Decision, Dispatcher, LaneState, Stage, TraceEvent } from "./api";
 import { byWords, CAUSES, COMMANDS, decisionWords, KNOWN, LANES, laneMeta, ROLES, runEndWords, whyWords } from "./engine";
-import { ruleWords, sourceWords } from "./guard";
+import { isHighRisk, ruleWords, sourceWords } from "./guard";
 
 /** The words of AWK a newcomer meets, said plainly; shown where they appear, and in the glossary. */
 export const TERMS: Record<string, string> = {
@@ -136,7 +136,7 @@ export function describe(event: TraceEvent, dispatcher?: Dispatcher): Described 
         cause ? `（${CAUSES[cause] ?? cause}）` : "",
         to === "needs_you" && word(data, "why") ? `。${whyWords(word(data, "why"))}` : "",
       ].join("");
-      const t: Tone = to === "needs_you" ? "signal" : to === "merged" || to === "completed" ? "go" : to === "implementing" || to === "reviewing" ? "live" : "muted";
+      const t: Tone = to === "needs_you" || to === "awaiting_approval" ? "signal" : to === "merged" || to === "completed" ? "go" : to === "implementing" || to === "reviewing" ? "live" : "muted";
       return say(`工單 ${ticket}：${said}`, t);
     }
     case "engine_run":
@@ -234,6 +234,10 @@ export function describe(event: TraceEvent, dispatcher?: Dispatcher): Described 
       const what = sourceWords(word(data, "source", "piece"));
       const why = ruleWords(word(data, "rule"), word(data, "reason"));
       const blocked = word(data, "result") === "block";
+      if (isHighRisk(word(data, "rule"))) {
+        const risky = `高風險，合併前等你核可${why ? `：${why}` : ""}`;
+        return say(issue ? `工單 ${issue} ${risky}` : risky, "caution");
+      }
       const text = `${blocked ? "擋下" : "標記為可疑"}${what ? `：${what}` : ""}${why ? `（${why}）` : ""}`;
       return say(issue ? `工單 ${issue} ${text}` : text, blocked ? "stop" : "caution");
     }

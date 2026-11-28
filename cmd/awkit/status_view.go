@@ -6,6 +6,8 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -350,6 +352,12 @@ func printLanes(w io.Writer, v statusView) {
 			}
 			fmt.Fprintf(w, "          %s\n", why)
 		}
+		if l.State == engine.AwaitingApproval {
+			if l.Note != "" {
+				fmt.Fprintf(w, "          %s\n", l.Note)
+			}
+			fmt.Fprintf(w, "          awkit lane approve %d sends it to the merge queue; awkit lane reject %d --note \"…\" returns it\n", l.Issue, l.Issue)
+		}
 		if l.Verdict != nil {
 			what := "flagged"
 			if l.Verdict.Result == guard.Block {
@@ -376,6 +384,31 @@ func nextStep(v statusView) string {
 	if v.Running {
 		return "Nothing: the run is going. awkit status again later; awkit stop to end it."
 	}
+	// A change that waits for its owner's approval: its ticket is marked
+	// needs-human-review as a stuck one is, but what it takes is approve or
+	// reject. The engine's lanes are known without GitHub.
+	var waiting []int
+	for _, l := range v.Engine.Lanes {
+		if l.State == engine.AwaitingApproval {
+			waiting = append(waiting, l.Issue)
+		}
+	}
+	if len(waiting) > 0 {
+		sort.Ints(waiting)
+		next := approvalNext(waiting)
+		if v.Tickets != nil {
+			var others []int
+			for _, t := range v.Tickets.In(status.StageNeedsYou) {
+				if !slices.Contains(waiting, t.Number) {
+					others = append(others, t.Number)
+				}
+			}
+			if len(others) > 0 {
+				next += fmt.Sprintf(" Look at %s as well (gh issue view %d --comments).", issueList(others), others[0])
+			}
+		}
+		return next
+	}
 	if v.Tickets == nil {
 		if v.Stopped {
 			return workflow.EndingFor(v.StopReason).Next
@@ -399,6 +432,25 @@ func nextStep(v statusView) string {
 	default:
 		return `No ticket yet. awkit plan "<what you want built>" proposes some; awkit create-task adds one.`
 	}
+}
+
+// approvalNext says how the changes that wait for approval are approved or
+// returned.
+func approvalNext(waiting []int) string {
+	if len(waiting) == 1 {
+		n := waiting[0]
+		return fmt.Sprintf("#%d waits for your approval: awkit lane approve %d sends it to the merge queue, awkit lane reject %d --note \"…\" returns it to its implementer; then awkit run.", n, n, n)
+	}
+	return fmt.Sprintf("%s wait for your approval: awkit lane approve N sends one to the merge queue, awkit lane reject N --note \"…\" returns it to its implementer; then awkit run.", issueList(waiting))
+}
+
+// issueList names issues: "#9, #14".
+func issueList(issues []int) string {
+	said := make([]string, len(issues))
+	for i, n := range issues {
+		said[i] = fmt.Sprintf("#%d", n)
+	}
+	return strings.Join(said, ", ")
 }
 
 // since says when a run started, in the local time of the person reading:

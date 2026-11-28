@@ -130,6 +130,7 @@ func TestShadow_ALaneThatStopsAlone(t *testing.T) {
 	if _, err := f.e.Journal.Record(Transition{Issue: 8, To: Ready, Cause: CauseImported, At: time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)}); err != nil {
 		t.Fatal(err)
 	}
+	awaiting(t, f, 9, 90)
 	stop := func(issue int, reason string) *analyzer.Decision {
 		return &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: issue, ExitReason: reason}
 	}
@@ -143,6 +144,7 @@ func TestShadow_ALaneThatStopsAlone(t *testing.T) {
 		{"a Worker failed", dispatch(8), stop(7, analyzer.ReasonWorkerFailed), KnownLaneStop},
 		{"another stop", nil, stop(7, analyzer.ReasonReviewMaxRetries), ""},
 		{"a lane that does not wait", nil, stop(8, analyzer.ReasonNeedsHumanReview), ""},
+		{"a lane that waits for its owner", nil, stop(9, analyzer.ReasonNeedsHumanReview), KnownLaneStop},
 		{"the same", stop(7, analyzer.ReasonNeedsHumanReview), stop(7, analyzer.ReasonNeedsHumanReview), ""},
 	} {
 		same, known := f.e.judge(c.mine, c.theirs, nil)
