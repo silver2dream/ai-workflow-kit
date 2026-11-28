@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/kickoff"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/stopmark"
@@ -20,8 +19,9 @@ import (
 // starts it holds the run's lock (`awkit run`, the kickoff lock the
 // Principal's workflow holds too, so that the two never run at once). It
 // says that it is alive and what it is doing in its run file, beat by beat:
-// the lease on the lane it is at, which `awkit status` and the workbench
-// read, and which an engine started after a crash finds stale. What it was
+// the lease on the lanes it is at, the steps that run on them, which `awkit
+// status` and the workbench read, and which an engine started after a crash
+// finds stale. What it was
 // doing when it stopped is taken up again from the lanes (Next): a Worker's
 // result is read, a review or a resolution is done again from the start.
 // It takes its commands from the inbox between beats, and a stop at once
@@ -44,15 +44,18 @@ type RunInfo struct {
 	Beat    time.Time `json:"beat"`
 	// Only is the one ticket the run is limited to.
 	Only int `json:"only,omitempty"`
-	// Step is what the engine is doing: the decision it acts on, and since
-	// when.
+	// Steps are what the engine is doing: the steps that run, each the
+	// decision it acts on, and since when; the oldest first.
+	Steps []StepInfo `json:"steps,omitempty"`
+	// Step is the one step a run file of an awkit before task 2.2b names:
+	// ReadRun takes it as Steps.
 	Step *StepInfo `json:"step,omitempty"`
 	// Ended and Reason say that the run is over, and why.
 	Ended  time.Time `json:"ended,omitzero"`
 	Reason string    `json:"reason,omitempty"`
 }
 
-// StepInfo is the decision an engine acts on.
+// StepInfo is a decision an engine acts on: a step that runs.
 type StepInfo struct {
 	Action string    `json:"action"`
 	Issue  int       `json:"issue,omitempty"`
@@ -71,6 +74,10 @@ func ReadRun(root string) (RunInfo, bool) {
 	if json.Unmarshal(data, &r) != nil {
 		return RunInfo{}, false
 	}
+	if len(r.Steps) == 0 && r.Step != nil {
+		r.Steps = []StepInfo{*r.Step}
+	}
+	r.Step = nil
 	return r, true
 }
 
@@ -119,16 +126,14 @@ func Serve(ctx context.Context, e *Engine, o ServeOptions) (string, error) {
 
 	ctx, stopNow := context.WithCancel(ctx)
 	defer stopNow()
-	watch := e.Watch
-	e.Watch = func(d *analyzer.Decision) {
-		write(func(r *RunInfo) {
-			r.Step = &StepInfo{Action: d.NextAction, Issue: d.IssueNumber, PR: d.PRNumber, Merge: d.MergeIssue, Since: e.clock()}
-		})
-		if watch != nil {
-			watch(d)
+	onSteps := e.OnSteps
+	e.OnSteps = func(steps []StepInfo) {
+		write(func(r *RunInfo) { r.Steps = steps })
+		if onSteps != nil {
+			onSteps(steps)
 		}
 	}
-	defer func() { e.Watch = watch }()
+	defer func() { e.OnSteps = onSteps }()
 
 	done := make(chan struct{})
 	var wg sync.WaitGroup
@@ -157,7 +162,8 @@ func Serve(ctx context.Context, e *Engine, o ServeOptions) (string, error) {
 	// A command given as the run ended is answered all the same.
 	e.takeCommands(nil)
 
-	write(func(r *RunInfo) { r.Step, r.Ended, r.Reason, r.Beat = nil, e.clock(), reason, e.clock() })
+	// The steps were taken out as each ended: a run ends when none runs.
+	write(func(r *RunInfo) { r.Ended, r.Reason, r.Beat = e.clock(), reason, e.clock() })
 	data := map[string]any{"event": "ended", "reason": reason}
 	if err != nil {
 		data["error"] = err.Error()

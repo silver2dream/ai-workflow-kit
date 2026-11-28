@@ -119,9 +119,12 @@ func printStatus(w io.Writer, v statusView) {
 	switch {
 	case v.Running:
 		fmt.Fprintf(w, "%-9s going%s (pid %d). awkit stop asks it to stop.\n", "Run", since(v.Since), v.PID)
-		if v.Engine.Going && v.Engine.Run.Step != nil {
-			if doing := stepWords(*v.Engine.Run.Step); doing != "" {
-				fmt.Fprintf(w, "%-9s the engine: %s%s\n", "", doing, since(v.Engine.Run.Step.Since.Format(time.RFC3339)))
+		if v.Engine.Going {
+			// A line for each step that runs: lanes run side by side.
+			for _, s := range v.Engine.Run.Steps {
+				if doing := stepWords(s); doing != "" {
+					fmt.Fprintf(w, "%-9s the engine: %s%s\n", "", doing, since(s.Since.Format(time.RFC3339)))
+				}
 			}
 		}
 	case v.Stopped:

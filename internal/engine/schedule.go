@@ -14,10 +14,6 @@ import (
 // circle. Which tickets can start, and in what order, the analyzer finds
 // (Candidates); the engine passes over those these rules keep off.
 
-// maxParallel is how many lanes take a slot at once. Task 2.2b runs lanes
-// side by side and reads it from engine.max_parallel.
-const maxParallel = 1
-
 // takesSlot says whether a lane in a state takes one of the slots: an agent
 // is at work on it, or is about to be. A lane to be done again (Rework)
 // waits for a slot with the tickets not started, by number, as the

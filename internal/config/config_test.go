@@ -48,6 +48,7 @@ func TestLoad_Defaults(t *testing.T) {
 		Timeouts:   Timeouts{GitSeconds: 120, GHSeconds: 60, CodexMinutes: 30, VerifyMinutes: 10, GHRetryCount: 3, GHRetryBaseDelay: 2},
 		Worker:     Worker{Backend: "codex", ClaudeCode: ClaudeCode{Model: "sonnet", MaxTurns: 50}},
 		Lessons:    Lessons{MaxActive: 30, InjectTopK: 3, InjectMaxChars: 800, Distiller: LessonsDistiller{Model: "sonnet", TimeoutSeconds: 60}},
+		Engine:     Engine{MaxParallel: 1},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("the configuration of an empty file =\n%+v\nwant\n%+v", cfg, want)
@@ -126,6 +127,7 @@ lessons:
   inject_top_k: 2
   inject_max_chars: 300
   distiller: {model: haiku, timeout_seconds: 20}
+engine: {max_parallel: 3, max_per_backend: {codex: 2, claude-code: 1}}
 `
 
 // What the file says is what the configuration holds: no default writes over
@@ -166,6 +168,7 @@ func TestLoad_WhatTheFileSays(t *testing.T) {
 		Worker: Worker{Backend: "claude-code", Codex: Codex{FullAuto: &no},
 			ClaudeCode: ClaudeCode{Model: "opus", Effort: "xhigh", MaxTurns: 80, DangerouslySkipPermissions: true}, KnowledgeGraph: "off"},
 		Lessons: Lessons{Enabled: &no, MaxActive: 7, InjectTopK: 2, InjectMaxChars: 300, Distiller: LessonsDistiller{Model: "haiku", TimeoutSeconds: 20}},
+		Engine:  Engine{MaxParallel: 3, MaxPerBackend: map[string]int{"codex": 2, "claude-code": 1}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("the configuration =\n%+v\nwant\n%+v", cfg, want)
@@ -200,6 +203,7 @@ escalation: {max_review_attempts: -2, retry_count: -1, retry_delay_seconds: -3}
 timeouts: {git_seconds: -1, gh_seconds: 0, codex_minutes: -9, verify_minutes: -2, gh_retry_count: -1, gh_retry_base_delay: 0}
 worker: {claude_code: {max_turns: -4}}
 lessons: {max_active: -1, inject_top_k: -1, inject_max_chars: -1, distiller: {timeout_seconds: -1}}
+engine: {max_parallel: -3}
 `))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -428,6 +432,14 @@ func TestValidate(t *testing.T) {
 			"worker.claude_code.effort: invalid effort: hgih (expected: low, medium, high, xhigh or max, or no value for the claude CLI's own default)"},
 		{"a Worker effort in capitals", func(c *Config) { c.Worker.ClaudeCode.Effort = "High" },
 			"worker.claude_code.effort: invalid effort: High (expected: low, medium, high, xhigh or max, or no value for the claude CLI's own default)"},
+		{"a limit for a backend the engine has none of", func(c *Config) { c.Engine.MaxPerBackend = map[string]int{"codex": 1, "gemini": 2} },
+			"engine.max_per_backend.gemini: unknown backend: gemini (expected: claude-code or codex)"},
+		{"a backend's limit in capitals", func(c *Config) { c.Engine.MaxPerBackend = map[string]int{"Codex": 1} },
+			"engine.max_per_backend.Codex: unknown backend: Codex (expected: claude-code or codex)"},
+		{"a backend that may run nothing", func(c *Config) { c.Engine.MaxPerBackend = map[string]int{"claude-code": 0} },
+			"engine.max_per_backend.claude-code: invalid limit: 0: a backend that may run no step never runs its roles (expected: 1 or more)"},
+		{"a backend that may run less than nothing", func(c *Config) { c.Engine.MaxPerBackend = map[string]int{"codex": -2} },
+			"engine.max_per_backend.codex: invalid limit: -2: a backend that may run no step never runs its roles (expected: 1 or more)"},
 	}
 	for _, tt := range tests {
 		cfg := valid()
@@ -508,6 +520,21 @@ func TestValidate(t *testing.T) {
 		if errs := cfg.Validate(); len(errs) != 0 {
 			t.Errorf("repo type %q: %v", kind, errs)
 		}
+	}
+	// Every backend may be bounded, to one step or more; two problems are
+	// both said, in the order of their names.
+	cfg := valid()
+	cfg.Engine.MaxPerBackend = map[string]int{"claude-code": 1, "codex": 9}
+	if errs := cfg.Validate(); len(errs) != 0 {
+		t.Errorf("limits for both backends: %v", errs)
+	}
+	cfg.Engine.MaxPerBackend = map[string]int{"zeta": 1, "codex": 0, "alpha": 1}
+	fields = nil
+	for _, err := range cfg.Validate() {
+		fields = append(fields, err.Field)
+	}
+	if want := []string{"engine.max_per_backend.alpha", "engine.max_per_backend.codex", "engine.max_per_backend.zeta"}; !reflect.DeepEqual(fields, want) {
+		t.Errorf("three wrong limits: problems = %v, want %v", fields, want)
 	}
 }
 

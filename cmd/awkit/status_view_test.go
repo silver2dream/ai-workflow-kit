@@ -377,8 +377,11 @@ func TestPrintStatus_Lanes(t *testing.T) {
 		Project: "demo", Integration: "develop", Running: true, PID: 7,
 		Tickets: &status.Tickets{Open: []status.Ticket{{Number: 5, Title: "[feat] show the room code", Stage: status.StageInReview}}, DoneTitles: map[int]string{8: "[feat] start the match"}},
 		Engine: engine.View{
-			Going:  true,
-			Run:    &engine.RunInfo{Step: &engine.StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: at}},
+			Going: true,
+			Run: &engine.RunInfo{Steps: []engine.StepInfo{
+				{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: at},
+				{Action: analyzer.ActionDispatchWorker, Issue: 11, Since: at},
+			}},
 			Limits: engine.Limits{Failures: 3, Reviews: 3, Conflicts: 3},
 			Lanes: []engine.LaneView{
 				{Lane: engine.Lane{Issue: 5, State: engine.Reviewing, PR: 12, Attempts: engine.Attempts{Reviews: 1}, Since: at}, Step: &engine.StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: at}},
@@ -392,7 +395,7 @@ func TestPrintStatus_Lanes(t *testing.T) {
 	}
 	out := statusText(view)
 	for _, want := range []string{
-		"          the engine: the reviewer reviews PR #12 of #5 since " + clock + "\n",
+		"          the engine: the reviewer reviews PR #12 of #5 since " + clock + "\n          the engine: a Worker writes #11 since " + clock + "\n",
 		"Lanes     3 in the engine's hands, 1 finished in its last run\n\n",
 		"    #5    in review, PR #12, reviewed again 1 of 3, since " + clock + "\n          [feat] show the room code\n          now: the reviewer reviews PR #12 of #5\n",
 		"    #7    needs you, PR #14, since " + clock + "\n          a guardrail stopped what an agent was to read\n          a guardrail blocked secret-scan/1 in the diff at " + clock + ": a token\n",
@@ -420,7 +423,7 @@ func TestPrintStatus_Lanes(t *testing.T) {
 		t.Errorf("the step of an engine that does not go, while another run goes:\n%s", out)
 	}
 	view.Running, view.Engine.Going = true, true
-	view.Engine.Run.Step = &engine.StepInfo{Action: analyzer.ActionAllComplete}
+	view.Engine.Run.Steps = []engine.StepInfo{{Action: analyzer.ActionAllComplete}}
 	if out := statusText(view); strings.Contains(out, "the engine: ") {
 		t.Errorf("the step that ends a run:\n%s", out)
 	}

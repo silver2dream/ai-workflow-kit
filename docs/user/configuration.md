@@ -148,7 +148,22 @@ commit 訊息與 pull request 標題的格式固定是 `[type] subject`（例如
 | `claude_code.dangerously_skip_permissions` | `false` | 以 `--dangerously-skip-permissions` 執行：Claude Code 不再問、也不再擋權限設定裡沒允許的工具。awkit 的工具檢查（下方說明）照樣執行。只在隔離的機器上打開 |
 | `knowledge_graph` | `auto` | `auto`：專案有 `.understand-anything/knowledge-graph.json` 時，把和這張票有關的一小段放進 Worker 的 prompt。`off`：不放 |
 
+**同時做幾張工單**是 [`engine`](#engine) 的設定。
+
 **Worker 能做什麼。** Claude Code 當 Worker 時，只帶 awkit 為那一次寫的設定執行：不讀你的、也不讀專案的 Claude Code 設定；寫程式要用的工具直接允許，其他的不問就拒絕；每一個工具呼叫都先經過 `awkit guard tool` 檢查。它不能用 `gh`、不能 push 或 commit（那是 runner 的事）、不能連外（`curl`、`wget`、網頁工具）、不能讀放憑證的地方（`~/.ssh`、gh 與 Claude Code 的登入資料）、不能印出環境變數，也不能改 `.git/`；`.claude/` 與 `.ai/` 只有工單設了 `allow_script_changes: true` 才能改。兩種 backend 都只拿到建置與工具鏈需要的環境變數，以及它自己的登入變數：`GH_TOKEN` 這類 token 不會給它。被擋下的呼叫寫進事件（`awkit events --all --type guardrail_verdict`）。
+
+## `engine`
+
+`awkit run` 的 engine 同時做幾件事。`AWKIT_ENGINE=principal` 時不用這一節：主控一次只做一張。
+
+| 鍵 | 預設 | 說明 |
+|---|---|---|
+| `max_parallel` | `1` | 同時在跑的步驟。執行者寫一張工單、審查一個 PR、解一次衝突，各算一步。它也是進行中工單的上限：寫、審、解衝突中的工單到了這個數字，就不再開新的工單。`1` 是一次一張；`0` 或負數都當作 `1` |
+| `max_per_backend` | 不限 | 每個 agent backend 同時在跑的步驟，例如 `{codex: 2, claude-code: 1}`。一步算在做那一步的角色的 backend 上：寫是 `worker.backend`，審查是 `agents.reviewer`，解衝突是 `agents.resolver`。只接受 `claude-code` 與 `codex`，數字至少是 `1`；沒列的 backend 只受 `max_parallel` 限制 |
+
+同時進行的工單不會改到同樣的檔案：一張工單的 `paths` 和進行中的工單有交集時，它會等那張做完。沒寫 `paths` 的舊工單（schema 1）當作可能改到任何檔案：其他工單都做完它才開工，它在做的時候其他工單也等它。審查與解衝突一次只做一個：審查通過就合併，兩個 PR 同時審、同時合併的話，後合併的那個是對著還沒有前一個的整合分支審的。
+
+每一張進行中的工單都有自己的 worktree 與一個 agent 程序，記憶體與 API 用量會跟著乘上去：先從 `2` 試起。`max_per_backend` 適合訂閱有同時連線上限的 backend。
 
 ## `review`
 

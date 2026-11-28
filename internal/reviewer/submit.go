@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/jittest"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
@@ -716,8 +716,13 @@ func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStra
 		strategyFlag = "--squash"
 	}
 
-	_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "merge", strconv.Itoa(prNumber),
-		strategyFlag, "--delete-branch")
+	// gh deletes the pull request's local branch too: a git command of its
+	// own, in this repository, which is held to its lock (internal/gitlock).
+	err := gitlock.Hold(ctx, ".", func() error {
+		_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "merge", strconv.Itoa(prNumber),
+			strategyFlag, "--delete-branch")
+		return err
+	})
 	if err != nil {
 		// Write PR merge failure event
 		trace.WriteEvent(trace.ComponentGitHub, trace.TypePRMergeFail, trace.LevelError,
@@ -771,8 +776,7 @@ func getMergeStateStatus(ctx context.Context, prNumber int, timeout time.Duratio
 func cleanupWorktree(stateRoot string, issueNumber int) error {
 	wtDir := filepath.Join(stateRoot, ".worktrees", fmt.Sprintf("issue-%d", issueNumber))
 	if info, err := os.Stat(wtDir); err == nil && info.IsDir() {
-		cmd := exec.Command("git", "worktree", "remove", wtDir, "--force")
-		if err := cmd.Run(); err != nil {
+		if err := gitlock.Run(context.Background(), stateRoot, 0, "worktree", "remove", wtDir, "--force"); err != nil {
 			return fmt.Errorf("failed to remove worktree %s: %w", wtDir, err)
 		}
 	}

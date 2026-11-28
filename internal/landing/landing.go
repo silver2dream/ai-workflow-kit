@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 )
 
 // Change is a file of the working tree that is not committed.
@@ -38,8 +40,25 @@ type Change struct {
 // standard error.
 type Runner func(ctx context.Context, dir, name string, args ...string) (string, error)
 
-// Exec runs a command on this computer.
+// Exec runs a command on this computer. A git command holds the repository's
+// lock while it runs (internal/gitlock): a run's lanes may be at work on the
+// same repository.
 func Exec(ctx context.Context, dir, name string, args ...string) (string, error) {
+	if name != "git" {
+		return execute(ctx, dir, name, args...)
+	}
+	var out string
+	var err error
+	if lockErr := gitlock.Hold(ctx, dir, func() error {
+		out, err = execute(ctx, dir, name, args...)
+		return nil
+	}); lockErr != nil {
+		return "", lockErr
+	}
+	return out, err
+}
+
+func execute(ctx context.Context, dir, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer

@@ -225,6 +225,61 @@
   - 2.2a 只在挑票的結果是「全部都在等依賴」（`blocked_by_dependencies`）時找環。原因：2.4 之前 `needs_you` 會讓整輪停下，一發現就轉人會擋住其他做得了的工單。2.4 起每次挑票都找。
   - 人改好依賴、拿掉標籤後，那條線照對帳回到 `ready`。還在環上就再轉一次。
 
+實作（2.2b，`internal/engine/engine.go`、`parallel.go`，`internal/gitlock`）：
+
+- **一輪**：run 開始時，以及每有一步做完時，engine 做一輪：
+  - 對帳，然後是開始前的檢查（`Precheck`）。檢查一輪只做一次，所以 `loop_count` 數的是輪數。平行上限是 1 時一輪就是一步，與之前相同。
+  - 把現在能開始的步驟都開始，直到名額用完、或沒有能開始的步驟。
+  - 每一步在自己的 goroutine 裡跑，做完把結果交回主迴圈。事件日誌本來就有鎖，線的轉換依序寫入。
+  - 開始那一步的轉換（派工、重審、轉去解衝突）在主迴圈裡先寫，agent 的部分才交給 goroutine。這樣下一個決定就看得到它佔的名額。
+- **哪些步驟能開始**：
+  - 同時在跑的步驟不超過 `engine.max_parallel`。
+  - 每個 backend 同時在跑的步驟，不超過 `engine.max_per_backend` 給它的數字。
+    - 一步的 backend 是做那一步的角色的：寫是實作者的，審查是審查者的，解衝突是 resolver 的。
+    - 讀 Worker 結果的那一步不用 agent，不算任何 backend。
+  - 審查與解衝突一次只跑一個（整合的步驟）。審查通過就合併：兩個 PR 同時審、同時合併時，後合併的那個是對著合併前的整合分支審的。2.3 的合併佇列接手合併之後，審查才能平行。
+  - 新工單：佔名額的線（2.2a）還沒滿，實作者的 backend 也還有名額，就一次挑好幾張（`Candidates` 的 *n*）。
+  - engine 手上不能開工的線，挑票時跳過（`Candidates` 的 skip）：不是 `ready`、`rework`、`blocked`、已結束的線，包括正在跑的（它的 Worker 還沒貼上 `in-progress` 之前，工單在 GitHub 上看起來還沒開工）。線以 engine 為準，GitHub 只是投影。
+  - 同一次挑出的幾張也互相避開路徑：analyzer 問完 skip 就挑那一張（skip 是最後一個檢查），所以沒被跳過的工單，路徑馬上算成佔住，後面的工單要避開它。
+- **不是步驟的決定**（結束、轉人、等依賴、每張都被路徑擋住）：
+  - 沒有步驟在跑時，與之前相同：照它結束這一輪 run。
+  - 有步驟在跑時，照樣把它說到的線轉到該去的狀態，但不結束，也不再開始新的步驟；等下一步做完，再做一輪。
+  - 所以停止（`awkit stop`、輪數到上限、連續失敗到上限）時，不再開始新的步驟，在跑的做完這一步就結束，與「收尾後停」相同。
+  - 一條線需要人時（2.4 之前整輪會停）：手上的線照樣做完它們的每一步，因為決定的順序裡，需要人的線本來就排在手上的線之後；新工單不再開工。手上沒有線了，才結束。
+  - 等依賴、每張都被路徑擋住時：等在跑的步驟做完。
+- **對帳不碰正在跑的線**：
+  - 它的工單標籤正被它自己那一步改，例如 Worker 會加上 `in-progress`、做完拿掉，再加上 `pr-ready`。
+  - 那一步做完之後的下一輪再看它。
+- **影子**：只在沒有步驟在跑時比對，因為 analyzer 看不出哪些線正在跑。平行上限是 1 時，每一個決定都比，與之前相同。
+- **出錯**：
+  - 一步回錯誤（例如事件日誌拒絕它的轉換），或對帳讀不到 GitHub：不再開始新的步驟，在跑的做完，整輪以那個錯誤結束。
+  - 立刻停（`stop_now`）取消所有步驟，等它們都結束，run 才結束。
+- **git 互斥**（`internal/gitlock`）：
+  - 為什麼要鎖：每個 Worker 是自己的程序（`awkit run-issue`），共用主 repo 的 `.git`。
+    - 同時 fetch 會搶 `refs/remotes`；同時 `push -u` 會搶 `.git/config`。
+    - Worker 建 worktree 之前，會在主 repo 切換到整合分支並 pull。
+    - Worker 開工前會刪掉主 repo「留下來的」`index.lock`；那時另一個 Worker 正在用它的話，主 repo 的 index 會壞掉。
+  - AWK 自己下的每一個 git 指令都先拿 repo 的鎖：
+    - 鎖是作業系統的檔案鎖（Windows 用 `LockFileEx`，其他系統用 `flock`）。程序結束，鎖就放掉，不會留下沒人放的鎖。
+    - 鎖檔在 repo 共用的 git 目錄裡（worktree 與主 repo 是同一把；submodule 是它自己的 repo，另一把）。
+    - 一次只鎖一個指令，指令與指令之間不持有。
+  - 刪 `index.lock` 也在鎖裡做，所以不會刪到 AWK 自己正在用的。
+  - agent 在 worktree 裡自己下的 git 指令不經過這把鎖。AWK 的指令碰到 git 自己的鎖衝突（`index.lock`、`cannot lock ref`、`could not lock config file`）時，等一下再試。
+  - `gh pr merge --delete-branch` 會刪本機的分支，也在鎖裡做。
+- **engine 程序裡共用的檔案**：下面這些以前一次只會有一件在做，現在都加鎖。
+  - 連續失敗次數（讀出來、加一、寫回去）與 session 紀錄（同樣是讀、改、寫）：鎖住寫的那一段。
+  - 教訓：審查後的結算與蒸餾、派工前讀維護者的回饋，鎖住整段。派工前的那一段會等審查的那一段做完。
+  - `WorkerSteps` 的預設值只設一次。
+- **設定**：
+  - `engine.max_parallel`：同時在跑的步驟數。預設 1；沒寫、0 或負數都是 1，與設定檔其他的數字鍵相同（不合理的數字用預設）。
+  - `engine.max_per_backend`：backend 對上限，例如 `{codex: 2, claude-code: 1}`。只接受 `claude-code`、`codex`，上限至少是 1。沒列的 backend 只受 `max_parallel` 限制。
+  - `awkit validate` 與設定頁存檔前都檢查；設定頁可以改這兩個鍵。
+- **看得到**：
+  - run 檔的 `step` 改成 `steps`：每一個在跑的步驟的動作、工單、PR、從何時開始。讀舊的 run 檔時，把 `step` 當成一步。
+  - `awkit status` 每一步一行。
+  - 工作台的執行頁列出同時在做的事。頂端的「工作中」顯示工單編號，不只一張時說幾張。線的列表本來就在每條線上顯示它在做的事。
+  - 多個 Worker 同時往 engine 的輸出寫，每一行前面加上工單編號（`[#5]`）。派工紀錄（`principal.log`）的每一行也加上工單編號。
+
 ### 5.4 合併佇列
 
 - 審查通過、且沒有等核可的 PR 進佇列（FIFO；人的優先可以插隊）。
@@ -605,7 +660,7 @@ P0（還沒有 engine）時：主控的 session 也掛上同一個 hook（1.7b �
 
 ```yaml
 engine:
-  max_parallel: 1            # 同時進行的線（不含等核可與等 CI）
+  max_parallel: 1            # 同時在跑的步驟（寫、審、解衝突），也是佔名額的線的上限（不含等核可與等 CI）
   max_per_backend: {}        # 例：{claude-code: 2, codex: 2}
   budget:
     run_usd: 0               # 0 = 不限；整輪

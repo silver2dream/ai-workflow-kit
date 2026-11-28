@@ -3,11 +3,11 @@ package worker
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
 
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
@@ -154,11 +154,13 @@ func splitLines(value string) []string {
 	return lines
 }
 
+// gitOutput is what git printed on its standard output, run in dir with the
+// repository's lock. What it says on its standard error (a warning about line
+// ends, say) is not part of what is read from it.
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	output, err := cmd.CombinedOutput()
+	out, err := gitlock.Output(ctx, dir, 0, args...)
 	if err != nil {
-		return "", fmt.Errorf("git %s failed: %w", strings.Join(args, " "), err)
+		return "", err
 	}
-	return string(output), nil
+	return out, nil
 }

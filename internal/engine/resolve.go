@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -19,6 +18,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/agent"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/rules"
 )
@@ -613,24 +613,28 @@ func (r *resolution) git(ctx context.Context, args ...string) (string, error) {
 // gitIn runs git in dir, with no editor and no prompt, and returns what it
 // printed, trimmed; the error carries what it said.
 func (r *resolution) gitIn(ctx context.Context, dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, r.step.GitTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_EDITOR=true", "GIT_TERMINAL_PROMPT=0")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		said := strings.TrimSpace(stderr.String())
+	// The repository's lock is held while it runs: lanes run side by side,
+	// on worktrees of one repository (internal/gitlock).
+	out, err := gitlock.Command{
+		Dir: dir, Args: args, Timeout: r.step.GitTimeout,
+		Env: []string{"GIT_EDITOR=true", "GIT_TERMINAL_PROMPT=0"},
+	}.Run(ctx)
+	if err != nil {
+		var failed *gitlock.Error
+		if !errors.As(err, &failed) {
+			// The lock was not taken.
+			return strings.TrimSpace(out), err
+		}
+		said := failed.Stderr
 		if said == "" {
-			said = strings.TrimSpace(stdout.String())
+			said = strings.TrimSpace(out)
 		}
 		if said != "" {
-			return strings.TrimSpace(stdout.String()), fmt.Errorf("%w: %s", err, said)
+			return strings.TrimSpace(out), fmt.Errorf("%w: %s", failed.Err, said)
 		}
-		return strings.TrimSpace(stdout.String()), err
+		return strings.TrimSpace(out), failed.Err
 	}
-	return strings.TrimRight(stdout.String(), "\n\r "), nil
+	return strings.TrimRight(out, "\n\r "), nil
 }
 
 func (r *resolution) config() *config.Config {

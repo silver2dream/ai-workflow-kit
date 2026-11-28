@@ -191,7 +191,7 @@ func TestApplyConfig_RefusesWhatARunCannotUse(t *testing.T) {
 
 func TestDefaultsOfConfig(t *testing.T) {
 	defaults := DefaultsOfConfig()
-	if defaults.Backend != "codex" || defaults.ScoreThreshold != 7 || defaults.WorkerRetries != 2 || defaults.VerifyMinutes != 10 || len(defaults.Strategies) != 3 {
+	if defaults.Backend != "codex" || defaults.ScoreThreshold != 7 || defaults.WorkerRetries != 2 || defaults.VerifyMinutes != 10 || defaults.MaxParallel != 1 || len(defaults.Strategies) != 3 {
 		t.Errorf("defaults = %+v", defaults)
 	}
 }
@@ -284,5 +284,65 @@ func TestDefaultsOfConfig_TheAgents(t *testing.T) {
 	}
 	if len(a.CodexEfforts) == 0 || a.CodexEfforts[0] != "minimal" {
 		t.Errorf("codex efforts = %v", a.CodexEfforts)
+	}
+}
+
+// How much the engine does at once: read as the file has it, written under
+// engine with the limits of the backends the page knows, and taken out again
+// when set back to the defaults.
+func TestApplyConfig_TheEngine(t *testing.T) {
+	cfg := readConfig(t, configFile)
+	if cfg.Engine.MaxParallel != nil || cfg.Engine.MaxPerBackend == nil || len(cfg.Engine.MaxPerBackend) != 0 {
+		t.Errorf("engine of a file without one = %+v", cfg.Engine)
+	}
+	cfg.Engine = Engine{MaxParallel: intOf(3), MaxPerBackend: map[string]int{"codex": 2, "claude-code": 1}}
+	out, err := ApplyConfig([]byte(configFile), *cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "worker:\n  # Who writes the code: codex or claude-code.\n  backend: codex\n\nengine:\n  max_parallel: 3\n  max_per_backend:\n    claude-code: 1\n    codex: 2\n\nreview:\n"; !strings.Contains(string(out), want) {
+		t.Errorf("the file has no %q:\n%s", want, out)
+	}
+	back := readConfig(t, string(out))
+	if *back.Engine.MaxParallel != 3 || back.Engine.MaxPerBackend["codex"] != 2 || back.Engine.MaxPerBackend["claude-code"] != 1 {
+		t.Errorf("read back = %+v", back.Engine)
+	}
+	loaded, err := config.Parse("config.yaml", out)
+	if err != nil || loaded.Engine.MaxParallel != 3 || loaded.Engine.MaxPerBackend["codex"] != 2 {
+		t.Errorf("the engine reads %+v, %v", loaded.Engine, err)
+	}
+
+	// One limit taken out, the rest stays in its place; a comment stays.
+	file := strings.Replace(string(out), "  max_parallel: 3\n", "  # As many as the machine takes.\n  max_parallel: 3\n", 1)
+	back = readConfig(t, file)
+	delete(back.Engine.MaxPerBackend, "claude-code")
+	if out, err = ApplyConfig([]byte(file), *back); err != nil {
+		t.Fatal(err)
+	}
+	if want := "engine:\n  # As many as the machine takes.\n  max_parallel: 3\n  max_per_backend:\n    codex: 2\n"; !strings.Contains(string(out), want) || strings.Contains(string(out), "claude-code: 1") {
+		t.Errorf("one limit out:\n%s", out)
+	}
+
+	// Back to the defaults: engine goes.
+	back = readConfig(t, string(out))
+	back.Engine = Engine{MaxParallel: intOf(0), MaxPerBackend: map[string]int{}}
+	if out, err = ApplyConfig(out, *back); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "engine:") {
+		t.Errorf("defaults are written down:\n%s", out)
+	}
+
+	// A limit the engine would refuse is refused before it is saved; a
+	// backend the page does not know is left as the file has it, and said.
+	cfg = readConfig(t, configFile)
+	cfg.Engine.MaxPerBackend = map[string]int{"codex": 0}
+	if _, err := ApplyConfig([]byte(configFile), *cfg); err == nil || !strings.Contains(err.Error(), "engine.max_per_backend.codex: invalid limit: 0") {
+		t.Errorf("a backend that may run nothing: %v", err)
+	}
+	odd := configFile + "engine:\n  max_per_backend:\n    gemini: 2\n"
+	cfg = readConfig(t, odd)
+	if _, err := ApplyConfig([]byte(odd), *cfg); err == nil || !strings.Contains(err.Error(), "engine.max_per_backend.gemini: unknown backend") {
+		t.Errorf("a backend the page does not know: %v", err)
 	}
 }

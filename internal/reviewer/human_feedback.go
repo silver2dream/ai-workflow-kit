@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/lessons"
 )
 
@@ -628,6 +628,5 @@ func fetchPRHead(stateRoot string, prNumber int) {
 	defer cancel()
 	// Best effort: without the objects the case is distilled from the
 	// objections alone.
-	_ = exec.CommandContext(ctx, "git", "-C", stateRoot, "fetch", "-q", "origin",
-		fmt.Sprintf("pull/%d/head", prNumber)).Run()
+	_ = gitlock.Run(ctx, stateRoot, 0, "fetch", "-q", "origin", fmt.Sprintf("pull/%d/head", prNumber))
 }

@@ -57,6 +57,8 @@ func (a *Analyzer) taskLabel() string {
 // Skip says whether a ticket that could start now is passed over: the engine
 // passes over one whose paths overlap the paths a lane holds (design.md
 // §5.3). meta is the ticket's block; found is false for a ticket without one.
+// It is asked last: a ticket it does not pass over is picked, so the tickets
+// picked after it can be kept off what it holds.
 type Skip func(issue int, meta ticket.Meta, found bool) bool
 
 // Picks is what Candidates found among the pending tickets.

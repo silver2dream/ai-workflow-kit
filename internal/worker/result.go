@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
@@ -283,6 +284,23 @@ func ReadConsecutiveFailures(stateRoot string) int {
 // ResetConsecutiveFailures resets the consecutive failures counter
 // Uses atomic write to prevent file corruption on crash
 func ResetConsecutiveFailures(stateRoot string) error {
+	failuresMu.Lock()
+	defer failuresMu.Unlock()
 	path := filepath.Join(stateRoot, ".ai", "state", "consecutive_failures")
 	return WriteFileAtomic(path, []byte("0"), 0644)
+}
+
+// failuresMu keeps the counter's changes from running into each other: the
+// engine's lanes run side by side, and each counts a failure as read, add
+// one, write back.
+var failuresMu sync.Mutex
+
+// AddConsecutiveFailure counts one more failure in a row, and says how many
+// there are now.
+func AddConsecutiveFailure(stateRoot string) (int, error) {
+	failuresMu.Lock()
+	defer failuresMu.Unlock()
+	count := ReadConsecutiveFailures(stateRoot) + 1
+	path := filepath.Join(stateRoot, ".ai", "state", "consecutive_failures")
+	return count, WriteFileAtomic(path, []byte(fmt.Sprintf("%d", count)), 0644)
 }

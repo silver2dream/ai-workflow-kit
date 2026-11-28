@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 )
 
 var ErrNoSubmoduleChanges = errors.New("no changes in submodule")
@@ -131,9 +132,8 @@ func ensureBranch(ctx context.Context, dir, branch string, timeout time.Duration
 	return runGit(ctx, dir, timeout, "checkout", "-b", branch)
 }
 
+// runGit runs git in dir with the repository's lock (internal/gitlock):
+// lanes run side by side, on worktrees of one repository.
 func runGit(ctx context.Context, dir string, timeout time.Duration, args ...string) error {
-	ctx, cancel := withOptionalTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	return cmd.Run()
+	return gitlock.Run(ctx, dir, timeout, args...)
 }

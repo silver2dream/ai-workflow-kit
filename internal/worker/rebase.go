@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -9,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 )
 
 // ErrRebaseConflict indicates that rebase has conflicts that need manual resolution
@@ -67,15 +68,14 @@ func hasConflicts(ctx context.Context, wtDir string) bool {
 	}
 
 	// git diff --name-only --diff-filter=U lists files with unresolved conflicts
-	cmd := exec.CommandContext(ctx, "git", "-C", wtDir, "diff", "--name-only", "--diff-filter=U")
-	output, err := cmd.Output()
+	output, err := gitlock.Output(ctx, wtDir, 0, "diff", "--name-only", "--diff-filter=U")
 	if err != nil {
 		// If the git command fails on a valid worktree, log warning but don't assume conflicts
 		// This could be due to various reasons (permission issues, git corruption, etc.)
 		// Returning false allows the workflow to continue; actual conflicts will surface later
 		return false
 	}
-	return len(bytes.TrimSpace(output)) > 0
+	return len(strings.TrimSpace(output)) > 0
 }
 
 // getRepoName gets the current repo's owner/name using gh CLI

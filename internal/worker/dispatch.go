@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,10 @@ type DispatchOptions struct {
 	MaxRetries         int               // Max retry count (default: 3)
 	MergeIssue         string            // "conflict" or "rebase" - indicates Worker needs to fix merge issues
 	HookRunner         *hooks.HookRunner // nil = no hooks
+	// Output is where the Worker's process prints; nil is stderr. The engine
+	// runs Workers side by side and gives each a writer that names its
+	// ticket on every line.
+	Output io.Writer
 }
 
 // DefaultWorkerTimeout is how long a dispatch waits for its Worker unless it
@@ -328,7 +333,7 @@ func DispatchWorker(ctx context.Context, opts DispatchOptions) (output *Dispatch
 	workerCtx, workerCancel := context.WithTimeout(ctx, opts.WorkerTimeout)
 	defer workerCancel()
 
-	workerExitCode := runWorkerScript(workerCtx, opts.StateRoot, opts.IssueNumber, issue.Title, ticketPath, meta.Repo, opts.MergeIssue, opts.PRNumber)
+	workerExitCode := runWorkerScript(workerCtx, opts.Output, opts.StateRoot, opts.IssueNumber, issue.Title, ticketPath, meta.Repo, opts.MergeIssue, opts.PRNumber)
 	logger.Log("Worker 執行完成 (exit code: %d)", workerExitCode)
 
 	// Check for timeout
@@ -621,9 +626,7 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 	logger.Log("失敗次數: %d / %d", failCount, opts.MaxRetries)
 
 	// Update consecutive failures atomically to prevent corruption
-	consecutiveFailures := ReadConsecutiveFailures(opts.StateRoot) + 1
-	failuresFile := filepath.Join(opts.StateRoot, ".ai", "state", "consecutive_failures")
-	if err := WriteFileAtomic(failuresFile, []byte(fmt.Sprintf("%d", consecutiveFailures)), 0644); err != nil {
+	if _, err := AddConsecutiveFailure(opts.StateRoot); err != nil {
 		logger.Log("⚠ 無法更新連續失敗計數器: %v", err)
 		// Continue execution - this is a tracking metric, not critical for workflow
 	}
@@ -687,13 +690,14 @@ func handleWorkerFailure(ctx context.Context, opts DispatchOptions, logger *Disp
 }
 
 // runWorkerScript runs the worker using awkit run-issue command
-func runWorkerScript(ctx context.Context, stateRoot string, issueNumber int, title, ticketPath, repo, mergeIssue string, prNumber int) int {
-	exitCode, _ := runWorkerCommand(ctx, stateRoot, issueNumber, title, ticketPath, repo, mergeIssue, prNumber)
+func runWorkerScript(ctx context.Context, output io.Writer, stateRoot string, issueNumber int, title, ticketPath, repo, mergeIssue string, prNumber int) int {
+	exitCode, _ := runWorkerCommand(ctx, output, stateRoot, issueNumber, title, ticketPath, repo, mergeIssue, prNumber)
 	return exitCode
 }
 
-// runWorkerCommand runs the worker using awkit run-issue command
-func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, title, ticketPath, repo, mergeIssue string, prNumber int) (int, bool) {
+// runWorkerCommand runs the worker using awkit run-issue command; what it
+// prints goes to output (nil is stderr).
+func runWorkerCommand(ctx context.Context, output io.Writer, stateRoot string, issueNumber int, title, ticketPath, repo, mergeIssue string, prNumber int) (int, bool) {
 	// Use the same binary as the current process to avoid PATH mismatches
 	// (e.g. ~/.local/bin/awkit vs $GOPATH/bin/awkit)
 	awkitPath, err := os.Executable()
@@ -703,8 +707,11 @@ func runWorkerCommand(ctx context.Context, stateRoot string, issueNumber int, ti
 
 	cmd := exec.CommandContext(ctx, awkitPath, runIssueArgs(stateRoot, issueNumber, title, ticketPath, repo, mergeIssue, prNumber)...)
 	cmd.Dir = stateRoot
-	cmd.Stdout = os.Stderr // Worker output goes to stderr
-	cmd.Stderr = os.Stderr
+	if output == nil {
+		output = os.Stderr // Worker output goes to stderr
+	}
+	cmd.Stdout = output
+	cmd.Stderr = output
 	cmd.Env = os.Environ()
 
 	if err := cmd.Run(); err != nil {
@@ -782,7 +789,8 @@ func (o *DispatchOutput) FormatBashOutput() string {
 
 // DispatchLogger logs dispatch operations
 type DispatchLogger struct {
-	file *os.File
+	file  *os.File
+	issue int
 }
 
 // NewDispatchLogger creates a new dispatch logger
@@ -796,7 +804,7 @@ func NewDispatchLogger(stateRoot string, issueNumber int) *DispatchLogger {
 		return &DispatchLogger{}
 	}
 
-	return &DispatchLogger{file: file}
+	return &DispatchLogger{file: file, issue: issueNumber}
 }
 
 // Log logs a message
@@ -805,7 +813,8 @@ func (l *DispatchLogger) Log(format string, args ...interface{}) {
 		return
 	}
 	timestamp := time.Now().Format("15:04:05")
-	msg := fmt.Sprintf("[PRINCIPAL] %s | %s\n", timestamp, fmt.Sprintf(format, args...))
+	// The ticket is named on each line: the engine dispatches several at once.
+	msg := fmt.Sprintf("[PRINCIPAL] %s | #%d | %s\n", timestamp, l.issue, fmt.Sprintf(format, args...))
 	_, _ = l.file.WriteString(msg)
 }
 

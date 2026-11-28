@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
 )
@@ -30,6 +31,15 @@ var AgentModels = []string{"haiku", "sonnet", "opus"}
 
 // AgentTriggers are the points of the workflow a custom agent may be tied to.
 var AgentTriggers = []string{"review_pr", "check_result", "dispatch_worker"}
+
+func sortedKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 func oneOf(value string, known []string) bool {
 	for _, candidate := range known {
@@ -131,6 +141,16 @@ func (c *Config) Validate() []ValidationError {
 		if repo.Type != "" && !oneOf(repo.Type, []string{"root", "directory", "submodule"}) {
 			errors = append(errors, ValidationError{Field: fmt.Sprintf("repos[%d].type", i), Message: fmt.Sprintf("invalid value: %s", repo.Type),
 				Expected: "root, directory, or submodule"})
+		}
+	}
+	// A backend the engine runs no agent on, or one that may run none: the
+	// first would bound nothing, the second would never run its roles.
+	for _, backend := range sortedKeys(c.Engine.MaxPerBackend) {
+		field := "engine.max_per_backend." + backend
+		if !oneOf(backend, AgentBackends) {
+			errors = append(errors, ValidationError{Field: field, Message: fmt.Sprintf("unknown backend: %s", backend), Expected: "claude-code or codex"})
+		} else if limit := c.Engine.MaxPerBackend[backend]; limit < 1 {
+			errors = append(errors, ValidationError{Field: field, Message: fmt.Sprintf("invalid limit: %d: a backend that may run no step never runs its roles", limit), Expected: "1 or more"})
 		}
 	}
 	// The claude CLI takes an effort it does not know with a warning and goes

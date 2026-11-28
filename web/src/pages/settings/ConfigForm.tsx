@@ -2,7 +2,7 @@ import { GitBranch, TriangleAlert } from "lucide-react";
 import { Panel, PanelHead, Tag } from "@/components/bits";
 import type { AgentRole, AgentRoleName, Config, Defaults } from "@/lib/settings";
 import { EffortSelect, ModelSelect, MoneyField, NumberField, SelectField, TextField } from "./fields";
-import { AGENT_ROLES, agentDefaults, agentProfile, BACKENDS, effortLabel, implementerOf, modelLabel, STRATEGIES } from "./model";
+import { AGENT_ROLES, agentDefaults, agentProfile, BACKENDS, effortLabel, implementerOf, modelLabel, STRATEGIES, withLimit } from "./model";
 
 /** EXAMPLES are the commands a repo of a language is usually built and tested with, shown as examples in its empty fields. */
 const EXAMPLES: Record<string, { setup: string; build: string; test: string }> = {
@@ -110,6 +110,64 @@ function AgentFields({
           審查者和執行者是同一個模型（{tool} 的 {modelLabel(runs.model)}），審查比較不獨立。換一個模型，審查比較看得出執行者的盲點。
         </p>
       )}
+    </div>
+  );
+}
+
+/** EngineFields edit how much the engine does at once: in all, and on each backend, which says the roles that run on it now. */
+function EngineFields({
+  config,
+  onChange,
+  defaults,
+  problems,
+}: {
+  config: Config;
+  onChange: (config: Config) => void;
+  defaults: Defaults["config"];
+  problems: Record<string, string>;
+}) {
+  const engine = config.engine ?? { max_parallel: null, max_per_backend: {} };
+  const set = (change: Partial<Config["engine"]>) => onChange({ ...config, engine: { ...engine, ...change } });
+  // Which role runs on which backend, as the settings above have it now.
+  const runsOn: [string, string][] = [
+    ["執行者", implementerOf(config.worker, defaults).backend],
+    ["審查者", agentProfile("reviewer", config.agents.reviewer, config.worker, defaults).backend],
+    ["解衝突者", agentProfile("resolver", config.agents.resolver, config.worker, defaults).backend],
+  ];
+  return (
+    <div className="grid gap-4 px-5 pb-5">
+      <NumberField
+        label="同時最多做幾件事"
+        hint="執行者寫一張工單、審查一個 PR、解一次衝突，各算一件。1 就是一次一張。"
+        unit="件"
+        min={1}
+        value={engine.max_parallel}
+        fallback={defaults.max_parallel}
+        error={problems["engine.max_parallel"]}
+        onChange={(max_parallel) => set({ max_parallel })}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        {defaults.backends.map((backend) => {
+          const roles = runsOn.filter(([, b]) => b === backend).map(([role]) => role);
+          const label = BACKENDS[backend]?.label ?? backend;
+          return (
+            <NumberField
+              key={backend}
+              label={`${label} 同時最多幾件`}
+              hint={roles.length > 0 ? `現在用它的：${roles.join("、")}。空著就是不限，只受上面的數字限制。` : "現在沒有角色用它。空著就是不限。"}
+              unit="件"
+              min={1}
+              empty="不限"
+              value={engine.max_per_backend[backend] ?? null}
+              error={problems[`engine.${backend}`]}
+              onChange={(limit) => set({ max_per_backend: withLimit(engine.max_per_backend, backend, limit) })}
+            />
+          );
+        })}
+      </div>
+      <p className="text-[13px] leading-snug text-muted-foreground">
+        改到同樣檔案的工單不會同時做，審查與解衝突一次只做一件。每多一件，就多一個工作區和一個 AI 程序同時在跑，電腦的記憶體與 AI 的用量也跟著加，先從 2 試起。
+      </p>
     </div>
   );
 }
@@ -238,6 +296,11 @@ export function ConfigForm({
             <AgentFields key={role} role={role} config={config} onChange={onChange} defaults={d} problems={problems} />
           ))}
         </div>
+      </Panel>
+
+      <Panel data-settings="engine">
+        <PanelHead title="同時做幾件事" sub="engine 同時寫、審、解衝突的工單數。不填就一次一件。" />
+        <EngineFields config={config} onChange={onChange} defaults={d} problems={problems} />
       </Panel>
 
       <Panel>

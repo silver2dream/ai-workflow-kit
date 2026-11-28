@@ -16,6 +16,7 @@ import (
 
 	"github.com/silver2dream/ai-workflow-kit/internal/config"
 	"github.com/silver2dream/ai-workflow-kit/internal/ghutil"
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/layout"
 	repocfg "github.com/silver2dream/ai-workflow-kit/internal/repo"
@@ -1751,17 +1752,22 @@ var workflowManagedPaths = []string{
 // before preflight check. Only .ai/ and .worktrees/ are cleaned; user files
 // outside these paths are preserved.
 func autoCleanRootRepository(ctx context.Context, stateRoot string, timeout time.Duration, logf func(string, ...interface{})) error {
-	// Step 1: Remove stale index lock
-	lockPath := filepath.Join(stateRoot, ".git", "index.lock")
-	if _, err := os.Stat(lockPath); err == nil {
-		if err := os.Remove(lockPath); err != nil {
-			if logf != nil {
-				logf("WARNING: failed to remove index.lock: %v", err)
+	// Step 1: Remove stale index lock. Workers run side by side: with the
+	// repository's lock held, no git command of AWK's holds the index, so one
+	// left there is stale.
+	_ = gitlock.Hold(ctx, stateRoot, func() error {
+		lockPath := filepath.Join(stateRoot, ".git", "index.lock")
+		if _, err := os.Stat(lockPath); err == nil {
+			if err := os.Remove(lockPath); err != nil {
+				if logf != nil {
+					logf("WARNING: failed to remove index.lock: %v", err)
+				}
+			} else if logf != nil {
+				logf("Removed stale .git/index.lock")
 			}
-		} else if logf != nil {
-			logf("Removed stale .git/index.lock")
 		}
-	}
+		return nil
+	})
 
 	// Step 2: Check if working tree is dirty at all
 	dirty, _ := isWorkingTreeDirty(ctx, stateRoot)
@@ -2233,12 +2239,11 @@ func logEarlyFailure(path, repoName, repoType, repoPath, branch, baseBranch, sta
 }
 
 func resolveGitRoot() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err := cmd.Output()
+	output, err := gitlock.Output(context.Background(), "", 0, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+	return strings.TrimSpace(output), nil
 }
 
 func newWorkerLogger(logFile, summaryFile string) *workerLogger {

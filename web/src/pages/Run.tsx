@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, PageHead, Panel, PanelHead, Problem } from "@/components/bits";
 import { useProject } from "@/app/project";
-import { api, type RunLog, type StopView, type Ticket } from "@/lib/api";
-import { endedWords, stepWords } from "@/lib/engine";
+import { api, type EngineStep, type RunLog, type StopView, type Ticket } from "@/lib/api";
+import { endedWords, stepWords, workingSteps } from "@/lib/engine";
 import { useResource } from "@/lib/resource";
 import { href } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -241,8 +241,9 @@ export function RunPage({ preset }: { preset?: number }) {
   // The engine says what it does; a run of the Principal's workflow is
   // guessed at from the Worker that ran last.
   const view = engine.data;
-  const step = going && view?.going ? view.run?.step : undefined;
-  const doing = step ? stepWords(step, step.issue ? titleOf(tickets.data, step.issue) : undefined) : "";
+  // Lanes run side by side: each step the engine is on, the oldest first.
+  const steps = going && view?.going ? workingSteps(view.run) : [];
+  const said = (s: EngineStep) => `${stepWords(s, s.issue ? titleOf(tickets.data, s.issue) : undefined)}，從 ${when(s.since)} 開始`;
   const health = useResource(() => (going ? Promise.resolve(undefined) : api.health(project.id)), [project.id, going]);
   // What a run's own checks stop at: the errors of the health check, and a
   // working tree that is not clean, which the health check only warns of.
@@ -277,11 +278,11 @@ export function RunPage({ preset }: { preset?: number }) {
     try {
       const said: StopView = await api.stopRun(project.id, now);
       if (said.engine && !said.answered && !now) {
-        toast.success("已經告訴 engine 要停了", { description: "它還沒回覆；手上這一步（執行者正在寫，或審查正在審）做完就會停。" });
+        toast.success("已經告訴 engine 要停了", { description: "它還沒回覆；手上正在做的事（執行者正在寫，或審查正在審）做完就會停。" });
       } else if (said.engine && !said.answered) {
         toast.success("停下來了", { description: "engine 沒有回覆，所以直接結束了它和它開出來的程式。做到一半的改動留在執行者自己的工作區，下一輪會從這張工單接著做。" });
       } else {
-        toast.success(now ? "停下來了" : "會在手上這一步做完後停", {
+        toast.success(now ? "停下來了" : "會在手上正在做的事做完後停", {
           description: now ? "做到一半的改動留在它自己的工作區，下一輪會從這張工單接著做。" : "正在寫的執行者或正在審的審查做完，就不再接新的工作。",
         });
       }
@@ -317,17 +318,28 @@ export function RunPage({ preset }: { preset?: number }) {
                     <span className={cn("text-[24px] font-black", winding ? "text-caution-ink" : "text-live")}>{winding ? "正在收尾" : "工作中"}</span>
                     {run?.start_time && <span className="text-[13.5px] text-muted-foreground">從 {when(run.start_time)} 開始</span>}
                   </div>
-                  <p className="text-[15px] leading-relaxed">
-                    {winding
-                      ? "收到停止了：手上這一步（執行者正在寫，或審查正在審）做完就停，不再接新的工作。等不及可以立刻停。"
-                      : doing
-                        ? `${doing}，從 ${when(step!.since)} 開始。`
-                        : view?.going
-                          ? "engine 在看下一步要做什麼。"
-                          : target
-                            ? `執行者正在處理工單 #${target}${targetTicket ? `「${targetTicket.title}」` : ""}。`
-                            : "主控在看下一步要做什麼。"}
-                  </p>
+                  {!winding && steps.length > 1 ? (
+                    <div className="grid gap-1.5 text-[15px] leading-relaxed">
+                      <p>同時在做 {steps.length} 件事：</p>
+                      <ul className="grid list-disc gap-1 pl-5">
+                        {steps.map((s) => (
+                          <li key={`${s.issue}-${s.action}-${s.merge ?? ""}`}>{said(s)}。</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-[15px] leading-relaxed">
+                      {winding
+                        ? "收到停止了：手上正在做的事（執行者正在寫，或審查正在審）做完就停，不再接新的工作。等不及可以立刻停。"
+                        : steps.length === 1
+                          ? `${said(steps[0])}。`
+                          : view?.going
+                            ? "engine 在看下一步要做什麼。"
+                            : target
+                              ? `執行者正在處理工單 #${target}${targetTicket ? `「${targetTicket.title}」` : ""}。`
+                              : "主控在看下一步要做什麼。"}
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {!winding && (
                       <Button variant="outline" onClick={() => stop(false)} disabled={busy}>

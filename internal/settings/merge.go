@@ -58,6 +58,35 @@ func pickFloat(was, mine, theirs *float64) *float64 {
 
 // pickRole takes each setting of an agent the person changed, and the
 // others as the branch has them.
+// pickLimits are the limits of the backends with what the person changed,
+// backend by backend: a limit is a number, or none.
+func pickLimits(was, mine, theirs map[string]int) map[string]int {
+	limit := func(m map[string]int, backend string) *int {
+		if n, ok := m[backend]; ok {
+			return &n
+		}
+		return nil
+	}
+	backends := map[string]bool{}
+	for _, m := range []map[string]int{was, mine, theirs} {
+		for backend := range m {
+			backends[backend] = true
+		}
+	}
+	out := map[string]int{}
+	for backend := range backends {
+		w, m, t := limit(was, backend), limit(mine, backend), limit(theirs, backend)
+		picked := t
+		if (m == nil) != (w == nil) || (m != nil && *m != *w) {
+			picked = m
+		}
+		if picked != nil {
+			out[backend] = *picked
+		}
+	}
+	return out
+}
+
 func pickRole(was, mine, theirs AgentRole) AgentRole {
 	return AgentRole{
 		Backend: pick(was.Backend, mine.Backend, theirs.Backend),
@@ -141,6 +170,10 @@ func mergeConfig(was, mine, theirs *Config) (*Config, error) {
 		Worker:         pickRetries(was.Retries.Worker, mine.Retries.Worker, theirs.Retries.Worker),
 	}
 	merged.VerifyMinutes = pickInt(was.VerifyMinutes, mine.VerifyMinutes, theirs.VerifyMinutes)
+	merged.Engine = Engine{
+		MaxParallel:   pickInt(was.Engine.MaxParallel, mine.Engine.MaxParallel, theirs.Engine.MaxParallel),
+		MaxPerBackend: pickLimits(was.Engine.MaxPerBackend, mine.Engine.MaxPerBackend, theirs.Engine.MaxPerBackend),
+	}
 
 	byName := func(repos []RepoCommands, name string) *RepoCommands {
 		for i := range repos {

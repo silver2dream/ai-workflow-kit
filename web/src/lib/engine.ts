@@ -2,7 +2,7 @@
 // person who does not write code reads. The server says it with the
 // engine's own names (internal/engine); they are put in words here, and a
 // name this page does not know is shown as it is.
-import type { Decision, EngineStep, Lane, LaneState } from "./api";
+import type { Decision, EngineRun, EngineStep, Lane, LaneState } from "./api";
 import type { StageMeta } from "./words";
 
 /** Where a ticket is in the engine's hands. */
@@ -76,6 +76,11 @@ export function stepWords(step: EngineStep, title?: string): string {
     default:
       return "";
   }
+}
+
+/** workingSteps are what the engine is doing: the steps of its run that work on a lane, the oldest first. */
+export function workingSteps(run?: EngineRun): EngineStep[] {
+  return (run?.steps ?? []).filter((s) => stepWords(s) !== "");
 }
 
 /** How a run of the engine ended, by the reason it ended with. */

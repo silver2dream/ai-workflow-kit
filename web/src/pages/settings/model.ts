@@ -144,7 +144,20 @@ export function configProblems(config: Config, d?: Defaults["config"]): { fields
     if (value !== null && value < 1) fields[key] = "至少是 1。";
   }
   if (config.retries.worker !== null && config.retries.worker < 0) fields.retries = "不能是負的；不要重試就填 0。";
+  const parallel = config.engine?.max_parallel;
+  if (parallel !== null && parallel !== undefined && parallel < 1) fields["engine.max_parallel"] = "至少是 1。";
+  for (const [backend, limit] of Object.entries(config.engine?.max_per_backend ?? {})) {
+    if (limit < 1) fields[`engine.${backend}`] = "至少是 1；不限就空著。";
+  }
   return { fields, count: Object.keys(fields).length };
+}
+
+/** withLimit is the limits of the backends with one set, or taken out (null), in the order the file has them. */
+export function withLimit(limits: Record<string, number>, backend: string, limit: number | null): Record<string, number> {
+  const next = { ...limits };
+  if (limit === null) delete next[backend];
+  else next[backend] = limit;
+  return Object.fromEntries(Object.entries(next).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
 /** Whether two values read the same: what the page shows of the files. */

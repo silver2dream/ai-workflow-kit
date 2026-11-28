@@ -50,7 +50,7 @@ type View struct {
 type LaneView struct {
 	Lane
 	// Step is what the engine does on the lane now: set while the run goes
-	// and the step it is on is this lane's.
+	// and one of the steps that run is this lane's.
 	Step *StepInfo `json:"step,omitempty"`
 	// Verdict is the latest guardrail verdict on the lane's ticket in the
 	// last run that was not a pass.
@@ -118,9 +118,14 @@ func Look(root string, cfg *config.Config, now time.Time) View {
 			continue
 		}
 		lv := LaneView{Lane: l}
-		if v.Going && v.Run.Step != nil && v.Run.Step.Issue == l.Issue && working(v.Run.Step.Action) {
-			step := *v.Run.Step
-			lv.Step = &step
+		if v.Going {
+			for _, s := range v.Run.Steps {
+				if s.Issue == l.Issue && working(s.Action) {
+					step := s
+					lv.Step = &step
+					break
+				}
+			}
 		}
 		v.Lanes = append(v.Lanes, lv)
 	}

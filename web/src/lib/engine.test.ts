@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Decision, LaneState } from "./api";
-import { decisionWords, endedWords, KNOWN, laneMeta, LANES, stepWords, WHY, whyWords } from "./engine";
+import { decisionWords, endedWords, KNOWN, laneMeta, LANES, stepWords, WHY, whyWords, workingSteps } from "./engine";
 import { titleOf } from "./tickets";
 import { counts } from "@/pages/run/Lanes";
 
@@ -40,6 +40,14 @@ describe("engine words", () => {
     // A step that ends the run, or settles a lane on the way, is no work on it.
     expect(stepWords({ action: "none", issue: 5, since: "" })).toBe("");
     expect(stepWords({ action: "all_complete", since: "" })).toBe("");
+  });
+
+  it("lists the steps that work on a lane, as the run file has them: lanes run side by side", () => {
+    const run = (steps?: { action: string; issue?: number }[]) => ({ pid: 1, host: "h", started: "", beat: "", steps: steps?.map((s) => ({ ...s, since: "" })) });
+    expect(workingSteps(undefined)).toEqual([]);
+    expect(workingSteps(run(undefined))).toEqual([]);
+    expect(workingSteps(run([{ action: "review_pr", issue: 5 }, { action: "none", issue: 7 }, { action: "dispatch_worker", issue: 3 }])).map((s) => s.issue)).toEqual([5, 3]);
+    expect(workingSteps(run([{ action: "all_complete" }]))).toEqual([]);
   });
 
   it("says how a run of the engine ended, and keeps a reason it does not know", () => {

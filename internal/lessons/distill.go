@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
+	"github.com/silver2dream/ai-workflow-kit/internal/gitlock"
 )
 
 // FeedbackRecord mirrors the reviewer package's feedback JSONL entries.
@@ -498,10 +499,9 @@ func gitFixDiff(ctx context.Context, repoRoot, from, to string) fixDiff {
 
 	gitDiff := func(args ...string) (string, error) {
 		// quotePath=false keeps non-ASCII file names readable.
-		full := append([]string{"-C", repoRoot, "-c", "core.quotePath=false",
+		full := append([]string{"-c", "core.quotePath=false",
 			"diff", "--no-color", "--no-ext-diff", "--no-textconv"}, args...)
-		out, err := exec.CommandContext(ctx, "git", full...).Output()
-		return string(out), err
+		return gitlock.Output(ctx, repoRoot, 0, full...)
 	}
 
 	names, err := gitDiff("--name-status", from, to)

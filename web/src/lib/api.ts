@@ -159,14 +159,15 @@ export interface EngineStep {
   since: string;
 }
 
-/** The engine's run file: its process, its beat, the step it is on, and how it ended. */
+/** The engine's run file: its process, its beat, the steps that run (lanes run side by side), and how it ended. */
 export interface EngineRun {
   pid: number;
   host: string;
   started: string;
   beat: string;
   only?: number;
-  step?: EngineStep;
+  /** The steps that run, the oldest first. */
+  steps?: EngineStep[];
   ended?: string;
   reason?: string;
 }

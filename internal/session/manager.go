@@ -19,8 +19,12 @@ import (
 // It is safe for concurrent use.
 type Manager struct {
 	StateRoot string
-	mu        sync.Mutex // protects concurrent session log operations
 }
+
+// logMu keeps the session logs' reads and writes (read, change, write back)
+// from running into each other. It is the package's, not a manager's: a
+// manager is made for each call, and the engine's lanes run side by side.
+var logMu sync.Mutex
 
 // NewManager creates a new session manager
 func NewManager(stateRoot string) *Manager {
