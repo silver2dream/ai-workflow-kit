@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import type { TraceEvent } from "./api";
-import { heldBackWords, ruleWords, sourceWords } from "./guard";
+import { heldBackWords, isHighRisk, ruleWords, sourceWords } from "./guard";
 import { describe } from "./words";
 
 const event = (e: Partial<TraceEvent>): TraceEvent => ({ seq: 1, ts: "2026-11-23T03:00:00Z", component: "guard", type: "x", level: "info", ...e });
@@ -31,12 +31,22 @@ group("ruleWords and sourceWords", () => {
     expect(ruleWords("lesson-screen", "it reaches for another host")).toBe("要連到外面（網址或下載指令）");
   });
 
+  it("says why a change is high risk, with the numbers of a deletion", () => {
+    expect(ruleWords("high-risk/1#migration", "it changes a database migration")).toBe("改到資料庫的 migration");
+    expect(ruleWords("high-risk/1#deletion", "it deletes 30 files, more than 20")).toBe("刪掉 30 個檔案，超過 20 個");
+    expect(ruleWords("high-risk/1#deletion", "something else")).toBe("刪掉很多檔案");
+    expect(ruleWords("high-risk/2#later", "a rule of a newer engine")).toBe("a rule of a newer engine");
+    expect(isHighRisk("high-risk/1#auth")).toBe(true);
+    expect(isHighRisk("diff-signals/1#dependency")).toBe(false);
+  });
+
   it("says where the text came from", () => {
     expect(sourceWords("lesson L-004")).toBe("教訓 L-004");
     expect(sourceWords("review comments on issue #12")).toBe("工單 #12 的審查意見");
     expect(sourceWords("gh pr create")).toBe("要送到 GitHub 的 PR 內容");
     expect(sourceWords("gh issue comment")).toBe("要送到 GitHub 的工單留言");
     expect(sourceWords("the Worker's change")).toBe("執行者的變更");
+    expect(sourceWords("the pull request")).toBe("這個 PR");
     expect(sourceWords("codebase map")).toBe("codebase map");
   });
 });
@@ -50,6 +60,10 @@ group("describe a guard's events", () => {
     const flagged = describe(event({ type: "guardrail_verdict", level: "warn", data: { result: "flag", rule: "diff-signals/1#network", source: "the Worker's change" } }));
     expect(flagged.text).toBe("標記為可疑：執行者的變更（變更裡新增了連到外面的呼叫）");
     expect(flagged.tone).toBe("caution");
+    const risky = describe(
+      event({ type: "guardrail_verdict", level: "warn", issue_id: 12, data: { result: "flag", rule: "high-risk/1#dependency", source: "the pull request", reason: "x" } }),
+    );
+    expect(risky).toEqual({ who: "防護", text: "工單 #12 高風險，合併前等你核可：改到專案用到的套件或鎖定的版本", tone: "caution" });
   });
 
   it("says a person's decision as theirs, and where they made it", () => {

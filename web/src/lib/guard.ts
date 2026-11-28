@@ -55,7 +55,21 @@ const RULES: Record<string, string> = {
   "tool-policy/1#unreadable": "下了一個讀不懂的指令",
   // What the Worker itself reported.
   "agent-reported": "執行者回報這段內容要它做不該做的事",
+  // Why a change the review approved waits for its owner before it is merged.
+  "high-risk/1#ticket": "工單寫了風險高",
+  "high-risk/1#release": "要合併到發版分支",
+  "high-risk/1#migration": "改到資料庫的 migration",
+  "high-risk/1#ci-build": "改到建置、測試、發版或容器的設定",
+  "high-risk/1#dependency": "改到專案用到的套件或鎖定的版本",
+  "high-risk/1#auth": "改到登入、權限或加密相關的程式",
+  "high-risk/1#deletion": "刪掉很多檔案",
+  "high-risk/1#project": "改到專案設為高風險的路徑",
 };
+
+/** isHighRisk says a verdict is a reason a change waits for its owner's approval, not something suspicious. */
+export function isHighRisk(rule: string): boolean {
+  return rule.startsWith("high-risk/");
+}
 
 // The lesson content policy says its reasons as sentences: they are the ids.
 const LESSON_POLICY: Record<string, string> = {
@@ -67,6 +81,10 @@ const LESSON_POLICY: Record<string, string> = {
 /** ruleWords says a verdict's rule in words, or the server's reason when the rule is not known here. */
 export function ruleWords(rule: string, reason = ""): string {
   if (rule === "lesson-screen") return heldBackWords(reason);
+  if (rule === "high-risk/1#deletion") {
+    const m = /deletes (\d+) files, more than (\d+)/.exec(reason);
+    if (m) return `刪掉 ${m[1]} 個檔案，超過 ${m[2]} 個`;
+  }
   return RULES[rule] ?? (reason || rule);
 }
 
@@ -76,6 +94,7 @@ const SOURCES: [RegExp, (m: RegExpExecArray) => string][] = [
   [/^review comments on issue #(\d+)$/, (m) => `工單 #${m[1]} 的審查意見`],
   [/^file-level review comments$/, () => "PR 上的逐行意見"],
   [/^the Worker's change$/, () => "執行者的變更"],
+  [/^the pull request$/, () => "這個 PR"],
   [/^issue #(\d+)$/, (m) => `工單 #${m[1]}`],
   [/^gh (pr|issue) (create|comment|review|edit)$/, (m) => `要送到 GitHub 的${m[1] === "pr" ? " PR " : "工單"}${{ create: "內容", comment: "留言", review: "審查", edit: "修改" }[m[2]]}`],
 ];
