@@ -702,10 +702,8 @@ func RunIssue(ctx context.Context, opts RunIssueOptions) (*RunIssueResult, error
 	}
 
 	secretMatches, err := CheckSensitiveInfo(ctx, wtDir, meta.AllowSecrets, meta.SecretPatterns)
-	if err == nil && repoType != "submodule" && len(meta.Paths) > 0 {
-		// The change stays within its ticket's paths (a submodule's change is
-		// in its own repository, and is not held to them here).
-		if scopeErr := CheckScope(ctx, wtDir, meta.Paths); scopeErr != nil {
+	if err == nil {
+		if scopeErr := holdToScope(ctx, wtDir, repoType, meta.Paths); scopeErr != nil {
 			var outside *ScopeError
 			if errors.As(scopeErr, &outside) {
 				logger.Log("✗ %v", scopeErr)

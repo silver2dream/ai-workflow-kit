@@ -144,6 +144,16 @@ func CheckScope(ctx context.Context, wtDir string, paths []string) error {
 	return nil
 }
 
+// holdToScope holds a Worker's staged change to its ticket's paths, when it
+// has any: a submodule's change is in its own repository, and is not held
+// to them here.
+func holdToScope(ctx context.Context, wtDir, repoType string, paths []string) error {
+	if repoType == "submodule" || len(paths) == 0 {
+		return nil
+	}
+	return CheckScope(ctx, wtDir, paths)
+}
+
 func inScope(file string, paths []string) bool {
 	lower := strings.ToLower(strings.ReplaceAll(file, "\\", "/"))
 	for _, p := range paths {

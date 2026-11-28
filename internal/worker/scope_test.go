@@ -167,3 +167,22 @@ func TestWithWorkersWord(t *testing.T) {
 	}
 	withWorkersWord(nil, &IssueResult{ErrorMessage: "y"})
 }
+
+// A ticket without paths, or of a submodule, is not held to them.
+func TestHoldToScope(t *testing.T) {
+	ctx := context.Background()
+	outside := stagedRepo(t, map[string]string{"go.mod": "module x\n"})
+	var scope *ScopeError
+	if err := holdToScope(ctx, outside, "directory", []string{"rally/**"}); !errors.As(err, &scope) {
+		t.Errorf("a directory repo: %v", err)
+	}
+	if err := holdToScope(ctx, outside, "root", []string{"rally/**"}); !errors.As(err, &scope) {
+		t.Errorf("the root repo: %v", err)
+	}
+	if err := holdToScope(ctx, outside, "submodule", []string{"rally/**"}); err != nil {
+		t.Errorf("a submodule: %v", err)
+	}
+	if err := holdToScope(ctx, outside, "root", nil); err != nil {
+		t.Errorf("no paths: %v", err)
+	}
+}
