@@ -45,7 +45,7 @@ run 開始前會做一串檢查，第一個不過就停下來並說是哪一個�
 
 | 階段 | 標籤 | 意思 | 你要做的 |
 |---|---|---|---|
-| needs you | `needs-human-review`、`worker-failed`，或 `awk-ticket` 區塊讀不懂 | 流程放棄了，等人處理 | 見下面兩節 |
+| needs you | `needs-human-review`、`worker-failed`，或 `awk-ticket` 區塊讀不懂 | 流程放棄了這張，等人處理；其他票照做 | 見下面兩節 |
 | in review | `pr-ready`、`review-failed` | pull request 等審查，或審查要重來一次 | 不用做事；run 會審它 |
 | in progress | `in-progress` | Worker 正在做 | 不用做事。run 被中斷而留下這個標籤也沒關係：下一次 run 會先確認那個 Worker 的結果 |
 | back to a Worker | `merge-conflict`、`needs-rebase` | pull request 與 integration branch 衝突，或落後於它 | 不用做事；run 會解衝突或把票交回給 Worker |

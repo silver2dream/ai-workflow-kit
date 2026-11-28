@@ -123,7 +123,7 @@ awkit stop     # 做完手上這一步就停；Worker 正在跑的話會等它�
 |---|---|---|
 | Every ticket is done. | 沒有票了 | 規劃下一批（`awkit plan`），或補一張票 |
 | The run was stopped, as asked. | 你用 `awkit stop` 停的 | `awkit run` 接著做 |
-| A ticket needs you. | 有 issue 被標上 `needs-human-review`（審查退回太多次、衝突解不掉，或 Worker 要讀的內容被 guardrail 擋下） | `awkit status` 看是哪張、為什麼；處理後拿掉標籤，再 `awkit run` |
+| A ticket needs you. | 有 issue 被標上 `needs-human-review`（審查退回太多次、衝突解不掉，或 Worker 要讀的內容被 guardrail 擋下）。只有那張停下來，其他的照做，做到沒有別的可做才結束 | `awkit status` 看是哪張、為什麼；處理後拿掉標籤，再 `awkit run` |
 | A pull request was turned back by the review as often as a review is tried. | 同一個 pull request 被審查退回太多次 | 看 pull request 上的審查留言；處理後 `awkit run` |
 | A ticket's Worker failed on every attempt. | Worker 的嘗試用完了 | issue 上有最後一次的錯誤；修正原因或改寫票，`awkit reset --labels`，再 `awkit run` |
 | A ticket cannot be read. | 票的 `awk-ticket` 區塊有誤 | issue 上有留言說明；改正區塊、拿掉 `needs-human-review`，再 `awkit run` |

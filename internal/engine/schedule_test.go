@@ -179,7 +179,8 @@ func TestEngine_PathsALaneHolds(t *testing.T) {
 	}{
 		{"meet", body("src/a.go"), body("src/**"), "implement #5", true},
 		{"meet, in another case", body("SRC/A.go"), body("src/**"), "implement #5", true},
-		{"apart", body("docs/**"), body("src/**"), "implement #3", false},
+		// #3 needs a person, alone: #5 is written after it.
+		{"apart", body("docs/**"), body("src/**"), "implement #3, implement #5", false},
 		{"the lane declares none", body("docs/**"), "```yaml awk-ticket\nschema: 1\nrepo: root\n```\n", "implement #5", true},
 		{"the ticket declares none", "## Summary\nno block\n", body("src/**"), "implement #5", true},
 	} {

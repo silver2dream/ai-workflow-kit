@@ -215,7 +215,8 @@ func dispatchedLabels(l Lane, names config.Labels) [][]string {
 
 // Every lane of P1, alone: its state, resolution and reason, with and
 // without a pull request, its attempts under, at and over the limit, and
-// every word GitHub has on its pull request.
+// every word GitHub has on its pull request. A lane that waits for a person
+// is the known difference that it stops alone (task 2.4).
 func TestShadow_EveryLane(t *testing.T) {
 	b := newShadowBench(t)
 	names := config.DefaultLabels()
@@ -233,7 +234,11 @@ func TestShadow_EveryLane(t *testing.T) {
 							c := shadowCase{lanes: []Lane{l}, mergeable: map[int]string{30: m}}
 							labelings := dispatchedLabels(l, names)
 							if labelings == nil {
-								b.expect(c, "")
+								known := ""
+								if l.State == NeedsYou {
+									known = KnownLaneStop
+								}
+								b.expect(c, known)
 								cases++
 								continue
 							}
@@ -277,7 +282,11 @@ func TestShadow_EveryLabelSet(t *testing.T) {
 		for _, pr := range []int{0, 30} {
 			for _, m := range []string{"", "CONFLICTING"} {
 				l := Lane{Issue: 7, State: in.State, Resolve: in.Resolve, Why: in.Why, PR: pr}
-				b.expect(shadowCase{lanes: []Lane{l}, labels: map[int][]string{7: labels}, mergeable: map[int]string{30: m}}, "")
+				known := ""
+				if l.State == NeedsYou {
+					known = KnownLaneStop
+				}
+				b.expect(shadowCase{lanes: []Lane{l}, labels: map[int][]string{7: labels}, mergeable: map[int]string{30: m}}, known)
 				cases++
 			}
 		}
@@ -286,7 +295,9 @@ func TestShadow_EveryLabelSet(t *testing.T) {
 }
 
 // Every two lanes of P1 at once, either way round: which is taken first.
-// Two lanes in the same state are the known difference of the order.
+// Two lanes in the same state are the known difference of the order; a lane
+// that waits for a person, when nothing else is in hand, the known
+// difference that it stops alone.
 func TestShadow_EveryTwoLanes(t *testing.T) {
 	b := newShadowBench(t)
 	names := config.DefaultLabels()
@@ -310,12 +321,14 @@ func TestShadow_EveryTwoLanes(t *testing.T) {
 				}
 				// The analyzer cannot tell two tickets with the same labels apart.
 				same := strings.Join(c.labelsOf(x, names), ",") == strings.Join(c.labelsOf(y, names), ",")
+				waits := x.State == NeedsYou || y.State == NeedsYou
 				got := b.compare(c)
 				switch {
 				case got.Error != "":
 					t.Errorf("%s: the analyzer could not decide: %s", c, got.Error)
 				case got.Same:
 				case got.Known == KnownOrder && same:
+				case got.Known == KnownLaneStop && waits && got.Engine == nil:
 				default:
 					t.Errorf("%s: the engine decides %s; the analyzer %s (known %q)", c, decided(got.Engine), decided(got.Analyzer), got.Known)
 				}
