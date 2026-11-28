@@ -278,7 +278,7 @@ export function RunPage({ preset }: { preset?: number }) {
     try {
       const said: StopView = await api.stopRun(project.id, now);
       if (said.engine && !said.answered && !now) {
-        toast.success("已經告訴 engine 要停了", { description: "它還沒回覆；手上正在做的事（執行者正在寫，或審查正在審）做完就會停。" });
+        toast.success("已經告訴 engine 要停了", { description: "它還沒回覆；手上正在做的事（執行者正在寫、審查正在審，或合併佇列正在合併）做完就會停。" });
       } else if (said.engine && !said.answered) {
         toast.success("停下來了", { description: "engine 沒有回覆，所以直接結束了它和它開出來的程式。做到一半的改動留在執行者自己的工作區，下一輪會從這張工單接著做。" });
       } else {
@@ -330,7 +330,7 @@ export function RunPage({ preset }: { preset?: number }) {
                   ) : (
                     <p className="text-[15px] leading-relaxed">
                       {winding
-                        ? "收到停止了：手上正在做的事（執行者正在寫，或審查正在審）做完就停，不再接新的工作。等不及可以立刻停。"
+                        ? "收到停止了：手上正在做的事（執行者正在寫、審查正在審，或合併佇列正在合併）做完就停，不再接新的工作。等不及可以立刻停。"
                         : steps.length === 1
                           ? `${said(steps[0])}。`
                           : view?.going
@@ -439,11 +439,11 @@ export function RunPage({ preset }: { preset?: number }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>立刻停下？</DialogTitle>
-            <DialogDescription>{view?.going ? "engine 會馬上結束執行者和審查，再結束它自己，" : "主控、執行者和審查會馬上被結束，"}不等手上這一步做完。</DialogDescription>
+            <DialogDescription>{view?.going ? "engine 會馬上結束執行者、審查和正在進行的合併，再結束它自己，" : "主控、執行者和審查會馬上被結束，"}不等手上這一步做完。</DialogDescription>
           </DialogHeader>
           <div className="flex gap-2.5 rounded-lg border-l-4 border-caution bg-caution/10 px-4 py-3 text-[14px]">
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-caution-ink" aria-hidden />
-            <span>做到一半的改動會留在執行者自己的工作區，不會進 PR；下一輪會從這張工單重新開始。留下的工作區可以在健康檢查清掉。不急的話，用「收尾後停」比較乾淨。</span>
+            <span>做到一半的改動會留在執行者自己的工作區，不會進 PR；下一輪會從這張工單重新開始。合併到一半的 PR 留在合併佇列，下一輪重新合併。留下的工作區可以在健康檢查清掉。不急的話，用「收尾後停」比較乾淨。</span>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStopping(false)} disabled={busy}>
