@@ -111,6 +111,7 @@ awkit run --dry-run    # 只跑啟動前的檢查
 ```bash
 awkit status   # run 的狀態、每張票在哪個階段、下一步
 awkit stop     # 做完手上這一步就停；Worker 正在跑的話會等它做完
+awkit lane approve 42   # 核可一張等你核可的高風險改動
 ```
 
 你也可以在 run 進行中直接到 GitHub 上審 pull request：有你未解決的審查意見時不會合併，Worker 會帶著你的意見重做。合併不會等你；合併之後才寫的意見，會在下一張票開工前被讀進來，變成教訓。

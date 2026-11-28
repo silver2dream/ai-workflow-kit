@@ -135,6 +135,13 @@ func Serve(ctx context.Context, e *Engine, o ServeOptions) (string, error) {
 	}
 	defer func() { e.OnSteps = onSteps }()
 
+	// What was asked of the engine while no run went is taken first: an
+	// approval given then is not lost to a run that finds nothing else.
+	if e.wake == nil {
+		e.wake = make(chan struct{}, 1)
+	}
+	e.takeCommands(stopNow)
+
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -200,10 +207,12 @@ func (e *Engine) takeCommands(stopNow func()) {
 			} else {
 				reason = "the run had ended"
 			}
+		case CommandApprove, CommandReject:
+			result, reason = e.approval(context.Background(), c)
 		case "":
 			result, reason = Rejected, "the file is not a command"
 		default:
-			result, reason = Rejected, fmt.Sprintf("the engine takes %q from task 2.6 on; until then only %s and %s", c.Kind, CommandStop, CommandStopNow)
+			result, reason = Rejected, fmt.Sprintf("the engine takes %q from task 2.6 on; until then only %s, %s, %s and %s", c.Kind, CommandStop, CommandStopNow, CommandApprove, CommandReject)
 		}
 		r, err := answer(e.Root, c, result, reason, e.clock())
 		if err != nil {

@@ -44,6 +44,24 @@ type Config struct {
 	Worker     Worker     `yaml:"worker"`
 	Lessons    Lessons    `yaml:"lessons"`
 	Engine     Engine     `yaml:"engine"`
+	Guardrails Guardrails `yaml:"guardrails"`
+}
+
+// Guardrails are what the project adds to the guardrails (design.md §9).
+type Guardrails struct {
+	HighRisk HighRisk `yaml:"high_risk"`
+}
+
+// HighRisk adds to the built-in rules of a change that waits for its
+// owner's approval before it is merged (design.md §10); it cannot take one
+// away.
+type HighRisk struct {
+	// Paths are globs, from the project's root: a change to a file they
+	// match is high risk.
+	Paths []string `yaml:"paths"`
+	// DeleteThreshold is how many deleted files make a change high risk;
+	// 20 when unset.
+	DeleteThreshold int `yaml:"delete_threshold"`
 }
 
 // Engine is how awkit's engine runs the work (design.md §5.3).
@@ -540,6 +558,7 @@ func (c *Config) applyDefaults() {
 		c.Worker.Backend = "codex"
 	}
 	positive(&c.Engine.MaxParallel, 1)
+	positive(&c.Guardrails.HighRisk.DeleteThreshold, 20)
 	if c.Worker.ClaudeCode.Model == "" {
 		c.Worker.ClaudeCode.Model = "sonnet"
 	}

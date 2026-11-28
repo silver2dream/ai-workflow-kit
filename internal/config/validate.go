@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/claudecli"
+	"github.com/silver2dream/ai-workflow-kit/internal/ticket"
 )
 
 // ValidationError says what is wrong with one field of the configuration.
@@ -151,6 +152,13 @@ func (c *Config) Validate() []ValidationError {
 			errors = append(errors, ValidationError{Field: field, Message: fmt.Sprintf("unknown backend: %s", backend), Expected: "claude-code or codex"})
 		} else if limit := c.Engine.MaxPerBackend[backend]; limit < 1 {
 			errors = append(errors, ValidationError{Field: field, Message: fmt.Sprintf("invalid limit: %d: a backend that may run no step never runs its roles", limit), Expected: "1 or more"})
+		}
+	}
+	// A high-risk path is a glob as a ticket's paths are: one written another
+	// way would match nothing, and mark nothing high risk.
+	for i, glob := range c.Guardrails.HighRisk.Paths {
+		if err := ticket.CheckGlob(glob); err != nil {
+			errors = append(errors, ValidationError{Field: fmt.Sprintf("guardrails.high_risk.paths[%d]", i), Message: err.Error(), Expected: "a path from the project's root, with *, ? and ** only"})
 		}
 	}
 	// The claude CLI takes an effort it does not know with a warning and goes

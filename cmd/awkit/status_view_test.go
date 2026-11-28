@@ -390,6 +390,7 @@ func TestPrintStatus_Lanes(t *testing.T) {
 				{Lane: engine.Lane{Issue: 9, State: engine.Resolving, Resolve: engine.ResolveRebase, PR: 15, Attempts: engine.Attempts{Failures: 2}, Since: at}},
 				{Lane: engine.Lane{Issue: 8, State: engine.Merged, PR: 11, Since: at}},
 				{Lane: engine.Lane{Issue: 13, State: engine.Queued, PR: 16, Attempts: engine.Attempts{Checks: 1}, Since: at}, Queue: 2},
+				{Lane: engine.Lane{Issue: 14, State: engine.AwaitingApproval, PR: 17, Note: "high risk: it changes what the project depends on (go.mod)", Since: at}},
 			},
 			Earlier: 4,
 		},
@@ -397,7 +398,8 @@ func TestPrintStatus_Lanes(t *testing.T) {
 	out := statusText(view)
 	for _, want := range []string{
 		"          the engine: the reviewer reviews PR #12 of #5 since " + clock + "\n          the engine: a Worker writes #11 since " + clock + "\n",
-		"Lanes     4 in the engine's hands, 1 finished in its last run\n\n",
+		"Lanes     5 in the engine's hands, 1 finished in its last run\n\n",
+		"    #14   waits for your approval, PR #17, since " + clock + "\n          high risk: it changes what the project depends on (go.mod)\n          awkit lane approve 14 sends it to the merge queue; awkit lane reject 14 --note \"…\" returns it\n",
 		"    #13   waits its turn to be merged, 2nd in the merge queue, PR #16, checks failed in the merge queue 1 of 3, since " + clock + "\n",
 		"    #5    in review, PR #12, reviewed again 1 of 3, since " + clock + "\n          [feat] show the room code\n          now: the reviewer reviews PR #12 of #5\n",
 		"    #7    needs you, PR #14, since " + clock + "\n          a guardrail stopped what an agent was to read\n          a guardrail blocked secret-scan/1 in the diff at " + clock + ": a token\n",

@@ -175,6 +175,9 @@ func (e *Engine) stepsChanged() {
 // that run end first: what they did is written.
 func (e *Engine) Run(ctx context.Context) (string, error) {
 	ended := make(chan stepEnd)
+	if e.wake == nil {
+		e.wake = make(chan struct{}, 1)
+	}
 	e.running = map[int]step{}
 	defer func() { e.running = nil }()
 	var end string
@@ -205,11 +208,14 @@ func (e *Engine) Run(ctx context.Context) (string, error) {
 			}
 			return end, failure
 		}
-		r := <-ended
-		delete(e.running, r.issue)
-		e.stepsChanged()
-		if r.err != nil {
-			stop("error_exit", r.err)
+		select {
+		case r := <-ended:
+			delete(e.running, r.issue)
+			e.stepsChanged()
+			if r.err != nil {
+				stop("error_exit", r.err)
+			}
+		case <-e.wake:
 		}
 	}
 }

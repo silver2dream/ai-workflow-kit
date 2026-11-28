@@ -257,7 +257,24 @@ func (s *ReviewStep) Review(ctx context.Context, lane Lane) (Transition, error) 
 		}
 		return retry("the review could not be submitted: " + err.Error()), nil
 	}
-	return s.after(lane, res), nil
+	next := s.after(lane, res)
+	// A plainly high-risk change waits for its owner before it is queued
+	// (design.md §10).
+	if next.To == Queued {
+		if reasons := highRisk(s.Root, rc.Ticket, diff); len(reasons) > 0 {
+			next.To, next.Cause, next.Note = AwaitingApproval, CauseApprovalNeeded, riskNote(reasons)
+			verdicts := make([]guard.Verdict, len(reasons))
+			for i, r := range reasons {
+				verdicts[i] = r.Verdict()
+			}
+			guard.Record(s.Root, verdicts, lane.Issue)
+			req := ApprovalRequest{Issue: lane.Issue, PR: lane.PR, Head: next.Approved, Reasons: reasons, Score: review.Score, Summary: review.Summary, At: s.now().UTC()}
+			if err := SaveApprovalRequest(s.Root, req); err != nil {
+				return retry("what the owner is to be shown could not be kept: " + err.Error()), nil
+			}
+		}
+	}
+	return next, nil
 }
 
 // ask runs the reviewer until it gives a review the workflow can take, as

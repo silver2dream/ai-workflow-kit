@@ -196,6 +196,12 @@
   - 相依：2.1、0.8
   - diff 對 `paths` 的範圍檢查（退回重做）；內建高風險規則與設定的加碼；`awaiting_approval`；工作台的核可畫面
   - 需求：R8、R11
+  - 分兩個 PR。2.5a engine 的部分：範圍檢查、高風險規則與設定的加碼、`awaiting_approval`、核可與退回的指令（收件匣與 `awkit lane approve|reject`）、退回的說明以 owner 等級進下一次派工。2.5b 工作台：核可畫面（為什麼、diff 摘要、審查結果、guardrail 判定、CI）、設定頁的高風險設定
+  - 細節在 `design.md` §10。原本沒寫清楚、這次定下的：
+    - 範圍檢查在 Worker 交出改動前做，超出就算這次派工失敗（照執行者失敗的次數）；沒有 `paths` 與 submodule 的工單不檢查
+    - 認證類的內建規則只看路徑裡的字，不含 `session`、`token`、`security`、`key`（太常見，內建規則又不能刪）
+    - 高風險在審查通過、要進佇列時判；核可回 `queued`，退回回 `rework`
+    - 拿掉 `needs-human-review` 不算核可；engine 開始一輪之前先處理收件匣
 - [ ] 2.6 指令通道與工作台的控制
   - 相依：1.6
   - 收件匣與回覆；`awkit lane …` CLI；工作台的線視圖與每個指令的控制項；補說明以 owner 等級進下一次派工

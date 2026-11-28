@@ -350,6 +350,12 @@ func printLanes(w io.Writer, v statusView) {
 			}
 			fmt.Fprintf(w, "          %s\n", why)
 		}
+		if l.State == engine.AwaitingApproval {
+			if l.Note != "" {
+				fmt.Fprintf(w, "          %s\n", l.Note)
+			}
+			fmt.Fprintf(w, "          awkit lane approve %d sends it to the merge queue; awkit lane reject %d --note \"…\" returns it\n", l.Issue, l.Issue)
+		}
 		if l.Verdict != nil {
 			what := "flagged"
 			if l.Verdict.Result == guard.Block {

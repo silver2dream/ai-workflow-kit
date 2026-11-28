@@ -327,7 +327,7 @@ func Apply(lane *Lane, t Transition) (*Lane, error) {
 
 	// What a person is told belongs to the state that needs them.
 	switch t.To {
-	case NeedsYou, Paused, Cancelled:
+	case NeedsYou, Paused, Cancelled, AwaitingApproval:
 		next.Why, next.Note = t.Why, t.Note
 	default:
 		next.Why, next.Note = "", ""

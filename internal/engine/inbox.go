@@ -18,8 +18,9 @@ import (
 // writes a command into the engine's inbox, a file of its own; the engine
 // takes the commands in the order they were written, and answers each in its
 // outbox: applied, or rejected and why. Every command is an event. P1 takes
-// the two stops; the other kinds come with the workbench's controls (task
-// 2.6), and are rejected until then.
+// the two stops, and 2.5 the owner's approval and return of a high-risk
+// change (approval.go); the other kinds come with the workbench's controls
+// (task 2.6), and are rejected until then.
 
 // Where the commands and their replies are, under the project.
 const (
