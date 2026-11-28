@@ -99,18 +99,73 @@ func riskNote(reasons []guard.RiskReason) string {
 
 // approvalComment is what the engine says on the issue of a lane that waits
 // for its owner's approval.
-func approvalComment(l Lane, names config.Labels) string {
+// The reasons are those the review kept for the owner; without them, the
+// lane's note says them.
+func approvalComment(l Lane, reasons []guard.RiskReason, names config.Labels) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## AWK：這張工單要你核可才會合併\n\nPR #%d 審查通過了，但它是高風險的改動：\n\n", l.PR)
-	for _, line := range strings.Split(strings.TrimPrefix(l.Note, "high risk: "), "; ") {
-		if line != "" {
-			fmt.Fprintf(&b, "- %s\n", line)
+	if len(reasons) > 0 {
+		for _, r := range reasons {
+			fmt.Fprintf(&b, "- %s\n", riskWords(r))
+		}
+	} else {
+		for _, line := range strings.Split(strings.TrimPrefix(l.Note, "high risk: "), "; ") {
+			if line != "" {
+				fmt.Fprintf(&b, "- %s\n", line)
+			}
 		}
 	}
-	fmt.Fprintf(&b, "\n核可：在工作台的「需要你處理」，或在終端機執行 `awkit lane approve %d`，它就進合併佇列。\n", l.Issue)
+	fmt.Fprintf(&b, "\n核可：在終端機執行 `awkit lane approve %d`，它就進合併佇列。\n", l.Issue)
 	fmt.Fprintf(&b, "退回：`awkit lane reject %d --note \"要改什麼\"`，你寫的說明會交給下一次的執行者。\n\n", l.Issue)
 	fmt.Fprintf(&b, "拿掉 `%s` 標籤不算核可。細節在這台電腦的 `awkit events --issue %d`。", names.NeedsHumanReview, l.Issue)
 	return b.String()
+}
+
+// ownerReasons is why the change of a lane that waits for approval is high
+// risk, as the review kept it for the owner: none when what was kept is of
+// another pull request, or nothing was.
+func ownerReasons(root string, l Lane) []guard.RiskReason {
+	if req, ok := ReadApprovalRequest(root, l.Issue); ok && req.PR == l.PR {
+		return req.Reasons
+	}
+	return nil
+}
+
+// riskRuleWords says each high-risk rule for the owner, by its id after the
+// rules' version. A rule not here keeps its own reason.
+var riskRuleWords = map[string]string{
+	guard.RiskTicket:     "工單寫了風險高（`risk: high`）",
+	guard.RiskRelease:    "要合併到發版分支（`release: true`）",
+	guard.RiskMigration:  "改到資料庫的 migration",
+	guard.RiskCIBuild:    "改到建置、測試、發版或容器的設定",
+	guard.RiskDependency: "改到專案用到的套件或鎖定的版本",
+	guard.RiskAuth:       "改到登入、權限或加密相關的程式",
+	guard.RiskProject:    "改到專案在 `guardrails.high_risk.paths` 設為高風險的路徑",
+}
+
+// riskWords says one reason a change is high risk, with the files it found.
+func riskWords(r guard.RiskReason) string {
+	id := strings.TrimPrefix(r.Rule, guard.RiskVersion+"#")
+	// A rule of another version keeps its prefix, and so its own reason.
+	said, known := riskRuleWords[id]
+	if !known {
+		said = r.Reason
+	}
+	var deleted, threshold int
+	if id == guard.RiskDeletion {
+		if _, err := fmt.Sscanf(r.Reason, "it deletes %d files, more than %d", &deleted, &threshold); err == nil {
+			said = fmt.Sprintf("刪掉 %d 個檔案，超過 %d 個", deleted, threshold)
+		}
+	}
+	if len(r.Files) == 0 {
+		return said
+	}
+	files := r.Files
+	more := ""
+	if len(files) > 5 {
+		files, more = files[:5], fmt.Sprintf(" 等 %d 個", len(r.Files))
+	}
+	return said + "：`" + strings.Join(files, "`、`") + "`" + more
 }
 
 // Command kinds of the owner's gate.

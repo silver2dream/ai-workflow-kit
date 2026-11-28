@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/silver2dream/ai-workflow-kit/internal/analyzer"
+	"github.com/silver2dream/ai-workflow-kit/internal/config"
+	"github.com/silver2dream/ai-workflow-kit/internal/guard"
 	"github.com/silver2dream/ai-workflow-kit/internal/lanenote"
 	"github.com/silver2dream/ai-workflow-kit/internal/reviewer"
 )
@@ -91,6 +93,11 @@ func TestEngine_AChangeThatWaitsForItsOwner(t *testing.T) {
 	})}
 	f.e.Review = func(ctx context.Context, l Lane) (Transition, error) {
 		f.steps = append(f.steps, "review #12")
+		// As the review does: what the owner is shown is kept first.
+		reasons := []guard.RiskReason{{Rule: "high-risk/1#dependency", Reason: "it changes what the project depends on", Files: []string{"go.mod"}}}
+		if err := SaveApprovalRequest(f.e.Root, ApprovalRequest{Issue: 12, PR: 30, Head: "abc", Reasons: reasons}); err != nil {
+			t.Fatal(err)
+		}
 		return f.review[0](l), nil
 	}
 	f.e.Shadow = nil
@@ -104,9 +111,65 @@ func TestEngine_AChangeThatWaitsForItsOwner(t *testing.T) {
 	if got := f.gh.labels(12); got != "ai-task,needs-human-review" {
 		t.Errorf("labels: %s", got)
 	}
-	if len(f.gh.comments) != 1 || !strings.Contains(f.gh.comments[0], "要你核可才會合併") || !strings.Contains(f.gh.comments[0], "it changes what the project depends on (go.mod)") ||
-		!strings.Contains(f.gh.comments[0], "awkit lane approve 12") {
+	// The comment says the reasons the review kept, in the owner's words.
+	if len(f.gh.comments) != 1 || !strings.Contains(f.gh.comments[0], "要你核可才會合併") || !strings.Contains(f.gh.comments[0], "- 改到專案用到的套件或鎖定的版本：`go.mod`\n") ||
+		strings.Contains(f.gh.comments[0], "it changes") || !strings.Contains(f.gh.comments[0], "awkit lane approve 12") {
 		t.Errorf("comments: %q", f.gh.comments)
+	}
+}
+
+// What the engine says on the issue: each reason in words, with its files;
+// without what the review kept (or what it kept is of another pull
+// request), the lane's note. Approving is said in the terminal only, until
+// the workbench does it (2.5b).
+func TestApprovalComment(t *testing.T) {
+	names := config.Labels{NeedsHumanReview: "needs-human-review"}
+	l := Lane{Issue: 29, PR: 30, Note: "high risk: its ticket says its risk is high; it deletes 31 files, more than 20"}
+	files := []string{"a.go", "b.go", "c.go", "d.go", "e.go", "f.go", "g.go"}
+	got := approvalComment(l, []guard.RiskReason{
+		{Rule: "high-risk/1#ticket", Reason: "its ticket says its risk is high"},
+		{Rule: "high-risk/1#deletion", Reason: "it deletes 31 files, more than 20"},
+		{Rule: "high-risk/1#migration", Reason: "it changes a database migration", Files: files},
+		{Rule: "high-risk/2#later", Reason: "a rule of a newer engine", Files: []string{"x.go"}},
+	}, names)
+	for _, want := range []string{
+		"PR #30 審查通過了，但它是高風險的改動：\n\n",
+		"- 工單寫了風險高（`risk: high`）\n",
+		"- 刪掉 31 個檔案，超過 20 個\n",
+		"- 改到資料庫的 migration：`a.go`、`b.go`、`c.go`、`d.go`、`e.go` 等 7 個\n",
+		"- a rule of a newer engine：`x.go`\n",
+		"核可：在終端機執行 `awkit lane approve 29`，它就進合併佇列。",
+		"退回：`awkit lane reject 29 --note \"要改什麼\"`",
+		"拿掉 `needs-human-review` 標籤不算核可。",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the comment has no %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "工作台") || strings.Contains(got, "its ticket says") {
+		t.Errorf("the comment:\n%s", got)
+	}
+	// Without the reasons, the note.
+	fallback := approvalComment(l, nil, names)
+	if !strings.Contains(fallback, "- its ticket says its risk is high\n- it deletes 31 files, more than 20\n") {
+		t.Errorf("without the reasons:\n%s", fallback)
+	}
+	// What the review kept, only for the pull request that waits.
+	root := t.TempDir()
+	if got := ownerReasons(root, l); got != nil {
+		t.Errorf("nothing kept: %+v", got)
+	}
+	if err := SaveApprovalRequest(root, ApprovalRequest{Issue: 29, PR: 28, Reasons: []guard.RiskReason{{Rule: "high-risk/1#ticket"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ownerReasons(root, l); got != nil {
+		t.Errorf("kept for another pull request: %+v", got)
+	}
+	if err := SaveApprovalRequest(root, ApprovalRequest{Issue: 29, PR: 30, Reasons: []guard.RiskReason{{Rule: "high-risk/1#ticket"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ownerReasons(root, l); len(got) != 1 || got[0].Rule != "high-risk/1#ticket" {
+		t.Errorf("kept for it: %+v", got)
 	}
 }
 

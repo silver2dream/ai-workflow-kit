@@ -141,6 +141,20 @@ func TestNextStep(t *testing.T) {
 		{"a run is going", project(statusView{Running: true, Tickets: ticketsOf(status.Ticket{Number: 9, Stage: status.StageNeedsYou})}), "Nothing: the run is going."},
 		{"tickets need a person", project(statusView{Tickets: ticketsOf(status.Ticket{Number: 9, Stage: status.StageNeedsYou}, status.Ticket{Number: 14, Stage: status.StageNeedsYou}, status.Ticket{Number: 16, Stage: status.StageReady})}),
 			"Look at #9, #14 (gh issue view 9 --comments). Once it is dealt with: awkit reset --labels puts a failed ticket back in the queue, then awkit run."},
+		// A change that waits for approval is marked needs-human-review too;
+		// approve or reject is what it takes, and before the others.
+		{"a change waits for approval", project(statusView{
+			Engine:  engine.View{Lanes: []engine.LaneView{{Lane: engine.Lane{Issue: 29, State: engine.AwaitingApproval}}}},
+			Tickets: ticketsOf(status.Ticket{Number: 29, Stage: status.StageNeedsYou}),
+		}), `#29 waits for your approval: awkit lane approve 29 sends it to the merge queue, awkit lane reject 29 --note "…" returns it to its implementer; then awkit run.`},
+		{"changes wait for approval, and another ticket needs you", project(statusView{
+			Engine:  engine.View{Lanes: []engine.LaneView{{Lane: engine.Lane{Issue: 31, State: engine.AwaitingApproval}}, {Lane: engine.Lane{Issue: 9, State: engine.NeedsYou}}, {Lane: engine.Lane{Issue: 29, State: engine.AwaitingApproval}}}},
+			Tickets: ticketsOf(status.Ticket{Number: 9, Stage: status.StageNeedsYou}, status.Ticket{Number: 29, Stage: status.StageNeedsYou}, status.Ticket{Number: 31, Stage: status.StageNeedsYou}),
+		}), `#29, #31 wait for your approval: awkit lane approve N sends one to the merge queue, awkit lane reject N --note "…" returns it to its implementer; then awkit run. Look at #9 as well (gh issue view 9 --comments).`},
+		{"a change waits for approval, GitHub not asked", project(statusView{
+			NoTickets: "x", Stopped: true, StopReason: "needs_human_review",
+			Engine: engine.View{Lanes: []engine.LaneView{{Lane: engine.Lane{Issue: 29, State: engine.AwaitingApproval}}}},
+		}), "#29 waits for your approval:"},
 		{"work is waiting", project(statusView{Tickets: ticketsOf(status.Ticket{Number: 16, Stage: status.StageReady})}), "awkit run works through the open tickets."},
 		{"everything is done", project(statusView{Tickets: &status.Tickets{Done: 5}}), `Every ticket is done. awkit plan "<what you want built>" plans more work.`},
 		{"no ticket yet", project(statusView{Tickets: &status.Tickets{}}), `No ticket yet. awkit plan "<what you want built>" proposes some; awkit create-task adds one.`},

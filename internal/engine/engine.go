@@ -631,7 +631,7 @@ func (e *Engine) record(ctx context.Context, t Transition, told bool) (*Lane, er
 		}
 	}
 	if lane.State == AwaitingApproval && !told {
-		if err := e.GitHub.Comment(ctx, lane.Issue, approvalComment(*lane, e.Names)); err != nil {
+		if err := e.GitHub.Comment(ctx, lane.Issue, approvalComment(*lane, ownerReasons(e.Root, *lane), e.Names)); err != nil {
 			e.logf("#%d: the comment that asks for its owner's approval could not be posted: %v", lane.Issue, err)
 		}
 	}
