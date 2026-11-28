@@ -24,8 +24,12 @@ export const LANES: Record<LaneState, StageMeta> = {
   cancelled: { label: "取消了", tone: "muted", means: "工單被關掉，或拿掉了工作標籤，engine 不再做它。" },
 };
 
-/** laneMeta is where a lane is, with what resolving does to its pull request. */
-export function laneMeta(lane: Pick<Lane, "state" | "resolve">): StageMeta {
+/** laneMeta is where a lane is, with what resolving does to its pull request and its place in the merge queue. */
+export function laneMeta(lane: Pick<Lane, "state" | "resolve" | "queue">): StageMeta {
+  if (lane.state === "queued" && lane.queue === 1)
+    return { label: "下一個合併", tone: "review", means: "審查通過，輪到它合併：接上整合分支最新的版本、再檢查一次、等 CI，然後合併。" };
+  if (lane.state === "queued" && lane.queue)
+    return { label: `排隊合併，第 ${lane.queue} 個`, tone: "review", means: `審查通過，前面還有 ${lane.queue - 1} 個 PR 要先合併。` };
   if (lane.state === "resolving" && lane.resolve === "conflict")
     return { label: "PR 有衝突", tone: "live", means: "它的 PR 和整合分支衝突，等著解。" };
   if (lane.state === "resolving" && lane.resolve === "rebase")
@@ -52,6 +56,10 @@ export const WHY: Record<string, string> = {
   person: "有人在 GitHub 上把它標成要人處理。",
   agent_refused: "設定要 AI 遵守的限制，那個 AI 工具做不到，所以沒有執行。",
   worker_lost: "工單上寫著執行者在做，但過了時限都沒有結果。",
+  diff_policy: "合併佇列把它接上整合分支最新的版本之後，改動違反了規則：改了 AWK 自己的檔案，或含有密鑰，工單又沒有允許。",
+  checks_stuck: "它的 PR 的檢查（CI）沒有在時限內開始，或沒有跑完。",
+  check_max_retries: "合併前的檢查（測試或 CI）沒過，退回重做的次數用完了。",
+  maintainer_feedback: "維護者在 PR 上的意見還沒處理，執行者上一輪也沒有為它推修改。",
 };
 
 export function whyWords(why?: string): string {
@@ -65,6 +73,8 @@ export function stepWords(step: EngineStep, title?: string): string {
   // 「#5 的」 is spaced as a number is; 「」的」 is not.
   const pr = `${title ? "" : " "}的 PR #${step.pr ?? "?"}`;
   switch (step.action) {
+    case "merge_pr":
+      return `合併佇列正在合併${ticket}${pr}`;
     case "review_pr":
       return `審查者正在審${ticket}${pr}`;
     case "dispatch_worker":
@@ -121,6 +131,8 @@ export function decisionWords(d: Decision | null): string {
   const ticket = `工單 #${d.issue_number}`;
   const pr = `PR #${d.pr_number}`;
   switch (d.next_action) {
+    case "merge_pr":
+      return `合併${ticket} 的 ${pr}`;
     case "review_pr":
       return `審查${ticket} 的 ${pr}`;
     case "dispatch_worker":
@@ -210,4 +222,5 @@ export const ROLES: Record<string, string> = {
 export const KNOWN: Record<string, string> = {
   order: "兩張工單的狀態一樣，兩邊先挑了不同的一張",
   check_first: "engine 先看執行者有沒有留下結果，主控直接再派一次",
+  queue: "engine 用合併佇列合併審查通過的 PR；主控沒有合併佇列，會再審一次",
 };

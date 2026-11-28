@@ -182,7 +182,7 @@ type engineFixture struct {
 	steps []string
 	log   bytes.Buffer
 	// The steps' answers, by step, in turn; the last repeats.
-	implement, check, review, resolve []func(Lane) Transition
+	implement, check, review, resolve, merge []func(Lane) Transition
 }
 
 func dispatch(issue int) *analyzer.Decision {
@@ -220,7 +220,8 @@ func newEngineFixture(t *testing.T, tickets ...Ticket) *engineFixture {
 		Root: root, Journal: j, GitHub: f.gh, Analyzer: f.an, Names: config.DefaultLabels(), MaxReviews: 3,
 		Implement: answer("implement", &f.implement), Check: answer("check", &f.check),
 		Review: answer("review", &f.review), Resolve: answer("resolve", &f.resolve),
-		Log: &f.log, now: func() time.Time { return time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC) },
+		Merge: answer("merge", &f.merge),
+		Log:   &f.log, now: func() time.Time { return time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC) },
 	}
 	shadowed(f)
 	return f
@@ -285,6 +286,80 @@ func TestEngine_ATicketToItsMerge(t *testing.T) {
 	}
 	if len(f.gh.comments) != 0 {
 		t.Errorf("comments: %v", f.gh.comments)
+	}
+}
+
+// A ticket through the merge queue: approved by its review, merged by the
+// queue. The shadow knows the queue for a difference: the analyzer, which
+// has none, would review the pull request again.
+func TestEngine_ATicketThroughTheMergeQueue(t *testing.T) {
+	f := newEngineFixture(t, task(12))
+	f.an.next = []*analyzer.Decision{dispatch(12), {NextAction: analyzer.ActionAllComplete}}
+	f.implement = []func(Lane) Transition{goTo(Reviewing, CauseImplemented, withPR(30))}
+	f.review = []func(Lane) Transition{approve}
+	f.merge = []func(Lane) Transition{goTo(Merged, CauseMerged)}
+
+	if end := f.run(); end != EndComplete {
+		t.Fatalf("ended %q\n%s", end, f.log.String())
+	}
+	if got := strings.Join(f.steps, ", "); got != "implement #12, review #12, merge #12" {
+		t.Errorf("steps: %s", got)
+	}
+	if l := f.lane(12); l.State != Merged || l.PR != 30 || l.Approved != "" {
+		t.Errorf("lane: %+v", l)
+	}
+	if got := f.gh.labels(12); got != "ai-task (closed)" {
+		t.Errorf("labels: %s", got)
+	}
+	run, _, _ := LastShadow(f.e.Root)
+	if run.Known != 1 {
+		t.Errorf("the shadow: %+v", run)
+	}
+}
+
+// A conflict the queue meets is resolved, and the lane goes back to the
+// queue, not to review; its approval goes with it.
+func TestEngine_TheQueuesConflict(t *testing.T) {
+	f := newEngineFixture(t, task(12))
+	f.an.next = []*analyzer.Decision{dispatch(12), {NextAction: analyzer.ActionAllComplete}}
+	f.implement = []func(Lane) Transition{goTo(Reviewing, CauseImplemented, withPR(30))}
+	f.review = []func(Lane) Transition{approve}
+	f.merge = []func(Lane) Transition{
+		goTo(Resolving, CauseConflicting, func(t *Transition) { t.Resolve = ResolveConflict }),
+		goTo(Merged, CauseMerged),
+	}
+	var resolvedFrom Lane
+	f.resolve = []func(Lane) Transition{func(l Lane) Transition { resolvedFrom = l; return resolvedBack(l) }}
+
+	if end := f.run(); end != EndComplete {
+		t.Fatalf("ended %q\n%s", end, f.log.String())
+	}
+	if got := strings.Join(f.steps, ", "); got != "implement #12, review #12, merge #12, resolve #12, merge #12" {
+		t.Errorf("steps: %s", got)
+	}
+	if resolvedFrom.Approved != "approved-12" || resolvedFrom.Attempts.Conflicts != 1 {
+		t.Errorf("the lane resolved: %+v", resolvedFrom)
+	}
+	if l := f.lane(12); l.State != Merged {
+		t.Errorf("lane: %+v", l)
+	}
+}
+
+// A lane in the queue whose pull request is not known waits for a person.
+func TestEngine_AQueuedLaneWithoutAPullRequest(t *testing.T) {
+	f := newEngineFixture(t, task(12, "pr-ready"))
+	f.e.Shadow = nil
+	if _, err := f.e.Journal.Record(Transition{Issue: 12, To: Reviewing, Cause: CauseImported, At: f.e.clock()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.e.Journal.Record(Transition{Issue: 12, From: Reviewing, To: Queued, Cause: CauseApproved, Approved: "abc", At: f.e.clock()}); err != nil {
+		t.Fatal(err)
+	}
+	if end := f.run(); end != analyzer.ReasonNeedsHumanReview {
+		t.Fatalf("ended %q\n%s", end, f.log.String())
+	}
+	if l := f.lane(12); l.State != NeedsYou || l.Why != WhyNoPR {
+		t.Errorf("lane: %+v", l)
 	}
 }
 

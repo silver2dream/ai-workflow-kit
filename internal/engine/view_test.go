@@ -76,7 +76,7 @@ func TestLook_NoEngine(t *testing.T) {
 	if v.Lanes == nil || v.Pending == nil || v.Replies == nil {
 		t.Errorf("a list is null for the page: %+v", v)
 	}
-	if want := (Limits{Failures: 3, Reviews: analyzer.DefaultMaxReviewAttempts, Conflicts: analyzer.DefaultMaxReviewAttempts}); v.Limits != want {
+	if want := (Limits{Failures: 3, Reviews: analyzer.DefaultMaxReviewAttempts, Conflicts: analyzer.DefaultMaxReviewAttempts, Checks: analyzer.DefaultMaxReviewAttempts}); v.Limits != want {
 		t.Errorf("limits = %+v, want %+v", v.Limits, want)
 	}
 }
@@ -215,6 +215,31 @@ func TestReadRun_OneStepOfAnEarlierAwkit(t *testing.T) {
 }
 
 // Without a run, every lane that is over ended before it.
+// The lanes in the merge queue are shown with their place in it, and the
+// merge that runs is a step on its lane.
+func TestLook_TheMergeQueue(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC()
+	run := &RunInfo{PID: os.Getpid(), Started: now.Add(-time.Hour), Beat: now, Steps: []StepInfo{{Action: ActionMerge, Issue: 6, PR: 16, Since: now.Add(-time.Minute)}}}
+	writeView(t, root, run,
+		Lane{Issue: 4, State: Queued, PR: 14, Since: now.Add(-3 * time.Minute)},
+		Lane{Issue: 5, State: Queued, PR: 15, Since: now.Add(-2 * time.Minute)},
+		Lane{Issue: 6, State: Queued, PR: 16, Since: now.Add(-9 * time.Minute)},
+		Lane{Issue: 7, State: Reviewing, PR: 17, Since: now.Add(-9 * time.Minute)},
+	)
+	v := Look(root, nil, now)
+	places := map[int]int{}
+	for _, l := range v.Lanes {
+		places[l.Issue] = l.Queue
+		if (l.Step != nil) != (l.Issue == 6) {
+			t.Errorf("#%d: step %+v", l.Issue, l.Step)
+		}
+	}
+	if fmt.Sprint(places) != "map[4:2 5:3 6:1 7:0]" {
+		t.Errorf("places = %v", places)
+	}
+}
+
 func TestLook_LanesWithoutARun(t *testing.T) {
 	root := t.TempDir()
 	writeView(t, root, nil, Lane{Issue: 4, State: NeedsYou, Why: WhyPerson, Since: time.Now()}, Lane{Issue: 2, State: Merged, Since: time.Now()})
@@ -229,7 +254,7 @@ func TestLook_LanesWithoutARun(t *testing.T) {
 func TestLook_Limits(t *testing.T) {
 	cfg := config.Default()
 	cfg.Escalation.MaxReviewAttempts = 5
-	if got, want := Look(t.TempDir(), cfg, time.Now()).Limits, (Limits{Failures: 3, Reviews: 5, Conflicts: 5}); got != want {
+	if got, want := Look(t.TempDir(), cfg, time.Now()).Limits, (Limits{Failures: 3, Reviews: 5, Conflicts: 5, Checks: 5}); got != want {
 		t.Errorf("limits = %+v, want %+v", got, want)
 	}
 	cfg.Escalation.MaxReviewAttempts = 0

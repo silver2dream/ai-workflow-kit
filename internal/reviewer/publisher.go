@@ -97,6 +97,9 @@ func PRDiff(ctx context.Context, pr int, timeout time.Duration) (string, error) 
 const (
 	// NextMerged: the work landed.
 	NextMerged = "merged"
+	// NextQueued: approved, it waits for the engine's merge queue
+	// (SubmitReviewOptions.Queue).
+	NextQueued = "queued"
 	// NextRework: the implementer does it again, with the review (or a
 	// maintainer's open feedback).
 	NextRework = "rework"

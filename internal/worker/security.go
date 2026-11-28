@@ -92,6 +92,57 @@ func CheckSensitiveInfo(ctx context.Context, wtDir string, allowSecrets bool, cu
 	return matches, nil
 }
 
+// PolicyError is a change the diff policy refuses: AWK's own files changed,
+// or a secret, which the ticket does not allow.
+type PolicyError struct {
+	// Protected are the workflow's files changed; Secrets the patterns of
+	// secrets found.
+	Protected []string
+	Secrets   []string
+}
+
+func (e *PolicyError) Error() string {
+	var said []string
+	if len(e.Protected) > 0 {
+		said = append(said, fmt.Sprintf("protected workflow files modified without approval: %s (to allow it, set 'allow_script_changes: true' in the ticket's '%s' block)", strings.Join(e.Protected, ", "), ticket.Info))
+	}
+	if len(e.Secrets) > 0 {
+		said = append(said, fmt.Sprintf("sensitive patterns detected: %s (to allow it, set 'allow_secrets: true' in the ticket's '%s' block)", strings.Join(e.Secrets, ", "), ticket.Info))
+	}
+	return strings.Join(said, "; ")
+}
+
+// CheckCommits holds the change of revs, in git's notation (for instance
+// "origin/develop...HEAD"), to the rules a Worker's staged change is held to
+// before it is handed in (CheckScriptModifications, CheckSensitiveInfo),
+// with what the ticket's metadata allows: the engine's merge queue checks a
+// change again once it rebased it. A *PolicyError is a change the rules
+// refuse; another error, one git could not show.
+func CheckCommits(ctx context.Context, wtDir, revs string, meta *TicketMetadata) error {
+	if meta == nil {
+		meta = &TicketMetadata{}
+	}
+	names, err := gitOutput(ctx, wtDir, "diff", "--name-only", revs)
+	if err != nil {
+		return err
+	}
+	diff, err := gitOutput(ctx, wtDir, "diff", revs)
+	if err != nil {
+		return err
+	}
+	refused := &PolicyError{}
+	if protected := findProtectedChanges(splitLines(names), meta.ScriptWhitelist); !meta.AllowScriptChanges {
+		refused.Protected = protected
+	}
+	if strings.TrimSpace(diff) != "" && !meta.AllowSecrets {
+		refused.Secrets = findSensitiveMatches(diff, meta.SecretPatterns)
+	}
+	if len(refused.Protected)+len(refused.Secrets) > 0 {
+		return refused
+	}
+	return nil
+}
+
 func findProtectedChanges(files []string, whitelist string) []string {
 	var violations []string
 	for _, file := range files {

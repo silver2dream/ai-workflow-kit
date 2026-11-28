@@ -149,6 +149,7 @@
 - **已知的差異**（有理由，不算分歧）：
   - `order`：analyzer 分不出來的兩張票（工作流程的標籤完全相同），engine 取編號最小的，analyzer 取 `gh issue list` 給的第一張（新的在前）。
   - `check_first`：engine 派出去的票，工單上沒有 `in-progress`（worker 還沒加上，或沒留結果就結束並拿掉了）。engine 先查 worker 有沒有留下結果再重派；analyzer 只看標籤，手上沒有票，直接把那張票再挑一次。
+  - `queue`（2.3）：engine 合併它佇列裡的線，或 analyzer 把佇列裡的線（標籤是 `pr-ready`）當成要審查的。analyzer 沒有合併佇列（§5.4）。
 - **engine 為了一致而改的**：需要人的線，決定只帶工單、不帶 PR 編號，與 analyzer 相同（原本 engine 會帶上線的 PR）。
 - **窮舉比對**（`shadow_test.go`，共 4,642 種狀況，每次 CI 都跑）：
   - 每一種 P1 的線（狀態、解哪種衝突、為什麼要人、有沒有 PR、兩種次數各在上限之下／剛好／之上、PR 可以合併／衝突／不確定／問不到），投影成標籤後兩邊各算一次；派出去的線用派工時實際的標籤（派工那一步不投影）。
@@ -237,7 +238,7 @@
   - 每個 backend 同時在跑的步驟，不超過 `engine.max_per_backend` 給它的數字。
     - 一步的 backend 是做那一步的角色的：寫是實作者的，審查是審查者的，解衝突是 resolver 的。
     - 讀 Worker 結果的那一步不用 agent，不算任何 backend。
-  - 審查與解衝突一次只跑一個（整合的步驟）。審查通過就合併：兩個 PR 同時審、同時合併時，後合併的那個是對著合併前的整合分支審的。2.3 的合併佇列接手合併之後，審查才能平行。
+  - 審查與解衝突一次只跑一個（整合的步驟）。審查通過就合併：兩個 PR 同時審、同時合併時，後合併的那個是對著合併前的整合分支審的。2.3 的合併佇列接手合併之後，審查才能平行（2.3 已拿掉這條，見 §5.4）。
   - 新工單：佔名額的線（2.2a）還沒滿，實作者的 backend 也還有名額，就一次挑好幾張（`Candidates` 的 *n*）。
   - engine 手上不能開工的線，挑票時跳過（`Candidates` 的 skip）：不是 `ready`、`rework`、`blocked`、已結束的線，包括正在跑的（它的 Worker 還沒貼上 `in-progress` 之前，工單在 GitHub 上看起來還沒開工）。線以 engine 為準，GitHub 只是投影。
   - 同一次挑出的幾張也互相避開路徑：analyzer 問完 skip 就挑那一張（skip 是最後一個檢查），所以沒被跳過的工單，路徑馬上算成佔住，後面的工單要避開它。
@@ -286,6 +287,55 @@
 - 輪到時：fetch 整合分支 → 在線的 worktree 裡 rebase → 衝突交給 `resolver`（§5.5）→ 重跑確定性驗證與 diff 政策（rebase 後的 diff）→ push → 等 CI → 用專案設定的合併方式合併。不繞過分支保護。
 - 任一步失敗，那條線轉回對應的狀態（rework、resolving、needs_you），佇列處理下一張。
 - 一次只有一張在佇列的「處理中」位置，所以合併永遠是串行的。
+
+實作（2.3，`internal/engine/merge.go`、`engine.go`、`parallel.go`，`internal/reviewer`）：
+
+- **與原本寫的不同**（使用者 2026-11-28 同意）：人的優先插隊與「先別合併」移到 2.6，與下這兩個指令的 CLI、工作台控制項一起做。2.6 之前沒有任何方法下這兩個指令（指令通道只收停止），理由與 2.2 把人的優先移過去相同。這段期間人要擋下一張的合併，就在 PR 上 request changes：佇列合併前會再看一次維護者的審查（下面第 7 步）。
+- **進佇列**：
+  - engine 的審查通過時（分數到門檻、證據關卡過、CI 沒有失敗、維護者沒有未處理的意見），在 GitHub 上核准，但不合併：線轉 `queued`（`approved`）。
+  - `SubmitReview` 多一個 `Queue` 選項，這時它回傳 `Next: queued`。合併、關 issue、清 worktree、教訓的結算，都留給佇列在真的合併之後做。主控的路（`AWKIT_ENGINE=principal`）照舊在審查裡合併。
+  - 線記下審查核准的 commit（`approved`：審查跑測試時 worktree 的 HEAD）。分數記在 `.ai/state/reviews/pr-<n>/approval.json`，合併後記教訓時用。
+  - `approved` 跟著線走到合併：`queued` → `resolving` → 解衝突 → `queued`，以及從這些狀態暫停或轉人，都保留；其他轉換都清掉（例如退回重做、再審一次）。
+- **順序與一次一張**：
+  - 佇列是 `queued` 的線，依進入 `queued` 的時間排（同時的依編號）。最前面那張由「合併」這一步處理（`merge`）。同時只有一個合併在跑，所以合併永遠是串行的。
+  - 合併這一步不佔 `engine.max_parallel` 的名額，也不算任何 backend：它不用 agent，大部分時間在等 CI（§5.3「等 CI 的線不佔名額」）。所以平行上限是預設的 1 時，也可以一邊合併、一邊寫下一張。
+  - 2.2b 的「審查與解衝突一次只跑一個」拿掉：審查不再合併，解衝突只 rebase 線自己的分支，都可以同時跑。
+  - 一輪的決定裡，合併排第一，手上的其他線、需要人的線都排在它後面。停止時（`awkit stop`、輪數上限），不開始新的合併，正在合併的那張做完。
+- **合併這一步**（`MergeStep.Merge(ctx, lane)`）：
+  1. 問 PR 的狀態。已經合併（例如上一次合併完 engine 就停了）→ 補做合併後的事，轉 `merged`。被關掉沒合併 → `needs_you`（`no_pr`）。
+  2. 準備 worktree（與解衝突同一段程式：在線的分支上、不在 rebase 中、乾淨），fetch，worktree 換成 GitHub 上那個分支的樣子：人推到 PR 的東西會一起帶走；佇列上一次 rebase 了卻沒推上去的，不留。分支在 GitHub 上不見了 → `needs_you`（`no_pr`）。
+  3. 整合分支最新的 commit 不在分支裡，就 `git rebase origin/<base>`。
+     - 衝突 → 中止 rebase。衝突次數還沒到上限 → `resolving`（`conflict`）；到了 → `needs_you`（`conflict_max_retries`）。佇列接著處理下一張。
+     - 不是衝突的失敗 → `needs_you`。
+  4. HEAD 不是審查核准的那個 commit 時重驗。這包括 rebase 過、有人推過、resolver 解過衝突。
+     - diff 政策：`origin/<base>...HEAD` 的改動，照 Worker 交出改動時的規則檢查。沒有 `allow_script_changes` 卻改了 AWK 自己的檔案、沒有 `allow_secrets` 卻有密鑰 → `needs_you`（`diff_policy`）。
+     - 測試：跑審查跑的那個測試指令（repo 的 `verify.test`），時限是 `timeouts.verify_minutes`。沒過 → `rework`（`check_failed`）。
+     - HEAD 就是核准的 commit 時不重驗：審查跑過的測試就是這個 commit，diff 也沒變。
+  5. push，用 `--force-with-lease`，只取代 fetch 時的版本。被拒（這中間有人推了）→ 從第 2 步重來。
+  6. 等 CI：讀 PR 的 head 與它的檢查（`gh pr view --json headRefOid,statusCheckRollup`），等到 PR 的 head 是剛推的 commit，而且檢查都跑完。
+     - 有檢查失敗或被取消 → `rework`（`check_failed`）。
+     - 一直沒有檢查：專案沒有對 PR 跑的 workflow 時，等 90 秒就當作沒有 CI；有的話，等 10 分鐘還沒開始 → `needs_you`（`checks_stuck`）。
+     - 跑了 40 分鐘還沒跑完 → `needs_you`（`checks_stuck`）。
+     - 這幾個時間與核可文件時的合併（`internal/landing`）相同。
+  7. 維護者的審查：與審查裡的關卡相同（`applyHumanGate`）。審查與合併之間可能隔了很久，所以合併前再看一次：有未處理的意見 → `rework`（附上意見），或照審查的規則轉人。
+  8. 合併：`gh pr merge --<合併方式> --delete-branch --match-head-commit <HEAD>`。
+     - 只合併驗過的那個 commit。不用 `--admin`，分支保護照樣有效。
+     - 被拒時問 GitHub 原因：`DIRTY` → `resolving`（`conflict`）；`BEHIND`，或 head 已經不是那個 commit → 從第 2 步重來；其他（`BLOCKED` 等）→ `needs_you`（`merge_blocked`）。
+  9. 合併之後做的，與主控合併後做的相同：`on_merge` hook、記下已落地、關 issue、清 worktree、教訓（記下核准、結算注入的教訓、蒸餾）。線轉 `merged`。
+- **合併這一步的界限**：
+  - 「重來」最多三次，再不行 → `needs_you`（`merge_blocked`）。這是為了整合分支一直在動時，這一步停得下來。
+  - 退回重做時在 issue 留言，標題含 `AWK Review`，寫出沒過的測試輸出或 CI 檢查的名稱：Worker 下一次派工時讀的就是這些留言。
+  - 佇列裡檢查沒過的次數記在線上（`attempts.checks`），工單重開才歸零。上限與衝突相同（`escalation.max_review_attempts`），到了 → `needs_you`（`check_max_retries`）。沒有這個上限，CI 不穩時同一張會在重做與合併之間一直繞。
+- **解衝突之後**：從佇列來的衝突（線有 `approved`），resolver 解完、push 之後回 `queued`，不再審一次：佇列的第 4 步會跑測試與 diff 政策。審查之前就衝突的（P1 的路）照舊回 `reviewing`。
+- **停下與重開**：
+  - 合併是一步，`awkit stop` 等它做完；立刻停會取消它（rebase 中止、什麼都不推）。
+  - engine 重開時，`queued` 的線再做一次合併這一步。每一段都可以重做：已經 rebase 並推上去的不會再 rebase，已經合併的在第 1 步就看得出來。
+- **影子**：已知差異 `queue`。engine 合併它佇列裡的線，或 analyzer 把佇列裡的線（標籤是 `pr-ready`）當成要審查的：analyzer 沒有合併佇列。
+- **看得到**：
+  - 執行頁的「同時在做」寫「正在合併工單 #N 的 PR」；線的列表裡，排隊的線寫排第幾。
+  - `awkit status`：`queued` 的線寫排第幾；正在合併的那一步一行。
+  - engine 的輸出：合併這一步在等 CI、重來、合併了，各說一行（前面加 `[#N]`）。
+- **已知的限制**：分支保護要求核准，又設了「push 新的 commit 就撤銷核准」時，佇列 rebase 後推上去，核准會被撤掉，GitHub 拒絕合併 → `needs_you`（`merge_blocked`）。不過 AWK 用的帳號就是開 PR 的帳號，GitHub 不讓它核准自己的 PR，所以要求核准的專案，AWK 原本就合併不了。
 
 ### 5.5 Agent runtime 與角色設定
 
@@ -339,7 +389,7 @@
   - 每次審查的檔案在 `runs/<issue>/<seq>/`，`seq` 是讓線進入 `reviewing` 的那個轉換在事件日誌裡的序號；每問一次 reviewer 是底下的 `reviewer-<n>/`。
   - 結果：`Next` 依序對到 `merged`、`rework`、`review_retry`、`resolving`（`conflict`／`rebase`）、`needs_you`（`merge_blocked`、`needs_human_review`、`guard_output`）；不認得的一律 `needs_you`。reviewer 沒跑完（逾時、失敗、預算、schema）→ `review_retry`；後端達不到角色設定而沒執行 → `needs_you`（`agent_refused`）；輸入檢查擋下 → `needs_you`（`guard_blocked`），reviewer 不會拿到那些內容；reviewer 回報可疑的資料區塊 → 記 flag 判定，審查照常。
   - 審查的留言被對外檢查擋下時（兩條路都一樣）：不核准、不合併，票轉人並說明原因，判定記在那張工單下。
-  - engine 的 `Publisher`（`EnginePublisher`）就是主控的，只是不改標籤。P1 的合併仍由它在 `SubmitReview` 裡做（engine 直接合併）；P2 把它換成進合併佇列。
+  - engine 的 `Publisher`（`EnginePublisher`）就是主控的，只是不改標籤。P1 的合併仍由它在 `SubmitReview` 裡做（engine 直接合併）；2.3 起 engine 的審查以 `Queue` 交給合併佇列（§5.4）。
 - 解衝突：engine 在 rebase 停住的 worktree 啟動 resolver → 拿到 `{result: RESOLVED|TOO_COMPLEX|FAILED, files, reason}` → engine 檢查沒有衝突標記、改動只在衝突檔案、驗證通過 → 繼續 rebase、push。現在由主控用 `gh issue edit` 改標籤的步驟（`references/conflict-resolution.md`）改由 engine 做。
 - engine 的解衝突步驟（1.5，`internal/engine/resolve.go`）：`ResolveStep.Resolve(ctx, lane)` 處理一條派去解 PR 的線（`implementing`，`resolve` 有值），回傳線要怎麼走的轉換，由主迴圈（1.6）記下。
   - 先把 worktree 準備好（不在 rebase 中、在線的分支上、乾淨），`git fetch` 後把遠端分支 fast-forward 進來（有人推到 PR 的東西不會被蓋掉；兩邊分岔就轉人）。push 用 `--force-with-lease=<分支>:<fetch 當時的 sha>`，只取代 worktree 出發時的那個版本。
@@ -347,7 +397,7 @@
   - rebase 停在衝突上時，每個停住的 commit 叫一次 resolver（上限 8 個 commit，超過轉人）。它拿到：指示（`resolve_instructions.md`）、工單摘要（owner）、衝突檔案適用的規則（repo）、每個衝突檔案連同標記、base 最近改過它的 commit、正在重放的 PR commit（agent）。它只改衝突檔案，可以跑檢查用的指令，不 stage、不 commit、不繼續或中止 rebase、不 push。答案 `{result: RESOLVED|TOO_COMPLEX|FAILED, files, reason}`。
   - engine 不信它的話，自己檢查：HEAD 沒動（動了 → 失敗）；索引與工作區裡衝突檔案以外的已追蹤檔案沒變（manifest 衝突時它的 lockfile 可以一起變，例如 `go.mod` 與 `go.sum`）——變了是 security，記 `resolver-scope` 的 block 判定、什麼都不 push、轉人（`guard_output`）；沒有留下衝突標記（單獨一行 `=======` 不算，那是 Markdown 標題）——留下是 quality，失敗。過了才 `git add` 衝突檔案與 lockfile、清掉它的檢查留下的未追蹤檔案（不 commit，也不讓接著的審查跑到）、`git rebase --continue`，下一個 commit 再衝突就再一輪。
   - 結果：push 成功 → `reviewing`（`resolved`）；`TOO_COMPLEX` → `needs_you`（`needs_human_review`，說明哪些檔案、為什麼）；`FAILED`、resolver 沒跑完、檢查沒過、git 失敗 → 回 `resolving`（`resolve_failed`，再派一次，次數由主迴圈管）；後端達不到角色設定 → `needs_you`（`agent_refused`）；輸入檢查擋下 → `needs_you`（`guard_blocked`）。不論結果，worktree 都不會留在 rebase 中途。
-  - 「驗證通過」：push 前做的是上面這些確定性檢查；建置與測試在接著的審查（1.4）由 engine 跑。
+  - 「驗證通過」：push 前做的是上面這些確定性檢查；建置與測試在接著的審查（1.4）由 engine 跑；從合併佇列來的衝突，解完回佇列，由佇列跑測試（§5.4）。
 
 ### 5.6 Context builder 與任務信封
 

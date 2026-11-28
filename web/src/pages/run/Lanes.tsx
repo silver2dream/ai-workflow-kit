@@ -13,10 +13,11 @@ import { when } from "@/lib/words";
 /** counts says how often a lane was tried again, of how often it may be: only the counts it used. */
 export function counts(lane: Lane, limits: EngineView["limits"]): string[] {
   const out: string[] = [];
-  const { failures = 0, reviews = 0, conflicts = 0 } = lane.attempts ?? {};
+  const { failures = 0, reviews = 0, conflicts = 0, checks = 0 } = lane.attempts ?? {};
   if (failures > 0) out.push(`執行者失敗 ${failures}／${limits.failures} 次`);
   if (reviews > 0) out.push(`重新審查 ${reviews}／${limits.reviews} 次`);
   if (conflicts > 0) out.push(`送去解衝突 ${conflicts}／${limits.conflicts} 次`);
+  if (checks > 0) out.push(`合併前的檢查沒過 ${checks}／${limits.checks ?? limits.conflicts} 次`);
   return out;
 }
 

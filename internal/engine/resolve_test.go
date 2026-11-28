@@ -123,7 +123,7 @@ func (f *conflictFixture) resolve() Transition {
 	}
 	f.lane = *next
 	// Never left in a rebase, and on its branch.
-	if r := (&resolution{step: f.step, wt: f.wt}); r.rebasing() {
+	if r := (&laneTree{wt: f.wt}); r.rebasing() {
 		f.t.Error("the worktree was left in a rebase")
 	}
 	if on := gitIn(f.t, f.wt, "rev-parse", "--abbrev-ref", "HEAD"); strings.TrimSpace(on) != "feat/ai-issue-12" {

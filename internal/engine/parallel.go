@@ -18,10 +18,10 @@ import (
 //
 //   - no more than engine.max_parallel at once, and no more of an agent
 //     backend than engine.max_per_backend gives it;
-//   - one review or resolution at a time: a review that passes merges, and
-//     until the merge queue (task 2.3) merges one pull request at a time, two
-//     reviews at once would merge a pull request reviewed against the
-//     integration branch without the other;
+//   - one merge at a time, of the pull request at the head of the merge
+//     queue (merge.go, task 2.3). The merge takes no slot and no backend: it
+//     runs no agent, and mostly waits for CI. A review approves, and the
+//     queue merges, so reviews and resolutions run side by side;
 //   - new tickets while the lanes that take a slot leave one (2.2a), as many
 //     as are left, past the tickets whose lanes are in the engine's hands.
 //
@@ -40,11 +40,14 @@ type Backends struct {
 
 // step is a step that runs: what it does, on which backend, since when.
 type step struct {
-	decision    analyzer.Decision
-	backend     string
-	integration bool
-	since       time.Time
+	decision analyzer.Decision
+	backend  string
+	since    time.Time
 }
+
+// merges says whether a step is the merge queue's: one at a time, in no
+// slot.
+func (s step) merges() bool { return s.decision.NextAction == ActionMerge }
 
 // stepEnd is a step that ended, and the error it ended with.
 type stepEnd struct {
@@ -69,14 +72,8 @@ func (e *Engine) maxParallel() int {
 	return e.MaxParallel
 }
 
-// integrates says whether a decision's step reviews or resolves a pull
-// request: one of them at a time.
-func integrates(d *analyzer.Decision) bool {
-	return d.NextAction == analyzer.ActionReviewPR || (d.NextAction == analyzer.ActionDispatchWorker && d.MergeIssue != "")
-}
-
 // backendOf is the backend of the agent that does a decision's step; "" for
-// one that runs none (a Worker's result read).
+// one that runs none (a Worker's result read, a merge).
 func (e *Engine) backendOf(d *analyzer.Decision) string {
 	switch {
 	case d.NextAction == analyzer.ActionReviewPR:
@@ -98,9 +95,22 @@ func (e *Engine) runs(issue int) bool {
 	return ok
 }
 
-func (e *Engine) integrating() bool {
+// taken counts the steps that run in a slot of max_parallel: every one but
+// the merge.
+func (e *Engine) taken() int {
+	n := 0
 	for _, s := range e.running {
-		if s.integration {
+		if !s.merges() {
+			n++
+		}
+	}
+	return n
+}
+
+// merging says whether the merge queue's step runs.
+func (e *Engine) merging() bool {
+	for _, s := range e.running {
+		if s.merges() {
 			return true
 		}
 	}
@@ -110,7 +120,7 @@ func (e *Engine) integrating() bool {
 // room is how many more steps of a backend may start now: what
 // max_parallel leaves, and what max_per_backend leaves of the backend.
 func (e *Engine) room(backend string) int {
-	n := e.maxParallel() - e.busy()
+	n := e.maxParallel() - e.taken()
 	if limit, ok := e.MaxPerBackend[backend]; ok && backend != "" {
 		on := 0
 		for _, s := range e.running {
@@ -129,8 +139,8 @@ func (e *Engine) canStart(d *analyzer.Decision) bool {
 	if !working(d.NextAction) {
 		return true
 	}
-	if integrates(d) && e.integrating() {
-		return false
+	if d.NextAction == ActionMerge {
+		return !e.merging()
 	}
 	return e.room(e.backendOf(d)) > 0
 }
@@ -267,7 +277,14 @@ func (e *Engine) decide(ctx context.Context, r *roundState) (*analyzer.Decision,
 		r.more = r.more[1:]
 		return d, nil
 	}
-	if r.picked || e.busy() >= e.maxParallel() {
+	if r.picked {
+		return nil, nil
+	}
+	if e.taken() >= e.maxParallel() {
+		// The merge takes no slot: it starts when the slots are full.
+		if d := e.queued(); d != nil && e.canStart(d) {
+			return d, nil
+		}
 		return nil, nil
 	}
 	d := e.inHand(ctx, r.mergeable)
@@ -298,7 +315,7 @@ func (e *Engine) start(ctx context.Context, d *analyzer.Decision, ended chan<- s
 	if e.running == nil {
 		e.running = map[int]step{}
 	}
-	e.running[lane.Issue] = step{decision: *d, backend: e.backendOf(d), integration: integrates(d), since: e.clock()}
+	e.running[lane.Issue] = step{decision: *d, backend: e.backendOf(d), since: e.clock()}
 	e.stepsChanged()
 	go func() {
 		ended <- stepEnd{issue: lane.Issue, err: work(ctx, *lane)}
@@ -315,6 +332,9 @@ func (e *Engine) begin(ctx context.Context, d *analyzer.Decision) (*Lane, func(c
 	case d.NextAction == analyzer.ActionCheckResult:
 		l, err = e.laneOf(d.IssueNumber)
 		return l, e.checked, err
+	case d.NextAction == ActionMerge:
+		l, err = e.laneOf(d.IssueNumber)
+		return l, e.merged, err
 	case d.NextAction == analyzer.ActionReviewPR:
 		l, err = e.toReview(ctx, d)
 		return l, e.reviewed, err

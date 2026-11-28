@@ -210,8 +210,10 @@ export interface Lane {
   resolve?: string;
   why?: string;
   note?: string;
-  attempts: { failures?: number; reviews?: number; conflicts?: number };
+  attempts: { failures?: number; reviews?: number; conflicts?: number; checks?: number };
   since: string;
+  /** Its place in the merge queue, 1 the next to be merged; none when it is not in it. */
+  queue?: number;
   /** What the engine does on it now. */
   step?: EngineStep;
   /** The latest verdict on its ticket in the last run that was not a pass. */
@@ -249,7 +251,7 @@ export interface EngineView {
   lanes: Lane[];
   /** The lanes that ended before the last run: not listed. */
   earlier: number;
-  limits: { failures: number; reviews: number; conflicts: number };
+  limits: { failures: number; reviews: number; conflicts: number; checks?: number };
   shadow?: ShadowRun;
   pending: { id: string; kind: string; by: string; at: string }[];
   replies: EngineReply[];
