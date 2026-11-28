@@ -44,6 +44,11 @@ type mergeFixture struct {
 	pub   *recordingPublisher
 	calls []string
 	clock time.Time
+	log   strings.Builder
+	// lag is how many looks GitHub still shows the head before the last
+	// push: its checks too.
+	lag   int
+	shown string
 
 	// What GitHub says: the pull request's state ("" is OPEN), its checks
 	// by head (the latest when a head has none of its own), whether the
@@ -87,7 +92,7 @@ func newMergeFixture(t *testing.T, moved map[string]string, pr map[string]string
 	f.checks = func(string, int) []Check { return []Check{{Name: "test", Bucket: "pass"}} }
 	f.lane = Lane{Issue: 12, State: Queued, PR: 30, Approved: f.remoteHead(), Seq: 60}
 	f.merge = &MergeStep{
-		Root: cf.root, Publisher: EnginePublisher{f.pub}, MaxConflicts: 3, MaxChecks: 3,
+		Root: cf.root, Log: &f.log, Publisher: EnginePublisher{f.pub}, MaxConflicts: 3, MaxChecks: 3,
 		now:   func() time.Time { return f.clock },
 		sleep: func(_ context.Context, d time.Duration) error { f.clock = f.clock.Add(d); return nil },
 		pull: func(_ context.Context, pr int) (PullRequest, error) {
@@ -97,7 +102,10 @@ func newMergeFixture(t *testing.T, moved map[string]string, pr map[string]string
 			}
 			head := f.remoteHead()
 			f.polls++
-			return PullRequest{State: state, Head: head, Base: "develop", Checks: f.checks(head, f.polls)}, nil
+			if f.shown == "" || f.polls > f.lag {
+				f.shown = head
+			}
+			return PullRequest{State: state, Head: f.shown, Base: "develop", Checks: f.checks(f.shown, f.polls)}, nil
 		},
 		merge: func(_ context.Context, pr int, strategy, head string) error {
 			f.calls = append(f.calls, fmt.Sprintf("merge %d %s %s", pr, strategy, short(head)))
@@ -212,6 +220,52 @@ func TestMerge_RebasedTestedPushedMerged(t *testing.T) {
 	}
 	if !f.clock.After(time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)) {
 		t.Error("the pending checks were not waited for")
+	}
+	for _, line := range []string{
+		"[#12] rebased onto origin/develop (",
+		"[#12] testing " + short(head) + ": go test ./...\n",
+		"[#12] pushed " + short(head) + " to PR #30\n",
+		"[#12] waiting for the checks of PR #30: 1 of 1 pending\n",
+		"[#12] the checks of PR #30 passed\n",
+		"[#12] merged PR #30 (" + short(head) + ") into develop\n",
+	} {
+		if !strings.Contains(f.log.String(), line) {
+			t.Errorf("the log does not say %q:\n%s", line, f.log.String())
+		}
+	}
+}
+
+// GitHub shows the head before the push for a while, with its checks
+// passed: the queue waits for the checks of the commit it pushed.
+func TestMerge_TheChecksOfTheCommitPushed(t *testing.T) {
+	f := newMergeFixture(t, map[string]string{"notes.txt": "the base moved on\n"}, nil)
+	approved := f.lane.Approved
+	f.lag = 3
+	f.checks = func(head string, polls int) []Check {
+		if head == approved || polls >= 6 {
+			return []Check{{Name: "test", Bucket: "pass"}}
+		}
+		return []Check{{Name: "test", Bucket: "pending"}}
+	}
+	if tr := f.run(); tr.To != Merged {
+		t.Fatalf("went %s: %s\n%s", tr.To, tr.Note, f.said())
+	}
+	if f.polls < 6 {
+		t.Errorf("merged after %d looks: the checks of the commit pushed were not waited for", f.polls)
+	}
+}
+
+// The limits are the project's when the step is given none.
+func TestMerge_TheProjectsLimits(t *testing.T) {
+	f := newMergeFixture(t, map[string]string{"score.txt": scoreMoved}, nil)
+	writeFile(t, filepath.Join(f.root, ".ai", "config.yaml"), mergeConfig+"escalation:\n  max_review_attempts: 2\n")
+	f.merge.MaxConflicts, f.merge.MaxChecks = 0, 0
+	f.lane.Attempts.Conflicts = 2
+	if tr := f.run(); tr.To != NeedsYou || tr.Why != WhyConflictRetries {
+		t.Errorf("went %s (%s): %s", tr.To, tr.Why, tr.Note)
+	}
+	if f.merge.MaxChecks != 2 {
+		t.Errorf("checks: %d", f.merge.MaxChecks)
 	}
 }
 
@@ -385,6 +439,31 @@ func TestMerge_Refused(t *testing.T) {
 		t.Errorf("BEHIND once: went %s: %s\n%s", tr.To, tr.Note, f.said())
 	}
 
+	// A person pushed just before the merge: it starts over with what was
+	// pushed.
+	f = newMergeFixture(t, nil, nil)
+	f.mergeState = "BLOCKED"
+	merge := f.merge.merge
+	pushed := false
+	f.merge.merge = func(ctx context.Context, pr int, strategy, head string) error {
+		if !pushed {
+			pushed = true
+			other := t.TempDir()
+			gitIn(t, other, "clone", "-q", "-b", "feat/ai-issue-12", f.origin, ".")
+			for _, kv := range [][2]string{{"user.email", "p@example.invalid"}, {"user.name", "p"}} {
+				gitIn(t, other, "config", kv[0], kv[1])
+			}
+			writeFile(t, filepath.Join(other, "other.txt"), "just before\n")
+			gitIn(t, other, "commit", "-qam", "[fix] just before")
+			gitIn(t, other, "push", "-q", "origin", "feat/ai-issue-12")
+			return errors.New("Head branch was modified")
+		}
+		return merge(ctx, pr, strategy, head)
+	}
+	if tr := f.run(); tr.To != Merged || !strings.Contains(f.said(), "test ") {
+		t.Errorf("a push just before: went %s (%s): %s\n%s", tr.To, tr.Why, tr.Note, f.said())
+	}
+
 	// Behind every time: a person, after three tries.
 	f = newMergeFixture(t, nil, nil)
 	f.mergeState = "BEHIND"
@@ -441,6 +520,18 @@ func TestMerge_APullRequestThatIsOver(t *testing.T) {
 	}
 }
 
+// A pull request whose branch is gone from GitHub is for a person.
+func TestMerge_ABranchGoneFromGitHub(t *testing.T) {
+	f := newMergeFixture(t, nil, nil)
+	gitIn(t, f.origin, "update-ref", "-d", "refs/heads/feat/ai-issue-12")
+	f.merge.pull = func(context.Context, int) (PullRequest, error) {
+		return PullRequest{State: "OPEN", Head: f.lane.Approved, Base: "develop"}, nil
+	}
+	if tr := f.run(); tr.To != NeedsYou || tr.Why != WhyNoPR || !strings.Contains(tr.Note, "not on GitHub") || f.said() != "" {
+		t.Errorf("went %s (%s): %s\n%s", tr.To, tr.Why, tr.Note, f.said())
+	}
+}
+
 // A stop at once ends the merge where it is: nothing is merged, and the
 // worktree is not left in a rebase.
 func TestMerge_AStopAtOnce(t *testing.T) {
@@ -483,6 +574,7 @@ func TestParsePR(t *testing.T) {
 		{"__typename":"CheckRun","name":"old","status":"COMPLETED","conclusion":"CANCELLED"},
 		{"__typename":"CheckRun","name":"slow","status":"COMPLETED","conclusion":"TIMED_OUT"},
 		{"__typename":"CheckRun","name":"queued","status":"QUEUED","conclusion":""},
+		{"__typename":"CheckRun","name":"rerun","status":"IN_PROGRESS","conclusion":"SUCCESS"},
 		{"__typename":"StatusContext","context":"ci/legacy","state":"PENDING"},
 		{"__typename":"StatusContext","context":"ci/ok","state":"SUCCESS"},
 		{"__typename":"StatusContext","context":"ci/bad","state":"ERROR"}
@@ -498,7 +590,7 @@ func TestParsePR(t *testing.T) {
 	for _, c := range pr.Checks {
 		got = append(got, c.Name+"="+c.Bucket)
 	}
-	want := "go=pass web=pending e2e=fail docs=skipping old=cancel slow=fail queued=pending ci/legacy=pending ci/ok=pass ci/bad=fail"
+	want := "go=pass web=pending e2e=fail docs=skipping old=cancel slow=fail queued=pending rerun=pending ci/legacy=pending ci/ok=pass ci/bad=fail"
 	if strings.Join(got, " ") != want {
 		t.Errorf("checks:\n%s\nwant:\n%s", strings.Join(got, " "), want)
 	}

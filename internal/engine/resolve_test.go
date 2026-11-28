@@ -143,6 +143,17 @@ func (f *conflictFixture) remoteLog() string {
 
 func write(path, text string) { _ = os.WriteFile(path, []byte(text), 0o644) }
 
+// A conflict the merge queue met goes back to the queue once it is
+// resolved: the queue tests it.
+func TestResolve_FromTheMergeQueue(t *testing.T) {
+	f := newConflictFixture(t, false)
+	f.lane.Approved = "abc"
+	tr := f.resolve()
+	if tr.To != Queued || tr.Cause != CauseResolved || f.lane.Approved != "abc" {
+		t.Fatalf("went %s (%s): %s; lane %+v", tr.To, tr.Cause, tr.Note, f.lane)
+	}
+}
+
 // A branch that is only behind is rebased and pushed by the engine alone.
 func TestResolve_ABranchBehind(t *testing.T) {
 	f := newConflictFixture(t, false)

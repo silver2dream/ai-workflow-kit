@@ -50,8 +50,9 @@ const KnownCheckFirst = "check_first"
 
 // KnownQueue is the known difference of the merge queue (task 2.3), which
 // the analyzer does not have: the engine merges the lane at the head of its
-// queue, or the analyzer takes a lane in the queue, whose ticket is labeled
-// pr-ready, for one to review.
+// queue, which the analyzer, reading pr-ready on its ticket, would review
+// again. With a lane in the queue and no step running, the engine's
+// decision is always the merge.
 const KnownQueue = "queue"
 
 // Shadow decides as the Principal's analyzer, from the tickets given, what
@@ -212,11 +213,6 @@ func (e *Engine) judge(mine, theirs *analyzer.Decision, tickets []Ticket) (same 
 	}
 	if mine != nil && mine.NextAction == ActionMerge {
 		return false, KnownQueue
-	}
-	if theirs != nil && theirs.IssueNumber != 0 && (mine == nil || *mine != *theirs) {
-		if l := e.Journal.Lane(theirs.IssueNumber); l != nil && l.State == Queued {
-			return false, KnownQueue
-		}
 	}
 	if mine == nil || theirs == nil {
 		return mine == nil && theirs == nil, ""

@@ -770,10 +770,30 @@ func TestEngine_OneMergeAtATime(t *testing.T) {
 	}
 }
 
+// One merge at a time, whichever lane asks: the queue only gives its head,
+// and a merge that runs keeps any other from starting.
+func TestEngine_CanStartOneMerge(t *testing.T) {
+	e := &Engine{MaxParallel: 1}
+	merge := func(issue int) *analyzer.Decision {
+		return &analyzer.Decision{NextAction: ActionMerge, IssueNumber: issue, PRNumber: 100 + issue}
+	}
+	if !e.canStart(merge(2)) {
+		t.Fatal("no merge runs, and one cannot start")
+	}
+	e.running = map[int]step{1: {decision: *merge(1)}}
+	if e.canStart(merge(2)) {
+		t.Error("a second merge can start while one runs")
+	}
+	if e.taken() != 0 || !e.canStart(&analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: 3}) {
+		t.Error("the merge takes the slot")
+	}
+}
+
 // The merge takes no slot: with one, a ticket is written, and reviewed,
-// while the queue merges another.
+// while the queue merges another; and the next merge starts when the one
+// before ends, though the slot is taken.
 func TestEngine_TheMergeTakesNoSlot(t *testing.T) {
-	p := newParallelFixture(t, 1, apart(1, 2)...)
+	p := newParallelFixture(t, 1, apart(1, 2, 3)...)
 	p.holdMerges = true
 	done := p.runAsync(t.Context())
 
@@ -784,9 +804,16 @@ func TestEngine_TheMergeTakesNoSlot(t *testing.T) {
 	p.expect("merge #1", "implement #2")
 	p.let("implement #2")
 	p.expect("review #2")
-	p.let("merge #1", "review #2")
+	// #2 waits for #1's merge; #3 takes the slot.
+	p.let("review #2")
+	p.expect("implement #3")
+	p.let("merge #1")
 	p.expect("merge #2")
-	p.let("merge #2")
+	p.let("implement #3")
+	p.expect("review #3")
+	p.let("merge #2", "review #3")
+	p.expect("merge #3")
+	p.let("merge #3")
 
 	if r := p.wait(done); r.end != EndComplete || r.err != nil {
 		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())

@@ -149,7 +149,7 @@
 - **已知的差異**（有理由，不算分歧）：
   - `order`：analyzer 分不出來的兩張票（工作流程的標籤完全相同），engine 取編號最小的，analyzer 取 `gh issue list` 給的第一張（新的在前）。
   - `check_first`：engine 派出去的票，工單上沒有 `in-progress`（worker 還沒加上，或沒留結果就結束並拿掉了）。engine 先查 worker 有沒有留下結果再重派；analyzer 只看標籤，手上沒有票，直接把那張票再挑一次。
-  - `queue`（2.3）：engine 合併它佇列裡的線，或 analyzer 把佇列裡的線（標籤是 `pr-ready`）當成要審查的。analyzer 沒有合併佇列（§5.4）。
+  - `queue`（2.3）：engine 合併它佇列裡的線，analyzer 看到工單的 `pr-ready` 會再審一次。analyzer 沒有合併佇列（§5.4）。
 - **engine 為了一致而改的**：需要人的線，決定只帶工單、不帶 PR 編號，與 analyzer 相同（原本 engine 會帶上線的 PR）。
 - **窮舉比對**（`shadow_test.go`，共 4,642 種狀況，每次 CI 都跑）：
   - 每一種 P1 的線（狀態、解哪種衝突、為什麼要人、有沒有 PR、兩種次數各在上限之下／剛好／之上、PR 可以合併／衝突／不確定／問不到），投影成標籤後兩邊各算一次；派出去的線用派工時實際的標籤（派工那一步不投影）。
@@ -330,7 +330,7 @@
 - **停下與重開**：
   - 合併是一步，`awkit stop` 等它做完；立刻停會取消它（rebase 中止、什麼都不推）。
   - engine 重開時，`queued` 的線再做一次合併這一步。每一段都可以重做：已經 rebase 並推上去的不會再 rebase，已經合併的在第 1 步就看得出來。
-- **影子**：已知差異 `queue`。engine 合併它佇列裡的線，或 analyzer 把佇列裡的線（標籤是 `pr-ready`）當成要審查的：analyzer 沒有合併佇列。
+- **影子**：已知差異 `queue`。engine 合併它佇列裡的線，analyzer 看到工單的 `pr-ready` 會再審一次：analyzer 沒有合併佇列。佇列裡有線、又沒有步驟在跑時，engine 的決定一定是合併，所以只有這一種。
 - **看得到**：
   - 執行頁的「同時在做」寫「正在合併工單 #N 的 PR」；線的列表裡，排隊的線寫排第幾。
   - `awkit status`：`queued` 的線寫排第幾；正在合併的那一步一行。

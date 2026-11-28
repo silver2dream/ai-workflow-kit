@@ -54,8 +54,8 @@ type MergeStep struct {
 	// nothing.
 	Log io.Writer
 	// MaxConflicts bounds how often a lane's conflict is sent to be
-	// resolved, MaxChecks how often its checks may fail in the queue
-	// (LimitsOf); 0 is 3.
+	// resolved, MaxChecks how often its checks may fail in the queue; 0 is
+	// what the project's configuration gives (LimitsOf).
 	MaxConflicts, MaxChecks int
 	// Publisher does what follows the merge, and comments; nil is the
 	// engine's.
@@ -106,11 +106,18 @@ func (s *MergeStep) setDefaults() {
 	if s.Log == nil {
 		s.Log = io.Discard
 	}
-	if s.MaxConflicts <= 0 {
-		s.MaxConflicts = 3
-	}
-	if s.MaxChecks <= 0 {
-		s.MaxChecks = 3
+	if s.MaxConflicts <= 0 || s.MaxChecks <= 0 {
+		cfg, err := config.Load(s.Root)
+		if err != nil {
+			cfg = nil
+		}
+		limits := LimitsOf(cfg)
+		if s.MaxConflicts <= 0 {
+			s.MaxConflicts = limits.Conflicts
+		}
+		if s.MaxChecks <= 0 {
+			s.MaxChecks = limits.Checks
+		}
 	}
 	if s.GHTimeout == 0 {
 		s.GHTimeout = time.Minute

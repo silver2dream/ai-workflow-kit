@@ -133,7 +133,7 @@ func New(opts Options) (*Engine, error) {
 	work := &WorkerSteps{Root: opts.Root, Log: log, GitHub: gh, InProgress: cfg.GitHub.Labels.InProgress}
 	review := &ReviewStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: reviewer}
 	resolve := &ResolveStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: resolver}
-	merge := &MergeStep{Root: opts.Root, Log: log, MaxConflicts: limits.Conflicts, MaxChecks: limits.Checks}
+	merge := &MergeStep{Root: opts.Root, Log: log}
 	e := &Engine{
 		Root: opts.Root, Journal: journal,
 		GitHub: gh, Analyzer: a,

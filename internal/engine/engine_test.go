@@ -345,6 +345,24 @@ func TestEngine_TheQueuesConflict(t *testing.T) {
 	}
 }
 
+// Who tells the person why the queue stopped: the maintainers' gate says so
+// on the issue itself; for the queue's other stops the engine does.
+func TestEngine_TheQueueTellsThePerson(t *testing.T) {
+	for why, comments := range map[string]int{WhyMaintainer: 0, WhyMergeBlocked: 1, WhyChecksStuck: 1} {
+		f := newEngineFixture(t, task(12))
+		f.an.next = []*analyzer.Decision{dispatch(12), {NextAction: analyzer.ActionAllComplete}}
+		f.implement = []func(Lane) Transition{goTo(Reviewing, CauseImplemented, withPR(30))}
+		f.review = []func(Lane) Transition{approve}
+		f.merge = []func(Lane) Transition{goTo(NeedsYou, CauseEscalated, withWhy(why))}
+		if end := f.run(); end != analyzer.ReasonNeedsHumanReview {
+			t.Fatalf("%s: ended %q\n%s", why, end, f.log.String())
+		}
+		if len(f.gh.comments) != comments {
+			t.Errorf("%s: comments %v", why, f.gh.comments)
+		}
+	}
+}
+
 // A lane in the queue whose pull request is not known waits for a person.
 func TestEngine_AQueuedLaneWithoutAPullRequest(t *testing.T) {
 	f := newEngineFixture(t, task(12, "pr-ready"))
