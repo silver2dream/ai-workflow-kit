@@ -180,7 +180,7 @@ function StartDialog({ open, onClose, preset, onStarted }: { open: boolean; onCl
       <DialogContent>
         <DialogHeader>
           <DialogTitle>開始工作？</DialogTitle>
-          <DialogDescription>engine 會一張一張把工單交給執行者，寫好的程式經過審查才合併。做到沒有工單、或有工單需要你，就會停下。執行者和審查是 AI，工單越多花越多。</DialogDescription>
+          <DialogDescription>engine 會一張一張把工單交給執行者，寫好的程式經過審查才合併。有工單需要你時，只有那張停下來，其他的照做；做到沒有別的工單可做，就會停下。執行者和審查是 AI，工單越多花越多。</DialogDescription>
         </DialogHeader>
         <fieldset className="grid gap-2">
           <legend className="sr-only">做哪些工單</legend>

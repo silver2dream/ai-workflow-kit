@@ -136,6 +136,10 @@ type fakeAnalyzer struct {
 	pending func() []Ticket
 	// maxAsked is how many tickets each Candidates asked for.
 	maxAsked []int
+	// gh, when set, is where a scripted ticket to start is looked up: one
+	// GitHub shows in the workflow's hands (a label beside the task's) is no
+	// pending ticket, and the analyzer finds nothing to do, as it would.
+	gh *fakeGitHub
 }
 
 func (a *fakeAnalyzer) Precheck() *analyzer.Decision { return a.precheck }
@@ -168,6 +172,9 @@ func (a *fakeAnalyzer) Candidates(ctx context.Context, max int, skip analyzer.Sk
 		}
 	}
 	if d.NextAction == analyzer.ActionDispatchWorker {
+		if a.gh != nil && !slices.ContainsFunc(a.gh.pendingOf(), func(t Ticket) bool { return t.Number == d.IssueNumber }) {
+			return analyzer.Picks{Then: &analyzer.Decision{NextAction: analyzer.ActionNone, ExitReason: analyzer.ReasonNoActionableTasks}}, nil
+		}
 		return analyzer.Picks{Tickets: []*analyzer.Decision{d}}, nil
 	}
 	return analyzer.Picks{Then: d}, nil
@@ -192,6 +199,7 @@ func dispatch(issue int) *analyzer.Decision {
 func newEngineFixture(t *testing.T, tickets ...Ticket) *engineFixture {
 	t.Helper()
 	f := &engineFixture{t: t, gh: newFakeGitHub(tickets...), an: &fakeAnalyzer{prs: map[int]int{}}}
+	f.an.gh = f.gh
 	root := t.TempDir()
 	j, err := OpenJournal(root)
 	if err != nil {
@@ -382,7 +390,8 @@ func TestEngine_AQueuedLaneWithoutAPullRequest(t *testing.T) {
 }
 
 // A review that cannot be completed is tried again as often as it may be,
-// then the ticket waits for a person, who is told why.
+// then the ticket waits for a person, who is told why. The lane alone
+// stops: the run ends when nothing else is left to do, for the person.
 func TestEngine_ReviewTriedAgain(t *testing.T) {
 	f := newEngineFixture(t, task(12))
 	f.an.next = []*analyzer.Decision{dispatch(12)}
@@ -390,7 +399,7 @@ func TestEngine_ReviewTriedAgain(t *testing.T) {
 	f.implement = []func(Lane) Transition{goTo(Reviewing, CauseImplemented, withPR(30))}
 	f.review = []func(Lane) Transition{goTo(ReviewRetry, CauseReviewFailed)}
 
-	if end := f.run(); end != analyzer.ReasonReviewMaxRetries {
+	if end := f.run(); end != analyzer.ReasonNeedsHumanReview {
 		t.Fatalf("ended %q\n%s", end, f.log.String())
 	}
 	if got := strings.Join(f.steps, ", "); got != "implement #12, review #12, review #12, review #12" {
@@ -489,7 +498,8 @@ func TestEngine_TakenUpWhereTheLabelsLeftIt(t *testing.T) {
 	}
 
 	// The analyzer's order: a Worker at work, a review, a review again, a
-	// conflict, a rebase, then the people.
+	// conflict, a rebase; a lane that waits for a person is no lane in hand
+	// (task 2.4), and the next ticket is picked.
 	order := []string{}
 	f.check = []func(Lane) Transition{goTo(Rework, CauseImplementFail)}
 	f.review = []func(Lane) Transition{goTo(Rework, CauseChangesWanted)}
@@ -500,14 +510,14 @@ func TestEngine_TakenUpWhereTheLabelsLeftIt(t *testing.T) {
 			t.Fatal(err)
 		}
 		order = append(order, fmt.Sprintf("%s#%d%s", d.NextAction, d.IssueNumber, d.MergeIssue))
-		if d.NextAction == analyzer.ActionNone {
+		if !working(d.NextAction) {
 			break
 		}
 		if _, err := f.e.Step(context.Background(), d); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := strings.Join(order, " "); got != "check_result#5 review_pr#3 review_pr#8 dispatch_worker#4conflict review_pr#4 dispatch_worker#7rebase review_pr#7 none#9" {
+	if got := strings.Join(order, " "); got != "check_result#5 review_pr#3 review_pr#8 dispatch_worker#4conflict review_pr#4 dispatch_worker#7rebase review_pr#7 all_complete#0" {
 		t.Errorf("order: %s", got)
 	}
 }
@@ -796,6 +806,7 @@ func TestEngine_AWorkerNoneIsAtWork(t *testing.T) {
 	}
 
 	f.gh.tickets[12].Labels = []string{"ai-task"}
+	f.an.next = []*analyzer.Decision{dispatch(12), {NextAction: analyzer.ActionAllComplete}}
 	if end := f.run(); end != EndComplete {
 		t.Fatalf("the next run ended %q\n%s", end, f.log.String())
 	}
@@ -888,15 +899,15 @@ func TestReconcile_APersonsHand(t *testing.T) {
 		t.Errorf("released: %s", got)
 	}
 
-	// A person puts needs-human-review on a lane under review: the run stops
-	// on it, and nobody is told what the person did.
+	// A person puts needs-human-review on a lane under review: that lane
+	// stops, alone (task 2.4), and nobody is told what the person did.
 	setLabels(f, 13, false, "ai-task", "pr-ready", "needs-human-review")
 	reconcile(f)
 	if got := state(f.lane(13)); got != "needs_you/person" || len(f.gh.comments) != 0 {
 		t.Errorf("marked: %s, comments %v", got, f.gh.comments)
 	}
-	if d, _ := f.e.Next(ctx); d.NextAction != analyzer.ActionNone || d.IssueNumber != 13 {
-		t.Errorf("the run goes on past a lane a person took: %+v", d)
+	if d, _ := f.e.Next(ctx); d.IssueNumber == 13 {
+		t.Errorf("the run stops on a lane a person took: %+v", d)
 	}
 
 	// A person closes tickets: one whose work landed, one whose did not, and

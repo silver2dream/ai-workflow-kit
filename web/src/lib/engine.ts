@@ -98,10 +98,10 @@ const ENDED: Record<string, string> = {
   all_tasks_complete: "上一輪做完了：沒有可以做的工單了。",
   user_stopped: "上一輪照你的要求停了。",
   interrupted: "上一輪被中斷了。",
-  needs_human_review: "上一輪停了：有工單需要你。",
+  needs_human_review: "上一輪停了：能做的都做完了，剩下的工單需要你。",
   escalation_triggered: "上一輪停了：有工單需要你。",
   review_max_retries: "上一輪停了：有張工單的審查一直沒做成，次數用完了。",
-  worker_failed: "上一輪停了：有張工單的執行者試了幾次都失敗。",
+  worker_failed: "上一輪停了：能做的都做完了，剩下的工單執行者試了幾次都失敗。",
   max_failures: "上一輪停了：有張工單的執行者試了幾次都失敗。",
   invalid_ticket: "上一輪停了：有張工單的內容讀不懂。",
   blocked_by_dependencies: "上一輪停了：開著的工單都在等還沒做完的工單。",
@@ -190,8 +190,8 @@ const RUN_ENDS: Record<string, string> = {
   all_tasks_complete: "工單都做完了",
   user_stopped: "照你的要求停了",
   interrupted: "被中斷了",
-  needs_human_review: "有工單需要你",
-  worker_failed: "有張工單的執行者試了幾次都失敗",
+  needs_human_review: "能做的都做完了，剩下的工單需要你",
+  worker_failed: "能做的都做完了，剩下的工單執行者試了幾次都失敗",
   review_max_retries: "有張工單的審查次數用完了",
 };
 

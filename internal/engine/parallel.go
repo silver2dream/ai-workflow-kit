@@ -28,9 +28,10 @@ import (
 // Each step runs on its own, and says when it ends. The move of its lane to
 // the work (dispatched, reviewed again, sent to be resolved) is written
 // before it starts, so that the next decision sees the slot it takes. A
-// decision that is not a step ends the run when no step runs, as it did one
-// lane at a time; while steps run, the lanes it names are moved, nothing new
-// starts, and the run waits for them. With one step at a time a round is a
+// decision that hands one lane to a person moves that lane, and the round
+// goes on (task 2.4). Another decision that is not a step ends the run when
+// no step runs, as it did one lane at a time; while steps run, the lane it
+// names is moved, nothing new starts, and the run waits for them. With one step at a time a round is a
 // step, and the run is what it was.
 
 // Backends are the agent backends of the roles that do the steps.
@@ -245,6 +246,18 @@ func (e *Engine) round(ctx context.Context, ended chan<- stepEnd) (string, error
 		}
 		e.logf("next: %s%s", d.NextAction, describe(d))
 		if !working(d.NextAction) {
+			// A decision that hands one lane to a person stops that lane
+			// alone: the round goes on (design.md §6, task 2.4).
+			if d.NextAction == analyzer.ActionNone {
+				moved, err := e.settle(ctx, d)
+				if err != nil {
+					return "error_exit", err
+				}
+				if moved {
+					r.picked = false
+					continue
+				}
+			}
 			return e.decided(ctx, d)
 		}
 		if err := e.start(ctx, d, ended); err != nil {
@@ -265,7 +278,7 @@ func (e *Engine) decided(ctx context.Context, d *analyzer.Decision) (string, err
 		e.logf("%s: nothing new starts, and the %d step(s) that run go on", end, n)
 		return "", nil
 	}
-	return end, nil
+	return e.forAPerson(end), nil
 }
 
 // decide is the next thing to do in a round: a step that can start now, or

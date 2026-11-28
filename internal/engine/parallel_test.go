@@ -429,9 +429,10 @@ func TestEngine_ReconcileLeavesALaneThatRuns(t *testing.T) {
 	}
 }
 
-// A lane that needs a person starts nothing new, while the lanes in hand
-// go on, step by step; once none is left in hand the run ends for it.
-func TestEngine_ALaneThatNeedsAPersonWaitsForTheLanesInHand(t *testing.T) {
+// A lane that needs a person stops alone (task 2.4): the lanes in hand go
+// on, and new tickets start in its place; once nothing else is left, the
+// run ends for the person.
+func TestEngine_ALaneThatNeedsAPersonStopsAlone(t *testing.T) {
 	p := newParallelFixture(t, 2, apart(1, 2, 3)...)
 	p.answers["implement"] = func(l Lane) Transition {
 		if l.Issue == 1 {
@@ -443,20 +444,22 @@ func TestEngine_ALaneThatNeedsAPersonWaitsForTheLanesInHand(t *testing.T) {
 
 	p.expect("implement #1", "implement #2")
 	p.let("implement #1")
-	p.quiet()
-	p.let("implement #2")
-	p.expect("review #2")
-	p.let("review #2")
+	p.expect("implement #3")
+	p.let("implement #2", "implement #3")
+	p.expect("review #2", "review #3")
+	p.let("review #2", "review #3")
 
 	r := p.wait(done)
 	if r.end != analyzer.ReasonWorkerFailed || r.err != nil {
 		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())
 	}
-	if l := p.lane(2); l.State != Merged {
-		t.Errorf("#2: %+v", l)
+	if l := p.lane(1); l.State != NeedsYou || l.Why != WhyWorkerFailed {
+		t.Errorf("#1: %+v", l)
 	}
-	if l := p.e.Journal.Lane(3); l != nil && l.State != Ready {
-		t.Errorf("#3 was started: %+v", l)
+	for _, issue := range []int{2, 3} {
+		if l := p.lane(issue); l.State != Merged {
+			t.Errorf("#%d: %+v", issue, l)
+		}
 	}
 }
 

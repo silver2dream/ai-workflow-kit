@@ -60,7 +60,7 @@ describe("engine words", () => {
 
   it("says how a run of the engine ended, and keeps a reason it does not know", () => {
     expect(endedWords("all_tasks_complete")).toBe("上一輪做完了：沒有可以做的工單了。");
-    expect(endedWords("needs_human_review")).toBe("上一輪停了：有工單需要你。");
+    expect(endedWords("needs_human_review")).toBe("上一輪停了：能做的都做完了，剩下的工單需要你。");
     expect(endedWords("user_stopped")).toBe("上一輪照你的要求停了。");
     expect(endedWords("something_new")).toBe("上一輪結束了（something_new）。");
   });

@@ -339,10 +339,11 @@ func (e *Engine) Next(ctx context.Context) (*analyzer.Decision, error) {
 // pick are the next tickets to start, as many as there is room for, as the
 // analyzer finds the tickets that can start, past the ones the paths of a
 // lane keep off (design.md §5.3); then what the analyzer decided instead,
-// when it did. With every ticket kept off and nothing in hand, the work waits
-// for the lanes that hold the paths: the run ends for a person. With every
-// ticket waiting for another, the ones in a circle are handed to a person.
-// None while steps run that leave no room, or that the tickets wait for.
+// when it did. The tickets that wait for each other in a circle are handed
+// to a person first, at every pick (task 2.4). With every ticket kept off and
+// nothing in hand, the work waits for the lanes that hold the paths: the run
+// ends for a person. None while steps run that leave no room, or that the
+// tickets wait for.
 func (e *Engine) pick(ctx context.Context) ([]*analyzer.Decision, error) {
 	lanes := e.live()
 	free := min(e.maxParallel()-taken(lanes), e.room(e.Backends.Implementer))
@@ -353,6 +354,11 @@ func (e *Engine) pick(ctx context.Context) ([]*analyzer.Decision, error) {
 		}
 		// Every lane that takes a slot is in hand, and decided first.
 		return nil, fmt.Errorf("no slot is free for a ticket to start, and no lane in hand was decided (%d take a slot)", taken(lanes))
+	}
+	// Tickets that wait for each other in a circle can never start: they
+	// are handed to a person before any ticket is picked.
+	if err := e.circles(ctx); err != nil {
+		return nil, err
 	}
 	paths := map[int][]string{}
 	known := map[int]bool{}
@@ -411,14 +417,6 @@ func (e *Engine) pick(ctx context.Context) ([]*analyzer.Decision, error) {
 		}
 		return []*analyzer.Decision{{NextAction: analyzer.ActionNone, IssueNumber: holder, ExitReason: analyzer.ReasonNeedsHumanReview}}, nil
 	}
-	if len(picks.Tickets) == 0 && picks.Then.ExitReason == analyzer.ReasonBlockedByDependencies {
-		if d, err := e.circles(ctx); d != nil || err != nil {
-			if d == nil {
-				return nil, err
-			}
-			return []*analyzer.Decision{d}, err
-		}
-	}
 	return append(picks.Tickets, picks.Then), nil
 }
 
@@ -430,10 +428,12 @@ func startable(l *Lane) bool {
 }
 
 // circles hands the tickets that wait for each other in a circle to a
-// person, and says so on each; nil when there is no circle. What the open
-// tickets wait for is read from their blocks: a closed ticket waits for
-// nothing (it is done, or done again first), so no circle goes through it.
-func (e *Engine) circles(ctx context.Context) (*analyzer.Decision, error) {
+// person, and says so on each. What the open tickets wait for is read from
+// their blocks: a closed ticket waits for nothing (it is done, or done again
+// first), so no circle goes through it. Only a ticket that has not started
+// is handed over: what it depends on decides when it starts, and one that
+// started goes on to its merge, which breaks the circle.
+func (e *Engine) circles(ctx context.Context) error {
 	waits := map[int][]int{}
 	for _, t := range e.open {
 		meta, found, err := ticket.Parse(t.Body)
@@ -442,41 +442,39 @@ func (e *Engine) circles(ctx context.Context) (*analyzer.Decision, error) {
 		}
 		waits[t.Number] = meta.DependsOn
 	}
-	var first *analyzer.Decision
 	for _, c := range Cycles(waits) {
 		for _, issue := range c.Members {
 			if (e.Only != 0 && issue != e.Only) || e.runs(issue) {
 				continue
 			}
 			l := e.Journal.Lane(issue)
+			if l != nil && (!startable(l) || l.State.Terminal()) {
+				continue
+			}
 			var err error
 			if l == nil {
 				l, err = e.record(ctx, Transition{Issue: issue, To: Blocked, Cause: CauseOpened, Note: "it waits for tickets that are not done", At: e.clock()}, true)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
-			if l.State != NeedsYou {
-				t := Transition{Issue: issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: WhyDependencyCycle, Note: c.Note(), At: e.clock()}
-				if _, err := e.record(ctx, t, false); err != nil {
-					return nil, err
-				}
-			}
-			if first == nil {
-				first = &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: issue, ExitReason: analyzer.ReasonNeedsHumanReview}
+			t := Transition{Issue: issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: WhyDependencyCycle, Note: c.Note(), At: e.clock()}
+			if _, err := e.record(ctx, t, false); err != nil {
+				return err
 			}
 		}
 	}
-	return first, nil
+	return nil
 }
 
 // inHand is what to do with the lanes in the workflow's hands: the head of
 // the merge queue, then a lane at work, in review, to be reviewed again, to
-// be resolved, waiting for a person, in that order (the analyzer's
-// LabelDecision, which has no queue). A lane whose step runs is passed over,
-// and so is one whose step cannot start yet (a merge while another runs, a
-// backend at its limit): with no step running, none is. nil is none in hand:
-// the next ticket is picked.
+// be resolved, in that order (the analyzer's LabelDecision, which has no
+// queue). A lane whose step runs is passed over, and so is one whose step
+// cannot start yet (a merge while another runs, a backend at its limit):
+// with no step running, none is. A lane that waits for a person is no lane
+// in hand: it stops alone (design.md §6, task 2.4), where the analyzer stops
+// the run. nil is none in hand: the next ticket is picked.
 func (e *Engine) inHand(ctx context.Context, mergeable Mergeability) *analyzer.Decision {
 	if d := e.queued(); d != nil && e.canStart(d) {
 		return d
@@ -543,19 +541,7 @@ func (e *Engine) inHand(ctx context.Context, mergeable Mergeability) *analyzer.D
 			return d
 		}
 	}
-	// A lane that needs a person stops the run (until task 2.4 stops that
-	// lane only), once no lane in hand is left: while steps run, nothing new
-	// starts, and the run waits for them. The decision names the ticket, not
-	// its pull request, as the analyzer's does.
-	waits := func(reason string) func(*Lane) *analyzer.Decision {
-		return func(l *Lane) *analyzer.Decision {
-			return &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: l.Issue, ExitReason: reason}
-		}
-	}
-	if d := first(func(l Lane) bool { return l.State == NeedsYou && l.Why == WhyWorkerFailed }, waits(analyzer.ReasonWorkerFailed)); d != nil {
-		return d
-	}
-	return first(func(l Lane) bool { return l.State == NeedsYou }, waits(analyzer.ReasonNeedsHumanReview))
+	return nil
 }
 
 // queued is what to do with the head of the merge queue: merge it. nil when
@@ -579,7 +565,7 @@ func (e *Engine) Step(ctx context.Context, d *analyzer.Decision) (string, error)
 	case analyzer.ActionAllComplete:
 		return EndComplete, nil
 	case analyzer.ActionNone:
-		if err := e.settle(ctx, d); err != nil {
+		if _, err := e.settle(ctx, d); err != nil {
 			return "", err
 		}
 		if d.ExitReason == "" {
@@ -732,16 +718,18 @@ func needsYouComment(l Lane, names config.Labels) string {
 // settle moves the lane a decision to stop gave up on, when it gave up on
 // one that is not already waiting for a person: a limit reached, a pull
 // request that cannot be found, a ticket that cannot be used, one that
-// waits for its dependencies.
-func (e *Engine) settle(ctx context.Context, d *analyzer.Decision) error {
+// waits for its dependencies. moved says whether it moved one: then that
+// lane alone stops, and the round goes on (design.md §6, task 2.4); a
+// decision that moves no lane is one the run stops on.
+func (e *Engine) settle(ctx context.Context, d *analyzer.Decision) (moved bool, err error) {
 	l := e.Journal.Lane(d.IssueNumber)
 	if l == nil || l.State.Terminal() || l.State == NeedsYou || l.State == Paused {
-		return nil
+		return false, nil
 	}
-	needsYou := func(why, note string) error {
+	needsYou := func(why, note string) (bool, error) {
 		t := Transition{Issue: l.Issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: why, Note: note, At: e.clock()}
 		_, err := e.record(ctx, t, false)
-		return err
+		return err == nil, err
 	}
 	switch {
 	case d.ExitReason == analyzer.ReasonReviewMaxRetries && l.State == ReviewRetry:
@@ -756,12 +744,40 @@ func (e *Engine) settle(ctx context.Context, d *analyzer.Decision) error {
 		// The analyzer handed the ticket to a person (and told them).
 		t := Transition{Issue: l.Issue, From: l.State, To: NeedsYou, Cause: CauseEscalated, Why: WhyNeedsHumanReview, At: e.clock()}
 		_, err := e.record(ctx, t, true)
-		return err
+		return err == nil, err
 	case d.ExitReason == analyzer.ReasonBlockedByDependencies && l.State == Ready:
 		_, err := e.move(ctx, l, Blocked, CauseBlocked, "it waits for a ticket it depends on")
-		return err
+		return err == nil, err
 	}
-	return nil
+	return false, nil
+}
+
+// forAPerson is how a run ends that has nothing more to do, or stops on a
+// lane that waits already: for a person, when lanes wait for one
+// (needs_human_review; worker_failed when each of them is a Worker that
+// failed as often as it may). A lane that waits for a person needs them,
+// paused or waiting for their approval as well. The run's own stops (a stop,
+// its limits, GitHub) are as they are.
+func (e *Engine) forAPerson(end string) string {
+	switch end {
+	case EndComplete, analyzer.ReasonNoActionableTasks, analyzer.ReasonBlockedByDependencies,
+		analyzer.ReasonNeedsHumanReview, analyzer.ReasonWorkerFailed, analyzer.ReasonReviewMaxRetries, analyzer.ReasonInvalidTicket:
+	default:
+		return end
+	}
+	reason := ""
+	for _, l := range e.live() {
+		switch {
+		case l.State == NeedsYou && l.Why == WhyWorkerFailed:
+			reason = analyzer.ReasonWorkerFailed
+		case l.State == NeedsYou, l.State == Paused, l.State == AwaitingApproval:
+			return analyzer.ReasonNeedsHumanReview
+		}
+	}
+	if reason != "" {
+		return reason
+	}
+	return end
 }
 
 // toImplement dispatches a ticket the analyzer picked to the Worker.
