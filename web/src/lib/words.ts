@@ -136,7 +136,7 @@ export function describe(event: TraceEvent, dispatcher?: Dispatcher): Described 
         cause ? `（${CAUSES[cause] ?? cause}）` : "",
         to === "needs_you" && word(data, "why") ? `。${whyWords(word(data, "why"))}` : "",
       ].join("");
-      const t: Tone = to === "needs_you" ? "signal" : to === "merged" || to === "completed" ? "go" : to === "implementing" || to === "reviewing" ? "live" : "muted";
+      const t: Tone = to === "needs_you" || to === "awaiting_approval" ? "signal" : to === "merged" || to === "completed" ? "go" : to === "implementing" || to === "reviewing" ? "live" : "muted";
       return say(`工單 ${ticket}：${said}`, t);
     }
     case "engine_run":
