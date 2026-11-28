@@ -91,6 +91,10 @@ const (
 	WhyPerson           = "person"               // a person marked it on GitHub
 	WhyAgentRefused     = "agent_refused"        // an agent's backend cannot be held to its role's settings: it was not run
 	WhyWorkerLost       = "worker_lost"          // its ticket says a Worker is at work, and none has left a result in the time a Worker may take
+	WhyDiffPolicy       = "diff_policy"          // the change, rebased in the merge queue, breaks the diff policy: a protected file, a secret
+	WhyChecksStuck      = "checks_stuck"         // the checks of its pull request did not start, or did not end, in the time they may take
+	WhyCheckRetries     = "check_max_retries"    // the merge queue's checks failed on its change as often as they may
+	WhyMaintainer       = "maintainer_feedback"  // a maintainer's review is open on its pull request, and nothing was pushed for it since
 )
 
 // Attempts are the counts a lane's limits are checked against, as the
@@ -104,6 +108,11 @@ type Attempts struct {
 	// Conflicts counts the times a conflict of the pull request was sent to
 	// be resolved.
 	Conflicts int `json:"conflicts,omitempty"`
+	// Checks counts the times the merge queue's checks (the tests, CI)
+	// failed on the change and sent it back. Only a reopened ticket starts
+	// it again: a check that fails now and then would have the lane go round
+	// between the queue and its implementer.
+	Checks int `json:"checks,omitempty"`
 }
 
 // Lane is a ticket's way to the integration branch, as its transitions left
@@ -122,7 +131,12 @@ type Lane struct {
 	// cancelled.
 	Note string `json:"note,omitempty"`
 	// Resume is the state a paused lane goes back to.
-	Resume   State    `json:"resume,omitempty"`
+	Resume State `json:"resume,omitempty"`
+	// Approved is the commit of the pull request its review approved: set
+	// when the lane enters the merge queue, and kept on its way to the merge
+	// (resolving a conflict the queue met, paused, waiting for a person).
+	// The queue checks again a head that is not this commit.
+	Approved string   `json:"approved,omitempty"`
 	Attempts Attempts `json:"attempts"`
 	// Priority orders the lanes that can start: lower first; 0 is none.
 	Priority int `json:"priority,omitempty"`
@@ -173,10 +187,11 @@ type Transition struct {
 	From  State `json:"from,omitempty"` // "" when the lane is opened
 	To    State `json:"to"`
 	Cause Cause `json:"cause"`
-	// PR, Resolve, Why, Note and Priority set the lane's fields of the same
-	// names; zero leaves them as they are, except as Apply says.
+	// PR, Resolve, Why, Note, Priority and Approved set the lane's fields
+	// of the same names; zero leaves them as they are, except as Apply says.
 	PR       int       `json:"pr,omitempty"`
 	Resolve  string    `json:"resolve,omitempty"`
+	Approved string    `json:"approved,omitempty"`
 	Why      string    `json:"why,omitempty"`
 	Note     string    `json:"note,omitempty"`
 	Priority int       `json:"priority,omitempty"`
@@ -213,7 +228,9 @@ var edges = []edge{
 	{Implementing, Resolving, CauseResolveFailed},
 	// An implementer that resolved the pull request's conflict, as the
 	// Principal's workflow has it done: the pull request is reviewed again.
+	// One the merge queue met goes back to the queue, which checks it.
 	{Implementing, Reviewing, CauseResolved},
+	{Implementing, Queued, CauseResolved},
 
 	{Checking, Reviewing, CauseChecked},
 	{Checking, Rework, CauseCheckFailed},
@@ -232,6 +249,7 @@ var edges = []edge{
 	{Queued, Merged, CauseMerged},
 	{Queued, Resolving, CauseConflicting},
 	{Queued, Rework, CauseCheckFailed},
+	{Queued, Rework, CauseChangesWanted},
 	{Resolving, Queued, CauseResolved},
 	{Resolving, Reviewing, CauseResolved},
 
@@ -338,6 +356,17 @@ func Apply(lane *Lane, t Transition) (*Lane, error) {
 		next.Resolve = ""
 	}
 
+	// The commit the review approved goes with the lane to the merge, and
+	// no further.
+	switch {
+	case t.Approved != "":
+		next.Approved = t.Approved
+	case t.To == Queued, t.To == Resolving, t.To == Paused, t.To == NeedsYou:
+	case t.To == Implementing && from == Resolving:
+	default:
+		next.Approved = ""
+	}
+
 	switch t.Cause {
 	case CauseImplementFail:
 		next.Attempts.Failures++
@@ -345,6 +374,8 @@ func Apply(lane *Lane, t Transition) (*Lane, error) {
 		next.Attempts.Failures = 0
 	case CauseReviewRetried:
 		next.Attempts.Reviews++
+	case CauseCheckFailed:
+		next.Attempts.Checks++
 	case CauseConflicting:
 		if t.Resolve != ResolveRebase {
 			next.Attempts.Conflicts++

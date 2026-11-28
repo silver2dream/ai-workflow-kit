@@ -109,6 +109,85 @@ func TestLane_Attempts(t *testing.T) {
 	}
 }
 
+// The commit the review approved goes with the lane through the merge
+// queue, and through a conflict the queue sends to be resolved, back to the
+// queue; any other move drops it.
+func TestLane_TheApprovalGoesToTheMerge(t *testing.T) {
+	approved := Transition{To: Queued, Cause: CauseApproved, Approved: "abc"}
+	lane := walk(t, 7,
+		to(Ready, CauseOpened),
+		to(Implementing, CauseDispatched),
+		Transition{To: Reviewing, Cause: CauseImplemented, PR: 11},
+		approved,
+		Transition{To: Resolving, Cause: CauseConflicting, Resolve: ResolveConflict},
+		to(Implementing, CauseDispatched),
+		to(Queued, CauseResolved),
+		to(Paused, CausePaused),
+		to(Queued, CauseResumed),
+		Transition{To: NeedsYou, Cause: CauseEscalated, Why: WhyMergeBlocked},
+		to(Resolving, CauseReleased),
+	)
+	if lane.Approved != "abc" || lane.Attempts.Conflicts != 1 {
+		t.Fatalf("lane = %+v", lane)
+	}
+	for name, away := range map[string][]Transition{
+		"sent back":          {approved, to(Rework, CauseCheckFailed)},
+		"the gate":           {approved, to(Rework, CauseChangesWanted)},
+		"merged":             {approved, to(Merged, CauseMerged)},
+		"released to review": {approved, Transition{To: NeedsYou, Cause: CauseEscalated, Why: WhyMergeBlocked}, to(Reviewing, CauseReleased)},
+		"cancelled":          {approved, to(Cancelled, CauseCancelled)},
+	} {
+		steps := append([]Transition{to(Ready, CauseOpened), to(Implementing, CauseDispatched), {To: Reviewing, Cause: CauseImplemented, PR: 11}}, away...)
+		if lane := walk(t, 7, steps...); lane.Approved != "" {
+			t.Errorf("%s: the approval is kept: %+v", name, lane)
+		}
+	}
+	// A conflict before the review is not approved, and is reviewed after it
+	// is resolved.
+	lane = walk(t, 7,
+		to(Ready, CauseOpened),
+		to(Implementing, CauseDispatched),
+		Transition{To: Reviewing, Cause: CauseImplemented, PR: 11},
+		to(Resolving, CauseConflicting),
+		to(Implementing, CauseDispatched),
+	)
+	if lane.Approved != "" {
+		t.Errorf("lane = %+v", lane)
+	}
+}
+
+// The merge queue's checks that failed are counted, and only a reopened
+// ticket starts the count again: a success of the implementer does not.
+func TestLane_ChecksThatFailed(t *testing.T) {
+	queued := Transition{To: Queued, Cause: CauseApproved, Approved: "abc"}
+	lane := walk(t, 4,
+		to(Ready, CauseOpened),
+		to(Implementing, CauseDispatched),
+		Transition{To: Reviewing, Cause: CauseImplemented, PR: 6},
+		queued,
+		to(Rework, CauseCheckFailed),
+		to(Implementing, CauseDispatched),
+		to(Reviewing, CauseImplemented),
+		queued,
+		to(Rework, CauseCheckFailed),
+	)
+	if lane.Attempts.Checks != 2 {
+		t.Fatalf("checks = %d", lane.Attempts.Checks)
+	}
+	lane = walk(t, 4,
+		to(Ready, CauseOpened),
+		to(Implementing, CauseDispatched),
+		Transition{To: Reviewing, Cause: CauseImplemented, PR: 6},
+		queued,
+		to(Rework, CauseCheckFailed),
+		to(Cancelled, CauseCancelled),
+		to(Ready, CauseReopened),
+	)
+	if lane.Attempts.Checks != 0 {
+		t.Errorf("reopened: checks = %d", lane.Attempts.Checks)
+	}
+}
+
 func TestLane_NeedsYouAndRelease(t *testing.T) {
 	lane := walk(t, 8,
 		to(Ready, CauseOpened),

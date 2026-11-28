@@ -52,6 +52,9 @@ type LaneView struct {
 	// Step is what the engine does on the lane now: set while the run goes
 	// and one of the steps that run is this lane's.
 	Step *StepInfo `json:"step,omitempty"`
+	// Queue is the lane's place in the merge queue, 1 the next to be
+	// merged; 0 is not in it.
+	Queue int `json:"queue,omitempty"`
 	// Verdict is the latest guardrail verdict on the lane's ticket in the
 	// last run that was not a pass.
 	Verdict *LaneVerdict `json:"verdict,omitempty"`
@@ -69,6 +72,9 @@ type Limits struct {
 	Failures  int `json:"failures"`
 	Reviews   int `json:"reviews"`
 	Conflicts int `json:"conflicts"`
+	// Checks bounds how often the merge queue's checks may fail on a
+	// lane's change.
+	Checks int `json:"checks"`
 }
 
 // LimitsOf are the limits a project's lanes are held to. The review is tried
@@ -81,18 +87,18 @@ func LimitsOf(cfg *config.Config) Limits {
 	if cfg != nil && cfg.Escalation.MaxReviewAttempts > 0 {
 		reviews = cfg.Escalation.MaxReviewAttempts
 	}
-	return Limits{Failures: worker.DefaultMaxRetries, Reviews: reviews, Conflicts: reviews}
+	return Limits{Failures: worker.DefaultMaxRetries, Reviews: reviews, Conflicts: reviews, Checks: reviews}
 }
 
 // MaxReplies is how many of the engine's answers a view lists.
 const MaxReplies = 5
 
 // working says whether a decision is a step on its lane: one that writes,
-// reviews or resolves it. The others end the run, or settle a lane on the
-// way to ending it.
+// reviews, resolves or merges it. The others end the run, or settle a lane
+// on the way to ending it.
 func working(action string) bool {
 	switch action {
-	case analyzer.ActionDispatchWorker, analyzer.ActionCheckResult, analyzer.ActionReviewPR:
+	case analyzer.ActionDispatchWorker, analyzer.ActionCheckResult, analyzer.ActionReviewPR, ActionMerge:
 		return true
 	}
 	return false
@@ -128,6 +134,13 @@ func Look(root string, cfg *config.Config, now time.Time) View {
 			}
 		}
 		v.Lanes = append(v.Lanes, lv)
+	}
+	for place, l := range queue(lanes) {
+		for i := range v.Lanes {
+			if v.Lanes[i].Issue == l.Issue {
+				v.Lanes[i].Queue = place + 1
+			}
+		}
 	}
 	rank := func(l LaneView) int {
 		switch {

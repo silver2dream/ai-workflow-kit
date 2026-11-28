@@ -319,6 +319,7 @@ func TestReview_WhereTheLaneGoes(t *testing.T) {
 		cause  Cause
 		other  string // the transition's Resolve or Why
 	}{
+		{reviewer.SubmitReviewResult{Result: "approved", Next: reviewer.NextQueued, Head: "abc123"}, Queued, CauseApproved, ""},
 		{reviewer.SubmitReviewResult{Result: "merged", Next: reviewer.NextMerged}, Merged, CauseMerged, ""},
 		{reviewer.SubmitReviewResult{Result: "changes_requested", Next: reviewer.NextRework}, Rework, CauseChangesWanted, ""},
 		{reviewer.SubmitReviewResult{Result: "changes_requested", Reason: "CI failed", Next: reviewer.NextReviewRetry}, ReviewRetry, CauseReviewFailed, ""},
@@ -554,8 +555,10 @@ func TestReview_WithTheReviewsDecision(t *testing.T) {
 		to    State
 		calls string
 	}{
-		{"approved", answerJSON(9, goodImplementation, ""), Merged,
-			"comment-pr 30\napprove 30 9\nmerge 30 squash\nlanded 12\nclose 12\ncleanup 12"},
+		// Approved, it goes to the merge queue: nothing is merged, closed
+		// or removed yet.
+		{"approved", answerJSON(9, goodImplementation, ""), Queued,
+			"comment-pr 30\napprove 30 9"},
 		{"sent back", answerJSON(4, goodImplementation, "Score ignores the order of the players"), Rework,
 			"comment-pr 30\nrequest-changes 30 4\ncomment-issue 12 ## AWK Review 不通過 (score: 4/10)"},
 		// The test the review cites is not in the engine's run: the
@@ -577,6 +580,18 @@ func TestReview_WithTheReviewsDecision(t *testing.T) {
 			}
 			if got := strings.Join(rec.calls, "\n"); got != c.calls {
 				t.Errorf("calls:\n%s\nwant:\n%s", got, c.calls)
+			}
+			if c.to != Queued {
+				return
+			}
+			// The commit approved is the one the tests ran on, and the
+			// approval keeps the score for the merge.
+			head := strings.TrimSpace(gitIn(t, f.wt, "rev-parse", "HEAD"))
+			if tr.Approved != head {
+				t.Errorf("approved %q, want the worktree's head %q", tr.Approved, head)
+			}
+			if a, ok := reviewer.LoadApproval(f.step.Root, 30); !ok || a.Score != 9 || a.Head != head || a.Issue != 12 {
+				t.Errorf("the approval kept: %+v, %v", a, ok)
 			}
 		})
 	}

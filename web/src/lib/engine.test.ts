@@ -20,10 +20,15 @@ describe("engine words", () => {
     expect(laneMeta({ state: "implementing", resolve: "rebase" }).label).toBe("更新 PR 中");
     expect(laneMeta({ state: "implementing" }).label).toBe("寫程式中");
     expect(laneMeta({ state: "sideways" as LaneState }).label).toBe("sideways");
+    // A lane in the merge queue says its place.
+    expect(laneMeta({ state: "queued", queue: 1 }).label).toBe("下一個合併");
+    expect(laneMeta({ state: "queued", queue: 3 }).label).toBe("排隊合併，第 3 個");
+    expect(laneMeta({ state: "queued", queue: 3 }).means).toContain("前面還有 2 個");
+    expect(laneMeta({ state: "queued" }).label).toBe("排隊合併");
   });
 
   it("says why a lane needs the person, for every reason the engine has", () => {
-    for (const why of ["worker_failed", "needs_human_review", "review_max_retries", "conflict_max_retries", "no_pr", "merge_blocked", "guard_blocked", "guard_output", "invalid_ticket", "dependency_cycle", "person", "agent_refused", "worker_lost"]) {
+    for (const why of ["worker_failed", "needs_human_review", "review_max_retries", "conflict_max_retries", "no_pr", "merge_blocked", "guard_blocked", "guard_output", "invalid_ticket", "dependency_cycle", "person", "agent_refused", "worker_lost", "diff_policy", "checks_stuck", "check_max_retries", "maintainer_feedback"]) {
       expect(WHY[why], why).toBeTruthy();
     }
     expect(whyWords("something_new")).toBe("something_new");
@@ -37,6 +42,8 @@ describe("engine words", () => {
     expect(stepWords({ action: "check_result", issue: 5, since: "" }, "開場")).toBe("執行者正在寫工單 #5「開場」");
     expect(stepWords({ action: "dispatch_worker", issue: 5, pr: 12, merge: "conflict", since: "" })).toBe("正在解工單 #5 的 PR #12 和整合分支的衝突");
     expect(stepWords({ action: "dispatch_worker", issue: 5, pr: 12, merge: "rebase", since: "" })).toBe("正在把工單 #5 的 PR #12 更新到整合分支最新的樣子");
+    expect(stepWords({ action: "merge_pr", issue: 5, pr: 12, since: "" })).toBe("合併佇列正在合併工單 #5 的 PR #12");
+    expect(stepWords({ action: "merge_pr", issue: 5, pr: 12, since: "" }, "開場")).toBe("合併佇列正在合併工單 #5「開場」的 PR #12");
     // A step that ends the run, or settles a lane on the way, is no work on it.
     expect(stepWords({ action: "none", issue: 5, since: "" })).toBe("");
     expect(stepWords({ action: "all_complete", since: "" })).toBe("");
@@ -48,6 +55,7 @@ describe("engine words", () => {
     expect(workingSteps(run(undefined))).toEqual([]);
     expect(workingSteps(run([{ action: "review_pr", issue: 5 }, { action: "none", issue: 7 }, { action: "dispatch_worker", issue: 3 }])).map((s) => s.issue)).toEqual([5, 3]);
     expect(workingSteps(run([{ action: "all_complete" }]))).toEqual([]);
+    expect(workingSteps(run([{ action: "merge_pr", issue: 4 }, { action: "review_pr", issue: 5 }])).map((s) => s.issue)).toEqual([4, 5]);
   });
 
   it("says how a run of the engine ended, and keeps a reason it does not know", () => {
@@ -66,18 +74,20 @@ describe("engine words", () => {
     expect(decisionWords(decision({ next_action: "none", issue_number: 7, exit_reason: "needs_human_review" }))).toBe("工單 #7：停下來，等人處理");
     expect(decisionWords(decision({ next_action: "none", exit_reason: "max_loop_reached" }))).toBe("停下來，max_loop_reached");
     expect(decisionWords(decision({ next_action: "all_complete" }))).toBe("全部做完了");
-    expect(KNOWN.order && KNOWN.check_first).toBeTruthy();
+    expect(decisionWords(decision({ next_action: "merge_pr", issue_number: 5, pr_number: 12 }))).toBe("合併工單 #5 的 PR #12");
+    expect(KNOWN.order && KNOWN.check_first && KNOWN.queue).toBeTruthy();
   });
 });
 
 describe("lane rows", () => {
   it("lists only the counts a lane used, of its limits", () => {
-    const limits = { failures: 3, reviews: 3, conflicts: 2 };
+    const limits = { failures: 3, reviews: 3, conflicts: 2, checks: 4 };
     expect(counts({ issue: 1, state: "reviewing", attempts: {}, since: "" }, limits)).toEqual([]);
-    expect(counts({ issue: 1, state: "reviewing", attempts: { failures: 1, reviews: 2, conflicts: 2 }, since: "" }, limits)).toEqual([
+    expect(counts({ issue: 1, state: "reviewing", attempts: { failures: 1, reviews: 2, conflicts: 2, checks: 1 }, since: "" }, limits)).toEqual([
       "執行者失敗 1／3 次",
       "重新審查 2／3 次",
       "送去解衝突 2／2 次",
+      "合併前的檢查沒過 1／4 次",
     ]);
   });
 

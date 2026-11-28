@@ -243,6 +243,8 @@ func (s *ReviewStep) Review(ctx context.Context, lane Lane) (Transition, error) 
 		ScoreThreshold: settings.ScoreThreshold, MergeStrategy: settings.MergeStrategy,
 		GHTimeout: s.GHTimeout, TestTimeout: settings.TestTimeout,
 		Publisher: s.Publisher, TestRun: run, Diff: diff,
+		// What the review approves goes to the merge queue (merge.go).
+		Queue: true,
 	}
 	// The project's review hooks fire as they do for the Principal's.
 	if cfg, err := analyzer.LoadConfig(config.Path(s.Root)); err == nil {
@@ -319,6 +321,10 @@ func parseReview(output json.RawMessage) (review *reviewer.StructuredReview, pro
 	return review, ""
 }
 
+// unknownHead is the commit approved when the review could not read it: no
+// commit is it.
+const unknownHead = "unknown"
+
 // needsYouWhy is why a lane needs a person, for each reason a review gives.
 var needsYouWhy = map[string]string{
 	reviewer.NeedsYouMergeBlocked: WhyMergeBlocked,
@@ -331,6 +337,13 @@ var needsYouWhy = map[string]string{
 func (s *ReviewStep) after(lane Lane, res *reviewer.SubmitReviewResult) Transition {
 	t := Transition{Issue: lane.Issue, From: Reviewing, Note: res.Reason, At: s.now().UTC()}
 	switch res.Next {
+	case reviewer.NextQueued:
+		t.To, t.Cause, t.Approved = Queued, CauseApproved, res.Head
+		if t.Approved == "" {
+			// A commit that could not be read: the queue checks whatever
+			// it finds at the head.
+			t.Approved = unknownHead
+		}
 	case reviewer.NextMerged:
 		t.To, t.Cause = Merged, CauseMerged
 	case reviewer.NextRework:

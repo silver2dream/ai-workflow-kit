@@ -382,13 +382,14 @@ func TestPrintStatus_Lanes(t *testing.T) {
 				{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: at},
 				{Action: analyzer.ActionDispatchWorker, Issue: 11, Since: at},
 			}},
-			Limits: engine.Limits{Failures: 3, Reviews: 3, Conflicts: 3},
+			Limits: engine.Limits{Failures: 3, Reviews: 3, Conflicts: 3, Checks: 3},
 			Lanes: []engine.LaneView{
 				{Lane: engine.Lane{Issue: 5, State: engine.Reviewing, PR: 12, Attempts: engine.Attempts{Reviews: 1}, Since: at}, Step: &engine.StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 12, Since: at}},
 				{Lane: engine.Lane{Issue: 7, State: engine.NeedsYou, PR: 14, Why: engine.WhyGuardBlocked, Note: "secret-scan/1 in the diff", Since: at},
 					Verdict: &engine.LaneVerdict{Verdict: guard.Verdict{Result: guard.Block, Rule: "secret-scan/1", Source: "the diff", Reason: "a token"}, At: at}},
 				{Lane: engine.Lane{Issue: 9, State: engine.Resolving, Resolve: engine.ResolveRebase, PR: 15, Attempts: engine.Attempts{Failures: 2}, Since: at}},
 				{Lane: engine.Lane{Issue: 8, State: engine.Merged, PR: 11, Since: at}},
+				{Lane: engine.Lane{Issue: 13, State: engine.Queued, PR: 16, Attempts: engine.Attempts{Checks: 1}, Since: at}, Queue: 2},
 			},
 			Earlier: 4,
 		},
@@ -396,7 +397,8 @@ func TestPrintStatus_Lanes(t *testing.T) {
 	out := statusText(view)
 	for _, want := range []string{
 		"          the engine: the reviewer reviews PR #12 of #5 since " + clock + "\n          the engine: a Worker writes #11 since " + clock + "\n",
-		"Lanes     3 in the engine's hands, 1 finished in its last run\n\n",
+		"Lanes     4 in the engine's hands, 1 finished in its last run\n\n",
+		"    #13   waits its turn to be merged, 2nd in the merge queue, PR #16, checks failed in the merge queue 1 of 3, since " + clock + "\n",
 		"    #5    in review, PR #12, reviewed again 1 of 3, since " + clock + "\n          [feat] show the room code\n          now: the reviewer reviews PR #12 of #5\n",
 		"    #7    needs you, PR #14, since " + clock + "\n          a guardrail stopped what an agent was to read\n          a guardrail blocked secret-scan/1 in the diff at " + clock + ": a token\n",
 		"    #9    behind its base, PR #15, failed 2 of 3, since " + clock + "\n",
@@ -470,6 +472,7 @@ func TestLaneWords(t *testing.T) {
 		{engine.StepInfo{Action: analyzer.ActionDispatchWorker, Issue: 5, PR: 9, Merge: analyzer.MergeIssueConflict}, "the resolver resolves the conflict of PR #9 of #5"},
 		{engine.StepInfo{Action: analyzer.ActionDispatchWorker, Issue: 5, PR: 9, Merge: analyzer.MergeIssueRebase}, "PR #9 of #5 is brought up to its base"},
 		{engine.StepInfo{Action: analyzer.ActionReviewPR, Issue: 5, PR: 9}, "the reviewer reviews PR #9 of #5"},
+		{engine.StepInfo{Action: engine.ActionMerge, Issue: 5, PR: 9}, "the merge queue merges PR #9 of #5"},
 		{engine.StepInfo{Action: analyzer.ActionNone, Issue: 5}, ""},
 	} {
 		if got := stepWords(c.step); got != c.want {
@@ -477,9 +480,20 @@ func TestLaneWords(t *testing.T) {
 		}
 	}
 	for _, why := range []string{engine.WhyWorkerFailed, engine.WhyNeedsHumanReview, engine.WhyReviewMaxRetries, engine.WhyConflictRetries, engine.WhyNoPR, engine.WhyMergeBlocked,
-		engine.WhyGuardBlocked, engine.WhyGuardOutput, engine.WhyInvalidTicket, engine.WhyDependencyCycle, engine.WhyPerson, engine.WhyAgentRefused, engine.WhyWorkerLost} {
+		engine.WhyGuardBlocked, engine.WhyGuardOutput, engine.WhyInvalidTicket, engine.WhyDependencyCycle, engine.WhyPerson, engine.WhyAgentRefused, engine.WhyWorkerLost,
+		engine.WhyDiffPolicy, engine.WhyChecksStuck, engine.WhyCheckRetries, engine.WhyMaintainer} {
 		if engine.WhyText(why) == why {
 			t.Errorf("%s is not said in words", why)
+		}
+	}
+}
+
+// A lane's place in the merge queue, in words.
+func TestQueuePlace(t *testing.T) {
+	for place, want := range map[int]string{1: "the next to be merged", 2: "2nd in the merge queue", 3: "3rd in the merge queue", 4: "4th in the merge queue",
+		11: "11th in the merge queue", 12: "12th in the merge queue", 13: "13th in the merge queue", 21: "21st in the merge queue", 22: "22nd in the merge queue", 101: "101st in the merge queue", 111: "111th in the merge queue"} {
+		if got := queuePlace(place); got != want {
+			t.Errorf("%d: %q, want %q", place, got, want)
 		}
 	}
 }

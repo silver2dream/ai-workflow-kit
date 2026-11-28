@@ -240,10 +240,31 @@ func laneState(l engine.Lane) string {
 	return string(l.State)
 }
 
+// queuePlace says a lane's place in the merge queue: "the next to be
+// merged", "2nd in the merge queue".
+func queuePlace(place int) string {
+	if place == 1 {
+		return "the next to be merged"
+	}
+	suffix := "th"
+	switch {
+	case place%100 >= 11 && place%100 <= 13:
+	case place%10 == 1:
+		suffix = "st"
+	case place%10 == 2:
+		suffix = "nd"
+	case place%10 == 3:
+		suffix = "rd"
+	}
+	return fmt.Sprintf("%d%s in the merge queue", place, suffix)
+}
+
 // stepWords say what the engine does in a step, "" for a step that ends
 // the run.
 func stepWords(s engine.StepInfo) string {
 	switch {
+	case s.Action == engine.ActionMerge:
+		return fmt.Sprintf("the merge queue merges PR #%d of #%d", s.PR, s.Issue)
 	case s.Action == analyzer.ActionReviewPR:
 		return fmt.Sprintf("the reviewer reviews PR #%d of #%d", s.PR, s.Issue)
 	case s.Action == analyzer.ActionDispatchWorker && s.Merge == analyzer.MergeIssueConflict:
@@ -289,6 +310,9 @@ func printLanes(w io.Writer, v statusView) {
 	fmt.Fprintf(w, "%-9s %s\n\n", "Lanes", summary)
 	for _, l := range e.Lanes {
 		parts := []string{laneState(l.Lane)}
+		if l.Queue > 0 {
+			parts = append(parts, queuePlace(l.Queue))
+		}
 		if l.PR > 0 {
 			parts = append(parts, fmt.Sprintf("PR #%d", l.PR))
 		}
@@ -299,6 +323,7 @@ func printLanes(w io.Writer, v statusView) {
 			{"failed", l.Attempts.Failures, e.Limits.Failures},
 			{"reviewed again", l.Attempts.Reviews, e.Limits.Reviews},
 			{"conflicts sent to be resolved", l.Attempts.Conflicts, e.Limits.Conflicts},
+			{"checks failed in the merge queue", l.Attempts.Checks, e.Limits.Checks},
 		} {
 			if count.used > 0 {
 				parts = append(parts, fmt.Sprintf("%s %d of %d", count.name, count.used, count.max))

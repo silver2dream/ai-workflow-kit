@@ -60,8 +60,9 @@ type Engine struct {
 	// Only limits the run to one ticket; 0 is every ticket.
 	Only int
 	// The steps: the Worker writes and checks (WorkerSteps), the reviewer
-	// reviews (ReviewStep), the resolver resolves (ResolveStep).
-	Implement, Check, Review, Resolve Step
+	// reviews (ReviewStep), the resolver resolves (ResolveStep), the merge
+	// queue merges (MergeStep).
+	Implement, Check, Review, Resolve, Merge Step
 	// Log is where the engine says what it does; nil is stderr.
 	Log io.Writer
 	// MaxParallel bounds the steps that run at once; 0 is 1 (one lane at a
@@ -132,11 +133,12 @@ func New(opts Options) (*Engine, error) {
 	work := &WorkerSteps{Root: opts.Root, Log: log, GitHub: gh, InProgress: cfg.GitHub.Labels.InProgress}
 	review := &ReviewStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: reviewer}
 	resolve := &ResolveStep{Root: opts.Root, Agents: agent.NewRunner(), Profile: resolver}
+	merge := &MergeStep{Root: opts.Root, Log: log}
 	e := &Engine{
 		Root: opts.Root, Journal: journal,
 		GitHub: gh, Analyzer: a,
 		Names: cfg.GitHub.Labels, MaxReviews: limits.Reviews, Only: opts.Only,
-		Implement: work.Implement, Check: work.Check, Review: review.Review, Resolve: resolve.Resolve,
+		Implement: work.Implement, Check: work.Check, Review: review.Review, Resolve: resolve.Resolve, Merge: merge.Merge,
 		Log:         log,
 		MaxParallel: cfg.Engine.MaxParallel, MaxPerBackend: cfg.Engine.MaxPerBackend,
 		Backends: Backends{Implementer: worker.Backend, Reviewer: reviewer.Backend, Resolver: resolver.Backend},
@@ -468,13 +470,17 @@ func (e *Engine) circles(ctx context.Context) (*analyzer.Decision, error) {
 	return first, nil
 }
 
-// inHand is what to do with the lanes in the workflow's hands: a lane at
-// work, in review, to be reviewed again, to be resolved, waiting for a
-// person, in that order (the analyzer's LabelDecision). A lane whose step
-// runs is passed over, and so is one whose step cannot start yet (a review
-// while another runs, a backend at its limit): with no step running, none
-// is. nil is none in hand: the next ticket is picked.
+// inHand is what to do with the lanes in the workflow's hands: the head of
+// the merge queue, then a lane at work, in review, to be reviewed again, to
+// be resolved, waiting for a person, in that order (the analyzer's
+// LabelDecision, which has no queue). A lane whose step runs is passed over,
+// and so is one whose step cannot start yet (a merge while another runs, a
+// backend at its limit): with no step running, none is. nil is none in hand:
+// the next ticket is picked.
 func (e *Engine) inHand(ctx context.Context, mergeable Mergeability) *analyzer.Decision {
+	if d := e.queued(); d != nil && e.canStart(d) {
+		return d
+	}
 	lanes := e.live()
 	first := func(match func(Lane) bool, decide func(*Lane) *analyzer.Decision) *analyzer.Decision {
 		for i := range lanes {
@@ -550,6 +556,20 @@ func (e *Engine) inHand(ctx context.Context, mergeable Mergeability) *analyzer.D
 		return d
 	}
 	return first(func(l Lane) bool { return l.State == NeedsYou }, waits(analyzer.ReasonNeedsHumanReview))
+}
+
+// queued is what to do with the head of the merge queue: merge it. nil when
+// the queue is empty, or its head's step runs.
+func (e *Engine) queued() *analyzer.Decision {
+	q := queue(e.live())
+	if len(q) == 0 || e.runs(q[0].Issue) {
+		return nil
+	}
+	l := q[0]
+	if l.PR == 0 {
+		return &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: l.Issue, ExitReason: analyzer.ReasonNeedsHumanReview}
+	}
+	return &analyzer.Decision{NextAction: ActionMerge, IssueNumber: l.Issue, PRNumber: l.PR}
 }
 
 // Step does what a decision says. It says the run's end when the decision
@@ -681,6 +701,10 @@ var whyText = map[string]string{
 	WhyWorkerLost:       "its ticket says a Worker is at work on it, but none has left a result in the time a Worker may take",
 	WhyDependencyCycle:  "the tickets it depends on go round in a circle",
 	WhyPerson:           "a person marked it on GitHub",
+	WhyDiffPolicy:       "its change, rebased in the merge queue, breaks the diff policy",
+	WhyChecksStuck:      "the checks of its pull request did not start, or did not end, in the time they may take",
+	WhyCheckRetries:     "the merge queue's checks failed on its change as often as they may",
+	WhyMaintainer:       "a maintainer's review is open on its pull request, and nothing was pushed for it since",
 }
 
 // WhyText says, for a person, why a lane needs them: what the engine's
@@ -722,7 +746,7 @@ func (e *Engine) settle(ctx context.Context, d *analyzer.Decision) error {
 	switch {
 	case d.ExitReason == analyzer.ReasonReviewMaxRetries && l.State == ReviewRetry:
 		return needsYou(WhyReviewMaxRetries, fmt.Sprintf("the review of PR #%d was tried %d times", l.PR, l.Attempts.Reviews))
-	case d.ExitReason == analyzer.ReasonNeedsHumanReview && l.PR == 0 && slices.Contains([]State{Reviewing, ReviewRetry, Resolving}, l.State):
+	case d.ExitReason == analyzer.ReasonNeedsHumanReview && l.PR == 0 && slices.Contains([]State{Reviewing, ReviewRetry, Resolving, Queued}, l.State):
 		return needsYou(WhyNoPR, "the lane's pull request is not known")
 	case d.ExitReason == analyzer.ReasonNeedsHumanReview && l.State == Reviewing:
 		return needsYou(WhyConflictRetries, fmt.Sprintf("PR #%d still conflicts with its base after %d resolutions", l.PR, l.Attempts.Conflicts))
@@ -820,4 +844,18 @@ func (e *Engine) resolved(ctx context.Context, lane Lane) error {
 		return err
 	}
 	return e.apply(ctx, t, false)
+}
+
+// merged has the pull request at the head of the merge queue merged.
+func (e *Engine) merged(ctx context.Context, lane Lane) error {
+	if lane.State != Queued {
+		return fmt.Errorf("lane #%d is %s: the merge queue merges a lane in it", lane.Issue, lane.State)
+	}
+	t, err := e.Merge(ctx, lane)
+	if err != nil {
+		return err
+	}
+	// The maintainers' gate says on the issue why it holds the pull
+	// request; the queue's other stops do not.
+	return e.apply(ctx, t, t.Why == WhyMaintainer)
 }

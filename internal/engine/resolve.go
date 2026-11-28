@@ -130,7 +130,7 @@ func (s *ResolveStep) Resolve(ctx context.Context, lane Lane) (Transition, error
 		return Transition{}, fmt.Errorf("lane #%d has no pull request to resolve", lane.Issue)
 	}
 	s.defaults()
-	r := &resolution{step: s, lane: lane, wt: filepath.Join(s.Root, ".worktrees", "issue-"+strconv.Itoa(lane.Issue)), branch: fmt.Sprintf("feat/ai-issue-%d", lane.Issue)}
+	r := &resolution{step: s, lane: lane, laneTree: newLaneTree(s.Root, lane.Issue, s.GitTimeout)}
 	t, err := r.run(ctx)
 	// Whatever happened, the worktree is not left in a rebase.
 	if r.rebasing() {
@@ -144,12 +144,27 @@ func (s *ResolveStep) Resolve(ctx context.Context, lane Lane) (Transition, error
 
 // resolution is one run of the step for a lane.
 type resolution struct {
+	laneTree
 	step     *ResolveStep
 	lane     Lane
-	wt       string
-	branch   string
 	base     string
 	resolved []string
+}
+
+// laneTree is a lane's worktree and branch, and git in them: what the
+// resolution and the merge queue rebase.
+type laneTree struct {
+	root, wt, branch string
+	gitTimeout       time.Duration
+}
+
+func newLaneTree(root string, issue int, gitTimeout time.Duration) laneTree {
+	return laneTree{
+		root:       root,
+		wt:         filepath.Join(root, ".worktrees", "issue-"+strconv.Itoa(issue)),
+		branch:     fmt.Sprintf("feat/ai-issue-%d", issue),
+		gitTimeout: gitTimeout,
+	}
 }
 
 func (r *resolution) move(to State, cause Cause, note string) Transition {
@@ -167,7 +182,7 @@ func (r *resolution) needsYou(why, note string) Transition {
 }
 
 func (r *resolution) run(ctx context.Context) (Transition, error) {
-	if err := r.worktree(ctx); err != nil {
+	if err := r.ready(ctx); err != nil {
 		return r.failed("the worktree could not be made ready: " + err.Error()), nil
 	}
 	base, err := r.step.base(ctx, r.lane.PR)
@@ -216,18 +231,23 @@ func (r *resolution) run(ctx context.Context) (Transition, error) {
 	if len(r.resolved) > 0 {
 		note += "; the resolver resolved " + strings.Join(r.resolved, ", ")
 	}
+	// A conflict the merge queue met goes back to the queue, which tests
+	// the change again; one met before the review is reviewed.
+	if r.lane.Approved != "" {
+		return r.move(Queued, CauseResolved, note), nil
+	}
 	return r.move(Reviewing, CauseResolved, note), nil
 }
 
-// worktree makes the lane's worktree ready: there, on the lane's branch,
-// out of any rebase, with nothing in it but the branch.
-func (r *resolution) worktree(ctx context.Context) error {
+// ready makes the lane's worktree ready: there, on the lane's branch, out
+// of any rebase, with nothing in it but the branch.
+func (r *laneTree) ready(ctx context.Context) error {
 	if _, err := os.Stat(r.wt); err != nil {
-		if _, err := r.gitIn(ctx, r.step.Root, "fetch", "origin", "--prune"); err != nil {
+		if _, err := r.gitIn(ctx, r.root, "fetch", "origin", "--prune"); err != nil {
 			return err
 		}
-		if _, err := r.gitIn(ctx, r.step.Root, "worktree", "add", r.wt, r.branch); err != nil {
-			if _, err2 := r.gitIn(ctx, r.step.Root, "worktree", "add", "-b", r.branch, r.wt, "origin/"+r.branch); err2 != nil {
+		if _, err := r.gitIn(ctx, r.root, "worktree", "add", r.wt, r.branch); err != nil {
+			if _, err2 := r.gitIn(ctx, r.root, "worktree", "add", "-b", r.branch, r.wt, "origin/"+r.branch); err2 != nil {
 				return fmt.Errorf("%v; %v", err, err2)
 			}
 		}
@@ -581,7 +601,7 @@ func hasMarker(text []byte) bool {
 }
 
 // unmerged are the files in conflict.
-func (r *resolution) unmerged(ctx context.Context) []string {
+func (r *laneTree) unmerged(ctx context.Context) []string {
 	out, err := r.git(ctx, "diff", "--name-only", "--diff-filter=U", "-z")
 	if err != nil {
 		return nil
@@ -590,7 +610,7 @@ func (r *resolution) unmerged(ctx context.Context) []string {
 }
 
 // rebasing says whether the worktree is in the middle of a rebase.
-func (r *resolution) rebasing() bool {
+func (r *laneTree) rebasing() bool {
 	for _, name := range []string{"rebase-merge", "rebase-apply"} {
 		dir, err := r.git(context.Background(), "rev-parse", "--git-path", name)
 		if err != nil {
@@ -606,17 +626,17 @@ func (r *resolution) rebasing() bool {
 	return false
 }
 
-func (r *resolution) git(ctx context.Context, args ...string) (string, error) {
+func (r *laneTree) git(ctx context.Context, args ...string) (string, error) {
 	return r.gitIn(ctx, r.wt, args...)
 }
 
 // gitIn runs git in dir, with no editor and no prompt, and returns what it
 // printed, trimmed; the error carries what it said.
-func (r *resolution) gitIn(ctx context.Context, dir string, args ...string) (string, error) {
+func (r *laneTree) gitIn(ctx context.Context, dir string, args ...string) (string, error) {
 	// The repository's lock is held while it runs: lanes run side by side,
 	// on worktrees of one repository (internal/gitlock).
 	out, err := gitlock.Command{
-		Dir: dir, Args: args, Timeout: r.step.GitTimeout,
+		Dir: dir, Args: args, Timeout: r.gitTimeout,
 		Env: []string{"GIT_EDITOR=true", "GIT_TERMINAL_PROMPT=0"},
 	}.Run(ctx)
 	if err != nil {

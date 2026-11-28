@@ -48,6 +48,13 @@ const KnownOrder = "order"
 // the ticket again at once.
 const KnownCheckFirst = "check_first"
 
+// KnownQueue is the known difference of the merge queue (task 2.3), which
+// the analyzer does not have: the engine merges the lane at the head of its
+// queue, which the analyzer, reading pr-ready on its ticket, would review
+// again. With a lane in the queue and no step running, the engine's
+// decision is always the merge.
+const KnownQueue = "queue"
+
 // Shadow decides as the Principal's analyzer, from the tickets given, what
 // to do with the tickets in the workflow's hands (analyzer.LabelDecision):
 // nil is none in its hands. mergeable answers what the engine was told of a
@@ -203,6 +210,9 @@ func (e *Engine) judge(mine, theirs *analyzer.Decision, tickets []Ticket) (same 
 		if l != nil && l.State == Implementing && l.Resolve == "" && i >= 0 && !slices.Contains(tickets[i].Labels, e.Names.InProgress) {
 			return false, KnownCheckFirst
 		}
+	}
+	if mine != nil && mine.NextAction == ActionMerge {
+		return false, KnownQueue
 	}
 	if mine == nil || theirs == nil {
 		return mine == nil && theirs == nil, ""

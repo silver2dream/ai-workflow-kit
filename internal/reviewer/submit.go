@@ -63,6 +63,11 @@ type SubmitReviewOptions struct {
 	// started: the version this review judges. SubmitReview fills it in
 	// before anything can merge or remove the worktree.
 	headSHA string
+
+	// Queue leaves the merge to the engine's merge queue: a pull request
+	// the review approves is approved on GitHub and not merged, and the
+	// result says NextQueued, with the commit approved.
+	Queue bool
 }
 
 // SubmitReviewResult holds the result of submitting a review
@@ -75,6 +80,9 @@ type SubmitReviewResult struct {
 	// NeedsYou says why a person is needed, when Next is NextNeedsYou (the
 	// NeedsYou constants).
 	NeedsYou string
+	// Head is the commit approved, when Next is NextQueued: the one the
+	// review's tests ran on.
+	Head string
 }
 
 // fillDefaults sets what the caller left open. The tests are run again with
@@ -372,39 +380,20 @@ func SubmitReview(ctx context.Context, opts SubmitReviewOptions) (result *Submit
 		}
 
 		if opts.CIStatus == "passed" {
+			// The engine's merge queue merges it, once it is checked again
+			// on the integration branch as it is then.
+			if opts.Queue {
+				if err := SaveApproval(opts.StateRoot, Approval{PR: opts.PRNumber, Issue: opts.IssueNumber, Score: opts.Score, Head: opts.headSHA, At: time.Now().UTC()}); err != nil {
+					fmt.Fprintf(os.Stderr, "[REVIEW] warning: the approval could not be kept: %v\n", err)
+				}
+				return &SubmitReviewResult{Result: "approved", Next: NextQueued, Head: opts.headSHA}, nil
+			}
+
 			// Try to merge
 			if err := opts.publisher().Merge(ctx, opts.PRNumber, opts.MergeStrategy); err != nil {
 				return handleMergeFailure(ctx, opts, sessionID, err)
 			}
-
-			// Fire on_merge hooks (non-blocking)
-			if opts.HookRunner != nil {
-				hookEnv := map[string]string{
-					"AWK_PR":    fmt.Sprintf("%d", opts.PRNumber),
-					"AWK_ISSUE": fmt.Sprintf("%d", opts.IssueNumber),
-				}
-				_ = opts.HookRunner.Fire(ctx, "on_merge", hookEnv)
-			}
-
-			// The work landed: the decision engine reads this instead of asking
-			// GitHub whether the closed issue has a merged pull request.
-			opts.publisher().Landed(opts.StateRoot, opts.IssueNumber)
-
-			// Merge successful - cleanup operations (non-critical, log warnings)
-			if err := opts.publisher().CloseIssue(ctx, opts.IssueNumber); err != nil {
-				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to close issue #%d: %v\n", opts.IssueNumber, err)
-			}
-			if err := opts.publisher().Labels(ctx, opts.IssueNumber, nil, []string{"pr-ready"}); err != nil {
-				fmt.Fprintf(os.Stderr, "[REVIEW] warning: failed to remove pr-ready label from issue #%d: %v\n", opts.IssueNumber, err)
-			}
-			if err := opts.publisher().Cleanup(opts.StateRoot, opts.IssueNumber); err != nil {
-				fmt.Fprintf(os.Stderr, "[REVIEW] warning: %v\n", err)
-			}
-
-			// Learning loop: record the approval, settle injected lessons,
-			// and distill the rejections this merge resolved.
-			closeLearningLoop(ctx, opts, learningOutcome{Outcome: lessons.OutcomeMerged})
-
+			followMerge(ctx, opts)
 			return &SubmitReviewResult{Result: "merged", Next: NextMerged}, nil
 		}
 
@@ -698,13 +687,21 @@ func ownPullRequest(output []byte) bool {
 }
 
 func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStrategy ...string) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	strategy := "squash"
-	if len(mergeStrategy) > 0 && mergeStrategy[0] != "" {
+	strategy := ""
+	if len(mergeStrategy) > 0 {
 		strategy = mergeStrategy[0]
 	}
+	return mergePRAt(ctx, prNumber, timeout, strategy, "")
+}
+
+// runGHMerge runs the gh command of a merge; replaced in tests.
+var runGHMerge = ghutil.RunWithRetry
+
+// mergePRAt merges a pull request in the project's way; with a head, only
+// while that commit is the pull request's head (--match-head-commit).
+func mergePRAt(ctx context.Context, prNumber int, timeout time.Duration, strategy, head string) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	var strategyFlag string
 	switch strategy {
@@ -718,9 +715,12 @@ func mergePR(ctx context.Context, prNumber int, timeout time.Duration, mergeStra
 
 	// gh deletes the pull request's local branch too: a git command of its
 	// own, in this repository, which is held to its lock (internal/gitlock).
+	args := []string{"pr", "merge", strconv.Itoa(prNumber), strategyFlag, "--delete-branch"}
+	if head != "" {
+		args = append(args, "--match-head-commit", head)
+	}
 	err := gitlock.Hold(ctx, ".", func() error {
-		_, err := ghutil.RunWithRetry(ctx, ghutil.DefaultRetryConfig(), "gh", "pr", "merge", strconv.Itoa(prNumber),
-			strategyFlag, "--delete-branch")
+		_, err := runGHMerge(ctx, ghutil.DefaultRetryConfig(), "gh", args...)
 		return err
 	})
 	if err != nil {

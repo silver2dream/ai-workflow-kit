@@ -23,13 +23,16 @@ type parallelFixture struct {
 	*engineFixture
 	mu sync.Mutex
 	// at and most count the steps of a kind that run now, and the most that
-	// ran at once; "all" counts every kind, "integration" reviews and
-	// resolutions.
+	// ran at once; "all" counts every kind that takes a slot (all but the
+	// merge).
 	at, most map[string]int
 	gates    map[string]chan struct{}
 	started  chan string
 	// answers are where a kind of step takes its lane; set before the run.
 	answers map[string]func(Lane) Transition
+	// holdMerges has the merges wait to be let go, and say they started, as
+	// the other steps do; else a merge ends at once, unseen.
+	holdMerges bool
 }
 
 func newParallelFixture(t *testing.T, max int, tickets ...Ticket) *parallelFixture {
@@ -40,38 +43,57 @@ func newParallelFixture(t *testing.T, max int, tickets ...Ticket) *parallelFixtu
 		gates: map[string]chan struct{}{}, started: make(chan string, 64),
 		answers: map[string]func(Lane) Transition{
 			"implement": goTo(Reviewing, CauseImplemented, func(t *Transition) { t.PR = 100 + t.Issue }),
-			"review":    goTo(Merged, CauseMerged),
-			"resolve":   goTo(Reviewing, CauseResolved),
+			"review":    approve,
+			"resolve":   resolvedBack,
 			"check":     goTo(Reviewing, CauseImplemented, func(t *Transition) { t.PR = 100 + t.Issue }),
+			"merge":     goTo(Merged, CauseMerged),
 		},
 	}
 	p.e.MaxParallel = max
 	p.an.pending = p.gh.pendingOf
 	p.e.Implement, p.e.Review, p.e.Resolve, p.e.Check = p.gated("implement"), p.gated("review"), p.gated("resolve"), p.gated("check")
+	p.e.Merge = p.gated("merge")
 	return p
+}
+
+// approve is a review that approves: the lane goes to the merge queue.
+func approve(l Lane) Transition {
+	return goTo(Queued, CauseApproved, func(t *Transition) { t.Approved = fmt.Sprintf("approved-%d", t.Issue) })(l)
+}
+
+// resolvedBack is a resolution that pushed: back to the queue for a lane the
+// queue sent, to review for one before it (ResolveStep).
+func resolvedBack(l Lane) Transition {
+	if l.Approved != "" {
+		return goTo(Queued, CauseResolved)(l)
+	}
+	return goTo(Reviewing, CauseResolved)(l)
 }
 
 // gated is a step that says it started, and waits to be let go.
 func (p *parallelFixture) gated(kind string) Step {
 	kinds := []string{kind, "all"}
-	if kind == "review" || kind == "resolve" {
-		kinds = append(kinds, "integration")
+	if kind == "merge" {
+		kinds = []string{kind}
 	}
 	return func(ctx context.Context, l Lane) (Transition, error) {
 		name := fmt.Sprintf("%s #%d", kind, l.Issue)
 		p.mu.Lock()
 		gate := p.gate(name)
+		held := kind != "merge" || p.holdMerges
 		for _, k := range kinds {
 			p.at[k]++
 			p.most[k] = max(p.most[k], p.at[k])
 		}
 		p.mu.Unlock()
-		p.started <- name
 		var err error
-		select {
-		case <-gate:
-		case <-ctx.Done():
-			err = ctx.Err()
+		if held {
+			p.started <- name
+			select {
+			case <-gate:
+			case <-ctx.Done():
+				err = ctx.Err()
+			}
 		}
 		p.mu.Lock()
 		for _, k := range kinds {
@@ -181,10 +203,10 @@ func apart(numbers ...int) []Ticket {
 	return tickets
 }
 
-// Tickets whose paths are apart are written side by side; their pull
-// requests are reviewed one at a time, by number, and merged. A ticket whose
-// step runs is not picked again, though GitHub shows it as one to start
-// until its Worker labels it.
+// Tickets whose paths are apart are written side by side, and their pull
+// requests reviewed side by side: the review approves, and the merge queue
+// merges. A ticket whose step runs is not picked again, though GitHub shows
+// it as one to start until its Worker labels it.
 func TestEngine_LanesSideBySide(t *testing.T) {
 	p := newParallelFixture(t, 3, apart(1, 2, 3)...)
 	done := p.runAsync(t.Context())
@@ -193,12 +215,8 @@ func TestEngine_LanesSideBySide(t *testing.T) {
 	p.let("implement #2")
 	p.expect("review #2")
 	p.let("implement #1", "implement #3")
-	p.quiet()
-	p.let("review #2")
-	p.expect("review #1")
-	p.let("review #1")
-	p.expect("review #3")
-	p.let("review #3")
+	p.expect("review #1", "review #3")
+	p.let("review #2", "review #1", "review #3")
 
 	r := p.wait(done)
 	if r.end != EndComplete || r.err != nil {
@@ -209,7 +227,7 @@ func TestEngine_LanesSideBySide(t *testing.T) {
 			t.Errorf("#%d: %+v", issue, l)
 		}
 	}
-	if p.mostOf("implement") != 3 || p.mostOf("integration") != 1 {
+	if p.mostOf("implement") != 3 || p.mostOf("review") != 3 || p.mostOf("merge") != 1 {
 		t.Errorf("at once: %v", p.most)
 	}
 	for _, max := range p.an.maxAsked {
@@ -238,9 +256,10 @@ func TestEngine_MaxParallel(t *testing.T) {
 	p.let("implement #2")
 	p.expect("review #2")
 	p.let("implement #3")
+	p.expect("review #3")
 	p.quiet()
 	p.let("review #2")
-	p.expect("review #3", "implement #4")
+	p.expect("implement #4")
 	p.let("review #3", "implement #4")
 	p.expect("review #4")
 	p.let("review #4")
@@ -296,22 +315,23 @@ func TestEngine_ALaneInHandWaitsForItsBackend(t *testing.T) {
 	p.gh.mergeable[102] = "CONFLICTING"
 	done := p.runAsync(t.Context())
 
-	// #2's conflict is resolved on codex, and #1 is written on claude-code;
-	// #3's review waits for the resolution.
-	p.expect("resolve #2", "implement #1")
+	// #2's conflict is resolved on codex, and #3 is reviewed on claude-code;
+	// #1 waits for claude-code's one slot.
+	p.expect("resolve #2", "review #3")
 	p.gh.mu.Lock()
 	p.gh.mergeable[102] = ""
 	p.gh.mu.Unlock()
 	p.let("resolve #2")
-	// Two reviews could start, and claude-code is at its limit.
+	// #2's review and #1 could start, and claude-code is at its limit.
 	p.quiet()
+	p.let("review #3")
+	// The lane in hand first.
+	p.expect("review #2")
+	p.let("review #2")
+	p.expect("implement #1")
 	p.let("implement #1")
 	p.expect("review #1")
 	p.let("review #1")
-	p.expect("review #2")
-	p.let("review #2")
-	p.expect("review #3")
-	p.let("review #3")
 
 	if r := p.wait(done); r.end != EndComplete || r.err != nil {
 		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())
@@ -321,9 +341,8 @@ func TestEngine_ALaneInHandWaitsForItsBackend(t *testing.T) {
 	}
 }
 
-// A review and a resolution are not done at once: each merges, or rebases
-// onto what was merged.
-func TestEngine_OneIntegrationStepAtATime(t *testing.T) {
+// A review and a resolution run side by side: neither merges (task 2.3).
+func TestEngine_ReviewsAndResolutionsSideBySide(t *testing.T) {
 	p := newParallelFixture(t, 3, task(1, "pr-ready"), task(2, "pr-ready"))
 	// Not compared: the shadow takes a conflict on #1 while the Principal's
 	// analyzer reviews #2, first in GitHub's order, for a difference it does
@@ -333,22 +352,18 @@ func TestEngine_OneIntegrationStepAtATime(t *testing.T) {
 	p.gh.mergeable[101] = "CONFLICTING"
 	done := p.runAsync(t.Context())
 
-	p.expect("resolve #1")
-	p.quiet()
+	p.expect("resolve #1", "review #2")
 	p.gh.mu.Lock()
 	p.gh.mergeable[101] = ""
 	p.gh.mu.Unlock()
 	p.let("resolve #1")
 	p.expect("review #1")
-	p.quiet()
-	p.let("review #1")
-	p.expect("review #2")
-	p.let("review #2")
+	p.let("review #1", "review #2")
 
 	if r := p.wait(done); r.end != EndComplete || r.err != nil {
 		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())
 	}
-	if p.mostOf("integration") != 1 {
+	if p.mostOf("all") != 2 || p.mostOf("review") != 2 {
 		t.Errorf("at once: %v", p.most)
 	}
 }
@@ -369,10 +384,8 @@ func TestEngine_PathsWhileLanesRun(t *testing.T) {
 	p.let("implement #3")
 	p.expect("review #3")
 	p.let("implement #2")
-	p.quiet()
-	p.let("review #3")
 	p.expect("review #2")
-	p.let("review #2")
+	p.let("review #3", "review #2")
 
 	if r := p.wait(done); r.end != EndComplete || r.err != nil {
 		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())
@@ -676,10 +689,13 @@ func TestWorkerSteps_SideBySide(t *testing.T) {
 
 // A lane in the engine's hands is not a ticket to start, whatever GitHub
 // shows of it: here #1 waits for its review while #2's resolution runs, and
-// its labels were lost.
+// its labels were lost. The reviewer and the resolver share a backend that
+// runs one step at a time.
 func TestEngine_ALaneInHandIsNotPickedWhateverGitHubShows(t *testing.T) {
 	p := newParallelFixture(t, 3, withBody(task(1, "pr-ready"), body("part1/**")), withBody(task(2, "pr-ready"), body("part2/**")))
 	p.e.Shadow = nil // the labels are taken off by hand
+	p.e.Backends = Backends{Implementer: "claude-code", Reviewer: "codex", Resolver: "codex"}
+	p.e.MaxPerBackend = map[string]int{"codex": 1}
 	p.an.prs = map[int]int{1: 101, 2: 102}
 	p.gh.mergeable[102] = "CONFLICTING"
 	done := p.runAsync(t.Context())
@@ -695,7 +711,7 @@ func TestEngine_ALaneInHandIsNotPickedWhateverGitHubShows(t *testing.T) {
 	p.gh.tickets[1].Labels = []string{"ai-task"}
 	p.gh.mergeable[102] = ""
 	p.gh.mu.Unlock()
-	p.answer("review", goTo(Merged, CauseMerged))
+	p.answer("review", approve)
 	p.let("resolve #2")
 	p.expect("review #2")
 	// #1 waits for the review, and is not written.
@@ -711,6 +727,128 @@ func TestEngine_ALaneInHandIsNotPickedWhateverGitHubShows(t *testing.T) {
 	}
 	if l := p.lane(1); l.State != Merged || l.Attempts.Reviews != 1 {
 		t.Errorf("#1: %+v", l)
+	}
+}
+
+// The queue merges one pull request at a time, the one that came into it
+// first.
+func TestEngine_OneMergeAtATime(t *testing.T) {
+	p := newParallelFixture(t, 3, apart(1, 2, 3)...)
+	p.holdMerges = true
+	done := p.runAsync(t.Context())
+
+	p.expect("implement #1", "implement #2", "implement #3")
+	p.let("implement #1", "implement #2", "implement #3")
+	p.expect("review #1", "review #2", "review #3")
+	// #3 is approved first, then #1, then #2: the queue is in that order.
+	p.let("review #3")
+	p.expect("merge #3")
+	p.let("review #1")
+	p.quiet()
+	p.let("review #2")
+	p.quiet()
+	p.let("merge #3")
+	p.expect("merge #1")
+	p.let("merge #1")
+	p.expect("merge #2")
+	p.let("merge #2")
+
+	if r := p.wait(done); r.end != EndComplete || r.err != nil {
+		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())
+	}
+	if p.mostOf("merge") != 1 {
+		t.Errorf("at once: %v", p.most)
+	}
+	var order []string
+	for _, line := range strings.Split(p.log.String(), "\n") {
+		if i := strings.Index(line, "next: merge_pr #"); i >= 0 {
+			order = append(order, strings.Fields(line[i+len("next: merge_pr "):])[0])
+		}
+	}
+	if got := strings.Join(order, " "); got != "#3 #1 #2" {
+		t.Errorf("merged in the order %s\n%s", got, p.log.String())
+	}
+}
+
+// One merge at a time, whichever lane asks: the queue only gives its head,
+// and a merge that runs keeps any other from starting.
+func TestEngine_CanStartOneMerge(t *testing.T) {
+	e := &Engine{MaxParallel: 1}
+	merge := func(issue int) *analyzer.Decision {
+		return &analyzer.Decision{NextAction: ActionMerge, IssueNumber: issue, PRNumber: 100 + issue}
+	}
+	if !e.canStart(merge(2)) {
+		t.Fatal("no merge runs, and one cannot start")
+	}
+	e.running = map[int]step{1: {decision: *merge(1)}}
+	if e.canStart(merge(2)) {
+		t.Error("a second merge can start while one runs")
+	}
+	if e.taken() != 0 || !e.canStart(&analyzer.Decision{NextAction: analyzer.ActionDispatchWorker, IssueNumber: 3}) {
+		t.Error("the merge takes the slot")
+	}
+}
+
+// The merge takes no slot: with one, a ticket is written, and reviewed,
+// while the queue merges another; and the next merge starts when the one
+// before ends, though the slot is taken.
+func TestEngine_TheMergeTakesNoSlot(t *testing.T) {
+	p := newParallelFixture(t, 1, apart(1, 2, 3)...)
+	p.holdMerges = true
+	done := p.runAsync(t.Context())
+
+	p.expect("implement #1")
+	p.let("implement #1")
+	p.expect("review #1")
+	p.let("review #1")
+	p.expect("merge #1", "implement #2")
+	p.let("implement #2")
+	p.expect("review #2")
+	// #2 waits for #1's merge; #3 takes the slot.
+	p.let("review #2")
+	p.expect("implement #3")
+	p.let("merge #1")
+	p.expect("merge #2")
+	p.let("implement #3")
+	p.expect("review #3")
+	p.let("merge #2", "review #3")
+	p.expect("merge #3")
+	p.let("merge #3")
+
+	if r := p.wait(done); r.end != EndComplete || r.err != nil {
+		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())
+	}
+	if p.mostOf("all") != 1 || p.mostOf("merge") != 1 {
+		t.Errorf("at once: %v", p.most)
+	}
+}
+
+// A stop lets the merge that runs end, and starts no other.
+func TestEngine_AStopLetsTheMergeEnd(t *testing.T) {
+	p := newParallelFixture(t, 2, apart(1, 2)...)
+	p.holdMerges = true
+	done := p.runAsync(t.Context())
+
+	p.expect("implement #1", "implement #2")
+	p.let("implement #1", "implement #2")
+	p.expect("review #1", "review #2")
+	p.let("review #1")
+	p.expect("merge #1")
+	// The run waits for its steps: the stop is read in the round the next
+	// step's end starts.
+	p.an.precheck = &analyzer.Decision{NextAction: analyzer.ActionNone, ExitReason: analyzer.ReasonStopRequested}
+	p.let("review #2")
+	p.quiet()
+	p.let("merge #1")
+
+	if r := p.wait(done); r.end != analyzer.ReasonStopRequested || r.err != nil {
+		t.Fatalf("ended %q, %v\n%s", r.end, r.err, p.log.String())
+	}
+	if l := p.lane(1); l.State != Merged {
+		t.Errorf("#1: %+v", l)
+	}
+	if l := p.lane(2); l.State != Queued || l.Approved != "approved-2" {
+		t.Errorf("#2: %+v", l)
 	}
 }
 

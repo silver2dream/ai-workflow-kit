@@ -123,7 +123,7 @@ func (f *conflictFixture) resolve() Transition {
 	}
 	f.lane = *next
 	// Never left in a rebase, and on its branch.
-	if r := (&resolution{step: f.step, wt: f.wt}); r.rebasing() {
+	if r := (&laneTree{wt: f.wt}); r.rebasing() {
 		f.t.Error("the worktree was left in a rebase")
 	}
 	if on := gitIn(f.t, f.wt, "rev-parse", "--abbrev-ref", "HEAD"); strings.TrimSpace(on) != "feat/ai-issue-12" {
@@ -142,6 +142,17 @@ func (f *conflictFixture) remoteLog() string {
 }
 
 func write(path, text string) { _ = os.WriteFile(path, []byte(text), 0o644) }
+
+// A conflict the merge queue met goes back to the queue once it is
+// resolved: the queue tests it.
+func TestResolve_FromTheMergeQueue(t *testing.T) {
+	f := newConflictFixture(t, false)
+	f.lane.Approved = "abc"
+	tr := f.resolve()
+	if tr.To != Queued || tr.Cause != CauseResolved || f.lane.Approved != "abc" {
+		t.Fatalf("went %s (%s): %s; lane %+v", tr.To, tr.Cause, tr.Note, f.lane)
+	}
+}
 
 // A branch that is only behind is rebased and pushed by the engine alone.
 func TestResolve_ABranchBehind(t *testing.T) {

@@ -104,7 +104,7 @@ awkit run --issue 42   # 只做一張
 awkit run --dry-run    # 只跑啟動前的檢查
 ```
 
-`awkit run` 在這個終端機裡由 awkit 的 engine（程式，不是模型）派工。每張票的流程：Worker 在自己的 worktree 裡寫變更並開 pull request → 審查（重跑測試、逐條核對驗收條件；CI 要通過）→ 通過就合併並關閉 issue，不通過就帶著意見退回給 Worker。票券依編號由小到大處理，依賴沒完成的會先跳過。設了環境變數 `AWKIT_ENGINE=principal` 時改用舊的做法：啟動 Claude Code 當 Principal 來派工。這個做法下一版移除。
+`awkit run` 在這個終端機裡由 awkit 的 engine（程式，不是模型）派工。每張票的流程：Worker 在自己的 worktree 裡寫變更並開 pull request → 審查（重跑測試、逐條核對驗收條件；CI 要通過）→ 通過就排進合併佇列，不通過就帶著意見退回給 Worker → 合併佇列一次合併一個：接上整合分支最新的版本、需要時再測一次、等 CI，然後合併並關閉 issue。票券依編號由小到大處理，依賴沒完成的會先跳過。設了環境變數 `AWKIT_ENGINE=principal` 時改用舊的做法：啟動 Claude Code 當 Principal 來派工。這個做法下一版移除。
 
 另一個終端機可以看進度或請它停下：
 
