@@ -834,9 +834,11 @@ func TestEngine_AStopLetsTheMergeEnd(t *testing.T) {
 	p.expect("review #1", "review #2")
 	p.let("review #1")
 	p.expect("merge #1")
+	// The run waits for its steps: the stop is read in the round the next
+	// step's end starts.
+	p.an.precheck = &analyzer.Decision{NextAction: analyzer.ActionNone, ExitReason: analyzer.ReasonStopRequested}
 	p.let("review #2")
 	p.quiet()
-	p.an.precheck = &analyzer.Decision{NextAction: analyzer.ActionNone, ExitReason: analyzer.ReasonStopRequested}
 	p.let("merge #1")
 
 	if r := p.wait(done); r.end != analyzer.ReasonStopRequested || r.err != nil {
