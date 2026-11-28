@@ -80,6 +80,78 @@ func TestEngine_AnUnusableTicketStopsAlone(t *testing.T) {
 	}
 }
 
+// A ticket the analyzer hands to a person (and tells them of) stops alone
+// too; the engine does not tell them again.
+func TestEngine_ATicketTheAnalyzerHandsOver(t *testing.T) {
+	f := newEngineFixture(t, task(4), task(6))
+	f.an.next = []*analyzer.Decision{
+		{NextAction: analyzer.ActionNone, IssueNumber: 4, ExitReason: analyzer.ReasonNeedsHumanReview},
+		dispatch(6),
+		{NextAction: analyzer.ActionNone, ExitReason: analyzer.ReasonNoActionableTasks},
+	}
+	f.implement = []func(Lane) Transition{goTo(Completed, CauseNoChanges)}
+
+	if end := f.run(); end != analyzer.ReasonNeedsHumanReview {
+		t.Fatalf("ended %q\n%s", end, f.log.String())
+	}
+	if got := strings.Join(f.steps, ", "); got != "implement #6" {
+		t.Errorf("steps: %s", got)
+	}
+	if l := f.lane(4); l.State != NeedsYou || l.Why != WhyNeedsHumanReview {
+		t.Errorf("#4: %+v", l)
+	}
+	if len(f.gh.comments) != 0 {
+		t.Errorf("comments: %q", f.gh.comments)
+	}
+}
+
+// Every ticket waiting for another hands none to a person: the run ends as
+// it did, and the analyzer is not asked again for the same answer.
+func TestEngine_EveryTicketWaits(t *testing.T) {
+	f := newEngineFixture(t, task(3))
+	f.an.next = []*analyzer.Decision{{NextAction: analyzer.ActionNone, IssueNumber: 3, ExitReason: analyzer.ReasonBlockedByDependencies}}
+	if end := f.run(); end != analyzer.ReasonBlockedByDependencies {
+		t.Fatalf("ended %q\n%s", end, f.log.String())
+	}
+	if l := f.lane(3); l.State != Blocked || f.an.asked != 1 {
+		t.Errorf("#3: %+v; the analyzer asked %d times", l, f.an.asked)
+	}
+}
+
+// The shadow's lane that stops alone is the analyzer stopping the run on a
+// ticket labeled for a person, whose lane waits for one: not another stop,
+// nor one on a lane that does not wait.
+func TestShadow_ALaneThatStopsAlone(t *testing.T) {
+	f := newEngineFixture(t, task(7))
+	f.e.Shadow = nil
+	if _, err := f.e.Journal.Record(Transition{Issue: 7, To: NeedsYou, Cause: CauseImported, Why: WhyPerson, At: time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.e.Journal.Record(Transition{Issue: 8, To: Ready, Cause: CauseImported, At: time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatal(err)
+	}
+	stop := func(issue int, reason string) *analyzer.Decision {
+		return &analyzer.Decision{NextAction: analyzer.ActionNone, IssueNumber: issue, ExitReason: reason}
+	}
+	for _, c := range []struct {
+		name   string
+		mine   *analyzer.Decision
+		theirs *analyzer.Decision
+		known  string
+	}{
+		{"needs a person", nil, stop(7, analyzer.ReasonNeedsHumanReview), KnownLaneStop},
+		{"a Worker failed", dispatch(8), stop(7, analyzer.ReasonWorkerFailed), KnownLaneStop},
+		{"another stop", nil, stop(7, analyzer.ReasonReviewMaxRetries), ""},
+		{"a lane that does not wait", nil, stop(8, analyzer.ReasonNeedsHumanReview), ""},
+		{"the same", stop(7, analyzer.ReasonNeedsHumanReview), stop(7, analyzer.ReasonNeedsHumanReview), ""},
+	} {
+		same, known := f.e.judge(c.mine, c.theirs, nil)
+		if known != c.known || (c.name == "the same") != same {
+			t.Errorf("%s: same %v, known %q", c.name, same, known)
+		}
+	}
+}
+
 // A decision that moves no lane is one the run stops on: the lane already
 // waits for a person, and the decision is not made again and again.
 func TestEngine_ADecisionThatMovesNoLane(t *testing.T) {

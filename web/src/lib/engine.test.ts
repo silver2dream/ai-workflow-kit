@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Decision, LaneState } from "./api";
-import { decisionWords, endedWords, KNOWN, laneMeta, LANES, stepWords, WHY, whyWords, workingSteps } from "./engine";
+import { decisionWords, endedWords, KNOWN, laneMeta, LANES, runEndWords, stepWords, WHY, whyWords, workingSteps } from "./engine";
 import { titleOf } from "./tickets";
 import { counts } from "@/pages/run/Lanes";
 
@@ -63,6 +63,8 @@ describe("engine words", () => {
     expect(endedWords("needs_human_review")).toBe("上一輪停了：能做的都做完了，剩下的工單需要你。");
     expect(endedWords("user_stopped")).toBe("上一輪照你的要求停了。");
     expect(endedWords("something_new")).toBe("上一輪結束了（something_new）。");
+    expect(runEndWords("needs_human_review")).toBe("能做的都做完了，剩下的工單需要你");
+    expect(runEndWords("worker_failed")).toBe("能做的都做完了，剩下的工單執行者試了幾次都失敗");
   });
 
   it("says each side's decision of the shadow", () => {

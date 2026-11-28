@@ -718,9 +718,9 @@ func needsYouComment(l Lane, names config.Labels) string {
 // settle moves the lane a decision to stop gave up on, when it gave up on
 // one that is not already waiting for a person: a limit reached, a pull
 // request that cannot be found, a ticket that cannot be used, one that
-// waits for its dependencies. moved says whether it moved one: then that
-// lane alone stops, and the round goes on (design.md §6, task 2.4); a
-// decision that moves no lane is one the run stops on.
+// waits for its dependencies. moved says whether it handed one to a person:
+// then that lane alone stops, and the round goes on (design.md §6, task
+// 2.4); a decision that hands none over is one the run stops on.
 func (e *Engine) settle(ctx context.Context, d *analyzer.Decision) (moved bool, err error) {
 	l := e.Journal.Lane(d.IssueNumber)
 	if l == nil || l.State.Terminal() || l.State == NeedsYou || l.State == Paused {
@@ -746,8 +746,10 @@ func (e *Engine) settle(ctx context.Context, d *analyzer.Decision) (moved bool, 
 		_, err := e.record(ctx, t, true)
 		return err == nil, err
 	case d.ExitReason == analyzer.ReasonBlockedByDependencies && l.State == Ready:
+		// Every ticket waits for another: no lane is handed to a person,
+		// and asking again would find the same.
 		_, err := e.move(ctx, l, Blocked, CauseBlocked, "it waits for a ticket it depends on")
-		return err == nil, err
+		return false, err
 	}
 	return false, nil
 }
